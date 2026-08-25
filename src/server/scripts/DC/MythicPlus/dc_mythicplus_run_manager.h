@@ -146,7 +146,7 @@ public:
     void HandleBossDeath(Creature* creature, Unit* killer);
     void HandleCreatureKill(Creature* creature, Unit* killer);
     void HandleInstanceReset(Map* map);
-    bool IsBossCreature(const Creature* creature) const;
+    bool IsBossCreature(Creature const* creature) const;
     bool IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const;
 
     // Weekly vault support
@@ -209,7 +209,7 @@ public:
 private:
     MythicPlusRunManager() = default;
 
-    uint64 MakeInstanceKey(const Map* map) const;
+    uint64 MakeInstanceKey(Map const* map) const;
     InstanceState* GetOrCreateState(Map* map);
     InstanceState* GetState(Map* map);
     InstanceState const* GetState(Map* map) const;
@@ -226,7 +226,7 @@ private:
     bool IsWipeBudgetEnabled() const;
     bool IsKeystoneRequirementEnabled() const;
     void CacheBossMetadata();
-    void RecordRunResult(const InstanceState* state, bool success, uint32 bossEntry);
+    void RecordRunResult(InstanceState const* state, bool success, uint32 bossEntry);
     void AwardTokens(InstanceState* state, uint32 bossEntry);
     // Single writer for dc_player_keystones. Upserts, because a bare UPDATE is
     // a silent no-op for any character that has never had a row inserted.
@@ -246,7 +246,7 @@ private:
     void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount);
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
-    std::string SerializeParticipants(const InstanceState* state) const;
+    std::string SerializeParticipants(InstanceState const* state) const;
 
     // Teleportation helpers
     bool GetEntranceLocation(Map* map, float& x, float& y, float& z, float& o) const;
@@ -256,13 +256,13 @@ private:
     void DespawnCountdownBarrier(InstanceState* state, Map* map) const;
     void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
     bool AreCompletionObjectivesMet(InstanceState const* state) const;
-    bool IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const;
+    bool IsFinalBossEncounter(InstanceState const* state, Creature const* creature) const;
 
     // Seasonal validation and affix system (NEW)
     bool IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const;
     std::vector<uint32> GetWeeklyAffixes(uint32 seasonId) const;
-    void ActivateAffixes(Map* map, const std::vector<uint32>& affixes, uint8 keystoneLevel);
-    void AnnounceAffixes(Player* player, const std::vector<uint32>& affixes);
+    void ActivateAffixes(Map* map, std::vector<uint32> const& affixes, uint8 keystoneLevel);
+    void AnnounceAffixes(Player* player, std::vector<uint32> const& affixes);
     std::string GetAffixName(uint32 affixId) const;
     bool ResolveWeeklyAffixInfo(uint32 scheduledAffixId, WeeklyAffixInfo& outInfo) const;
     void InitializeHud(InstanceState* state, Map* map);
@@ -284,7 +284,6 @@ private:
     uint32 GetBestRunDuration(uint32 mapId, uint8 keystoneLevel) const;
     void UpdateBestRunDuration(uint32 mapId, uint8 keystoneLevel, uint32 durationSeconds);
     uint64 MakeBestRunCacheKey(uint32 mapId, uint8 keystoneLevel) const;
-
 
     // Guards every container below. Instances update on MapUpdate.Threads
     // worker threads while the 1s sweep runs on the world thread, so an

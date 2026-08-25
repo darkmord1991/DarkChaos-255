@@ -73,7 +73,7 @@ namespace CrossSystem
     };
 
     // Convert SystemId to string for logging/display
-    inline const char* SystemIdToString(SystemId id)
+    inline char const* SystemIdToString(SystemId id)
     {
         switch (id)
         {
@@ -314,10 +314,10 @@ namespace CrossSystem
         virtual SystemId GetSystemId() const = 0;
 
         // Get system name for logging
-        virtual const char* GetSystemName() const = 0;
+        virtual char const* GetSystemName() const = 0;
 
         // Called when an event is broadcast
-        virtual void OnEvent(const EventData& event) = 0;
+        virtual void OnEvent(EventData const& event) = 0;
 
         // Get which event types this handler wants to receive
         virtual std::vector<EventType> GetSubscribedEvents() const = 0;

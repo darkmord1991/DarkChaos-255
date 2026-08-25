@@ -40,7 +40,7 @@
 namespace
 {
     // Module identifier for leaderboards
-    constexpr const char* MODULE_LEADERBOARD = "LBRD";
+    constexpr char const* MODULE_LEADERBOARD = "LBRD";
 
     // Opcodes
     namespace Opcode
@@ -234,7 +234,7 @@ namespace
     std::mutex g_cacheMutex;  // Thread safety
 
     // Helper to generate cache key
-    std::string MakeCacheKey(const std::string& category, const std::string& subcategory,
+    std::string MakeCacheKey(std::string const& category, std::string const& subcategory,
                              uint32 seasonId, uint32 page, uint32 limit)
     {
         return category + "_" + subcategory + "_" + std::to_string(seasonId) +
@@ -322,7 +322,7 @@ namespace
 
     // Mythic+ leaderboard (history or per-player aggregate views)
     // Note: dc_mplus_scores table has: character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs
-    std::string BuildMythicPlusLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset,
+    std::string BuildMythicPlusLeaderboardSql(std::string const& subcat, uint32 seasonId, uint32 limit, uint32 offset,
         uint32 requesterGuid, bool myRunsOnly)
     {
         if (subcat == "mplus_history")
@@ -368,7 +368,7 @@ namespace
             seasonId, orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseMythicPlusLeaderboard(QueryResult result, const std::string& subcat,
+    std::vector<LeaderboardEntry> ParseMythicPlusLeaderboard(QueryResult result, std::string const& subcat,
         uint32 seasonId, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
@@ -576,7 +576,7 @@ namespace
 
     // Seasonal leaderboard
     // Table: dc_player_seasonal_stats with fields: total_tokens_earned, total_essence_earned, quests_completed, bosses_killed
-    std::string BuildSeasonalLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    std::string BuildSeasonalLeaderboardSql(std::string const& subcat, uint32 seasonId, uint32 limit, uint32 offset)
     {
         std::string orderBy = "d.total_tokens_earned DESC";
         std::string selectField = "d.total_tokens_earned";
@@ -607,7 +607,7 @@ namespace
             selectField, seasonId, orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseSeasonalLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParseSeasonalLeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -642,12 +642,12 @@ namespace
     // Sources:
     //   - v_hlbg_player_seasonal_stats: unified seasonal aggregation
     //   - dc_hlbg_player_stats: all-time kill/win/resource counters
-    bool IsHLBGOverallSubcategory(const std::string& subcat)
+    bool IsHLBGOverallSubcategory(std::string const& subcat)
     {
         return subcat == "hlbg_kills" || subcat == "hlbg_alltime_wins" || subcat == "hlbg_resources";
     }
 
-    std::string BuildHLBGLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    std::string BuildHLBGLeaderboardSql(std::string const& subcat, uint32 seasonId, uint32 limit, uint32 offset)
     {
         if (IsHLBGOverallSubcategory(subcat))
         {
@@ -686,7 +686,7 @@ namespace
             seasonId, orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseHLBGLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParseHLBGLeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -794,7 +794,7 @@ namespace
     // Schema tables:
     //   - dc_player_artifact_mastery (per artifact)
     // Legacy subcat "prestige_resets" still uses dc_character_prestige.
-    std::string BuildPrestigeLeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildPrestigeLeaderboardSql(std::string const& subcat, uint32 limit, uint32 offset)
     {
         // Legacy: prestige resets leaderboard
         if (subcat == "prestige_resets")
@@ -830,7 +830,7 @@ namespace
             orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParsePrestigeLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParsePrestigeLeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -896,7 +896,7 @@ namespace
 
     // Item Upgrade leaderboard
     // Uses dc_item_upgrades table: player_guid, tier_id, upgrade_level, tokens_invested, essence_invested
-    std::string BuildUpgradeLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    std::string BuildUpgradeLeaderboardSql(std::string const& subcat, uint32 seasonId, uint32 limit, uint32 offset)
     {
         std::string orderBy = "total_tokens DESC";
         if (subcat == "upgrade_items")
@@ -922,7 +922,7 @@ namespace
             seasonId, orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseUpgradeLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParseUpgradeLeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -971,7 +971,7 @@ namespace
 
     // Duel leaderboard
     // Table: dc_duel_statistics with fields: player_guid, wins, losses, draws, total_damage_dealt
-    std::string BuildDuelLeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildDuelLeaderboardSql(std::string const& subcat, uint32 limit, uint32 offset)
     {
         std::string orderBy = "d.wins DESC";
         if (subcat == "duel_winrate")
@@ -990,7 +990,7 @@ namespace
             orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseDuelLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParseDuelLeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -1042,7 +1042,7 @@ namespace
     // AOE Loot leaderboard
     // Table: dc_aoeloot_detailed_stats with quality breakdown columns
     // Simplified to 3 views: aoe_items (looted + quality), aoe_filtered (filtered + quality), aoe_gold
-    std::string BuildAOELeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildAOELeaderboardSql(std::string const& subcat, uint32 limit, uint32 offset)
     {
         std::string orderBy = "a.total_items DESC";
         if (subcat == "aoe_gold")
@@ -1070,7 +1070,7 @@ namespace
             orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseAOELeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParseAOELeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -1178,7 +1178,7 @@ namespace
 
     // Achievement leaderboard
     // Table: dc_player_achievements with fields: player_guid, achievement_id, progress, completed
-    std::string BuildAchievementLeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildAchievementLeaderboardSql(std::string const& subcat, uint32 limit, uint32 offset)
     {
         std::string orderBy = "total_completed DESC";
         if (subcat == "achieve_progress")
@@ -1195,7 +1195,7 @@ namespace
             orderBy, limit, offset);
     }
 
-    std::vector<LeaderboardEntry> ParseAchievementLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    std::vector<LeaderboardEntry> ParseAchievementLeaderboard(QueryResult result, std::string const& subcat, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
         if (!result)
@@ -1232,7 +1232,7 @@ namespace
 
     // Build the total-entry-count query for pagination (all sources live in the
     // character DB). Empty string = unknown category (no query to run).
-    std::string BuildTotalEntryCountSql(const std::string& category, const std::string& subcat, uint32 seasonId,
+    std::string BuildTotalEntryCountSql(std::string const& category, std::string const& subcat, uint32 seasonId,
         bool myRunsOnly, uint32 requesterGuid)
     {
         // Handle seasonId = 0 as current season
@@ -1291,7 +1291,7 @@ namespace
     // source implemented for this category/subcategory.
     // This is a simplified version - a full implementation would use window
     // functions or subqueries to get the exact rank per category.
-    std::string BuildPlayerRankSql(uint32 requesterGuid, const std::string& category, const std::string& subcat,
+    std::string BuildPlayerRankSql(uint32 requesterGuid, std::string const& category, std::string const& subcat,
         uint32 seasonId)
     {
         if (category == "mplus" && subcat == "mplus_key")
@@ -1306,7 +1306,7 @@ namespace
     }
 
     // Extract the map id from a "mplus_dungeon_<mapId>" subcategory.
-    bool TryParseDungeonMapId(const std::string& subcategory, uint16& mapId)
+    bool TryParseDungeonMapId(std::string const& subcategory, uint16& mapId)
     {
         if (subcategory.rfind("mplus_dungeon_", 0) != 0)
             return false;
@@ -1316,7 +1316,7 @@ namespace
 
     // Dispatch: build the fetch SQL for a category/subcategory.
     // Empty string = unknown category (respond with an empty leaderboard).
-    std::string BuildLeaderboardSql(const std::string& category, const std::string& subcategory, uint32 seasonId,
+    std::string BuildLeaderboardSql(std::string const& category, std::string const& subcategory, uint32 seasonId,
         uint32 limit, uint32 offset, uint32 requesterGuid, bool myRunsOnly)
     {
         if (category == "mplus")
@@ -1347,8 +1347,8 @@ namespace
     }
 
     // Dispatch: parse the fetch-query result with the matching row parser.
-    std::vector<LeaderboardEntry> ParseLeaderboardEntries(QueryResult result, const std::string& category,
-        const std::string& subcategory, uint32 seasonId, uint32 offset)
+    std::vector<LeaderboardEntry> ParseLeaderboardEntries(QueryResult result, std::string const& category,
+        std::string const& subcategory, uint32 seasonId, uint32 offset)
     {
         if (category == "mplus")
         {
@@ -1379,7 +1379,7 @@ namespace
 
     // Serialize the SMSG_LEADERBOARD_DATA payload (shared by the cache-hit
     // path and the async cache-miss callback).
-    std::string BuildLeaderboardJson(const std::string& category, const std::string& subcategory, uint32 page,
+    std::string BuildLeaderboardJson(std::string const& category, std::string const& subcategory, uint32 page,
         uint32 totalPages, uint32 totalEntries, std::vector<LeaderboardEntry> const& entries)
     {
         // Build entries array as JSON string
@@ -1444,7 +1444,7 @@ namespace
 
     // Store a freshly fetched page in the leaderboard cache (with the same
     // oldest-entry eviction the synchronous path used).
-    void StoreLeaderboardCache(const std::string& cacheKey, std::vector<LeaderboardEntry> const& entries,
+    void StoreLeaderboardCache(std::string const& cacheKey, std::vector<LeaderboardEntry> const& entries,
         uint32 totalEntries)
     {
         std::lock_guard<std::mutex> lock(g_cacheMutex);
@@ -1486,7 +1486,7 @@ namespace
         return DarkChaos::GetActiveSeasonId();
     }
 
-    void HandleGetLeaderboard(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetLeaderboard(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -1628,7 +1628,7 @@ namespace
         }));
     }
 
-    void HandleGetCategories(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetCategories(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -1640,7 +1640,7 @@ namespace
         response.Send(player);
     }
 
-    void SendMyRankResponse(Player* player, const std::string& category, const std::string& subcategory,
+    void SendMyRankResponse(Player* player, std::string const& category, std::string const& subcategory,
         uint32 rank, uint32 total)
     {
         float percentile = total > 0 ? (static_cast<float>(rank) / total * 100.0f) : 0.0f;
@@ -1653,7 +1653,7 @@ namespace
         response.Send(player);
     }
 
-    void HandleGetMyRank(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetMyRank(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -1715,7 +1715,7 @@ namespace
         }));
     }
 
-    void HandleRefresh(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleRefresh(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -1743,7 +1743,7 @@ namespace
         "dc_player_achievements"
     };
 
-    void HandleTestTables(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleTestTables(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -1829,7 +1829,7 @@ namespace
         }));
     }
 
-    void HandleGetSeasons(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetSeasons(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -1879,7 +1879,7 @@ namespace
     }
 
     // v1.3.0: Handle request for available M+ dungeons
-    void HandleGetMythicPlusDungeons(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetMythicPlusDungeons(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -1918,7 +1918,7 @@ namespace
     }
 
     // v1.5.0: Handle request for account-wide statistics
-    void HandleGetAccountStats(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetAccountStats(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
@@ -2070,7 +2070,7 @@ namespace
     }
 
     // Error handler for future use
-    [[maybe_unused]] void HandleError(Player* player, const std::string& message)
+    [[maybe_unused]] void HandleError(Player* player, std::string const& message)
     {
         if (!player)
             return;

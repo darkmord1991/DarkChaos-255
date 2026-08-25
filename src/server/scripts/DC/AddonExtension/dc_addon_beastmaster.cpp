@@ -37,7 +37,7 @@ namespace DCAddon
 {
 namespace Beastmaster
 {
-    constexpr const char* MODULE_BEAST = Module::BEASTMASTER;
+    constexpr char const* MODULE_BEAST = Module::BEASTMASTER;
 
     // The roster is read-mostly (changes only on SQL reload), so we cache the
     // encoded payload + the set of adoptable creature ids and rebuild lazily on
@@ -150,7 +150,7 @@ namespace Beastmaster
     }
 
     // Handler: client requests the adoptable pet catalog.
-    static void HandleGetCatalog(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetCatalog(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -163,7 +163,7 @@ namespace Beastmaster
     }
 
     // Reply helper for adopt outcomes.
-    static void SendAdoptResult(Player* player, bool success, const std::string& reason, uint32 creatureId, const std::string& petName)
+    static void SendAdoptResult(Player* player, bool success, std::string const& reason, uint32 creatureId, std::string const& petName)
     {
         JsonMessage reply(Module::BEASTMASTER, Opcode::Beastmaster::SMSG_ADOPT_RESULT);
         reply.Set("success", JsonValue(success));
@@ -176,7 +176,7 @@ namespace Beastmaster
     }
 
     // Handler: client adopts a pet by creatureId.
-    static void HandleAdopt(Player* player, const ParsedMessage& msg)
+    static void HandleAdopt(Player* player, ParsedMessage const& msg)
     {
         if (!player)
             return;

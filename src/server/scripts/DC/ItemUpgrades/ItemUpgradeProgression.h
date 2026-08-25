@@ -132,7 +132,7 @@ namespace DarkChaos
             /**
              * Get tier configuration
              */
-            const TierProgressionConfig* GetTierConfig(uint8 tier_id) const
+            TierProgressionConfig const* GetTierConfig(uint8 tier_id) const
             {
                 auto it = tier_configs.find(tier_id);
                 return it != tier_configs.end() ? &it->second : nullptr;
@@ -143,7 +143,7 @@ namespace DarkChaos
              */
             uint8 GetMaxUpgradeLevel(uint8 tier_id) const
             {
-                const auto* config = GetTierConfig(tier_id);
+                auto const* config = GetTierConfig(tier_id);
                 return config ? config->max_upgrade_level : 0;
             }
 
@@ -152,7 +152,7 @@ namespace DarkChaos
              */
             std::string GetTierName(uint8 tier_id) const
             {
-                const auto* config = GetTierConfig(tier_id);
+                auto const* config = GetTierConfig(tier_id);
                 return config ? config->tier_name : "Unknown";
             }
         };
@@ -289,7 +289,7 @@ namespace DarkChaos
             /**
              * Get config
              */
-            const CostScalingConfig& GetConfig() const { return config; }
+            CostScalingConfig const& GetConfig() const { return config; }
         };
 
         // =====================================================================

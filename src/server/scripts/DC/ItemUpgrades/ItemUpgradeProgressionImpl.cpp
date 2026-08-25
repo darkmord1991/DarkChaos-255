@@ -163,7 +163,7 @@ public:
     }
 
 private:
-    void SaveMasteryInfo(const PlayerArtifactMasteryInfo& info)
+    void SaveMasteryInfo(PlayerArtifactMasteryInfo const& info)
     {
         CharacterDatabase.Execute(
             "REPLACE INTO dc_player_artifact_mastery "
@@ -457,7 +457,7 @@ public:
         return commandTable;
     }
 
-    static bool HandleTierCapCommand(ChatHandler* handler, const char* args)
+    static bool HandleTierCapCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
         {
@@ -493,7 +493,7 @@ public:
         return true;
     }
 
-    static bool HandleTestSetCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleTestSetCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -508,7 +508,7 @@ public:
             return false;
         }
 
-        const ClassGearSet& gearSet = it->second;
+        ClassGearSet const& gearSet = it->second;
 
         // Grant test items
         uint32 items_added = 0;

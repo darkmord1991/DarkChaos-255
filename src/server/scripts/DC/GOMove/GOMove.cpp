@@ -32,7 +32,7 @@ http://rochet2.github.io/
 
 GameObjectStore GOMove::Store;
 
-void GOMove::SendAddonMessage(Player * player, const char * msg)
+void GOMove::SendAddonMessage(Player * player, char const* msg)
 {
     if (!player || !msg)
         return;

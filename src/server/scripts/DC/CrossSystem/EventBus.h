@@ -48,7 +48,7 @@ namespace CrossSystem
         std::optional<ContentDifficulty> difficultyFilter;
         std::optional<uint32> mapIdFilter;
 
-        bool Matches(const EventData& event) const;
+        bool Matches(EventData const& event) const;
     };
 
     // =========================================================================
@@ -85,7 +85,7 @@ namespace CrossSystem
         uint64 Subscribe(IEventHandler* handler, EventType eventType, uint8 priority = 100);
 
         // Subscribe to multiple event types
-        void SubscribeMultiple(IEventHandler* handler, const std::vector<EventType>& eventTypes, uint8 priority = 100);
+        void SubscribeMultiple(IEventHandler* handler, std::vector<EventType> const& eventTypes, uint8 priority = 100);
 
         // Subscribe handler to all events it declares interest in
         void SubscribeHandler(IEventHandler* handler);
@@ -115,7 +115,7 @@ namespace CrossSystem
         // handler destroyed concurrently with a Publish in flight would be
         // called through a dangling pointer. Today every Subscribe/Unsubscribe
         // happens at startup/shutdown, which satisfies this; keep it that way.
-        void Publish(const EventData& event, SystemId sourceSystem = SystemId::None);
+        void Publish(EventData const& event, SystemId sourceSystem = SystemId::None);
 
         // Publish with specific event type (convenience for simple events)
         void PublishSimple(EventType type, ObjectGuid playerGuid, uint32 mapId = 0,
@@ -128,7 +128,7 @@ namespace CrossSystem
         void PublishCreatureKill(Player* player, Creature* creature, bool isBoss = false,
                                  uint8 keystoneLevel = 0, uint32 partySize = 1);
 
-        void PublishDungeonComplete(const DungeonCompleteEvent& event);
+        void PublishDungeonComplete(DungeonCompleteEvent const& event);
 
         void PublishQuestComplete(Player* player, uint32 questId, bool isDaily = false, bool isWeekly = false);
 
@@ -152,7 +152,7 @@ namespace CrossSystem
         void SetHistoryMaxSize(uint32 maxSize) { historyMaxSize_ = maxSize; }
         uint32 GetHistoryMaxSize() const { return historyMaxSize_; }
 
-        const std::vector<EventHistoryEntry>& GetHistory() const { return eventHistory_; }
+        std::vector<EventHistoryEntry> const& GetHistory() const { return eventHistory_; }
         std::vector<EventHistoryEntry> GetHistoryForPlayer(ObjectGuid guid) const;
         std::vector<EventHistoryEntry> GetHistoryForEventType(EventType type) const;
         void ClearHistory();
@@ -171,7 +171,7 @@ namespace CrossSystem
             std::unordered_map<SystemId, uint64> systemHandlerCounts;
         };
 
-        const Statistics& GetStatistics() const { return stats_; }
+        Statistics const& GetStatistics() const { return stats_; }
         void ResetStatistics();
 
         // =====================================================================
@@ -192,7 +192,7 @@ namespace CrossSystem
         std::vector<EventSubscription> GetHandlersForEvent(EventType type);
 
         // Add to history
-        void RecordHistory(const EventData& event, SystemId source, uint32 handlerCount, uint64 processingTimeUs);
+        void RecordHistory(EventData const& event, SystemId source, uint32 handlerCount, uint64 processingTimeUs);
 
         // Subscription storage (eventType -> subscriptions)
         std::unordered_map<EventType, std::vector<EventSubscription>> subscriptions_;

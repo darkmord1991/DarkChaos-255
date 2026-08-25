@@ -1512,7 +1512,7 @@ namespace HLBG
     // =====================================================================
 
     // Real-time BG status handlers
-    static void HandleRequestStatus(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleRequestStatus(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player) return;
 
@@ -1546,7 +1546,7 @@ namespace HLBG
         SendQueueInfo(player);
     }
 
-    static void HandleRequestResources(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleRequestResources(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player) return;
 
@@ -1577,7 +1577,7 @@ namespace HLBG
         SendResources(player, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
-    static void HandleRequestObjective(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleRequestObjective(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player) return;
 
@@ -1588,7 +1588,7 @@ namespace HLBG
         response.Send(player);
     }
 
-    static void HandleSpectate(Player* player, const ParsedMessage& msg)
+    static void HandleSpectate(Player* player, ParsedMessage const& msg)
     {
         if (!player) return;
 
@@ -1623,7 +1623,7 @@ namespace HLBG
         DCSpectator::Registry::Get().SendLiveSnapshot(player);
     }
 
-    static void HandleQuickQueue(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleQuickQueue(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player) return;
 
@@ -1641,7 +1641,7 @@ namespace HLBG
         SendQueueInfo(player);
     }
 
-    static void HandleLeaveQueue(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleLeaveQueue(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player) return;
 
@@ -1660,7 +1660,7 @@ namespace HLBG
     }
 
     // Leaderboard and stats handlers
-    static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
+    static void HandleGetLeaderboard(Player* player, ParsedMessage const& msg)
     {
         if (!player) return;
 
@@ -1739,7 +1739,7 @@ namespace HLBG
             StatsFeature::LEADERBOARD, response, requestToken);
     }
 
-    static void HandleGetPlayerStats(Player* player, const ParsedMessage& msg)
+    static void HandleGetPlayerStats(Player* player, ParsedMessage const& msg)
     {
         if (!player) return;
 
@@ -1796,7 +1796,7 @@ namespace HLBG
             StatsFeature::PLAYER_STATS, statsJson, requestToken);
     }
 
-    static void HandleGetAllTimeStats(Player* player, const ParsedMessage& msg)
+    static void HandleGetAllTimeStats(Player* player, ParsedMessage const& msg)
     {
         if (!player) return;
 
@@ -2053,7 +2053,7 @@ namespace HLBGAddonFallback
 {
     using namespace HinterlandBGConstants;
 
-    static std::string EscapeJson(const std::string& in)
+    static std::string EscapeJson(std::string const& in)
     {
         return DarkChaos::CrossSystem::Utils::EscapeJson(in);
     }

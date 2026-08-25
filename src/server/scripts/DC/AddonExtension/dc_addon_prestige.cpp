@@ -41,7 +41,7 @@ namespace DCPrestigeAddon
     // Module id + opcodes are sourced from the canonical registry in
     // dc_addon_namespace.h so the two can never drift (previously these were
     // hand-copied literal constants kept in sync by comment).
-    constexpr const char* MODULE = DCAddon::Module::PRESTIGE;
+    constexpr char const* MODULE = DCAddon::Module::PRESTIGE;
 
     namespace Opcode
     {
@@ -58,7 +58,7 @@ namespace DCPrestigeAddon
     // Configuration
     namespace Config
     {
-        constexpr const char* CANONICAL_ENABLED = "DC.AddonProtocol.Prestige.Enable";
+        constexpr char const* CANONICAL_ENABLED = "DC.AddonProtocol.Prestige.Enable";
     }
 
     // =======================================================================
@@ -235,7 +235,7 @@ namespace DCPrestigeAddon
     // Message Handlers
     // =======================================================================
 
-    void HandleGetInfo(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetInfo(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -243,7 +243,7 @@ namespace DCPrestigeAddon
         SendPrestigeInfo(player);
     }
 
-    void HandleGetBonuses(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetBonuses(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;

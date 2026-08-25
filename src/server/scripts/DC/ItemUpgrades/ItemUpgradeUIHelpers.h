@@ -39,13 +39,13 @@ namespace DarkChaos
             // COLOR CODES FOR WoW CHAT
             // =====================================================================
 
-            static constexpr const char* COLOR_TITLE     = "|cff99ccff";  // Cyan (titles)
-            static constexpr const char* COLOR_POSITIVE  = "|cff00ff00";  // Green (positive)
-            static constexpr const char* COLOR_NEGATIVE  = "|cffff0000";  // Red (negative)
-            static constexpr const char* COLOR_NEUTRAL   = "|cffffffff";  // White (neutral)
-            static constexpr const char* COLOR_GOLD      = "|cffd0ad00";  // Gold (currency)
-            static constexpr const char* COLOR_WARNING   = "|cffff8000";  // Orange (warning)
-            static constexpr const char* COLOR_RESET     = "|r";
+            static constexpr char const* COLOR_TITLE     = "|cff99ccff";  // Cyan (titles)
+            static constexpr char const* COLOR_POSITIVE  = "|cff00ff00";  // Green (positive)
+            static constexpr char const* COLOR_NEGATIVE  = "|cffff0000";  // Red (negative)
+            static constexpr char const* COLOR_NEUTRAL   = "|cffffffff";  // White (neutral)
+            static constexpr char const* COLOR_GOLD      = "|cffd0ad00";  // Gold (currency)
+            static constexpr char const* COLOR_WARNING   = "|cffff8000";  // Orange (warning)
+            static constexpr char const* COLOR_RESET     = "|r";
 
             // =====================================================================
             // PROGRESS BAR VISUALIZATION
@@ -124,7 +124,7 @@ namespace DarkChaos
              * @param width Width of header (default 35)
              * @return Formatted header string
              */
-            inline std::string CreateHeader(const std::string& title, uint32 width = 35)
+            inline std::string CreateHeader(std::string const& title, uint32 width = 35)
             {
                 std::ostringstream ss;
                 ss << COLOR_TITLE;
@@ -159,7 +159,7 @@ namespace DarkChaos
              * @param width Width of line (default 35)
              * @return Formatted stat row
              */
-            inline std::string CreateStatRow(const std::string& label, const std::string& value, uint32 width = 35)
+            inline std::string CreateStatRow(std::string const& label, std::string const& value, uint32 width = 35)
             {
                 std::ostringstream ss;
                 int spacingNeeded = width - label.length() - value.length() - 2;
@@ -203,7 +203,7 @@ namespace DarkChaos
              * @param eventType Event type (quest, creature, pvp, achievement, battleground)
              * @return Human-readable event type
              */
-            inline std::string FormatEventType(const std::string& eventType)
+            inline std::string FormatEventType(std::string const& eventType)
             {
                 if (eventType == "quest")
                     return COLOR_POSITIVE + std::string("Quest") + COLOR_RESET;

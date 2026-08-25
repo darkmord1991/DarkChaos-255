@@ -157,7 +157,7 @@ namespace CrossSystem
     // Multiplier Calculation
     // =========================================================================
 
-    RewardCalculation RewardDistributor::CalculateReward(const RewardContext& context,
+    RewardCalculation RewardDistributor::CalculateReward(RewardContext const& context,
                                                          RewardType type, uint32 baseAmount)
     {
         RewardCalculation calc;
@@ -248,8 +248,8 @@ namespace CrossSystem
     // Reward Distribution
     // =========================================================================
 
-    DistributionResult RewardDistributor::Distribute(Player* player, const RewardContext& context,
-                                                     const std::vector<RewardDefinition>& rewards)
+    DistributionResult RewardDistributor::Distribute(Player* player, RewardContext const& context,
+                                                     std::vector<RewardDefinition> const& rewards)
     {
         DistributionResult result;
 
@@ -380,19 +380,19 @@ namespace CrossSystem
         return result;
     }
 
-    DistributionResult RewardDistributor::DistributeTokens(Player* player, const RewardContext& context,
+    DistributionResult RewardDistributor::DistributeTokens(Player* player, RewardContext const& context,
                                                            uint32 baseAmount)
     {
         return Distribute(player, context, {RewardDefinition::Tokens(baseAmount)});
     }
 
-    DistributionResult RewardDistributor::DistributeEssence(Player* player, const RewardContext& context,
+    DistributionResult RewardDistributor::DistributeEssence(Player* player, RewardContext const& context,
                                                             uint32 baseAmount)
     {
         return Distribute(player, context, {RewardDefinition::Essence(baseAmount)});
     }
 
-    DistributionResult RewardDistributor::DistributeBoth(Player* player, const RewardContext& context,
+    DistributionResult RewardDistributor::DistributeBoth(Player* player, RewardContext const& context,
                                                          uint32 baseTokens, uint32 baseEssence)
     {
         return Distribute(player, context, {
@@ -402,7 +402,7 @@ namespace CrossSystem
     }
 
     bool RewardDistributor::DistributeItem(Player* player, uint32 itemId, uint32 count,
-                                           SystemId source, const std::string& reason)
+                                           SystemId source, std::string const& reason)
     {
         if (!player || itemId == 0 || count == 0)
             return false;
@@ -444,7 +444,7 @@ namespace CrossSystem
     }
 
     bool RewardDistributor::DistributeCollectible(Player* player, uint8 collectionType, uint32 entry,
-                                                   SystemId source, const std::string& reason)
+                                                   SystemId source, std::string const& reason)
     {
         if (!player || collectionType == 0 || entry == 0)
             return false;
@@ -476,8 +476,8 @@ namespace CrossSystem
     // =========================================================================
 
     std::vector<RewardCalculation> RewardDistributor::PreviewRewards([[maybe_unused]] Player* player,
-                                                                      const RewardContext& context,
-                                                                      const std::vector<RewardDefinition>& rewards)
+                                                                      RewardContext const& context,
+                                                                      std::vector<RewardDefinition> const& rewards)
     {
         std::vector<RewardCalculation> results;
 
@@ -492,8 +492,8 @@ namespace CrossSystem
         return results;
     }
 
-    std::string RewardDistributor::GetRewardPreviewText(Player* player, const RewardContext& context,
-                                                        const std::vector<RewardDefinition>& rewards)
+    std::string RewardDistributor::GetRewardPreviewText(Player* player, RewardContext const& context,
+                                                        std::vector<RewardDefinition> const& rewards)
     {
         auto calcs = PreviewRewards(player, context, rewards);
 
@@ -548,7 +548,7 @@ namespace CrossSystem
     // Internal Distribution
     // =========================================================================
 
-    bool RewardDistributor::DoDistributeTokens(Player* player, uint32 amount, const RewardContext& context)
+    bool RewardDistributor::DoDistributeTokens(Player* player, uint32 amount, RewardContext const& context)
     {
         if (!player || amount == 0)
             return false;
@@ -582,7 +582,7 @@ namespace CrossSystem
         return false;
     }
 
-    bool RewardDistributor::DoDistributeEssence(Player* player, uint32 amount, const RewardContext& context)
+    bool RewardDistributor::DoDistributeEssence(Player* player, uint32 amount, RewardContext const& context)
     {
         if (!player || amount == 0)
             return false;
@@ -618,7 +618,7 @@ namespace CrossSystem
     // Transaction Logging
     // =========================================================================
 
-    void RewardDistributor::LogTransaction(const RewardTransaction& tx)
+    void RewardDistributor::LogTransaction(RewardTransaction const& tx)
     {
         recentTransactions_.push_back(tx);
 

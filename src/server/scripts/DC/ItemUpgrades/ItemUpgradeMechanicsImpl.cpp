@@ -212,7 +212,7 @@ std::string ItemLevelCalculator::GetItemLevelDisplay(uint16 base_ilvl, uint16 cu
 
 namespace DarkChaos { namespace ItemUpgrade { namespace UI {
 
-std::string CreateUpgradeDisplay(const ItemUpgradeState& state, uint8 tier_id)
+std::string CreateUpgradeDisplay(ItemUpgradeState const& state, uint8 tier_id)
 {
     std::ostringstream ss;
 

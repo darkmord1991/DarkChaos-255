@@ -20,7 +20,7 @@ class ItemTemplate;
 namespace DCCollection
 {
     // Module identifier
-    constexpr const char* MODULE = "COLL";
+    constexpr char const* MODULE = "COLL";
     constexpr uint32 TRANSMOG_CANONICAL_ITEMID_THRESHOLD = 200000;
 
     // Collection types

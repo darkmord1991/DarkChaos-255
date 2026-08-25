@@ -54,7 +54,7 @@ namespace DCAddon
             Cell::VisitObjects(player, searcher, range);
         }
 
-        static void SendAddonMessage(Player* player, const char* msg)
+        static void SendAddonMessage(Player* player, char const* msg)
         {
             if (!player || !msg)
                 return;
@@ -214,7 +214,7 @@ namespace DCAddon
             return nearest;
         }
 
-        static void HandleRequestMove(Player* player, const ParsedMessage& msg)
+        static void HandleRequestMove(Player* player, ParsedMessage const& msg)
         {
             if (!DCAddon::CheckAddonPermission(player, Module::NPCMOVE, s_npcMoveMoveMinSecurity))
             {

@@ -59,7 +59,7 @@ namespace Seasons
         s_enabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Seasonal.Enable", true);
     }
 
-    static uint32 GetSeasonIdFromMsg(const ParsedMessage& msg)
+    static uint32 GetSeasonIdFromMsg(ParsedMessage const& msg)
     {
         uint32 seasonId = 0;
 
@@ -193,7 +193,7 @@ namespace Seasons
     }
 
     // Send current season information
-    void SendSeasonInfo(Player* player, uint32 seasonId, const std::string& seasonName,
+    void SendSeasonInfo(Player* player, uint32 seasonId, std::string const& seasonName,
                         uint32 startTime, uint32 endTime, uint32 daysRemaining)
     {
         uint32 tokenItemId = 0;
@@ -244,7 +244,7 @@ namespace Seasons
     }
 
     // Send milestone notification
-    void SendMilestoneReached(Player* player, uint32 milestoneId, const std::string& milestoneName,
+    void SendMilestoneReached(Player* player, uint32 milestoneId, std::string const& milestoneName,
                               uint32 rewardItemId, uint32 rewardCount)
     {
         Message msg(Module::SEASONAL, SMSG_MILESTONE_REACHED);
@@ -268,8 +268,8 @@ namespace Seasons
     }
 
     // Send new season notification
-    void SendSeasonStart(Player* player, uint32 seasonId, const std::string& seasonName,
-                         const std::string& theme, uint32 duration)
+    void SendSeasonStart(Player* player, uint32 seasonId, std::string const& seasonName,
+                         std::string const& theme, uint32 duration)
     {
         Message msg(Module::SEASONAL, SMSG_SEASON_START);
         msg.Add(seasonId);
@@ -291,7 +291,7 @@ namespace Seasons
     }
 
     // Handler implementations
-    static void HandleGetCurrentSeason(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetCurrentSeason(Player* player, ParsedMessage const& /*msg*/)
     {
         uint32 seasonId = DarkChaos::GetActiveSeasonId();
         std::string seasonName = DarkChaos::GetActiveSeasonName();
@@ -332,7 +332,7 @@ namespace Seasons
         }));
     }
 
-    static void HandleGetProgress(Player* player, const ParsedMessage& msg)
+    static void HandleGetProgress(Player* player, ParsedMessage const& msg)
     {
         uint32 seasonId = GetSeasonIdFromMsg(msg);
 
@@ -398,7 +398,7 @@ namespace Seasons
         }));
     }
 
-    static void HandleGetRewards(Player* player, const ParsedMessage& msg)
+    static void HandleGetRewards(Player* player, ParsedMessage const& msg)
     {
         uint32 seasonId = GetSeasonIdFromMsg(msg);
 
@@ -451,7 +451,7 @@ namespace Seasons
         }));
     }
 
-    static void HandleClaimReward(Player* player, const ParsedMessage& msg)
+    static void HandleClaimReward(Player* player, ParsedMessage const& msg)
     {
         uint32 rewardId = 0;
         if (IsJsonMessage(msg))
@@ -527,7 +527,7 @@ namespace Seasons
         }));
     }
 
-    static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
+    static void HandleGetLeaderboard(Player* player, ParsedMessage const& msg)
     {
         uint32 seasonId = GetSeasonIdFromMsg(msg);
         uint32 page = 1;
@@ -607,7 +607,7 @@ namespace Seasons
         }));
     }
 
-    static void HandleGetChallenges(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetChallenges(Player* player, ParsedMessage const& /*msg*/)
     {
         JsonValue response;
         response.SetObject();

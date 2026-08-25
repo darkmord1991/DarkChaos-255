@@ -44,7 +44,7 @@ struct JadeforestTeleportData
     float z;
     float o;
     uint32 map;
-    const char* icon;
+    char const* icon;
     std::string name;
 };
 

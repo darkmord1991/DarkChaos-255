@@ -350,7 +350,7 @@ namespace DarkChaos
 
                             if (needsBase || needsName)
                         {
-                            if (const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
+                            if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
                             {
                                     if (state.item_entry == 0)
                                         state.item_entry = itemTemplate->ItemId;
@@ -381,7 +381,7 @@ namespace DarkChaos
 
                             if (state.base_item_level == 0 || state.base_item_name.empty())
                             {
-                                if (const ItemTemplate* itemTemplate = ownedItem->GetTemplate())
+                                if (ItemTemplate const* itemTemplate = ownedItem->GetTemplate())
                                 {
                                     if (state.base_item_level == 0)
                                         state.base_item_level = itemTemplate->ItemLevel;
@@ -625,7 +625,7 @@ namespace DarkChaos
                     stats.db_writes++; // For the logs and mastery
                     return true;
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to upgrade item {} for player {}: {}", item_guid, player_guid, e.what());
                     return false;
@@ -820,7 +820,7 @@ namespace DarkChaos
 
                         if (itemEntry)
                         {
-                            if (const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
+                            if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
                             {
                                 if (state.base_item_level == 0)
                                     state.base_item_level = itemTemplate->ItemLevel;
@@ -1187,7 +1187,7 @@ namespace DarkChaos
                     // If no upgraded items found, return default tier
                     return TIER_LEVELING;
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to get highest tier for player {}: {}", player_guid, e.what());
                     return TIER_LEVELING;
@@ -1203,7 +1203,7 @@ namespace DarkChaos
                 return MAX_UPGRADE_LEVEL;
             }
 
-            const TierDefinition* GetTierDefinition(uint8 tier_id) override
+            TierDefinition const* GetTierDefinition(uint8 tier_id) override
             {
                 auto it = tier_definitions.find(tier_id);
                 if (it != tier_definitions.end())
@@ -1225,7 +1225,7 @@ namespace DarkChaos
                 return nullptr;
             }
 
-            std::vector<ChaosArtifact*> GetArtifactsByLocation(const std::string& location) override
+            std::vector<ChaosArtifact*> GetArtifactsByLocation(std::string const& location) override
             {
                 std::vector<ChaosArtifact*> result;
                 for (auto& [id, artifact] : artifacts)
@@ -1474,7 +1474,7 @@ namespace DarkChaos
             {
                 // Remove all cached item states for this player
                 // Using shared InvalidateIf capability
-                item_state_cache.InvalidateIf([player_guid](const uint32& /*key*/, const ItemUpgradeState& state) {
+                item_state_cache.InvalidateIf([player_guid](uint32 const& /*key*/, ItemUpgradeState const& state) {
                     return state.player_guid == player_guid;
                 });
             }

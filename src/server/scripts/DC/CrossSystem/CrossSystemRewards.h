@@ -27,7 +27,7 @@ namespace CrossSystem
 namespace Rewards
 {
     inline bool AwardTokens(Player* player, uint32 amount, SystemId sourceSystem, EventType triggerEvent,
-                            const std::string& sourceName, uint32 sourceId = 0)
+                            std::string const& sourceName, uint32 sourceId = 0)
     {
         if (!player || amount == 0)
             return false;
@@ -61,7 +61,7 @@ namespace Rewards
     }
 
     inline bool AwardEssence(Player* player, uint32 amount, SystemId sourceSystem, EventType triggerEvent,
-                             const std::string& sourceName, uint32 sourceId = 0)
+                             std::string const& sourceName, uint32 sourceId = 0)
     {
         if (!player || amount == 0)
             return false;
@@ -95,7 +95,7 @@ namespace Rewards
     // route through the seasonal/cross-system pipeline.
     inline bool AwardItemOrSeasonalCurrency(Player* player, uint32 itemId, uint32 amount,
                                            SystemId sourceSystem, EventType triggerEvent,
-                                           const std::string& sourceName, uint32 sourceId = 0)
+                                           std::string const& sourceName, uint32 sourceId = 0)
     {
         if (!player || itemId == 0 || amount == 0)
             return false;

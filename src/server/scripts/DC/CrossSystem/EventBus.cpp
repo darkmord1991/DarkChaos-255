@@ -23,7 +23,7 @@ namespace CrossSystem
     // EventSubscription
     // =========================================================================
 
-    bool EventSubscription::Matches(const EventData& event) const
+    bool EventSubscription::Matches(EventData const& event) const
     {
         if (!enabled)
             return false;
@@ -73,7 +73,7 @@ namespace CrossSystem
 
         // Sort by priority
         std::sort(subscriptions_[eventType].begin(), subscriptions_[eventType].end(),
-            [](const EventSubscription& a, const EventSubscription& b) {
+            [](EventSubscription const& a, EventSubscription const& b) {
                 return a.priority < b.priority;
             });
 
@@ -86,7 +86,7 @@ namespace CrossSystem
         return sub.id;
     }
 
-    void EventBus::SubscribeMultiple(IEventHandler* handler, const std::vector<EventType>& eventTypes, uint8 priority)
+    void EventBus::SubscribeMultiple(IEventHandler* handler, std::vector<EventType> const& eventTypes, uint8 priority)
     {
         for (EventType type : eventTypes)
         {
@@ -111,7 +111,7 @@ namespace CrossSystem
         {
             subs.erase(
                 std::remove_if(subs.begin(), subs.end(),
-                    [subscriptionId](const EventSubscription& s) {
+                    [subscriptionId](EventSubscription const& s) {
                         return s.id == subscriptionId;
                     }),
                 subs.end());
@@ -129,7 +129,7 @@ namespace CrossSystem
         {
             subs.erase(
                 std::remove_if(subs.begin(), subs.end(),
-                    [handler](const EventSubscription& s) {
+                    [handler](EventSubscription const& s) {
                         return s.handler == handler;
                     }),
                 subs.end());
@@ -144,7 +144,7 @@ namespace CrossSystem
         {
             subs.erase(
                 std::remove_if(subs.begin(), subs.end(),
-                    [system](const EventSubscription& s) {
+                    [system](EventSubscription const& s) {
                         return s.subscriberSystem == system;
                     }),
                 subs.end());
@@ -186,7 +186,7 @@ namespace CrossSystem
     // Event Publishing
     // =========================================================================
 
-    void EventBus::Publish(const EventData& event, SystemId sourceSystem)
+    void EventBus::Publish(EventData const& event, SystemId sourceSystem)
     {
         // steady_clock, not high_resolution_clock: the latter is permitted to
         // be non-monotonic, which can yield negative processing times.
@@ -215,7 +215,7 @@ namespace CrossSystem
                 ++handlerCount;
                 invokedSystems.push_back(sub.subscriberSystem);
             }
-            catch (const std::exception& e)
+            catch (std::exception const& e)
             {
                 LOG_ERROR("dc.crosssystem.events", "Exception in event handler {}: {}",
                           sub.handler->GetSystemName(), e.what());
@@ -302,7 +302,7 @@ namespace CrossSystem
         Publish(*event, SystemId::None);
     }
 
-    void EventBus::PublishDungeonComplete(const DungeonCompleteEvent& event)
+    void EventBus::PublishDungeonComplete(DungeonCompleteEvent const& event)
     {
         Publish(event, SystemId::MythicPlus);
     }
@@ -395,7 +395,7 @@ namespace CrossSystem
     // Event History
     // =========================================================================
 
-    void EventBus::RecordHistory(const EventData& event, SystemId source,
+    void EventBus::RecordHistory(EventData const& event, SystemId source,
                                  uint32 handlerCount, uint64 processingTimeUs)
     {
         std::lock_guard<std::mutex> lock(mutex_);

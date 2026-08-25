@@ -52,7 +52,7 @@ namespace DarkChaos
             /**
              * Get stat weight for a specific stat
              */
-            int GetStatWeight(const std::string& stat) const
+            int GetStatWeight(std::string const& stat) const
             {
                 auto it = stat_weights.find(stat);
                 return it != stat_weights.end() ? it->second : 0;
@@ -61,7 +61,7 @@ namespace DarkChaos
             /**
              * Set stat weight
              */
-            void SetStatWeight(const std::string& stat, int weight)
+            void SetStatWeight(std::string const& stat, int weight)
             {
                 stat_weights[stat] = weight;
             }
@@ -78,7 +78,7 @@ namespace DarkChaos
             /**
              * Create a new loadout
              */
-            virtual uint32 CreateLoadout(const StatLoadout& loadout) = 0;
+            virtual uint32 CreateLoadout(StatLoadout const& loadout) = 0;
 
             /**
              * Get player's loadouts
@@ -103,12 +103,12 @@ namespace DarkChaos
             /**
              * Calculate total stat bonus for loadout
              */
-            virtual float CalculateTotalStatBonus(const StatLoadout& loadout) = 0;
+            virtual float CalculateTotalStatBonus(StatLoadout const& loadout) = 0;
 
             /**
              * Save loadout to database
              */
-            virtual void SaveLoadout(const StatLoadout& loadout) = 0;
+            virtual void SaveLoadout(StatLoadout const& loadout) = 0;
         };
 
         // =====================================================================
@@ -144,7 +144,7 @@ namespace DarkChaos
             /**
              * Create transmog preset
              */
-            virtual uint32 CreateTransmogPreset(const UpgradeTransmogPreset& preset) = 0;
+            virtual uint32 CreateTransmogPreset(UpgradeTransmogPreset const& preset) = 0;
 
             /**
              * Get player's transmog presets
@@ -226,7 +226,7 @@ namespace DarkChaos
             /**
              * Define new achievement
              */
-            virtual void DefineAchievement(const UpgradeAchievement& achievement) = 0;
+            virtual void DefineAchievement(UpgradeAchievement const& achievement) = 0;
 
             /**
              * Check and award achievements (called after upgrades)
@@ -313,7 +313,7 @@ namespace DarkChaos
             /**
              * Get configuration
              */
-            const TradingConfig& GetConfig() const { return config; }
+            TradingConfig const& GetConfig() const { return config; }
         };
 
         // =====================================================================
@@ -385,7 +385,7 @@ namespace DarkChaos
             /**
              * Get configuration
              */
-            const RespecConfig& GetConfig() const { return config; }
+            RespecConfig const& GetConfig() const { return config; }
         };
 
         // =====================================================================

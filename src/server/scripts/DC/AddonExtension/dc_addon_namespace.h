@@ -59,13 +59,13 @@ namespace DCAddon
     // ========================================================================
 
     // The unified DC addon prefix - ALL DC messages use this
-    constexpr const char* DC_PREFIX = "DC";
+    constexpr char const* DC_PREFIX = "DC";
 
     // Message delimiter
     constexpr char DELIMITER = '|';
 
     // JSON marker for detecting JSON payloads
-    constexpr const char* JSON_MARKER = "J";
+    constexpr char const* JSON_MARKER = "J";
 
     // WoW 3.3.5a message limits
     constexpr uint32 MAX_CLIENT_MSG_SIZE = 255;
@@ -74,34 +74,34 @@ namespace DCAddon
     // Module identifiers (first field after prefix)
     namespace Module
     {
-        constexpr const char* AOE_LOOT      = "AOE";
-        constexpr const char* SPECTATOR     = "SPEC";
-        constexpr const char* UPGRADE       = "UPG";
-        constexpr const char* HINTERLAND    = "HLBG";
-        constexpr const char* HINTERLAND_BG = "HLBG";  // Alias
-        constexpr const char* PHASED_DUELS  = "DUEL";
-        constexpr const char* MYTHIC_PLUS   = "MPLUS";
-        constexpr const char* PRESTIGE      = "PRES";
-        constexpr const char* SEASONAL      = "SEAS";
-        constexpr const char* CORE          = "CORE";   // Handshake, version check
-        constexpr const char* HOTSPOT       = "SPOT";   // Hotspot/XP zones
-        constexpr const char* LEADERBOARD   = "LBRD";   // Unified leaderboards
-        constexpr const char* WELCOME       = "WELC";   // First-start/welcome system
-        constexpr const char* GROUP_FINDER  = "GRPF";   // Group Finder (M+, Raid Finder)
-        constexpr const char* GOMOVE        = "GOMV";   // GOMove Object Mover
-        constexpr const char* NPCMOVE       = "NPCM";   // NPC Mover
-        constexpr const char* TELEPORTS     = "TELE";   // Teleport system
-        constexpr const char* EVENTS        = "EVNT";   // Dynamic events (invasions, rifts, etc.)
-        constexpr const char* WORLD         = "WRLD";   // World Content (world bosses, hotspots, rares)
-        constexpr const char* COLLECTION    = "COLL";   // Collection System (mounts, pets, toys, transmog, etc.)
-        constexpr const char* QOS           = "QOS";    // Quality of Service (QoL settings, tooltips, automation)
-        constexpr const char* DECORATION    = "DECO";   // Guild house decorations (player-facing placement)
-        constexpr const char* GRAVEYARD     = "GRVY";   // Return-to-graveyard button (death helper)
-        constexpr const char* QUEST_POPUPS  = "QPOP";   // Auto-quest offer / remote turn-in popups (retail-style)
-        constexpr const char* BEASTMASTER   = "BEAST";  // Hunter pet catalog (browse + preview + adopt)
-        constexpr const char* MAP_POI       = "MPOI";   // World-map POI markers (flight masters, ...)
-        constexpr const char* QUEST_NAV     = "QNAV";   // Quest navigation data (kill-entry highlights, live coord resolve)
-        constexpr const char* ENCOUNTERS    = "DENC";   // Dungeon/raid boss tracker (DungeonEncounter.dbc driven)
+        constexpr char const* AOE_LOOT      = "AOE";
+        constexpr char const* SPECTATOR     = "SPEC";
+        constexpr char const* UPGRADE       = "UPG";
+        constexpr char const* HINTERLAND    = "HLBG";
+        constexpr char const* HINTERLAND_BG = "HLBG";  // Alias
+        constexpr char const* PHASED_DUELS  = "DUEL";
+        constexpr char const* MYTHIC_PLUS   = "MPLUS";
+        constexpr char const* PRESTIGE      = "PRES";
+        constexpr char const* SEASONAL      = "SEAS";
+        constexpr char const* CORE          = "CORE";   // Handshake, version check
+        constexpr char const* HOTSPOT       = "SPOT";   // Hotspot/XP zones
+        constexpr char const* LEADERBOARD   = "LBRD";   // Unified leaderboards
+        constexpr char const* WELCOME       = "WELC";   // First-start/welcome system
+        constexpr char const* GROUP_FINDER  = "GRPF";   // Group Finder (M+, Raid Finder)
+        constexpr char const* GOMOVE        = "GOMV";   // GOMove Object Mover
+        constexpr char const* NPCMOVE       = "NPCM";   // NPC Mover
+        constexpr char const* TELEPORTS     = "TELE";   // Teleport system
+        constexpr char const* EVENTS        = "EVNT";   // Dynamic events (invasions, rifts, etc.)
+        constexpr char const* WORLD         = "WRLD";   // World Content (world bosses, hotspots, rares)
+        constexpr char const* COLLECTION    = "COLL";   // Collection System (mounts, pets, toys, transmog, etc.)
+        constexpr char const* QOS           = "QOS";    // Quality of Service (QoL settings, tooltips, automation)
+        constexpr char const* DECORATION    = "DECO";   // Guild house decorations (player-facing placement)
+        constexpr char const* GRAVEYARD     = "GRVY";   // Return-to-graveyard button (death helper)
+        constexpr char const* QUEST_POPUPS  = "QPOP";   // Auto-quest offer / remote turn-in popups (retail-style)
+        constexpr char const* BEASTMASTER   = "BEAST";  // Hunter pet catalog (browse + preview + adopt)
+        constexpr char const* MAP_POI       = "MPOI";   // World-map POI markers (flight masters, ...)
+        constexpr char const* QUEST_NAV     = "QNAV";   // Quest navigation data (kill-entry highlights, live coord resolve)
+        constexpr char const* ENCOUNTERS    = "DENC";   // Dungeon/raid boss tracker (DungeonEncounter.dbc driven)
     }
 
     // ========================================================================
@@ -798,7 +798,7 @@ namespace DCAddon
 
             uint32 GetVersion() const { return (major << 16) | (minor << 8) | patch; }
 
-            bool IsCompatible(const VersionInfo& other) const
+            bool IsCompatible(VersionInfo const& other) const
             {
                 // Major version must match, minor can be >=
                 return (major == other.major);
@@ -814,7 +814,7 @@ namespace DCAddon
         }
 
         // Parse client version string "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|CAPS"
-        inline VersionInfo ParseClientVersion(const std::string& versionStr)
+        inline VersionInfo ParseClientVersion(std::string const& versionStr)
         {
             VersionInfo info = { 0, 0, 0, 0 };
             size_t pipePos = versionStr.find('|');
@@ -839,7 +839,7 @@ namespace DCAddon
         }
 
         // Build version string for client
-        inline std::string BuildVersionString(const VersionInfo& info)
+        inline std::string BuildVersionString(VersionInfo const& info)
         {
             return std::to_string(info.major) + "." +
                    std::to_string(info.minor) + "." +
@@ -963,7 +963,7 @@ namespace DCAddon
         std::string metadataJson;
     };
 
-    inline bool IsSafeRequestId(const std::string& id)
+    inline bool IsSafeRequestId(std::string const& id)
     {
         if (id.empty() || id.size() > 64)
             return false;
@@ -982,17 +982,17 @@ namespace DCAddon
     class ParsedMessage
     {
     public:
-        ParsedMessage(const std::string& raw)
+        ParsedMessage(std::string const& raw)
         {
             Parse(raw);
         }
 
         bool IsValid() const { return _valid; }
-        const std::string& GetModule() const { return _module; }
+        std::string const& GetModule() const { return _module; }
         uint8 GetOpcode() const { return _opcode; }
         size_t GetDataCount() const { return _data.size(); }
         bool HasRequestId() const { return !_requestId.empty(); }
-        const std::string& GetRequestId() const { return _requestId; }
+        std::string const& GetRequestId() const { return _requestId; }
         bool HasMore() const { return _currentIndex < _data.size(); }
 
         // Get data at index with type conversion
@@ -1049,7 +1049,7 @@ namespace DCAddon
         }
 
     private:
-        void Parse(const std::string& raw)
+        void Parse(std::string const& raw)
         {
             std::stringstream ss(raw);
             std::string token;
@@ -1100,7 +1100,7 @@ namespace DCAddon
             size_t dataStart = 2;
             if (tokens.size() > 2)
             {
-                const std::string& maybeRid = tokens[2];
+                std::string const& maybeRid = tokens[2];
                 if (maybeRid.rfind("RID:", 0) == 0 || maybeRid.rfind("RID=", 0) == 0)
                 {
                     _requestId = maybeRid.substr(4);
@@ -1149,7 +1149,7 @@ namespace DCAddon
     class Parser
     {
     public:
-        Parser(const ParsedMessage& msg) : _msg(msg), _index(0) {}
+        Parser(ParsedMessage const& msg) : _msg(msg), _index(0) {}
 
         uint8 GetOpcode() const { return _msg.GetOpcode(); }
         bool HasMore() const { return _index < _msg.GetDataCount(); }
@@ -1171,7 +1171,7 @@ namespace DCAddon
         void Reset() { _index = 0; }
 
     private:
-        const ParsedMessage& _msg;
+        ParsedMessage const& _msg;
         size_t _index;
     };
 
@@ -1181,7 +1181,7 @@ namespace DCAddon
 
     namespace Batch
     {
-        constexpr const char* MODULE = "BATCH";
+        constexpr char const* MODULE = "BATCH";
         constexpr size_t MAX_MESSAGES_PER_BATCH = 10;
 
         // Batch message is parsed as: BATCH|count|MOD|op|...|MOD|op|...
@@ -1195,7 +1195,7 @@ namespace DCAddon
         // Parse a batch message into individual entries
         // Format: BATCH|count|MOD|op|d1|d2|...|MOD|op|d1|...
         // Each sub-message ends when next MOD is found or end of data
-        inline std::vector<BatchEntry> ParseBatch(const ParsedMessage& msg)
+        inline std::vector<BatchEntry> ParseBatch(ParsedMessage const& msg)
         {
             std::vector<BatchEntry> entries;
 
@@ -1254,17 +1254,17 @@ namespace DCAddon
     {
     public:
         Message() = default;
-        Message(const std::string& module, uint8 opcode)
+        Message(std::string const& module, uint8 opcode)
             : _module(module), _opcode(opcode) {}
 
-        Message& SetRequestId(const std::string& requestId)
+        Message& SetRequestId(std::string const& requestId)
         {
             _requestId = IsSafeRequestId(requestId) ? requestId : std::string();
             return *this;
         }
 
         // Build message for sending
-        Message& Add(const std::string& value)
+        Message& Add(std::string const& value)
         {
             _data.push_back(value);
             return *this;
@@ -1330,7 +1330,7 @@ namespace DCAddon
         void SendTo(Player* player) const { Send(player); }
 
         // Send to multiple players
-        void SendToList(const std::vector<Player*>& players) const
+        void SendToList(std::vector<Player*> const& players) const
         {
             for (Player* p : players)
             {
@@ -1347,14 +1347,14 @@ namespace DCAddon
     };
 
     // Forward declarations for helpers used by MessageRouter::Route
-    inline void SendError(Player* player, const std::string& module, const std::string& errorMsg, uint32 errorCode, uint8 opcode);
-    inline void SendPermissionDenied(Player* player, const std::string& module, const std::string& errorMsg);
+    inline void SendError(Player* player, std::string const& module, std::string const& errorMsg, uint32 errorCode, uint8 opcode);
+    inline void SendPermissionDenied(Player* player, std::string const& module, std::string const& errorMsg);
 
     // Request context helpers (defined in dc_addon_protocol.cpp)
-    void SetCurrentRequestContext(const std::string& requestId);
+    void SetCurrentRequestContext(std::string const& requestId);
     void ClearCurrentRequestContext();
-    const std::string& GetCurrentRequestId();
-    void NotifyResponseSent(Player* player, const std::string& requestId);
+    std::string const& GetCurrentRequestId();
+    void NotifyResponseSent(Player* player, std::string const& requestId);
 
     // Async DB helpers (defined in dc_addon_protocol.cpp).
     // A QueryCallback that is created and then discarded never runs its
@@ -1370,48 +1370,48 @@ namespace DCAddon
     void ProcessPendingQueryCallbacks();
 
     bool IsS2CProtocolLoggingEnabled();
-    uint32 GetPendingRequestElapsedMs(Player* player, const std::string& requestId);
-    void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
-        size_t dataSize, bool updateStats, const std::string& payloadPreview,
+    uint32 GetPendingRequestElapsedMs(Player* player, std::string const& requestId);
+    void LogS2CMessage(Player* player, std::string const& module, uint8 opcode,
+        size_t dataSize, bool updateStats, std::string const& payloadPreview,
         uint32 processingTimeMs);
     enum class ProtocolLogDirection : uint8
     {
         ClientToServer = 0,
         ServerToClient = 1,
     };
-    void LogNativeC2SMessage(Player* player, const std::string& module,
+    void LogNativeC2SMessage(Player* player, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, bool handled = true,
-        const std::string& errorMsg = "");
+        std::string const& payloadPreview, bool handled = true,
+        std::string const& errorMsg = "");
     void LogNativeC2SMessageWithStatus(Player* player,
-        const std::string& module, uint8 logicalOpcode,
+        std::string const& module, uint8 logicalOpcode,
         uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, const std::string& status,
-        const std::string& errorMsg = "", bool countAsError = false);
-    void LogNativeS2CMessage(Player* player, const std::string& module,
+        std::string const& payloadPreview, std::string const& status,
+        std::string const& errorMsg = "", bool countAsError = false);
+    void LogNativeS2CMessage(Player* player, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, bool updateStats,
+        std::string const& payloadPreview, bool updateStats,
         uint32 processingTimeMs);
     void LogNativeS2CMessage(WorldSession* session,
-        const std::string& module, uint8 logicalOpcode, uint16 nativeOpcode,
-        size_t dataSize, const std::string& payloadPreview,
+        std::string const& module, uint8 logicalOpcode, uint16 nativeOpcode,
+        size_t dataSize, std::string const& payloadPreview,
         uint32 processingTimeMs);
     void LogNativeProtocolError(Player* player,
-        ProtocolLogDirection direction, const std::string& module,
+        ProtocolLogDirection direction, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode,
-        const std::string& eventType, const std::string& message,
-        const std::string& payloadPreview = "");
+        std::string const& eventType, std::string const& message,
+        std::string const& payloadPreview = "");
     void LogNativeProtocolError(WorldSession* session,
-        ProtocolLogDirection direction, const std::string& module,
+        ProtocolLogDirection direction, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode,
-        const std::string& eventType, const std::string& message,
-        const std::string& payloadPreview = "");
-    void AuditNativeC2SRequest(Player* player, const std::string& module,
+        std::string const& eventType, std::string const& message,
+        std::string const& payloadPreview = "");
+    void AuditNativeC2SRequest(Player* player, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, bool handled = true,
-        const std::string& errorMsg = "",
-        const std::string& eventType = "",
-        const std::string& eventMessage = "");
+        std::string const& payloadPreview, bool handled = true,
+        std::string const& errorMsg = "",
+        std::string const& eventType = "",
+        std::string const& eventMessage = "");
     // Shared receive-side bridge for dedicated native CMSG opcodes. Decodes the
     // packet (uint32 logicalOpcode + JSON string), rebuilds the canonical
     // MODULE|op|J|payload message, routes it through MessageRouter (so native
@@ -1419,24 +1419,24 @@ namespace DCAddon
     // the caller's CanPacketReceive consumes the packet. Caller must first check
     // packet.GetOpcode() == nativeOpcode.
     bool HandleNativeModuleRequest(WorldSession* session,
-        WorldPacket const& packet, uint16 nativeOpcode, const char* module);
+        WorldPacket const& packet, uint16 nativeOpcode, char const* module);
     // Generic native message bridge: modules with a registered native capability
     // have their JsonMessage/Message::Send transparently routed over the single
     // SMSG_DC_NATIVE_MESSAGE opcode (body = canonical addon body, "J|<json>" or
     // "<f1>|<f2>..."), and CMSG_DC_NATIVE_REQUEST is decoded back through the
     // MessageRouter. Returns 0 when the module has no native bridge.
-    uint32 GetModuleNativeCapability(const std::string& module);
-    bool TrySendModuleNativeMessage(Player* player, const std::string& module,
-        uint8 opcode, const std::string& body);
+    uint32 GetModuleNativeCapability(std::string const& module);
+    bool TrySendModuleNativeMessage(Player* player, std::string const& module,
+        uint8 opcode, std::string const& body);
     bool HandleNativeGenericRequest(WorldSession* session,
         WorldPacket const& packet);
-    bool SendNativeEnvelope(Player* player, const std::string& module,
-        uint8 logicalOpcode, const std::string& feature,
-        const std::string& action, uint32 revision,
-        const std::string& payload = "",
-        const std::string& context = "");
+    bool SendNativeEnvelope(Player* player, std::string const& module,
+        uint8 logicalOpcode, std::string const& feature,
+        std::string const& action, uint32 revision,
+        std::string const& payload = "",
+        std::string const& context = "");
     void SetSessionCapabilityState(Player* player,
-        const std::string& clientVersionStr, uint32 clientCaps,
+        std::string const& clientVersionStr, uint32 clientCaps,
         uint32 negotiatedCaps, bool versionCompatible,
         ClientHandshakeMetadata const& metadata = ClientHandshakeMetadata());
     bool TryGetLiveSessionCapabilityState(uint32 accountId,
@@ -1477,7 +1477,7 @@ namespace DCAddon
     // MESSAGE HANDLER REGISTRATION
     // ========================================================================
 
-    using MessageHandler = std::function<void(Player*, const ParsedMessage&)>;
+    using MessageHandler = std::function<void(Player*, ParsedMessage const&)>;
 
     // Routing table: module name -> { handlers by opcode, enabled, min security }.
     //
@@ -1500,7 +1500,7 @@ namespace DCAddon
         }
 
         // Register a handler for a module + opcode combination
-        void RegisterHandler(const std::string& module, uint8 opcode, MessageHandler handler)
+        void RegisterHandler(std::string const& module, uint8 opcode, MessageHandler handler)
         {
             _modules[module].handlers[opcode] = std::move(handler);
         }
@@ -1512,7 +1512,7 @@ namespace DCAddon
         }
 
         // Route an incoming message to the appropriate handler
-        bool Route(Player* player, const std::string& rawMessage)
+        bool Route(Player* player, std::string const& rawMessage)
         {
             ParsedMessage msg(rawMessage);
             if (!msg.IsValid())
@@ -1545,7 +1545,7 @@ namespace DCAddon
             // Set current request context so SendError can echo request ID
             struct RequestContextScope
             {
-                RequestContextScope(const std::string& reqId) { DCAddon::SetCurrentRequestContext(reqId); }
+                RequestContextScope(std::string const& reqId) { DCAddon::SetCurrentRequestContext(reqId); }
                 ~RequestContextScope() { DCAddon::ClearCurrentRequestContext(); }
             } scope(msg.GetRequestId());
 
@@ -1607,12 +1607,12 @@ namespace DCAddon
             return entry && entry->enabled;
         }
 
-        void SetModuleEnabled(const std::string& module, bool enabled)
+        void SetModuleEnabled(std::string const& module, bool enabled)
         {
             _modules[module].enabled = enabled;
         }
 
-        void SetModuleMinSecurity(const std::string& module, uint32 minSecurity)
+        void SetModuleMinSecurity(std::string const& module, uint32 minSecurity)
         {
             _modules[module].minSecurity = minSecurity;
         }
@@ -1649,7 +1649,7 @@ namespace DCAddon
     };
 
     // Quick permission helper: ensure module enabled and player has minimum security
-    inline bool CheckAddonPermission(Player* player, const std::string& module, uint32 minSecurity = SEC_MODERATOR)
+    inline bool CheckAddonPermission(Player* player, std::string const& module, uint32 minSecurity = SEC_MODERATOR)
     {
         if (!MessageRouter::Instance().IsModuleEnabled(module))
             return false;
@@ -1659,12 +1659,12 @@ namespace DCAddon
     }
 
     // Send a standard error response via addon protocol for module
-    inline void SendError(Player* player, const std::string& module, const std::string& errorMsg, uint32 errorCode = 1, uint8 opcode = Opcode::Core::SMSG_ERROR)
+    inline void SendError(Player* player, std::string const& module, std::string const& errorMsg, uint32 errorCode = 1, uint8 opcode = Opcode::Core::SMSG_ERROR)
     {
         if (!player || !player->GetSession())
             return;
         Message errorMsgObj(module, opcode);
-        const std::string& reqId = GetCurrentRequestId();
+        std::string const& reqId = GetCurrentRequestId();
         if (!reqId.empty())
             errorMsgObj.SetRequestId(reqId);
         errorMsgObj.Add(std::to_string(errorCode));
@@ -1672,7 +1672,7 @@ namespace DCAddon
         errorMsgObj.Send(player);
     }
 
-    inline void SendPermissionDenied(Player* player, const std::string& module, const std::string& errorMsg = "Permission denied")
+    inline void SendPermissionDenied(Player* player, std::string const& module, std::string const& errorMsg = "Permission denied")
     {
         SendError(player, module, errorMsg, ErrorCode::PERMISSION_DENIED, Opcode::Core::SMSG_PERMISSION_DENIED);
     }
@@ -1695,7 +1695,7 @@ namespace DCAddon
     {
     public:
         // Split a large message into chunks
-        static std::vector<std::string> Chunk(const std::string& message, uint32 maxSize = MAX_CLIENT_MSG_SIZE - 10)
+        static std::vector<std::string> Chunk(std::string const& message, uint32 maxSize = MAX_CLIENT_MSG_SIZE - 10)
         {
             std::vector<std::string> chunks;
 
@@ -1719,7 +1719,7 @@ namespace DCAddon
         }
 
         // Reassemble chunks (call per incoming chunk, returns complete message when done)
-        bool AddChunk(const std::string& chunk)
+        bool AddChunk(std::string const& chunk)
         {
             // Parse chunk header: INDEX|TOTAL|DATA
             std::stringstream ss(chunk);
@@ -1806,8 +1806,8 @@ namespace DCAddon
         JsonValue(int32 v) : _type(Number), _number(static_cast<double>(v)) {}
         JsonValue(uint32 v) : _type(Number), _number(static_cast<double>(v)) {}
         JsonValue(double v) : _type(Number), _number(v) {}
-        JsonValue(const std::string& v) : _type(String), _string(v) {}
-        JsonValue(const char* v) : _type(String), _string(v) {}
+        JsonValue(std::string const& v) : _type(String), _string(v) {}
+        JsonValue(char const* v) : _type(String), _string(v) {}
 
         Type GetType() const { return _type; }
         bool IsNull() const { return _type == Null; }
@@ -1821,17 +1821,17 @@ namespace DCAddon
         double AsNumber() const { return _number; }
         int32 AsInt32() const { return static_cast<int32>(_number); }
         uint32 AsUInt32() const { return static_cast<uint32>(_number); }
-        const std::string& AsString() const { return _string; }
-        const std::vector<JsonValue>& AsArray() const { return _array; }
-        const std::map<std::string, JsonValue>& AsObject() const { return _object; }
+        std::string const& AsString() const { return _string; }
+        std::vector<JsonValue> const& AsArray() const { return _array; }
+        std::map<std::string, JsonValue> const& AsObject() const { return _object; }
 
         // Object access
-        bool HasKey(const std::string& key) const
+        bool HasKey(std::string const& key) const
         {
             return _type == Object && _object.find(key) != _object.end();
         }
 
-        const JsonValue& operator[](const std::string& key) const
+        JsonValue const& operator[](std::string const& key) const
         {
             static JsonValue null;
             if (_type != Object) return null;
@@ -1840,7 +1840,7 @@ namespace DCAddon
         }
 
         // Array access
-        const JsonValue& operator[](size_t index) const
+        JsonValue const& operator[](size_t index) const
         {
             static JsonValue null;
             return (_type == Array && index < _array.size()) ? _array[index] : null;
@@ -1857,7 +1857,7 @@ namespace DCAddon
         void SetNull() { _type = Null; }
         void Set(bool v) { _type = Bool; _bool = v; }
         void Set(double v) { _type = Number; _number = v; }
-        void Set(const std::string& v) { _type = String; _string = v; }
+        void Set(std::string const& v) { _type = String; _string = v; }
 
         void SetArray() { _type = Array; _array.clear(); }
         void SetArray(size_t reserveCount)
@@ -1866,15 +1866,15 @@ namespace DCAddon
             _array.clear();
             _array.reserve(reserveCount);
         }
-        void Push(const JsonValue& v) { if (_type == Array) _array.push_back(v); }
+        void Push(JsonValue const& v) { if (_type == Array) _array.push_back(v); }
         void Push(JsonValue&& v) { if (_type == Array) _array.push_back(std::move(v)); }
 
         void SetObject() { _type = Object; _object.clear(); }
-        void Set(const std::string& key, const JsonValue& v)
+        void Set(std::string const& key, JsonValue const& v)
         {
             if (_type == Object) _object[key] = v;
         }
-        void Set(const std::string& key, JsonValue&& v)
+        void Set(std::string const& key, JsonValue&& v)
         {
             if (_type == Object) _object[key] = std::move(v);
         }
@@ -2100,20 +2100,20 @@ namespace DCAddon
     class JsonParser
     {
     public:
-        static JsonValue Parse(const std::string& json)
+        static JsonValue Parse(std::string const& json)
         {
             size_t pos = 0;
             return ParseValue(json, pos);
         }
 
     private:
-        static void SkipWhitespace(const std::string& s, size_t& pos)
+        static void SkipWhitespace(std::string const& s, size_t& pos)
         {
             while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\n' || s[pos] == '\r'))
                 ++pos;
         }
 
-        static JsonValue ParseValue(const std::string& s, size_t& pos)
+        static JsonValue ParseValue(std::string const& s, size_t& pos)
         {
             SkipWhitespace(s, pos);
             if (pos >= s.size()) return JsonValue();
@@ -2130,7 +2130,7 @@ namespace DCAddon
             return JsonValue();
         }
 
-        static JsonValue ParseString(const std::string& s, size_t& pos)
+        static JsonValue ParseString(std::string const& s, size_t& pos)
         {
             if (s[pos] != '"') return JsonValue();
             ++pos;
@@ -2158,7 +2158,7 @@ namespace DCAddon
             return JsonValue(result);
         }
 
-        static JsonValue ParseNumber(const std::string& s, size_t& pos)
+        static JsonValue ParseNumber(std::string const& s, size_t& pos)
         {
             size_t start = pos;
             bool negative = false;
@@ -2214,7 +2214,7 @@ namespace DCAddon
             return JsonValue(std::strtod(s.c_str() + start, nullptr));
         }
 
-        static JsonValue ParseArray(const std::string& s, size_t& pos)
+        static JsonValue ParseArray(std::string const& s, size_t& pos)
         {
             if (s[pos] != '[') return JsonValue();
             ++pos;
@@ -2232,7 +2232,7 @@ namespace DCAddon
             return arr;
         }
 
-        static JsonValue ParseObject(const std::string& s, size_t& pos)
+        static JsonValue ParseObject(std::string const& s, size_t& pos)
         {
             if (s[pos] != '{') return JsonValue();
             ++pos;
@@ -2261,70 +2261,70 @@ namespace DCAddon
     class JsonMessage
     {
     public:
-        JsonMessage(const std::string& module, uint8 opcode, const JsonValue& json)
+        JsonMessage(std::string const& module, uint8 opcode, JsonValue const& json)
             : _module(module), _opcode(opcode), _json(json) {}
 
-        JsonMessage(const std::string& module, uint8 opcode)
+        JsonMessage(std::string const& module, uint8 opcode)
             : _module(module), _opcode(opcode)
         {
             _json.SetObject();
         }
 
-        JsonMessage& SetRequestId(const std::string& requestId)
+        JsonMessage& SetRequestId(std::string const& requestId)
         {
             _requestId = IsSafeRequestId(requestId) ? requestId : std::string();
             return *this;
         }
 
-        JsonMessage& Set(const std::string& key, bool v)
+        JsonMessage& Set(std::string const& key, bool v)
         {
             ClearPreEncodedJson();
             _json.Set(key, JsonValue(v));
             return *this;
         }
-        JsonMessage& Set(const std::string& key, int32 v)
+        JsonMessage& Set(std::string const& key, int32 v)
         {
             ClearPreEncodedJson();
             _json.Set(key, JsonValue(v));
             return *this;
         }
-        JsonMessage& Set(const std::string& key, uint32 v)
+        JsonMessage& Set(std::string const& key, uint32 v)
         {
             ClearPreEncodedJson();
             _json.Set(key, JsonValue(v));
             return *this;
         }
-        JsonMessage& Set(const std::string& key, double v)
+        JsonMessage& Set(std::string const& key, double v)
         {
             ClearPreEncodedJson();
             _json.Set(key, JsonValue(v));
             return *this;
         }
-        JsonMessage& Set(const std::string& key, const std::string& v)
+        JsonMessage& Set(std::string const& key, std::string const& v)
         {
             ClearPreEncodedJson();
             _json.Set(key, JsonValue(v));
             return *this;
         }
-        JsonMessage& Set(const std::string& key, const char* v)
+        JsonMessage& Set(std::string const& key, char const* v)
         {
             ClearPreEncodedJson();
             _json.Set(key, JsonValue(v));
             return *this;
         }
-        JsonMessage& Set(const std::string& key, const JsonValue& v)
+        JsonMessage& Set(std::string const& key, JsonValue const& v)
         {
             ClearPreEncodedJson();
             _json.Set(key, v);
             return *this;
         }
-        JsonMessage& Set(const std::string& key, JsonValue&& v)
+        JsonMessage& Set(std::string const& key, JsonValue&& v)
         {
             ClearPreEncodedJson();
             _json.Set(key, std::move(v));
             return *this;
         }
-        JsonMessage& SetPreEncodedJson(const std::string& json)
+        JsonMessage& SetPreEncodedJson(std::string const& json)
         {
             _preEncodedJson = json;
             _hasPreEncodedJson = true;
@@ -2390,7 +2390,7 @@ namespace DCAddon
             std::string effectiveRequestId = _requestId;
             if (effectiveRequestId.empty())
             {
-                const std::string& ctxReqId = GetCurrentRequestId();
+                std::string const& ctxReqId = GetCurrentRequestId();
                 if (IsSafeRequestId(ctxReqId))
                     effectiveRequestId = ctxReqId;
             }
@@ -2494,13 +2494,13 @@ namespace DCAddon
     };
 
     // Check if a parsed message contains JSON
-    inline bool IsJsonMessage(const ParsedMessage& msg)
+    inline bool IsJsonMessage(ParsedMessage const& msg)
     {
         return msg.GetDataCount() > 0 && msg.GetString(0) == JSON_MARKER;
     }
 
     // Get JSON data from a message (returns empty JsonValue if not JSON)
-    inline JsonValue GetJsonData(const ParsedMessage& msg)
+    inline JsonValue GetJsonData(ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg) || msg.GetDataCount() < 2)
             return JsonValue();

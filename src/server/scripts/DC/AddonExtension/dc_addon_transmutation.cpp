@@ -22,11 +22,11 @@ namespace DCAddon
 {
 namespace Upgrade
 {
-    static int32 JsonGetInt(const JsonValue& json, const std::string& key, int32 defaultVal = 0)
+    static int32 JsonGetInt(JsonValue const& json, std::string const& key, int32 defaultVal = 0)
     {
         if (!json.IsObject() || !json.HasKey(key))
             return defaultVal;
-        const JsonValue& v = json[key];
+        JsonValue const& v = json[key];
         if (v.IsNumber())
             return v.AsInt32();
         if (v.IsString())
@@ -34,11 +34,11 @@ namespace Upgrade
         return defaultVal;
     }
 
-    static std::string JsonGetString(const JsonValue& json, const std::string& key, const std::string& defaultVal = "")
+    static std::string JsonGetString(JsonValue const& json, std::string const& key, std::string const& defaultVal = "")
     {
         if (!json.IsObject() || !json.HasKey(key))
             return defaultVal;
-        const JsonValue& v = json[key];
+        JsonValue const& v = json[key];
         if (v.IsString())
             return v.AsString();
         return defaultVal;
@@ -97,13 +97,13 @@ namespace Upgrade
             .Send(player);
     }
 
-    static void HandleGetTransmuteInfo(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetTransmuteInfo(Player* player, ParsedMessage const& /*msg*/)
     {
         CacheContext(player);
         SendTransmutationInfo(player);
     }
 
-    static void HandleDoTransmute(Player* player, const ParsedMessage& msg)
+    static void HandleDoTransmute(Player* player, ParsedMessage const& msg)
     {
         CacheContext(player);
         // Format: Type|Arg1|Arg2...

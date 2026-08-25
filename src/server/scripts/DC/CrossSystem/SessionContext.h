@@ -150,8 +150,8 @@ namespace CrossSystem
         ~SessionContext();
 
         // Non-copyable
-        SessionContext(const SessionContext&) = delete;
-        SessionContext& operator=(const SessionContext&) = delete;
+        SessionContext(SessionContext const&) = delete;
+        SessionContext& operator=(SessionContext const&) = delete;
 
         // =====================================================================
         // Basic Info
@@ -165,7 +165,7 @@ namespace CrossSystem
         // Active Content State
         // =====================================================================
 
-        const ActiveContentState& GetActiveContent() const { return activeContent_; }
+        ActiveContentState const& GetActiveContent() const { return activeContent_; }
         ActiveContentState& GetActiveContentMutable() { return activeContent_; }
 
         void SetActiveContent(ContentType type, ContentDifficulty difficulty,
@@ -196,7 +196,7 @@ namespace CrossSystem
         // Progression Snapshot
         // =====================================================================
 
-        const ProgressionSnapshot& GetProgression() const { return progression_; }
+        ProgressionSnapshot const& GetProgression() const { return progression_; }
         ProgressionSnapshot& GetProgressionMutable() { return progression_; }
 
         void RefreshProgression(Player* player);
@@ -216,7 +216,7 @@ namespace CrossSystem
         // Pending Rewards
         // =====================================================================
 
-        uint64 AddPendingReward(const PendingReward& reward);
+        uint64 AddPendingReward(PendingReward const& reward);
         bool ClaimReward(uint64 rewardId);
         void ExpireRewards();
         std::vector<PendingReward> GetPendingRewards() const;
@@ -233,7 +233,7 @@ namespace CrossSystem
 
         // Build a RewardContext with current session state
         RewardContext BuildRewardContext(SystemId sourceSystem, EventType triggerEvent,
-                                         uint32 sourceId = 0, const std::string& sourceName = "") const;
+                                         uint32 sourceId = 0, std::string const& sourceName = "") const;
 
         // =====================================================================
         // Session Stats
@@ -252,10 +252,10 @@ namespace CrossSystem
             uint32 deaths = 0;
         };
 
-        const SessionStats& GetSessionStats() const { return sessionStats_; }
+        SessionStats const& GetSessionStats() const { return sessionStats_; }
         void AddSessionTokens(uint32 amount) { sessionStats_.tokensEarned += amount; }
         void AddSessionEssence(uint32 amount) { sessionStats_.essenceEarned += amount; }
-        void IncrementSessionStat(const std::string& stat);
+        void IncrementSessionStat(std::string const& stat);
 
         // =====================================================================
         // Dirty Flag (for persistence)

@@ -57,7 +57,7 @@ public:
     // .season info
     static bool HandleSeasonInfoCommand(ChatHandler* handler)
     {
-        const SeasonalConfig& config = sSeasonalRewards->GetConfig();
+        SeasonalConfig const& config = sSeasonalRewards->GetConfig();
 
         handler->SendSysMessage("=== Seasonal Reward System Info ===");
         handler->PSendSysMessage("Enabled: {}", config.enabled ? "Yes" : "No");

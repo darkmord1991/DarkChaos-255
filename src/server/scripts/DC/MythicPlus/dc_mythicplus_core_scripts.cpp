@@ -163,7 +163,7 @@ public:
     MythicPlusCreatureScript() : AllCreatureScript("MythicPlusCreatureScript") { }
 
     // Hook 1: Modify level BEFORE stats are calculated
-    void OnBeforeCreatureSelectLevel(const CreatureTemplate* /*cinfo*/, Creature* creature, uint8& level) override
+    void OnBeforeCreatureSelectLevel(CreatureTemplate const* /*cinfo*/, Creature* creature, uint8& level) override
     {
         if (!creature)
             return;
@@ -220,7 +220,7 @@ public:
     }
 
     // Hook 2: Modify HP/damage AFTER base stats are calculated
-    void OnCreatureSelectLevel(const CreatureTemplate* /*cinfo*/, Creature* creature) override
+    void OnCreatureSelectLevel(CreatureTemplate const* /*cinfo*/, Creature* creature) override
     {
         if (!creature)
             return;

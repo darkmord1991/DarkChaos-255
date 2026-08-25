@@ -46,7 +46,7 @@ public:
         : _ttlSeconds(ttlSeconds), _lastCleanup(0) {}
 
     // Get entry, returns nullptr if not found or expired
-    V* Get(const K& key)
+    V* Get(K const& key)
     {
         auto it = _data.find(key);
         if (it == _data.end())
@@ -62,7 +62,7 @@ public:
     }
 
     // Set entry with TTL
-    void Set(const K& key, const V& value)
+    void Set(K const& key, V const& value)
     {
         Entry entry;
         entry.value = value;
@@ -71,7 +71,7 @@ public:
     }
 
     // Invalidate specific entry
-    void Invalidate(const K& key)
+    void Invalidate(K const& key)
     {
         _data.erase(key);
     }
@@ -154,7 +154,7 @@ public:
         : _maxSize(maxSize) {}
 
     // Get entry, moves to front (most recently used)
-    V* Get(const K& key)
+    V* Get(K const& key)
     {
         auto it = _map.find(key);
         if (it == _map.end())
@@ -166,7 +166,7 @@ public:
     }
 
     // Set entry, evicts LRU if full
-    void Set(const K& key, const V& value)
+    void Set(K const& key, V const& value)
     {
         auto it = _map.find(key);
         if (it != _map.end())
@@ -191,7 +191,7 @@ public:
     }
 
     // Invalidate specific entry
-    void Invalidate(const K& key)
+    void Invalidate(K const& key)
     {
         auto it = _map.find(key);
         if (it != _map.end())

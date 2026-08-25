@@ -542,7 +542,7 @@ public:
                 f[5].Get<uint8>(), f[6].Get<uint8>(), f[7].Get<uint8>());
             if (!affixDisplay.empty())
                 reason += ", affixes: " + affixDisplay;
-            const char* name = (tid == TEAM_ALLIANCE ? "Alliance" : (tid == TEAM_HORDE ? "Horde" : "Draw"));
+            char const* name = (tid == TEAM_ALLIANCE ? "Alliance" : (tid == TEAM_HORDE ? "Horde" : "Draw"));
             handler->PSendSysMessage("  [{}] {}  A:{} H:{}  ({})", ts, name, a, h, reason);
         }
         while (res->NextRow());
@@ -592,7 +592,7 @@ public:
             uint32 wtype  = bg->GetAffixWeatherType(code);
             float  wint   = bg->GetAffixWeatherIntensity(code);
             // Friendly weather label (0 Fine, 1 Rain, 2 Snow, 3 Storm); default intensity 0.50 when unset
-            const char* wname = "Fine";
+            char const* wname = "Fine";
             switch (wtype)
             {
                 case 1: wname = "Rain"; break;

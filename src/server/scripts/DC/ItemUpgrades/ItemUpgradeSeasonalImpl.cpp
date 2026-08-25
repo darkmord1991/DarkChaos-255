@@ -155,7 +155,7 @@ public:
 class HistoryManagerImpl : public HistoryManager
 {
 public:
-    void RecordUpgrade(const UpgradeHistoryEntry& entry) override
+    void RecordUpgrade(UpgradeHistoryEntry const& entry) override
     {
         CharacterDatabase.Execute(
             "INSERT INTO dc_upgrade_history "

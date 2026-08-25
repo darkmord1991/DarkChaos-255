@@ -83,7 +83,7 @@ namespace DarkChaos
                     return false;
                 }
 
-                const TransmutationRecipe& recipe = it->second;
+                TransmutationRecipe const& recipe = it->second;
 
                 // Check player level
                 QueryResult level_result = CharacterDatabase.Query(
@@ -205,7 +205,7 @@ namespace DarkChaos
                 if (it == recipes.end())
                     return false;
 
-                const TransmutationRecipe& recipe = it->second;
+                TransmutationRecipe const& recipe = it->second;
 
                 try
                 {
@@ -243,7 +243,7 @@ namespace DarkChaos
                     return true;
 
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to start transmutation {} for player {}: {}",
                              recipe_id, player_guid, e.what());
@@ -295,7 +295,7 @@ namespace DarkChaos
                 if (it == active_sessions.end())
                     return false;
 
-                const TransmutationSession& session = it->second;
+                TransmutationSession const& session = it->second;
                 if (session.completed)
                     return false;
 
@@ -303,7 +303,7 @@ namespace DarkChaos
                 if (recipe_it == recipes.end())
                     return false;
 
-                const TransmutationRecipe& recipe = recipe_it->second;
+                TransmutationRecipe const& recipe = recipe_it->second;
 
                 try
                 {
@@ -332,7 +332,7 @@ namespace DarkChaos
                     return true;
 
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to cancel transmutation for player {}: {}", player_guid, e.what());
                     return false;
@@ -435,7 +435,7 @@ namespace DarkChaos
 
                     return true;
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: ExchangeCurrency failed for player {}: {}", player_guid, e.what());
                     return false;
@@ -472,7 +472,7 @@ namespace DarkChaos
                 if (recipe_it == recipes.end())
                     return;
 
-                const TransmutationRecipe& recipe = recipe_it->second;
+                TransmutationRecipe const& recipe = recipe_it->second;
 
                 // Determine success
                 float success_roll = frand(0.0f, 1.0f);
@@ -524,7 +524,7 @@ namespace DarkChaos
                             session.recipe_id, player_guid, session.success ? "SUCCESS" : "FAILED");
 
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to complete transmutation for player {}: {}", player_guid, e.what());
                 }
@@ -685,7 +685,7 @@ namespace DarkChaos
 
                     return success;
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: Tier conversion failed for player {}: {}", player_guid, e.what());
                     return false;

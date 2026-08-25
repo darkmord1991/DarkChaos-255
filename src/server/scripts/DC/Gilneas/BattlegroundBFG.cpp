@@ -582,7 +582,7 @@ void BattlegroundBFG::ApplyPhaseMask()
         if (_capturePointInfo[i]._ownerTeamId != TEAM_NEUTRAL)
             phaseMask |= 1u << (i*2+1 + static_cast<uint32>(_capturePointInfo[i]._ownerTeamId));
 
-    const BattlegroundPlayerMap& bgPlayerMap = GetPlayers();
+    BattlegroundPlayerMap const& bgPlayerMap = GetPlayers();
     for (BattlegroundPlayerMap::const_iterator itr = bgPlayerMap.begin(); itr != bgPlayerMap.end(); ++itr)
     {
         itr->second->SetPhaseMask(phaseMask, false);

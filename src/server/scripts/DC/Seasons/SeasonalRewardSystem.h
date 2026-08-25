@@ -133,14 +133,14 @@ namespace DarkChaos
             void Initialize();
 
             // Configuration
-            const SeasonalConfig& GetConfig() const { return config_; }
-            void SetConfig(const SeasonalConfig& config) { config_ = config; }
+            SeasonalConfig const& GetConfig() const { return config_; }
+            void SetConfig(SeasonalConfig const& config) { config_ = config; }
             void ReloadConfiguration();
 
             // Reward Distribution
-            bool AwardTokens(Player* player, uint32 amount, const std::string& source, uint32 sourceId = 0);
-            bool AwardEssence(Player* player, uint32 amount, const std::string& source, uint32 sourceId = 0);
-            bool AwardBoth(Player* player, uint32 tokens, uint32 essence, const std::string& source, uint32 sourceId = 0);
+            bool AwardTokens(Player* player, uint32 amount, std::string const& source, uint32 sourceId = 0);
+            bool AwardEssence(Player* player, uint32 amount, std::string const& source, uint32 sourceId = 0);
+            bool AwardBoth(Player* player, uint32 tokens, uint32 essence, std::string const& source, uint32 sourceId = 0);
 
             // Quest Rewards
             bool ProcessQuestReward(Player* player, Quest const* quest);
@@ -162,8 +162,8 @@ namespace DarkChaos
             // Player Stats
             PlayerSeasonStats* GetPlayerStats(uint32 playerGuid);
             PlayerSeasonStats* GetOrCreatePlayerStats(Player* player);
-            void UpdatePlayerStats(Player* player, const PlayerSeasonStats& stats);
-            void SavePlayerStats(const PlayerSeasonStats& stats);
+            void UpdatePlayerStats(Player* player, PlayerSeasonStats const& stats);
+            void SavePlayerStats(PlayerSeasonStats const& stats);
 
             // Achievement Tracking
             void CheckAchievements(Player* player);
@@ -172,14 +172,14 @@ namespace DarkChaos
             // Admin Commands
             void ResetPlayerSeason(Player* player);
             void SetActiveSeason(uint32 seasonId);
-            void SetMultiplier(const std::string& type, float value);
+            void SetMultiplier(std::string const& type, float value);
 
             // Periodic Tasks
             void CheckWeeklyReset();
             void Update(uint32 diff);
 
             // Transaction Logging
-            void LogTransaction(const RewardTransaction& transaction);
+            void LogTransaction(RewardTransaction const& transaction);
             std::vector<RewardTransaction> GetPlayerTransactions(uint32 playerGuid, uint32 limit = 50);
 
         private:
@@ -187,9 +187,9 @@ namespace DarkChaos
             ~SeasonalRewardManager() = default;
 
             // Internal helpers
-            bool AwardCurrency(Player* player, uint32 itemId, uint32 amount, const std::string& source, uint32 sourceId);
+            bool AwardCurrency(Player* player, uint32 itemId, uint32 amount, std::string const& source, uint32 sourceId);
             void UpdateWeeklyEarnings(Player* player, uint32 tokens, uint32 essence);
-            void NotifyPlayer(Player* player, uint32 tokens, uint32 essence, const std::string& source);
+            void NotifyPlayer(Player* player, uint32 tokens, uint32 essence, std::string const& source);
 
             // Data storage
             SeasonalConfig config_;

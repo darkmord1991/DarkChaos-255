@@ -40,12 +40,12 @@ void ChallengeModeDatabase::LogEvent(
     ChallengeModeEventType eventType,
     uint32 modesBefore,
     uint32 modesAfter,
-    const std::string& details,
+    std::string const& details,
     Player* player,
     uint32 killerEntry,
-    const std::string& killerName)
+    std::string const& killerName)
 {
-    const char* eventTypeStr = "MODIFY";
+    char const* eventTypeStr = "MODIFY";
     switch(eventType)
     {
         case EVENT_ACTIVATE:   eventTypeStr = "ACTIVATE"; break;
@@ -106,7 +106,7 @@ void ChallengeModeDatabase::LogEvent(
 }
 
 // Record hardcore death
-void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player, uint32 killerEntry, const std::string& killerName, uint32 activeModes)
+void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player, uint32 killerEntry, std::string const& killerName, uint32 activeModes)
 {
     CharacterDatabase.Execute(
         "UPDATE dc_character_challenge_modes SET hardcore_deaths = hardcore_deaths + 1, last_hardcore_death = NOW() WHERE guid = {}",

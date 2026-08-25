@@ -58,8 +58,8 @@ namespace DarkChaos
         // (Heirloom Shirt) must have a row in that table with tier_id=3.
 
         // Centralize backing table name so SQL stays consistent with the deployed schema
-        inline constexpr const char* ITEM_UPGRADES_TABLE = "dc_item_upgrades";
-        inline constexpr const char* ITEM_UPGRADE_LOG_TABLE = "dc_item_upgrade_log";
+        inline constexpr char const* ITEM_UPGRADES_TABLE = "dc_item_upgrades";
+        inline constexpr char const* ITEM_UPGRADE_LOG_TABLE = "dc_item_upgrade_log";
 
         // =====================================================================
         // Configuration Helpers
@@ -236,11 +236,11 @@ namespace DarkChaos
             virtual uint32 GetEssenceCost(uint8 tier_id, uint8 upgrade_level) = 0;
             virtual uint8 GetPlayerHighestTier(uint32 player_guid) = 0;
             virtual uint8 GetTierMaxLevel(uint8 tier_id) = 0;
-            virtual const TierDefinition* GetTierDefinition(uint8 tier_id) = 0;
+            virtual TierDefinition const* GetTierDefinition(uint8 tier_id) = 0;
 
             // Artifact functions
             virtual ChaosArtifact* GetArtifact(uint32 artifact_id) = 0;
-            virtual std::vector<ChaosArtifact*> GetArtifactsByLocation(const std::string& location) = 0;
+            virtual std::vector<ChaosArtifact*> GetArtifactsByLocation(std::string const& location) = 0;
             virtual bool DiscoverArtifact(uint32 player_guid, uint32 artifact_id) = 0;
 
             // Database functions

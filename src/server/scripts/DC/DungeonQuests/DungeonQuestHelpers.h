@@ -186,7 +186,7 @@ inline uint32 GetDungeonQuestCompletions(Player* player)
  * Get specific statistic value by field name
  * SECURITY: Uses whitelist validation to prevent SQL injection
  */
-inline uint32 GetStatisticValue(Player* player, const std::string& statName)
+inline uint32 GetStatisticValue(Player* player, std::string const& statName)
 {
     if (!player || statName.empty())
         return 0;
@@ -558,7 +558,7 @@ inline std::pair<uint32, std::string> GetNextMilestone(Player* player)
 /**
  * Send colored difficulty message to player
  */
-inline void SendDifficultyMessage(Player* player, QuestDifficulty difficulty, const std::string& message)
+inline void SendDifficultyMessage(Player* player, QuestDifficulty difficulty, std::string const& message)
 {
     if (!player)
         return;

@@ -29,7 +29,7 @@ namespace DCAddon
     static uint32 s_gomoveMoveMinSecurity = SEC_GAMEMASTER;
     static bool s_gomoveEnabled = true; // fallback if router not configured
         // Helper to send GOMove specific messages wrapped in DC Protocol
-        static void SendGOMoveMessage(Player* player, const std::string& msg)
+        static void SendGOMoveMessage(Player* player, std::string const& msg)
         {
             Message response(Module::GOMOVE, Opcode::GOMove::SMSG_MOVE_RESULT);
             // Echo the in-flight request id so the client closes its pending
@@ -58,7 +58,7 @@ namespace DCAddon
             );
         }
 
-        static void HandleRequestMove(Player* player, const ParsedMessage& msg)
+        static void HandleRequestMove(Player* player, ParsedMessage const& msg)
         {
             // Quick guard: check module enabled + GM level
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMoveMinSecurity))
@@ -220,7 +220,7 @@ namespace DCAddon
                 SendMoveResult("OK");
         }
 
-        static void HandleRequestSearch(Player* player, const ParsedMessage& msg)
+        static void HandleRequestSearch(Player* player, ParsedMessage const& msg)
         {
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
             {
@@ -279,7 +279,7 @@ namespace DCAddon
             JsonMessage(Module::GOMOVE, Opcode::GOMove::SMSG_SEARCH_RESULT, response).Send(player);
         }
 
-        static void HandleRequestTeleSync(Player* player, const ParsedMessage& msg)
+        static void HandleRequestTeleSync(Player* player, ParsedMessage const& msg)
         {
             (void)msg; // msg is intentionally unused in this handler
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))

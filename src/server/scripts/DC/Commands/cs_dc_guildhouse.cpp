@@ -203,7 +203,7 @@ public:
         return true;
     }
 
-    static bool HandleAdminResetCommand(ChatHandler* handler, const char* args)
+    static bool HandleAdminResetCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -233,7 +233,7 @@ public:
         return true;
     }
 
-    static bool HandleAdminTeleportCommand(ChatHandler* handler, const char* args)
+    static bool HandleAdminTeleportCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -259,7 +259,7 @@ public:
         return true;
     }
 
-    static bool HandleAdminDeleteCommand(ChatHandler* handler, const char* args)
+    static bool HandleAdminDeleteCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -286,7 +286,7 @@ public:
         return true;
     }
 
-    static bool HandleAdminLevelCommand(ChatHandler* handler, const char* args)
+    static bool HandleAdminLevelCommand(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession() || !handler->GetSession()->GetPlayer())
             return false;
@@ -403,7 +403,7 @@ public:
         return !str.empty() && std::all_of(str.begin(), str.end(), [](unsigned char ch) { return std::isdigit(ch); });
     }
 
-    static bool HandleAdminBuyCommand(ChatHandler* handler, const char* args)
+    static bool HandleAdminBuyCommand(ChatHandler* handler, char const* args)
     {
         if (!handler || !handler->GetSession() || !handler->GetSession()->GetPlayer())
             return false;
@@ -511,7 +511,7 @@ public:
         return true;
     }
 
-    static bool HandleRankCommand(ChatHandler* handler, const char* args)
+    static bool HandleRankCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player || !player->GetGuildId()) return false;
@@ -574,7 +574,7 @@ public:
         return true;
     }
 
-    static bool HandleUndoCommand(ChatHandler* handler, const char* args)
+    static bool HandleUndoCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player || !player->GetGuildId()) return false;
@@ -602,7 +602,7 @@ public:
         return true;
     }
 
-    static bool HandleMoveCommand(ChatHandler* handler, const char* args)
+    static bool HandleMoveCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player || !player->GetGuildId()) return false;

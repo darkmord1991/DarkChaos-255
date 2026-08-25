@@ -181,7 +181,7 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
     std::vector<uint32> candidates;
     candidates.reserve(64);
 
-    for (const LootQueryStage& stage : stages)
+    for (LootQueryStage const& stage : stages)
     {
         candidates.clear();
 

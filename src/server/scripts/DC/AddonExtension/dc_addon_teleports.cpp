@@ -18,7 +18,7 @@
 
 namespace DCAddon
 {
-    static void HandleRequestList(Player* player, const ParsedMessage& msg)
+    static void HandleRequestList(Player* player, ParsedMessage const& msg)
     {
         if (!player)
             return;

@@ -99,7 +99,7 @@ namespace DCUtils
     /**
      * Get quality name string from item quality enum
      */
-    inline const char* GetQualityName(uint32 quality)
+    inline char const* GetQualityName(uint32 quality)
     {
         switch (quality)
         {
@@ -118,7 +118,7 @@ namespace DCUtils
     /**
      * Get quality color code for chat messages
      */
-    inline const char* GetQualityColor(uint32 quality)
+    inline char const* GetQualityColor(uint32 quality)
     {
         switch (quality)
         {

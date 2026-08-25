@@ -201,15 +201,15 @@ namespace DCAddon
         void CleanupExpiredEvents();
 
         // Listing Management
-        uint32 CreateListing(Player* player, const GroupFinderListing& listing);
-        bool UpdateListing(Player* player, uint32 listingId, const GroupFinderListing& updates);
+        uint32 CreateListing(Player* player, GroupFinderListing const& listing);
+        bool UpdateListing(Player* player, uint32 listingId, GroupFinderListing const& updates);
         bool DeleteListing(Player* player, uint32 listingId);
         std::optional<GroupFinderListing> GetListing(uint32 listingId);
         std::vector<GroupFinderListing> SearchListings(uint8 listingType, uint32 dungeonId,
                                                         uint8 minLevel, uint8 maxLevel, uint16 minRating);
 
         // Application Management
-        bool ApplyToListing(Player* player, uint32 listingId, uint8 role, const std::string& note);
+        bool ApplyToListing(Player* player, uint32 listingId, uint8 role, std::string const& note);
         bool AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid);
         bool DeclineApplication(Player* leader, uint32 listingId, uint32 applicantGuid);
         bool CancelApplication(Player* player, uint32 listingId);
@@ -226,7 +226,7 @@ namespace DCAddon
 
         // Matchmaking
         void TryAutoMatch(uint32 listingId);
-        bool CheckRoleRequirements(const GroupFinderListing& listing);
+        bool CheckRoleRequirements(GroupFinderListing const& listing);
         void FormGroupFromListing(uint32 listingId);
 
         // Scheduled Events
@@ -247,9 +247,9 @@ namespace DCAddon
         uint16 GetPlayerItemLevel(Player* player);
 
         // Notifications
-        void NotifyNewListing(const GroupFinderListing& listing);
-        void NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, const std::string& message);
-        void NotifyNewApplication(uint32 leaderGuid, const GroupFinderApplication& app);
+        void NotifyNewListing(GroupFinderListing const& listing);
+        void NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, std::string const& message);
+        void NotifyNewApplication(uint32 leaderGuid, GroupFinderApplication const& app);
         void NotifyGroupReady(uint32 listingId);
         void NotifyEventReminder(uint32 eventId);
 

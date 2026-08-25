@@ -52,7 +52,7 @@ std::string MythicPlusAffixManager::GetAffixDescription(AffixType affix) const
         static_cast<uint32>(affix));
 }
 
-void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixType>& affixes, uint8 keystoneLevel)
+void MythicPlusAffixManager::ActivateAffixes(Map* map, std::vector<AffixType> const& affixes, uint8 keystoneLevel)
 {
     std::lock_guard<std::recursive_mutex> guard(_affixMutex);
 
@@ -244,7 +244,7 @@ uint8 MythicPlusAffixManager::GetKeystoneLevel(Map* map) const
     return (itr != _instanceStates.end()) ? itr->second.keystoneLevel : 0;
 }
 
-uint64 MythicPlusAffixManager::MakeInstanceKey(const Map* map) const
+uint64 MythicPlusAffixManager::MakeInstanceKey(Map const* map) const
 {
     if (!map)
         return 0;

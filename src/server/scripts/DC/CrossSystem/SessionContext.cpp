@@ -228,7 +228,7 @@ namespace CrossSystem
     // Pending Rewards
     // =========================================================================
 
-    uint64 SessionContext::AddPendingReward(const PendingReward& reward)
+    uint64 SessionContext::AddPendingReward(PendingReward const& reward)
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -270,7 +270,7 @@ namespace CrossSystem
 
         pendingRewards_.erase(
             std::remove_if(pendingRewards_.begin(), pendingRewards_.end(),
-                [now](const PendingReward& r) {
+                [now](PendingReward const& r) {
                     return r.claimed || (r.expiresAt > 0 && now > r.expiresAt);
                 }),
             pendingRewards_.end());
@@ -346,7 +346,7 @@ namespace CrossSystem
     }
 
     RewardContext SessionContext::BuildRewardContext(SystemId sourceSystem, EventType triggerEvent,
-                                                     uint32 sourceId, const std::string& sourceName) const
+                                                     uint32 sourceId, std::string const& sourceName) const
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -367,7 +367,7 @@ namespace CrossSystem
         return ctx;
     }
 
-    void SessionContext::IncrementSessionStat(const std::string& stat)
+    void SessionContext::IncrementSessionStat(std::string const& stat)
     {
         std::lock_guard<std::mutex> lock(mutex_);
 

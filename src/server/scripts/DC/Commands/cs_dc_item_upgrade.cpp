@@ -270,7 +270,7 @@ public:
     // Mechanics Handlers
     // =================================================================
 
-    static bool HandleMechCostCommand(ChatHandler* handler, const char* args)
+    static bool HandleMechCostCommand(ChatHandler* handler, char const* args)
     {
         uint8 tier, level;
 
@@ -314,7 +314,7 @@ public:
         return true;
     }
 
-    static bool HandleMechStatsCommand(ChatHandler* handler, const char* args)
+    static bool HandleMechStatsCommand(ChatHandler* handler, char const* args)
     {
         uint8 tier, level;
 
@@ -355,7 +355,7 @@ public:
         return true;
     }
 
-    static bool HandleMechILvLCommand(ChatHandler* handler, const char* args)
+    static bool HandleMechILvLCommand(ChatHandler* handler, char const* args)
     {
         uint8 tier, level;
         uint16 base_ilvl;
@@ -396,7 +396,7 @@ public:
         return true;
     }
 
-    static bool HandleMechResetCommand(ChatHandler* handler, const char* args)
+    static bool HandleMechResetCommand(ChatHandler* handler, char const* args)
     {
         Player* target = nullptr;
 
@@ -459,7 +459,7 @@ public:
         return true;
     }
 
-    static bool HandleMechProcsCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleMechProcsCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -879,7 +879,7 @@ public:
     // Advanced Handlers
     // =================================================================
 
-    static bool HandleAdvRespecCommand(ChatHandler* handler, const char* args)
+    static bool HandleAdvRespecCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -956,7 +956,7 @@ public:
         return true;
     }
 
-    static bool HandleAdvAchievementsCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleAdvAchievementsCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player) return false;
@@ -981,7 +981,7 @@ public:
         return true;
     }
 
-    static bool HandleAdvGuildStatsCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleAdvGuildStatsCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player || !player->GetGuildId())
@@ -1008,7 +1008,7 @@ public:
     // Progression Handlers
     // =================================================================
 
-    static bool HandleProgMasteryCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleProgMasteryCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -1039,7 +1039,7 @@ public:
         return true;
     }
 
-    static bool HandleProgUnlockTierCommand(ChatHandler* handler, const char* args)
+    static bool HandleProgUnlockTierCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
         {
@@ -1076,7 +1076,7 @@ public:
         return true;
     }
 
-    static bool HandleProgWeekCapCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleProgWeekCapCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player) return false;
@@ -1084,7 +1084,7 @@ public:
         auto costMgr = GetCostScalingManager();
         if (!costMgr) return false;
 
-        const CostScalingConfig& config = costMgr->GetConfig();
+        CostScalingConfig const& config = costMgr->GetConfig();
 
         uint32 spentEssence = costMgr->GetWeeklySpending(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE);
         uint32 spentTokens = costMgr->GetWeeklySpending(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
@@ -1098,7 +1098,7 @@ public:
         return true;
     }
 
-    static bool HandleProgTierCapCommand(ChatHandler* handler, const char* args)
+    static bool HandleProgTierCapCommand(ChatHandler* handler, char const* args)
     {
         if (!handler)
             return false;
@@ -1145,7 +1145,7 @@ public:
         return true;
     }
 
-    static bool HandleProgTestSetCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleProgTestSetCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
         if (!player)
@@ -1159,7 +1159,7 @@ public:
             return false;
         }
 
-        const ClassTestGearSet& gearSet = it->second;
+        ClassTestGearSet const& gearSet = it->second;
         uint32 itemsAdded = 0;
 
         for (uint32 itemId : gearSet.itemIds)
@@ -1206,7 +1206,7 @@ public:
         return true;
     }
 
-    static bool HandleProgReloadCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleProgReloadCommand(ChatHandler* handler, char const* /*args*/)
     {
         UpgradeManager* mgr = GetUpgradeManager();
         if (!mgr)
@@ -1225,7 +1225,7 @@ public:
     // Seasonal Handlers
     // =================================================================
 
-    static bool HandleSeasonInfoCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleSeasonInfoCommand(ChatHandler* handler, char const* /*args*/)
     {
          // Get current season
         QueryResult result = WorldDatabase.Query(
@@ -1277,7 +1277,7 @@ public:
         return true;
     }
 
-    static bool HandleSeasonLeaderboardCommand(ChatHandler* handler, const char* args)
+    static bool HandleSeasonLeaderboardCommand(ChatHandler* handler, char const* args)
     {
         std::string type = "upgrades";
         if (*args)
@@ -1310,7 +1310,7 @@ public:
         return true;
     }
 
-    static bool HandleSeasonHistoryCommand(ChatHandler* handler, const char* args)
+    static bool HandleSeasonHistoryCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -1341,7 +1341,7 @@ public:
         return true;
     }
 
-    static bool HandleSeasonResetCommand(ChatHandler* handler, const char* args)
+    static bool HandleSeasonResetCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
         {

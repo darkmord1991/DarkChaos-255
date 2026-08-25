@@ -463,7 +463,7 @@ void GroupFinderMgr::CleanupExpiredEvents()
 // LISTING MANAGEMENT
 // ========================================================================
 
-uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& listing)
+uint32 GroupFinderMgr::CreateListing(Player* player, GroupFinderListing const& listing)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
@@ -621,7 +621,7 @@ std::vector<GroupFinderListing> GroupFinderMgr::SearchListings(uint8 listingType
     }
 
     // Sort by keystone level descending
-    std::sort(results.begin(), results.end(), [](const GroupFinderListing& a, const GroupFinderListing& b) {
+    std::sort(results.begin(), results.end(), [](GroupFinderListing const& a, GroupFinderListing const& b) {
         return a.keystoneLevel > b.keystoneLevel;
     });
 
@@ -636,7 +636,7 @@ std::vector<GroupFinderListing> GroupFinderMgr::SearchListings(uint8 listingType
 // APPLICATION MANAGEMENT
 // ========================================================================
 
-bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role, const std::string& note)
+bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role, std::string const& note)
 {
     bool applied = false;
 
@@ -907,7 +907,7 @@ std::vector<GroupFinderApplication> GroupFinderMgr::GetApplicationsForListing(ui
 // MATCHMAKING
 // ========================================================================
 
-bool GroupFinderMgr::CheckRoleRequirements(const GroupFinderListing& listing)
+bool GroupFinderMgr::CheckRoleRequirements(GroupFinderListing const& listing)
 {
     return listing.needTank == 0 && listing.needHealer == 0 && listing.needDps == 0;
 }
@@ -988,7 +988,7 @@ std::vector<ScheduledEvent> GroupFinderMgr::GetUpcomingEvents(uint8 eventType)
     }
 
     // Sort by scheduled time
-    std::sort(results.begin(), results.end(), [](const ScheduledEvent& a, const ScheduledEvent& b) {
+    std::sort(results.begin(), results.end(), [](ScheduledEvent const& a, ScheduledEvent const& b) {
         return a.scheduledTime < b.scheduledTime;
     });
 
@@ -1145,7 +1145,7 @@ uint16 GroupFinderMgr::GetPlayerItemLevel(Player* player)
     {
         if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
         {
-            if (const ItemTemplate* proto = item->GetTemplate())
+            if (ItemTemplate const* proto = item->GetTemplate())
             {
                 totalIlvl += proto->ItemLevel;
                 ++itemCount;
@@ -1160,7 +1160,7 @@ uint16 GroupFinderMgr::GetPlayerItemLevel(Player* player)
 // NOTIFICATIONS
 // ========================================================================
 
-void GroupFinderMgr::NotifyNewListing(const GroupFinderListing& listing)
+void GroupFinderMgr::NotifyNewListing(GroupFinderListing const& listing)
 {
     // Future: Could broadcast to players who have matching search criteria
     // For now, just log
@@ -1187,7 +1187,7 @@ void GroupFinderMgr::NotifyNewListing(const GroupFinderListing& listing)
         listing.dungeonName, listingType, listing.keystoneLevel);
 }
 
-void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, const std::string& message)
+void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, std::string const& message)
 {
     if (Player* player = FindConnectedPlayerByGuidLow(playerGuid))
     {
@@ -1210,7 +1210,7 @@ void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId
     }
 }
 
-void GroupFinderMgr::NotifyNewApplication(uint32 leaderGuid, const GroupFinderApplication& app)
+void GroupFinderMgr::NotifyNewApplication(uint32 leaderGuid, GroupFinderApplication const& app)
 {
     if (Player* leader = FindConnectedPlayerByGuidLow(leaderGuid))
     {

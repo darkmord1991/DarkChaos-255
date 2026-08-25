@@ -41,7 +41,6 @@ uint32 const EncounterCount = 7;
 // DC clone map. Stock Shadowfang Keep stays on 33.
 uint32 const MapShadowfangKeepCata = 825;
 
-
 // ---------------------------------------------------------------------------------
 // Portal constants -- shared by the clickable GO and the walk-through trigger NPC
 // ---------------------------------------------------------------------------------

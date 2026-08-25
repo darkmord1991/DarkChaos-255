@@ -27,21 +27,21 @@
 namespace DCCollection
 {
     // Module identifier
-    constexpr const char* MODULE = "COLL";
+    constexpr char const* MODULE = "COLL";
 
     // =======================================================================
     // Configuration Keys
     // =======================================================================
     namespace Config
     {
-        constexpr const char* ENABLED = "DCCollection.Enable";
-        constexpr const char* MOUNT_BONUSES_ENABLED = "DCCollection.MountBonuses.Enable";
-        constexpr const char* SHOP_ENABLED = "DCCollection.Shop.Enable";
-        constexpr const char* TRANSMOG_ENABLED = "DCCollection.Transmog.Enable";
-        constexpr const char* TRANSMOG_APPEARANCES_ENABLED = "DCCollection.Transmog.Appearances.Enable";
-        constexpr const char* ACCOUNTWIDE_ENABLED = "DCCollection.Accountwide.Enable";
-        constexpr const char* PETS_REBUILD_ON_STARTUP = "DCCollection.Pets.RebuildDefinitionsOnStartup";
-        constexpr const char* PETS_REBUILD_ON_STARTUP_TRUNCATE = "DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate";
+        constexpr char const* ENABLED = "DCCollection.Enable";
+        constexpr char const* MOUNT_BONUSES_ENABLED = "DCCollection.MountBonuses.Enable";
+        constexpr char const* SHOP_ENABLED = "DCCollection.Shop.Enable";
+        constexpr char const* TRANSMOG_ENABLED = "DCCollection.Transmog.Enable";
+        constexpr char const* TRANSMOG_APPEARANCES_ENABLED = "DCCollection.Transmog.Appearances.Enable";
+        constexpr char const* ACCOUNTWIDE_ENABLED = "DCCollection.Accountwide.Enable";
+        constexpr char const* PETS_REBUILD_ON_STARTUP = "DCCollection.Pets.RebuildDefinitionsOnStartup";
+        constexpr char const* PETS_REBUILD_ON_STARTUP_TRUNCATE = "DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate";
     }
 
     // =======================================================================

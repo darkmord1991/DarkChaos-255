@@ -68,12 +68,12 @@
 
 // Structure representing a Point of Interest (POI)
 struct ACGuardPOI {
-    const char* name;   // Display name for the POI
+    char const* name;   // Display name for the POI
     uint32 map;         // Map ID where the POI is located
     float x, y, z, o;   // Coordinates and orientation
     bool teleport;      // If true, selecting this entry teleports instead of marking
     uint32 poiIcon;     // Poi_Icon (map/minimap marker)
-    const char* gossipIcon; // Large gossip icon (texture path)
+    char const* gossipIcon; // Large gossip icon (texture path)
     uint32 menuIcon;    // GossipOptionIcon (menu icon)
 };
 
@@ -135,7 +135,7 @@ public:
             return true;
         }
 
-        const ACGuardPOI& poi = ac_guard_pois[action];
+        ACGuardPOI const& poi = ac_guard_pois[action];
         const std::string poiPrefix = "Ashzara Crater - ";
 
         // Default behavior: just show a POI marker on the map/minimap.

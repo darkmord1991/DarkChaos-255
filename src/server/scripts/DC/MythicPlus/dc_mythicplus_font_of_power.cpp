@@ -804,7 +804,7 @@ private:
     }
 
     void SendKeystoneReadyCheck(Player* activator, Group* group,
-        const std::string& dungeonName, const KeystoneDescriptor& descriptor)
+        std::string const& dungeonName, KeystoneDescriptor const& descriptor)
     {
         if (!activator)
             return;
@@ -871,7 +871,7 @@ private:
     }
 
     void SendKeystoneReadyCheckFallback(Player* activator, Group* group,
-        const std::string& dungeonName, const KeystoneDescriptor& descriptor)
+        std::string const& dungeonName, KeystoneDescriptor const& descriptor)
     {
         if (!activator)
             return;
@@ -1000,7 +1000,7 @@ public:
     }
 
     static void CancelPendingActivation(ObjectGuid const& activationKey,
-        const std::string& reason)
+        std::string const& reason)
     {
         auto it = s_pendingActivations.find(activationKey);
         if (it == s_pendingActivations.end())

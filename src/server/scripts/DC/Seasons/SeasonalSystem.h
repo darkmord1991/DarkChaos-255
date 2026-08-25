@@ -147,8 +147,8 @@ namespace DarkChaos
             virtual ~SeasonalManager() = default;
 
             // Season Management
-            virtual bool CreateSeason(const SeasonDefinition& season) = 0;
-            virtual bool UpdateSeason(uint32 season_id, const SeasonDefinition& season) = 0;
+            virtual bool CreateSeason(SeasonDefinition const& season) = 0;
+            virtual bool UpdateSeason(uint32 season_id, SeasonDefinition const& season) = 0;
             virtual bool DeleteSeason(uint32 season_id) = 0;
             virtual SeasonDefinition* GetSeason(uint32 season_id) = 0;
             virtual SeasonDefinition* GetActiveSeason() = 0;
@@ -160,13 +160,13 @@ namespace DarkChaos
             virtual bool TransitionSeason(uint32 from_season_id, uint32 to_season_id) = 0;
 
             // System Registration
-            virtual bool RegisterSystem(const SystemRegistration& system) = 0;
-            virtual bool UnregisterSystem(const std::string& system_name) = 0;
+            virtual bool RegisterSystem(SystemRegistration const& system) = 0;
+            virtual bool UnregisterSystem(std::string const& system_name) = 0;
             virtual std::vector<SystemRegistration> GetRegisteredSystems() = 0;
 
             // Player Management
             virtual PlayerSeasonData* GetPlayerSeasonData(uint32 player_guid) = 0;
-            virtual bool UpdatePlayerSeasonData(uint32 player_guid, const PlayerSeasonData& data) = 0;
+            virtual bool UpdatePlayerSeasonData(uint32 player_guid, PlayerSeasonData const& data) = 0;
             virtual bool TransitionPlayerSeason(uint32 player_guid, uint32 new_season_id) = 0;
             // Drop the cached per-player season data (call on logout so the
             // cache stays bounded by online players).

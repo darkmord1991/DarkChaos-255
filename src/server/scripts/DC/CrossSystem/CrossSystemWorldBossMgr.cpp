@@ -345,7 +345,7 @@ namespace DC
             float posX = 0.0f, posY = 0.0f;
             bool havePos = false;
 
-            if (const CreatureData* data = sObjectMgr->GetCreatureData(info.spawnId))
+            if (CreatureData const* data = sObjectMgr->GetCreatureData(info.spawnId))
             {
                 posX = data->posX;
                 posY = data->posY;

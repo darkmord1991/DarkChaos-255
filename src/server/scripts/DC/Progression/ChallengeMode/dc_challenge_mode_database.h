@@ -61,14 +61,14 @@ public:
         ChallengeModeEventType eventType,
         uint32 modesBefore,
         uint32 modesAfter,
-        const std::string& details,
+        std::string const& details,
         Player* player = nullptr,
         uint32 killerEntry = 0,
-        const std::string& killerName = ""
+        std::string const& killerName = ""
     );
 
     // Record hardcore death
-    static void RecordHardcoreDeath(ObjectGuid guid, Player* player, uint32 killerEntry, const std::string& killerName, uint32 activeModes);
+    static void RecordHardcoreDeath(ObjectGuid guid, Player* player, uint32 killerEntry, std::string const& killerName, uint32 activeModes);
 
     // Lock character (hardcore death)
     static void LockCharacter(ObjectGuid guid, uint32 activeModes);

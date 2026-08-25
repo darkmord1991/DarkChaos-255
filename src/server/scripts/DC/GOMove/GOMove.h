@@ -39,7 +39,7 @@ public:
 
     static void SendAdd(Player* player, ObjectGuid::LowType lowguid);
     static void SendRemove(Player* player, ObjectGuid::LowType lowguid);
-    static void SendAddonMessage(Player* player, const char* msg);
+    static void SendAddonMessage(Player* player, char const* msg);
 
     static void DeleteGameObject(GameObject* object);
     static GameObject* GetGameObject(Player* player, ObjectGuid::LowType lowguid);

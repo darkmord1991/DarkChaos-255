@@ -68,7 +68,7 @@ public:
     static MythicPlusAffixManager* instance();
 
     void RegisterAffix(std::unique_ptr<IAffixHandler> handler);
-    void ActivateAffixes(Map* map, const std::vector<AffixType>& affixes, uint8 keystoneLevel);
+    void ActivateAffixes(Map* map, std::vector<AffixType> const& affixes, uint8 keystoneLevel);
     void DeactivateAffixes(Map* map);
     bool HasHandler(AffixType affix) const;
     std::string GetAffixName(AffixType affix) const;
@@ -88,7 +88,7 @@ public:
     // Per-instance key matching _instanceStates, exposed so IAffixHandler implementations
     // can key their own per-run state and avoid clobbering concurrent instances of the
     // same dungeon.
-    uint64 MakeInstanceKey(const Map* map) const;
+    uint64 MakeInstanceKey(Map const* map) const;
 
 private:
     MythicPlusAffixManager() = default;

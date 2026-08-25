@@ -197,17 +197,17 @@ namespace DarkChaos
         // Reward Distribution
         // =====================================================================
 
-        bool SeasonalRewardManager::AwardTokens(Player* player, uint32 amount, const std::string& source, uint32 sourceId)
+        bool SeasonalRewardManager::AwardTokens(Player* player, uint32 amount, std::string const& source, uint32 sourceId)
         {
             return AwardCurrency(player, config_.tokenItemId, amount, source, sourceId);
         }
 
-        bool SeasonalRewardManager::AwardEssence(Player* player, uint32 amount, const std::string& source, uint32 sourceId)
+        bool SeasonalRewardManager::AwardEssence(Player* player, uint32 amount, std::string const& source, uint32 sourceId)
         {
             return AwardCurrency(player, config_.essenceItemId, amount, source, sourceId);
         }
 
-        bool SeasonalRewardManager::AwardBoth(Player* player, uint32 tokens, uint32 essence, const std::string& source, uint32 sourceId)
+        bool SeasonalRewardManager::AwardBoth(Player* player, uint32 tokens, uint32 essence, std::string const& source, uint32 sourceId)
         {
             bool success = true;
             if (tokens > 0)
@@ -217,7 +217,7 @@ namespace DarkChaos
             return success;
         }
 
-        bool SeasonalRewardManager::AwardCurrency(Player* player, uint32 itemId, uint32 amount, const std::string& source, uint32 sourceId)
+        bool SeasonalRewardManager::AwardCurrency(Player* player, uint32 itemId, uint32 amount, std::string const& source, uint32 sourceId)
         {
             if (!config_.enabled || !player || amount == 0)
                 return false;
@@ -648,7 +648,7 @@ namespace DarkChaos
             return stats;
         }
 
-        void SeasonalRewardManager::UpdatePlayerStats(Player* player, const PlayerSeasonStats& stats)
+        void SeasonalRewardManager::UpdatePlayerStats(Player* player, PlayerSeasonStats const& stats)
         {
             if (!player)
                 return;
@@ -657,7 +657,7 @@ namespace DarkChaos
             SavePlayerStats(stats);
         }
 
-        void SeasonalRewardManager::SavePlayerStats(const PlayerSeasonStats& stats)
+        void SeasonalRewardManager::SavePlayerStats(PlayerSeasonStats const& stats)
         {
             std::string sql = Acore::StringFormat("REPLACE INTO dc_player_seasonal_stats "
                 "(player_guid, season_id, total_tokens_earned, total_essence_earned, "
@@ -773,7 +773,7 @@ namespace DarkChaos
             LOG_INFO("module.dc", "[SeasonalRewards] Active season changed to {}", seasonId);
         }
 
-        void SeasonalRewardManager::SetMultiplier(const std::string& type, float value)
+        void SeasonalRewardManager::SetMultiplier(std::string const& type, float value)
         {
             if (type == "quest")
                 config_.questMultiplier = value;
@@ -828,7 +828,7 @@ namespace DarkChaos
         // Transaction Logging
         // =====================================================================
 
-        void SeasonalRewardManager::LogTransaction(const RewardTransaction& transaction)
+        void SeasonalRewardManager::LogTransaction(RewardTransaction const& transaction)
         {
             std::string transactionType = "manual";
             if (transaction.source == "Quest")
@@ -1020,7 +1020,7 @@ namespace DarkChaos
         // Internal Helpers
         // =====================================================================
 
-        void SeasonalRewardManager::NotifyPlayer(Player* player, uint32 tokens, uint32 essence, const std::string& source)
+        void SeasonalRewardManager::NotifyPlayer(Player* player, uint32 tokens, uint32 essence, std::string const& source)
         {
             // This will be handled by Eluna AIO bridge
             // For now, just send chat message

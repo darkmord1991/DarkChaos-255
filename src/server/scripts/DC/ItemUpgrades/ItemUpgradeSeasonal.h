@@ -108,7 +108,7 @@ namespace DarkChaos
             /**
              * Create a new season
              */
-            void CreateSeason(const Season& season)
+            void CreateSeason(Season const& season)
             {
                 seasons[season.season_id] = season;
             }
@@ -152,7 +152,7 @@ namespace DarkChaos
             /**
              * Get all seasons
              */
-            const std::map<uint32, Season>& GetAllSeasons() const
+            std::map<uint32, Season> const& GetAllSeasons() const
             {
                 return seasons;
             }
@@ -274,12 +274,12 @@ namespace DarkChaos
             /**
              * Get reset configuration
              */
-            const SeasonResetConfig& GetConfig() const { return config; }
+            SeasonResetConfig const& GetConfig() const { return config; }
 
             /**
              * Set reset configuration
              */
-            void SetConfig(const SeasonResetConfig& new_config)
+            void SetConfig(SeasonResetConfig const& new_config)
             {
                 config = new_config;
             }
@@ -319,7 +319,7 @@ namespace DarkChaos
             /**
              * Add a balance adjustment
              */
-            void AddAdjustment(const BalanceAdjustment& adjustment)
+            void AddAdjustment(BalanceAdjustment const& adjustment)
             {
                 adjustments.push_back(adjustment);
             }
@@ -408,7 +408,7 @@ namespace DarkChaos
             /**
              * Record an upgrade
              */
-            virtual void RecordUpgrade(const UpgradeHistoryEntry& entry) = 0;
+            virtual void RecordUpgrade(UpgradeHistoryEntry const& entry) = 0;
 
             /**
              * Get player's upgrade history

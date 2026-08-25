@@ -25,7 +25,7 @@ namespace DCMythicSpectator
     // ============================================================
     // Spectator Protocol Constants
     // ============================================================
-    constexpr const char* ADDON_PREFIX = "DCM+S\x09";  // DarkChaos Mythic+ Spectator
+    constexpr char const* ADDON_PREFIX = "DCM+S\x09";  // DarkChaos Mythic+ Spectator
     constexpr uint32 SPECTATOR_VERSION = 2;
     constexpr uint32 MAX_SPECTATORS_PER_RUN = 50;
     constexpr uint32 SPECTATOR_UPDATE_INTERVAL_MS = 1000;

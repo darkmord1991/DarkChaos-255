@@ -43,8 +43,8 @@
 #include "DC/Progression/FirstStart/dc_firststart_learnspells.h"
 
 // forward declaration of helpers implemented in DC_AddonHelpers.cpp
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
-void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, char const* context = "XP");
+void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, char const* context = "XP");
 
 using namespace Acore::ChatCommands;
 

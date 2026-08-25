@@ -226,7 +226,7 @@ public:
 class TransmogManagerImpl : public TransmogManager
 {
 public:
-    uint32 CreateTransmogPreset(const UpgradeTransmogPreset& /*preset*/) override { return 0; }
+    uint32 CreateTransmogPreset(UpgradeTransmogPreset const& /*preset*/) override { return 0; }
     std::vector<UpgradeTransmogPreset> GetTransmogPresets(uint32 /*player_guid*/) override { return {}; }
     bool ApplyTransmogPreset(uint32 /*player_guid*/, uint32 /*preset_id*/) override { return false; }
     bool WillUpgradesTransmog(uint32 /*source_item*/, uint32 /*target_item*/) override { return true; }
@@ -236,13 +236,13 @@ public:
 class OptimizationManagerImpl : public OptimizationManager
 {
 public:
-    uint32 CreateLoadout(const StatLoadout& /*loadout*/) override { return 0; }
+    uint32 CreateLoadout(StatLoadout const& /*loadout*/) override { return 0; }
     std::vector<StatLoadout> GetPlayerLoadouts(uint32 /*player_guid*/) override { return {}; }
     StatLoadout* GetActiveLoadout(uint32 /*player_guid*/) override { return nullptr; }
     bool SwitchLoadout(uint32 /*player_guid*/, uint32 /*loadout_id*/) override { return false; }
     void AutoOptimizeLoadout(uint32 /*loadout_id*/) override {}
-    float CalculateTotalStatBonus(const StatLoadout& /*loadout*/) override { return 0.0f; }
-    void SaveLoadout(const StatLoadout& /*loadout*/) override {}
+    float CalculateTotalStatBonus(StatLoadout const& /*loadout*/) override { return 0.0f; }
+    void SaveLoadout(StatLoadout const& /*loadout*/) override {}
 };
 
 // =====================================================================
@@ -493,7 +493,7 @@ public:
         return 0;
     }
 
-    void DefineAchievement(const UpgradeAchievement& achievement) override
+    void DefineAchievement(UpgradeAchievement const& achievement) override
     {
         achievements.push_back(achievement);
     }
@@ -683,7 +683,7 @@ public:
         return commandTable;
     }
 
-    static bool HandleRespecCommand(ChatHandler* handler, const char* args)
+    static bool HandleRespecCommand(ChatHandler* handler, char const* args)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -741,7 +741,7 @@ public:
         return true;
     }
 
-    static bool HandleAchievementsCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleAchievementsCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
@@ -778,7 +778,7 @@ public:
         return true;
     }
 
-    static bool HandleGuildStatsCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleGuildStatsCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)

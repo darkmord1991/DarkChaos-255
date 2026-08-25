@@ -550,7 +550,7 @@ public:
         uint32 teleporterEntryId = sender;
 
         Difficulty selectedDifficulty = DUNGEON_DIFFICULTY_NORMAL;
-        const char* difficultyLabel = "|cffffffffNormal|r";
+        char const* difficultyLabel = "|cffffffffNormal|r";
 
         switch (action)
         {

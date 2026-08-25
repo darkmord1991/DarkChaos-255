@@ -82,7 +82,7 @@ inline std::string GetClassNameFromId(uint8_t classId)
 // JSON Escaping Helper
 // =============================================================================
 
-inline std::string JsonEscape(const std::string& input)
+inline std::string JsonEscape(std::string const& input)
 {
     return DarkChaos::CrossSystem::Utils::EscapeJson(input);
 }
@@ -91,7 +91,7 @@ inline std::string JsonEscape(const std::string& input)
 // JSON Entry Builder
 // =============================================================================
 
-inline std::string BuildEntryJson(const Entry& e)
+inline std::string BuildEntryJson(Entry const& e)
 {
     std::string json = "{";
     json += "\"rank\":" + std::to_string(e.rank) + ",";
@@ -136,7 +136,7 @@ inline std::string BuildEntryJson(const Entry& e)
     return json;
 }
 
-inline std::string BuildEntriesJson(const std::vector<Entry>& entries)
+inline std::string BuildEntriesJson(std::vector<Entry> const& entries)
 {
     std::string json = "[";
     for (size_t i = 0; i < entries.size(); ++i)

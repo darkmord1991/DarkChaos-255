@@ -103,7 +103,7 @@ namespace DarkChaos
              */
             // Create an upgrade display; implemented in the .cpp to avoid depending on
             // the concrete ItemUpgradeState definition in this header.
-            std::string CreateUpgradeDisplay(const ItemUpgradeState& state, uint8 tier_id);
+            std::string CreateUpgradeDisplay(ItemUpgradeState const& state, uint8 tier_id);
 
             /**
              * Create upgrade cost display

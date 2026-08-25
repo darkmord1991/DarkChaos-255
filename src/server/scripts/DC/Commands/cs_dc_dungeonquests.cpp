@@ -69,13 +69,13 @@ namespace DC_DungeonQuests
             LOG_INFO("scripts.dc", msg);
     }
 
-    inline void SendCommandError(ChatHandler* handler, const std::string& msg)
+    inline void SendCommandError(ChatHandler* handler, std::string const& msg)
     {
         if (handler)
             handler->SendErrorMessage(msg.c_str());
     }
 
-    inline void SendCommandSuccess(ChatHandler* handler, const std::string& msg)
+    inline void SendCommandSuccess(ChatHandler* handler, std::string const& msg)
     {
         if (handler)
             handler->SendSysMessage(msg.c_str());
@@ -416,7 +416,7 @@ namespace DC_DungeonQuests
             {
                 if (player->GetQuestStatus(i) != QUEST_STATUS_NONE)
                 {
-                    const char* status = player->GetQuestStatus(i) == QUEST_STATUS_COMPLETE ? "COMPLETED" : "IN PROGRESS";
+                    char const* status = player->GetQuestStatus(i) == QUEST_STATUS_COMPLETE ? "COMPLETED" : "IN PROGRESS";
                     handler->PSendSysMessage("  [{}] - {}", i, status);
                 }
             }
@@ -425,7 +425,7 @@ namespace DC_DungeonQuests
             {
                 if (player->GetQuestStatus(i) != QUEST_STATUS_NONE)
                 {
-                    const char* status = player->GetQuestStatus(i) == QUEST_STATUS_COMPLETE ? "COMPLETED" : "IN PROGRESS";
+                    char const* status = player->GetQuestStatus(i) == QUEST_STATUS_COMPLETE ? "COMPLETED" : "IN PROGRESS";
                     handler->PSendSysMessage("  [{}] - {}", i, status);
                 }
             }

@@ -47,7 +47,7 @@ namespace DarkChaos
             // Season Management
             // =================================================================
 
-            bool CreateSeason(const SeasonDefinition& season) override
+            bool CreateSeason(SeasonDefinition const& season) override
             {
                 EnsureInitialized();
                 if (seasons_.find(season.season_id) != seasons_.end())
@@ -79,7 +79,7 @@ namespace DarkChaos
                 return true;
             }
 
-            bool UpdateSeason(uint32 season_id, const SeasonDefinition& season) override
+            bool UpdateSeason(uint32 season_id, SeasonDefinition const& season) override
             {
                 auto it = seasons_.find(season_id);
                 if (it == seasons_.end())
@@ -183,7 +183,7 @@ namespace DarkChaos
 
                     WorldDatabase.CommitTransaction(trans);
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("seasonal", "StartSeason: Transaction failed: {}", e.what());
                     return false;
@@ -261,7 +261,7 @@ namespace DarkChaos
                     // Commit the transaction - both updates happen atomically
                     WorldDatabase.CommitTransaction(trans);
                 }
-                catch (const std::exception& e)
+                catch (std::exception const& e)
                 {
                     LOG_ERROR("seasonal", "TransitionSeason: Transaction failed: {}", e.what());
                     // Transaction automatically rolls back on exception
@@ -286,7 +286,7 @@ namespace DarkChaos
             // System Registration
             // =================================================================
 
-            bool RegisterSystem(const SystemRegistration& system) override
+            bool RegisterSystem(SystemRegistration const& system) override
             {
                 // Do NOT call EnsureInitialized() here - this is called during script registration
                 // before the database is initialized
@@ -298,7 +298,7 @@ namespace DarkChaos
                 return true;
             }
 
-            bool UnregisterSystem(const std::string& system_name) override
+            bool UnregisterSystem(std::string const& system_name) override
             {
                 auto it = registered_systems_.find(system_name);
                 if (it == registered_systems_.end())
@@ -352,7 +352,7 @@ namespace DarkChaos
                 return &player_data_[player_guid];
             }
 
-            bool UpdatePlayerSeasonData(uint32 player_guid, const PlayerSeasonData& data) override
+            bool UpdatePlayerSeasonData(uint32 player_guid, PlayerSeasonData const& data) override
             {
                 std::ostringstream oss;
                 oss << "INSERT INTO dc_player_season_data (player_guid, current_season_id, "
@@ -448,7 +448,7 @@ namespace DarkChaos
                     sorted_systems.push_back(pair.second);
 
                 std::sort(sorted_systems.begin(), sorted_systems.end(),
-                         [](const SystemRegistration& a, const SystemRegistration& b) {
+                         [](SystemRegistration const& a, SystemRegistration const& b) {
                              return a.priority > b.priority;
                          });
 
@@ -461,7 +461,7 @@ namespace DarkChaos
                         {
                             system.on_season_event(season_id, event_type);
                         }
-                        catch (const std::exception& e)
+                        catch (std::exception const& e)
                         {
                             LOG_ERROR("seasonal", "Exception in system {} during season event: {}",
                                      system.system_name, e.what());

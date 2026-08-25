@@ -213,8 +213,8 @@ namespace CrossSystem
         void LoadConfiguration();
         void ReloadConfiguration();
 
-        const MultiplierConfig& GetMultiplierConfig() const { return multiplierConfig_; }
-        void SetMultiplierConfig(const MultiplierConfig& config) { multiplierConfig_ = config; }
+        MultiplierConfig const& GetMultiplierConfig() const { return multiplierConfig_; }
+        void SetMultiplierConfig(MultiplierConfig const& config) { multiplierConfig_ = config; }
 
         // Set global event multiplier (for special events)
         void SetEventMultiplier(float multiplier, uint32 durationSeconds = 0);
@@ -225,7 +225,7 @@ namespace CrossSystem
         // =====================================================================
 
         // Calculate all applicable multipliers for a reward context
-        RewardCalculation CalculateReward(const RewardContext& context, RewardType type, uint32 baseAmount);
+        RewardCalculation CalculateReward(RewardContext const& context, RewardType type, uint32 baseAmount);
 
         // Get multiplier for specific factors
         float GetPrestigeMultiplier(uint8 prestigeLevel) const;
@@ -239,34 +239,34 @@ namespace CrossSystem
         // =====================================================================
 
         // Main distribution entry point
-        DistributionResult Distribute(Player* player, const RewardContext& context,
-                                      const std::vector<RewardDefinition>& rewards);
+        DistributionResult Distribute(Player* player, RewardContext const& context,
+                                      std::vector<RewardDefinition> const& rewards);
 
         // Convenience methods for common reward types
-        DistributionResult DistributeTokens(Player* player, const RewardContext& context, uint32 baseAmount);
-        DistributionResult DistributeEssence(Player* player, const RewardContext& context, uint32 baseAmount);
-        DistributionResult DistributeBoth(Player* player, const RewardContext& context,
+        DistributionResult DistributeTokens(Player* player, RewardContext const& context, uint32 baseAmount);
+        DistributionResult DistributeEssence(Player* player, RewardContext const& context, uint32 baseAmount);
+        DistributionResult DistributeBoth(Player* player, RewardContext const& context,
                                          uint32 baseTokens, uint32 baseEssence);
 
         // Item rewards (no multipliers applied)
         bool DistributeItem(Player* player, uint32 itemId, uint32 count = 1,
-                           SystemId source = SystemId::None, const std::string& reason = "");
+                           SystemId source = SystemId::None, std::string const& reason = "");
 
         // Account-wide collectible unlock (no multipliers applied). Returns
         // true when the account owns it afterwards, including when it already
         // did.
         bool DistributeCollectible(Player* player, uint8 collectionType, uint32 entry,
-                                  SystemId source = SystemId::None, const std::string& reason = "");
+                                  SystemId source = SystemId::None, std::string const& reason = "");
 
         // =====================================================================
         // Preview (no actual distribution)
         // =====================================================================
 
-        std::vector<RewardCalculation> PreviewRewards(Player* player, const RewardContext& context,
-                                                      const std::vector<RewardDefinition>& rewards);
+        std::vector<RewardCalculation> PreviewRewards(Player* player, RewardContext const& context,
+                                                      std::vector<RewardDefinition> const& rewards);
 
-        std::string GetRewardPreviewText(Player* player, const RewardContext& context,
-                                         const std::vector<RewardDefinition>& rewards);
+        std::string GetRewardPreviewText(Player* player, RewardContext const& context,
+                                         std::vector<RewardDefinition> const& rewards);
 
         // =====================================================================
         // Weekly Caps
@@ -290,7 +290,7 @@ namespace CrossSystem
         void EnableTransactionLogging(bool enable) { logTransactions_ = enable; }
         bool IsTransactionLoggingEnabled() const { return logTransactions_; }
 
-        const std::vector<RewardTransaction>& GetRecentTransactions() const { return recentTransactions_; }
+        std::vector<RewardTransaction> const& GetRecentTransactions() const { return recentTransactions_; }
         std::vector<RewardTransaction> GetTransactionsForPlayer(ObjectGuid guid) const;
         void ClearTransactionHistory();
 
@@ -308,18 +308,18 @@ namespace CrossSystem
             std::unordered_map<SystemId, uint64> distributionsBySystem;
         };
 
-        const Statistics& GetStatistics() const { return stats_; }
+        Statistics const& GetStatistics() const { return stats_; }
         void ResetStatistics();
 
     private:
         RewardDistributor() = default;
 
         // Internal distribution
-        bool DoDistributeTokens(Player* player, uint32 amount, const RewardContext& context);
-        bool DoDistributeEssence(Player* player, uint32 amount, const RewardContext& context);
+        bool DoDistributeTokens(Player* player, uint32 amount, RewardContext const& context);
+        bool DoDistributeEssence(Player* player, uint32 amount, RewardContext const& context);
 
         // Logging
-        void LogTransaction(const RewardTransaction& transaction);
+        void LogTransaction(RewardTransaction const& transaction);
 
         // Event multiplier read without acquiring mutex_ (caller must already hold it,
         // or accept a lock-free read as the lock-free multiplier helpers do). Used by

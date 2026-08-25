@@ -315,7 +315,7 @@ bool MythicPlusRunManager::IsRecognizedBoss(uint32 mapId, uint32 bossEntry) cons
     return itr->second.find(bossEntry) != itr->second.end();
 }
 
-bool MythicPlusRunManager::IsBossCreature(const Creature* creature) const
+bool MythicPlusRunManager::IsBossCreature(Creature const* creature) const
 {
     if (!creature)
         return false;
@@ -943,7 +943,7 @@ void MythicPlusRunManager::ResetWeeklyVaultProgress(Player* player)
     ChatHandler(player->GetSession()).SendSysMessage("Your weekly vault progress was reset.");
 }
 
-uint64 MythicPlusRunManager::MakeInstanceKey(const Map* map) const
+uint64 MythicPlusRunManager::MakeInstanceKey(Map const* map) const
 {
     if (!map)
         return 0;
@@ -1382,7 +1382,7 @@ bool MythicPlusRunManager::IsKeystoneRequirementEnabled() const
     return sConfigMgr->GetOption<bool>("MythicPlus.Keystone.Enabled", false);
 }
 
-void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool success, uint32 bossEntry)
+void MythicPlusRunManager::RecordRunResult(InstanceState const* state, bool success, uint32 bossEntry)
 {
     if (!state)
         return;
@@ -1739,7 +1739,7 @@ std::vector<uint32> MythicPlusRunManager::GetWeeklyAffixes(uint32 seasonId) cons
     return affixes;
 }
 
-void MythicPlusRunManager::ActivateAffixes(Map* map, const std::vector<uint32>& affixes, uint8 keystoneLevel)
+void MythicPlusRunManager::ActivateAffixes(Map* map, std::vector<uint32> const& affixes, uint8 keystoneLevel)
 {
     if (!map || affixes.empty())
         return;
@@ -1797,7 +1797,7 @@ void MythicPlusRunManager::ActivateAffixes(Map* map, const std::vector<uint32>& 
     }
 }
 
-void MythicPlusRunManager::AnnounceAffixes(Player* player, const std::vector<uint32>& affixes)
+void MythicPlusRunManager::AnnounceAffixes(Player* player, std::vector<uint32> const& affixes)
 {
     if (!player || affixes.empty())
         return;
@@ -1874,7 +1874,7 @@ bool MythicPlusRunManager::ResolveWeeklyAffixInfo(uint32 scheduledAffixId, Weekl
     return true;
 }
 
-std::string MythicPlusRunManager::SerializeParticipants(const InstanceState* state) const
+std::string MythicPlusRunManager::SerializeParticipants(InstanceState const* state) const
 {
     if (!state)
         return "[]";
@@ -3484,7 +3484,7 @@ uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
     }
 }
 
-bool MythicPlusRunManager::IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const
+bool MythicPlusRunManager::IsFinalBossEncounter(InstanceState const* state, Creature const* creature) const
 {
     if (!state || !creature)
         return false;

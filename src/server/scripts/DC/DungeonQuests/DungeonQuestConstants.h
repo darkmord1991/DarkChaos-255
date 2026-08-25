@@ -118,28 +118,28 @@ constexpr float MULTIPLIER_MYTHIC_PLUS = 3.0f;
 // =====================================================================
 
 // World Database Tables
-constexpr const char* TABLE_DIFFICULTY_CONFIG           = "dc_difficulty_config";
-constexpr const char* TABLE_QUEST_DIFFICULTY_MAPPING    = "dc_quest_difficulty_mapping";
-constexpr const char* TABLE_DUNGEON_QUEST_MAPPING       = "dc_dungeon_quest_mapping";
-constexpr const char* TABLE_DAILY_QUEST_TOKEN_REWARDS   = "dc_daily_quest_token_rewards";
-constexpr const char* TABLE_WEEKLY_QUEST_TOKEN_REWARDS  = "dc_weekly_quest_token_rewards";
-constexpr const char* TABLE_QUEST_REWARD_TOKENS         = "dc_quest_reward_tokens";
+constexpr char const* TABLE_DIFFICULTY_CONFIG           = "dc_difficulty_config";
+constexpr char const* TABLE_QUEST_DIFFICULTY_MAPPING    = "dc_quest_difficulty_mapping";
+constexpr char const* TABLE_DUNGEON_QUEST_MAPPING       = "dc_dungeon_quest_mapping";
+constexpr char const* TABLE_DAILY_QUEST_TOKEN_REWARDS   = "dc_daily_quest_token_rewards";
+constexpr char const* TABLE_WEEKLY_QUEST_TOKEN_REWARDS  = "dc_weekly_quest_token_rewards";
+constexpr char const* TABLE_QUEST_REWARD_TOKENS         = "dc_quest_reward_tokens";
 
 // Character Database Tables
-constexpr const char* TABLE_CHARACTER_STATISTICS            = "dc_character_statistics";
-constexpr const char* TABLE_CHARACTER_DIFFICULTY_COMPLETIONS = "dc_character_difficulty_completions";
-constexpr const char* TABLE_CHARACTER_DIFFICULTY_STREAKS    = "dc_character_difficulty_streaks";
-constexpr const char* TABLE_CHARACTER_DUNGEON_PROGRESS      = "dc_character_dungeon_progress";
+constexpr char const* TABLE_CHARACTER_STATISTICS            = "dc_character_statistics";
+constexpr char const* TABLE_CHARACTER_DIFFICULTY_COMPLETIONS = "dc_character_difficulty_completions";
+constexpr char const* TABLE_CHARACTER_DIFFICULTY_STREAKS    = "dc_character_difficulty_streaks";
+constexpr char const* TABLE_CHARACTER_DUNGEON_PROGRESS      = "dc_character_dungeon_progress";
 
 // =====================================================================
 // CONFIGURATION KEYS
 // =====================================================================
 
 // Config.worldserver keys
-constexpr const char* CONFIG_DUNGEON_QUEST_ENABLE       = "DungeonQuest.Enable";
-constexpr const char* CONFIG_FOLLOWER_ENABLE            = "DungeonQuest.FollowerEnable";
-constexpr const char* CONFIG_DEBUG_ENABLE               = "DungeonQuest.Debug.Enable";
-constexpr const char* CONFIG_TOKEN_ITEM_ID              = "DungeonQuest.TokenItemId";
+constexpr char const* CONFIG_DUNGEON_QUEST_ENABLE       = "DungeonQuest.Enable";
+constexpr char const* CONFIG_FOLLOWER_ENABLE            = "DungeonQuest.FollowerEnable";
+constexpr char const* CONFIG_DEBUG_ENABLE               = "DungeonQuest.Debug.Enable";
+constexpr char const* CONFIG_TOKEN_ITEM_ID              = "DungeonQuest.TokenItemId";
 
 // =====================================================================
 // GAMEPLAY CONSTANTS
@@ -203,7 +203,7 @@ inline bool IsDungeonAchievement(uint32 achievementId)
 }
 
 // Quest Type Name (for logging/display)
-inline const char* GetQuestTypeName(uint32 questId)
+inline char const* GetQuestTypeName(uint32 questId)
 {
     if (IsDailyQuest(questId))
         return "Daily Quest";
@@ -216,7 +216,7 @@ inline const char* GetQuestTypeName(uint32 questId)
 }
 
 // Difficulty Name (for logging/display)
-inline const char* GetDifficultyName(QuestDifficulty difficulty)
+inline char const* GetDifficultyName(QuestDifficulty difficulty)
 {
     switch (difficulty)
     {
@@ -229,7 +229,7 @@ inline const char* GetDifficultyName(QuestDifficulty difficulty)
 }
 
 // Get color code for difficulty (for chat messages)
-inline const char* GetDifficultyColor(QuestDifficulty difficulty)
+inline char const* GetDifficultyColor(QuestDifficulty difficulty)
 {
     switch (difficulty)
     {

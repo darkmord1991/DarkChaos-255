@@ -48,7 +48,7 @@ namespace DCAddon
 {
 namespace World
 {
-    constexpr const char* MODULE_WORLD = Module::WORLD;
+    constexpr char const* MODULE_WORLD = Module::WORLD;
     constexpr int32 WORLD_SCHEMA_VERSION = 1;
     constexpr uint64 WORLD_CONTENT_CACHE_TTL_MS = 1000;
 
@@ -256,12 +256,12 @@ namespace World
     }
 
     // Handler: Client requests world content
-    static void HandleGetContent(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetContent(Player* player, ParsedMessage const& /*msg*/)
     {
         SendWorldContentSnapshot(player);
     }
 
-    static void HandleResolveSpawn(Player* player, const ParsedMessage& msg)
+    static void HandleResolveSpawn(Player* player, ParsedMessage const& msg)
     {
         using namespace DCAddon;
 

@@ -36,7 +36,7 @@
 namespace DCDuelAddon
 {
     // Module identifier - must match client-side and DCAddonNamespace.h
-    constexpr const char* MODULE = "DUEL";
+    constexpr char const* MODULE = "DUEL";
 
     // Opcodes - match DCAddonNamespace.h Opcode::Duel
     namespace Opcode
@@ -57,7 +57,7 @@ namespace DCDuelAddon
     // Configuration
     namespace Config
     {
-        constexpr const char* CANONICAL_ENABLED = "DC.AddonProtocol.Duels.Enable";
+        constexpr char const* CANONICAL_ENABLED = "DC.AddonProtocol.Duels.Enable";
         // Note: LeaderboardLimit is currently unused but reserved for future config
         // constexpr const char* LEADERBOARD_LIMIT = "DCDuelAddon.LeaderboardLimit";
     }
@@ -175,7 +175,7 @@ namespace DCDuelAddon
      *   "sortBy": string
      * }
      */
-    void SendLeaderboard(Player* player, const std::string& sortBy, uint32 page, uint32 limit)
+    void SendLeaderboard(Player* player, std::string const& sortBy, uint32 page, uint32 limit)
     {
         if (!player || !player->GetSession())
             return;
@@ -343,7 +343,7 @@ namespace DCDuelAddon
     // Message Handlers
     // =======================================================================
 
-    void HandleGetStats(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetStats(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -364,7 +364,7 @@ namespace DCDuelAddon
         SendPlayerStats(player, targetGuid);
     }
 
-    void HandleGetLeaderboard(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetLeaderboard(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -387,7 +387,7 @@ namespace DCDuelAddon
         SendLeaderboard(player, sortBy, page, limit);
     }
 
-    void HandleSpectateDuel(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSpectateDuel(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
