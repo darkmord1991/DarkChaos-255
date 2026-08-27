@@ -83,6 +83,11 @@ enum Races
     // DC: Goblin(9) and Worgen(12) are playable (Worgoblin port). Worgen
     // occupies the stock FelOrc display-stub slot (all FelOrc NPC displays
     // are baked and unaffected).
+    // DC: Pandaren is playable as TWO ChrRaces rows sharing the same model/art
+    // (Custom/Custom feature SQLs/worlddb/Pandaren/00_SCOPE.md). RaceMgr picks
+    // them up from ChrRaces.dbc; the enum entries exist for typed use.
+    RACE_PANDAREN_ALLIANCE  = 22, // TITLE Pandaren
+    RACE_PANDAREN_HORDE     = 23, // TITLE Pandaren
     //RACE_NAGA           = 13,
     //RACE_BROKEN         = 14,
     //RACE_SKELETON       = 15,

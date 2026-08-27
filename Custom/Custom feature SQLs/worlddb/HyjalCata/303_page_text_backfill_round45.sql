@@ -1,0 +1,126 @@
+-- ---------------------------------------------------------------------------
+-- 303  Round 45 -- page_text backfill, from the map 751 text audit
+-- ---------------------------------------------------------------------------
+-- Answering "for map 751 were all npc/creature texts ported?". Short version:
+-- yes, with ONE exception, and it is in page_text rather than anywhere obvious.
+--
+-- ---------------------------------------------------------------------------
+-- What the audit covered, and what it found
+-- ---------------------------------------------------------------------------
+-- 1,487 distinct creature entries are spawned on map 751. Their entry bands
+-- resolve by name against the sources as:
+--     cata +4,100,000   1,121 entries   <- the main band
+--     cata +3,600,000     354 entries
+--     unresolved / stock   12 entries
+-- (Worth noting: the +4,100,000 band is the dominant one for 751 creatures.)
+--
+--   creature_text     116 entries have text on both sides, 113 of them an EXACT
+--                     row-count match, and **0 entries where the source has text
+--                     and we have none**. 22 more carry text we authored or took
+--                     from another source. Only 3 differ, all benign (below).
+--   gossip chain      274 npc_text rows reachable from 751 gossip menus; every
+--                     gossip_menu_id resolves to a gossip_menu row, every TextID
+--                     resolves to an npc_text row, **0 placeholders** ("Missing
+--                     npc_text" / "Need TXT YTDB", the trap from 296_) and 0 rows
+--                     blank in both text0_0 and text0_1.
+--   broadcast_text    0 dangling BroadcastTextId.
+--   quest text        535 quests are given by 751 NPCs; 0 have an empty LogTitle
+--                     and 0 are blank in all three text fields.
+--   page_text         **1 dangling reference** -- the subject of this file.
+--
+-- ---------------------------------------------------------------------------
+-- The one real gap: page_text 3743
+-- ---------------------------------------------------------------------------
+-- gameobject_template 4807257 "Tombstone" (type 9 PAGE, 1 spawn on map 751)
+-- points at page 3743, which does not exist here. cata_world does not have it
+-- either -- but nelt_world does, and it is the generic epitaph "Here Lies $N",
+-- so the tombstone reads correctly once the row lands. NextPageID 0, no chain.
+--
+-- Taken from nelt because it is the only source that has it. We are missing
+-- 3740-3744 entirely in that range (3745-3749 are present), so this is a plain
+-- import gap rather than a renumbering.
+--
+-- ---------------------------------------------------------------------------
+-- Same defect one map over, fixed in the same pass
+-- ---------------------------------------------------------------------------
+-- Widening the check DB-wide found 17 dangling page_text references. Most do not
+-- matter -- 10 belong to gameobjects with **0 spawns**, and 5 more are Blizzard's
+-- own "TEST MARBLE / PARCHMENT / STONE / SILVER / BRONZE" props (17148-17152),
+-- which ship dangling in stock and are not player content.
+--
+-- That leaves four that a player can actually click, and nelt covers two of
+-- them: 3743 above, and the **3616 -> 3617 -> 3618 -> 3619** chain behind a map
+-- 750 gameobject -- a four-page goblin journal that degrades from cheerful to
+-- Twilight-cultist raving. All four pages are added here; the chain terminates
+-- correctly at 3619 (NextPageID 0) and none of the four existed on our side, so
+-- there is nothing to overwrite.
+--
+-- STILL OPEN, NO SOURCE: page 5121 "Blood Ledger" (GO 4100267) and page 5260
+-- "Caution!" (GO 4100249), both 1 spawn, both in the Legion Dalaran 4.1M band.
+-- **Neither cata_world nor nelt_world has either row**, so they cannot be
+-- imported -- they would have to be authored or pulled from a retail extract.
+-- Flagged rather than invented, same call as the Angler Tideborn greeting.
+--
+-- ---------------------------------------------------------------------------
+-- page_text
+-- ---------------------------------------------------------------------------
+DELETE FROM acore_world.`page_text` WHERE `ID` IN (3616,3617,3618,3619,3743);
+INSERT INTO acore_world.`page_text` (`ID`, `Text`, `NextPageID`, `VerifiedBuild`) VALUES
+(3616, 'We found something amazing! An old busted-up machine thing. One of the smartypants antique collectors that survived the crash said it looked like it might be a Titan thingy.$B$BWhatever it is, I bet it''s valuable. The guys that found it said their heads hurt after digging it up and it''s leaking some kinda glowy light but WHATEVER!', 3617, NULL),  -- map 750 goblin journal 1/4
+(3617, 'The guys who found that artifact are acting a little FUNNY! Nothing too bad for a goblin mind you. And they''ve only stabbed one or TWO people.$B$BI guess it''s not that bad! Everyone around here is feeling a LITTLE funny anyway ha ha ha.$BThat brute they keep with them sure TALKS a lot, though.', 3618, NULL),  -- map 750 goblin journal 2/4
+(3618, 'THE others let me JOIN them finally they showed me the ARTIFACT for a really long time til I felt the tingles they say MEATFACE knows everything he is the SMARTEST I hope with his help we can LIBERATE this lost beach from the OTHER EVIL GOBLINS that came in their FLYING MACHINES to KILL US they lied they said WE''RE FROM GADGET-ZAN TO SAVE YOU but we were not fooled we took their stuff ha ha ha', 3619, NULL),  -- map 750 goblin journal 3/4
+(3619, 'DELICIOUS JOURNAL I MUST EAT IT$B$B<The rest of the pages are missing>', 0, NULL),  -- map 750 goblin journal 4/4
+(3743, 'Here Lies $N', 0, NULL);  -- map 751 Tombstone epitaph
+
+-- ---------------------------------------------------------------------------
+-- Three creature_text differences, all deliberately left alone
+-- ---------------------------------------------------------------------------
+-- * 3610926 Pamela Redpath (4 rows in cata, 6 here) and 3617238 Anchorite
+--   Truuen (3 vs 8) -- we have MORE. Both are classic Eastern Plaguelands NPCs
+--   whose 751 clones were seeded from stock AC, which carries fuller text than
+--   the cata export. Nothing missing.
+-- * 4107806 Homing Robot OOX-09/HL -- 6 rows in cata, 5 here. The cata row we
+--   lack is group 3, "No one challenges the Wastewander nomads", which is
+--   Tanaris flavour on a Hillsbrad robot and looks like a cata data oddity; our
+--   groups are compacted 0-3 with cata's group 4 sitting at our group 3.
+--   IMPORTANT: our numbering is SELF-CONSISTENT -- no SmartAI row on this
+--   creature references a group we do not have -- so renumbering to match cata
+--   would break working lines to gain one dubious one. Left as is.
+--
+-- ---------------------------------------------------------------------------
+-- Two silent scripts on 751 -- a SPAWN gap, not a text gap
+-- ---------------------------------------------------------------------------
+-- Worth recording because a naive check reports these as missing text and they
+-- are not:
+--     3606547 Suffering Victim              TALK group 1
+--     3617253 Defile Uther's Tomb Trigger   TALK groups 4,5,6,7
+-- Neither creature has creature_text of its own -- and should not. Both use a
+-- creature-target (SMART_TARGET_CLOSEST_CREATURE 19 / CREATURE_DISTANCE 9), so
+-- the line is spoken by the TARGET, and SmartScriptMgr.cpp:2136-2139 explicitly
+-- skips text validation for exactly those target types. The text lives on the
+-- targets -- creature 4306 (7 rows) and 17233 (8 rows) -- and is present.
+-- The stock entries 6547 / 17253 are built the same way, so the import is
+-- faithful.
+--
+-- The real problem is that target_param1 still names the STOCK entries, and
+-- **neither 4306/17233 nor their 3604306/3617233 clones is spawned on map 751**.
+-- So both vignettes are inert there: the trigger fires and finds nobody to
+-- speak. That is a spawn/content gap in two quest set-ups, not a text one, and
+-- it is silent -- it produces no boot warning at all. Left for a content pass
+-- rather than fixed blind here, since it needs the right NPC placed at Uther's
+-- Tomb and at the Suffering Victim, not a text row.
+--
+-- ---------------------------------------------------------------------------
+-- Verify after apply
+-- ---------------------------------------------------------------------------
+--  1  SELECT COUNT(*) FROM page_text WHERE ID IN (3616,3617,3618,3619,3743);
+--                                                                           -> 5
+--  2  Dangling refs from SPAWNED page gameobjects should drop to 7 (the 5 TEST
+--     props + 5121 + 5260):
+--     SELECT COUNT(*) FROM gameobject_template gt WHERE gt.type=9 AND gt.Data0>0
+--       AND EXISTS (SELECT 1 FROM gameobject g WHERE g.id=gt.entry)
+--       AND NOT EXISTS (SELECT 1 FROM page_text pt WHERE pt.ID=gt.Data0);
+--  3  In game: the Tombstone on 751 should read "Here Lies <yourname>", and the
+--     map 750 journal should turn all four pages.
+--  4  No boot-log change -- page_text gaps are not validated at load. This one
+--     was only visible by auditing.

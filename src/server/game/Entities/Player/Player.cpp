@@ -107,7 +107,7 @@
 #include "GridNotifiersImpl.h"
 
 // forward declaration for the helper added in DC_AddonHelpers.cpp
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, char const* context = "XP");
 
 enum CharacterFlags
 {
@@ -827,6 +827,10 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
     // players from being stuck infinitely falling below the map
     if (type != DAMAGE_FALL_TO_VOID && IsImmuneToEnvironmentalDamage())
         return 0;
+
+    // DC: Pandaren racial - Bouncy (107076): you take half falling damage.
+    if (type == DAMAGE_FALL && HasAura(107076))
+        damage /= 2;
 
     // Absorb, resist some environmental damage type
     uint32 absorb = 0;
@@ -9334,7 +9338,9 @@ uint32 Player::GetXPRestBonus(uint32 xp)
     if (rested_bonus > xp)                                   // max rested_bonus == xp or (r+x) = 200% xp
         rested_bonus = xp;
 
-    SetRestBonus(GetRestBonus() - rested_bonus);
+    // DC: Pandaren racial - Inner Peace (107074): the rested bonus lasts twice as
+    // long (the pool drains at half rate while still granting the full bonus).
+    SetRestBonus(GetRestBonus() - (HasAura(107074) ? rested_bonus / 2.0f : float(rested_bonus)));
 
     LOG_DEBUG("entities.player", "Player gain {} xp (+ {} Rested Bonus). Rested points={}", xp + rested_bonus, rested_bonus, GetRestBonus());
     return rested_bonus;
