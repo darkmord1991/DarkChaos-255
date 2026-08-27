@@ -146,6 +146,9 @@ local EYE_HEIGHT = {
 	-- camera targets (tz 2.125 male / 1.999 female); untrimmed pending in-client review.
 	[22] = { [0] = 2.10, [1] = 1.95 },
 	[23] = { [0] = 2.10, [1] = 1.95 },
+	[24] = { [0] = 1.05, [1] = 1.00 },  -- Vulpera: goblin-sized
+	[25] = { [0] = 2.05, [1] = 1.90 },  -- Zandalari Troll
+	[26] = { [0] = 2.05, [1] = 1.85 },  -- Kul Tiran
 }
 
 -- Per-race face-framing trims on top of the analytic camera math, from in-client review
@@ -178,6 +181,9 @@ local FACE_TUNE = {
 local BODY_TUNE = {
 	[22] = { back = 2.4 },   -- r3: 1.2 -> 1.6 was still too tight, bigger step out
 	[23] = { back = 2.4 },
+	-- First guesses pending in-client review; bulky frames crop like pandaren did.
+	[25] = { back = 0.8 },
+	[26] = { back = 1.4 },
 }
 
 local AXIS_SKIN = 1

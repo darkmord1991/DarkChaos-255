@@ -1,5 +1,5 @@
 CHARACTER_FACING_INCREMENT = 2;
-MAX_RACES = 14;
+MAX_RACES = 17;
 MAX_CLASSES_PER_RACE = 10;
 NUM_CHAR_CUSTOMIZATIONS = 5;
 MIN_CHAR_NAME_LENGTH = 2;
@@ -23,40 +23,50 @@ FRAMES_TO_BACKDROP_COLOR = {
 	"CharacterCreateNameEdit",
 };
 RACE_ICON_TCOORDS = {
-	["HUMAN_MALE"]		= {0, 0.125, 0, 0.25},
-	["DWARF_MALE"]		= {0.125, 0.25, 0, 0.25},
-	["GNOME_MALE"]		= {0.25, 0.375, 0, 0.25},
-	["NIGHTELF_MALE"]	= {0.375, 0.5, 0, 0.25},
+	["HUMAN_MALE"]		= {0, 0.0625, 0, 0.25},
+	["DWARF_MALE"]		= {0.0625, 0.125, 0, 0.25},
+	["GNOME_MALE"]		= {0.125, 0.1875, 0, 0.25},
+	["NIGHTELF_MALE"]	= {0.1875, 0.25, 0, 0.25},
 	
-	["TAUREN_MALE"]		= {0, 0.125, 0.25, 0.5},
-	["SCOURGE_MALE"]	= {0.125, 0.25, 0.25, 0.5},
-	["TROLL_MALE"]		= {0.25, 0.375, 0.25, 0.5},
-	["ORC_MALE"]		= {0.375, 0.5, 0.25, 0.5},
+	["TAUREN_MALE"]		= {0, 0.0625, 0.25, 0.5},
+	["SCOURGE_MALE"]	= {0.0625, 0.125, 0.25, 0.5},
+	["TROLL_MALE"]		= {0.125, 0.1875, 0.25, 0.5},
+	["ORC_MALE"]		= {0.1875, 0.25, 0.25, 0.5},
 
-	["HUMAN_FEMALE"]	= {0, 0.125, 0.5, 0.75},  
-	["DWARF_FEMALE"]	= {0.125, 0.25, 0.5, 0.75},
-	["GNOME_FEMALE"]	= {0.25, 0.375, 0.5, 0.75},
-	["NIGHTELF_FEMALE"]	= {0.375, 0.5, 0.5, 0.75},
+	["HUMAN_FEMALE"]	= {0, 0.0625, 0.5, 0.75},  
+	["DWARF_FEMALE"]	= {0.0625, 0.125, 0.5, 0.75},
+	["GNOME_FEMALE"]	= {0.125, 0.1875, 0.5, 0.75},
+	["NIGHTELF_FEMALE"]	= {0.1875, 0.25, 0.5, 0.75},
 	
-	["TAUREN_FEMALE"]	= {0, 0.125, 0.75, 1.0},   
-	["SCOURGE_FEMALE"]	= {0.125, 0.25, 0.75, 1.0}, 
-	["TROLL_FEMALE"]	= {0.25, 0.375, 0.75, 1.0}, 
-	["ORC_FEMALE"]		= {0.375, 0.5, 0.75, 1.0}, 
+	["TAUREN_FEMALE"]	= {0, 0.0625, 0.75, 1.0},   
+	["SCOURGE_FEMALE"]	= {0.0625, 0.125, 0.75, 1.0}, 
+	["TROLL_FEMALE"]	= {0.125, 0.1875, 0.75, 1.0}, 
+	["ORC_FEMALE"]		= {0.1875, 0.25, 0.75, 1.0}, 
 
-	["BLOODELF_MALE"]	= {0.5, 0.625, 0.25, 0.5},
-	["BLOODELF_FEMALE"]	= {0.5, 0.625, 0.75, 1.0}, 
+	["BLOODELF_MALE"]	= {0.25, 0.3125, 0.25, 0.5},
+	["BLOODELF_FEMALE"]	= {0.25, 0.3125, 0.75, 1.0}, 
 
-	["DRAENEI_MALE"]	= {0.5, 0.625, 0, 0.25},
-	["DRAENEI_FEMALE"]	= {0.5, 0.625, 0.5, 0.75},
+	["DRAENEI_MALE"]	= {0.25, 0.3125, 0, 0.25},
+	["DRAENEI_FEMALE"]	= {0.25, 0.3125, 0.5, 0.75},
 
-	["GOBLIN_MALE"]     	= {0.625, 0.750, 0.25, 0.5},
-	["GOBLIN_FEMALE"]   	= {0.625, 0.750, 0.75, 1.0},
+	["GOBLIN_MALE"]     	= {0.3125, 0.375, 0.25, 0.5},
+	["GOBLIN_FEMALE"]   	= {0.3125, 0.375, 0.75, 1.0},
 
-	["WORGEN_MALE"]     	= {0.625, 0.750, 0, 0.25},
-	["WORGEN_FEMALE"]   	= {0.625, 0.750, 0.5, 0.75},
+	["WORGEN_MALE"]     	= {0.3125, 0.375, 0, 0.25},
+	["WORGEN_FEMALE"]   	= {0.3125, 0.375, 0.5, 0.75},
 
-	["PANDAREN_MALE"]   	= {0.750, 0.875, 0, 0.25},
-	["PANDAREN_FEMALE"] 	= {0.750, 0.875, 0.5, 0.75},
+	["PANDAREN_MALE"]   	= {0.375, 0.4375, 0, 0.25},
+	["PANDAREN_FEMALE"] 	= {0.375, 0.4375, 0.5, 0.75},
+
+	-- Atlas widened to 1024x256 (16 columns) for the allied races; every U above is
+	-- therefore HALVED from the old 512-wide coords. col7 = KulTiran(A)/Vulpera(H),
+	-- col8 = Zandalari(H). Rows: 0 A-male, 1 H-male, 2 A-female, 3 H-female.
+	["KULTIRAN_MALE"]		= {0.4375, 0.5, 0, 0.25},
+	["KULTIRAN_FEMALE"]		= {0.4375, 0.5, 0.5, 0.75},
+	["VULPERA_MALE"]		= {0.4375, 0.5, 0.25, 0.5},
+	["VULPERA_FEMALE"]		= {0.4375, 0.5, 0.75, 1.0},
+	["ZANDALARITROLL_MALE"]	= {0.5, 0.5625, 0.25, 0.5},
+	["ZANDALARITROLL_FEMALE"]	= {0.5, 0.5625, 0.75, 1.0},
 };
 CLASS_ICON_TCOORDS = {
 	["WARRIOR"]	= {0, 0.25, 0, 0.25},

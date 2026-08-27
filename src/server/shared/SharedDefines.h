@@ -88,6 +88,11 @@ enum Races
     // them up from ChrRaces.dbc; the enum entries exist for typed use.
     RACE_PANDAREN_ALLIANCE  = 22, // TITLE Pandaren
     RACE_PANDAREN_HORDE     = 23, // TITLE Pandaren
+    // DC: allied races ported from the same Ascension donor set
+    // (Custom/Custom feature SQLs/worlddb/AlliedRaces/00_README.md).
+    RACE_VULPERA            = 24, // TITLE Vulpera
+    RACE_ZANDALARI_TROLL    = 25, // TITLE Zandalari Troll
+    RACE_KUL_TIRAN          = 26, // TITLE Kul Tiran
     //RACE_NAGA           = 13,
     //RACE_BROKEN         = 14,
     //RACE_SKELETON       = 15,

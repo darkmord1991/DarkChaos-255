@@ -57,6 +57,18 @@ GlueAmbienceTracks["WORGEN"] = "GlueScreenHuman";
 -- the result straight to PlayGlueAmbience, which errors on nil ("Usage: PlayGlueAmbience..").
 -- That path bypasses the substitution in SetBackgroundModel, so it needs its own entry.
 GlueAmbienceTracks["PANDAREN"] = "GlueScreenTauren";
+GlueAmbienceTracks["VULPERA"] = "GlueScreenOrcTroll";
+GlueAmbienceTracks["ZANDALARITROLL"] = "GlueScreenOrcTroll";
+GlueAmbienceTracks["KULTIRAN"] = "GlueScreenHuman";
+
+-- Custom races have no UI_<Race>.m2 glue scene of their own; borrow a thematically
+-- close stock one. Keyed by the UPPERCASE ChrRaces ClientFileString.
+DC_GLUE_SCENE_SUBSTITUTE = {
+	["PANDAREN"] = "Tauren",
+	["VULPERA"] = "Orc",
+	["ZANDALARITROLL"] = "Orc",
+	["KULTIRAN"] = "Human",
+};
 
 -- RaceLights[] duplicates the 3.2.2 color values in the models. Henceforth, the models no longer contain directional lights
 RaceLights = {
@@ -752,10 +764,12 @@ end
 function SetBackgroundModel(model, name)
 	-- DC: races without a 3.3.5 glue scene fall back to an existing one. A missing
 	-- UI_<Race>.m2 blanks the whole 3D scene (background AND the character model).
-	-- Pandaren -> the daylight Mulgore (Tauren) scene until a MoP UI_Pandaren downport
-	-- ships (the NightElf scene lit the face-zoom far too dark).
-	if ( strupper(name) == "PANDAREN" ) then
-		name = "Tauren";
+	-- Only these scenes exist here: Human, Orc, Dwarf, NightElf, Scourge, Tauren,
+	-- BloodElf, Draenei (locale-enGB) plus Goblin and Worgen (patch-5). There is NO
+	-- Troll or Gnome scene -- trolls share the orc one, hence its GlueScreenOrcTroll
+	-- ambience. Substitutes live in DC_GLUE_SCENE_SUBSTITUTE beside that table.
+	if ( DC_GLUE_SCENE_SUBSTITUTE[strupper(name)] ) then
+		name = DC_GLUE_SCENE_SUBSTITUTE[strupper(name)];
 	end
     local nameupper = strupper(name);
     local path = "Interface\\Glues\\Models\\UI_"..name.."\\UI_"..name..".m2";
