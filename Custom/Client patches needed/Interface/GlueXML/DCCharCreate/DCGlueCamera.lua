@@ -142,6 +142,10 @@ local EYE_HEIGHT = {
 	[10] = { [0] = 1.80, [1] = 1.65 },  -- Blood Elf
 	[11] = { [0] = 2.20, [1] = 2.00 },  -- Draenei
 	[12] = { [0] = 2.10, [1] = 1.90 },  -- Worgen
+	-- Pandaren (22 Alliance / 23 Horde, same model): from the MoP-Classic create-screen
+	-- camera targets (tz 2.125 male / 1.999 female); untrimmed pending in-client review.
+	[22] = { [0] = 2.10, [1] = 1.95 },
+	[23] = { [0] = 2.10, [1] = 1.95 },
 }
 
 -- Per-race face-framing trims on top of the analytic camera math, from in-client review
@@ -163,8 +167,17 @@ local FACE_TUNE = {
 	[11] = { df = -1.20, dz = 0.0 },    -- Draenei: distance settled in r3; +0.90 raise showed
 	                                    -- only the torso -- character back down (r4)
 	[12] = { dz = 0.25 },               -- Worgen: up a bit (round 3)
+	[22] = { dz = -0.40 },              -- Pandaren: face sat above the frame on the tauren
+	[23] = { dz = -0.40 },              -- scene - character down (round 1, untrimmed guess)
 	-- Scourge: pure analytic is the keeper.
 	-- (The undead brightening during face zoom is scene lighting near the camera, not framing.)
+}
+
+-- Per-race body-framing back-off in character units: the stage-1 dolly only ever moves IN,
+-- but some models crop at a scene's baseline camera (pandaren bulk on the tauren scene).
+local BODY_TUNE = {
+	[22] = { back = 2.4 },   -- r3: 1.2 -> 1.6 was still too tight, bigger step out
+	[23] = { back = 2.4 },
 }
 
 local AXIS_SKIN = 1
@@ -353,11 +366,13 @@ local function BodyArgs(state)
 	-- falls off hard with height. Clamped for the small races so gnomes do not rocket in.
 	local scale = DEFAULT_EYE / EyeHeight()
 	scale = math.min(scale * scale * scale, 1.6)
+	local race = DCCharCustomize and DCCharCustomize.RaceSex and select(1, DCCharCustomize.RaceSex())
+	local back = (race and BODY_TUNE[race] and BODY_TUNE[race].back) or 0
 	local cam = state and ScreenCamera(state)
 	if cam then
-		return { cam.dh * cfg.bodyFraction * scale, 0, 0 }
+		return { cam.dh * cfg.bodyFraction * scale - back, 0, 0 }
 	end
-	return Compose(cfg.bodyForward * scale, 0, 0)
+	return Compose(cfg.bodyForward * scale - back, 0, 0)
 end
 
 --- The face framing: v18, verbatim and still the only thing that decides WHERE the character

@@ -329,8 +329,14 @@ struct PlayerInfo
     float positionY{0.0f};
     float positionZ{0.0f};
     float orientation{0.0f};
-    uint16 displayId_m{0};
-    uint16 displayId_f{0};
+    // uint32, NOT uint16: these hold CreatureDisplayInfo ids copied straight from
+    // ChrRaces.model_m/model_f, and DC's custom playable races use ids well above
+    // 65535 (pandaren = 503910/503911). As uint16 they silently truncated -- 503911
+    // became 45159 -- and the truncated id is absent from CreatureDisplayInfo, so
+    // Unit::GetCollisionHeight's AssertEntry(GetNativeDisplayId()) segfaulted on the
+    // first login of any such race.
+    uint32 displayId_m{0};
+    uint32 displayId_f{0};
     PlayerCreateInfoItems item;
     PlayerCreateInfoSpells customSpells;
     PlayerCreateInfoSpells  castSpells;

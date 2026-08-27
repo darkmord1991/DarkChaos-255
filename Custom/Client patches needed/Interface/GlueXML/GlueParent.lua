@@ -52,6 +52,11 @@ GlueAmbienceTracks["DEATHKNIGHT"] = "GlueScreenIntro";
 GlueAmbienceTracks["CHARACTERSELECT"] = "GlueScreenIntro";
 GlueAmbienceTracks["GOBLIN"] = "GlueScreenOrcTroll";
 GlueAmbienceTracks["WORGEN"] = "GlueScreenHuman";
+-- DC: races with no 3.3.5 glue scene of their own still need an ambience key -- callers
+-- like CharacterSelect_OnShow index this table DIRECTLY with the raw race name and pass
+-- the result straight to PlayGlueAmbience, which errors on nil ("Usage: PlayGlueAmbience..").
+-- That path bypasses the substitution in SetBackgroundModel, so it needs its own entry.
+GlueAmbienceTracks["PANDAREN"] = "GlueScreenTauren";
 
 -- RaceLights[] duplicates the 3.2.2 color values in the models. Henceforth, the models no longer contain directional lights
 RaceLights = {
@@ -745,6 +750,13 @@ end
 
 -- Function to set the background model for character select and create screens
 function SetBackgroundModel(model, name)
+	-- DC: races without a 3.3.5 glue scene fall back to an existing one. A missing
+	-- UI_<Race>.m2 blanks the whole 3D scene (background AND the character model).
+	-- Pandaren -> the daylight Mulgore (Tauren) scene until a MoP UI_Pandaren downport
+	-- ships (the NightElf scene lit the face-zoom far too dark).
+	if ( strupper(name) == "PANDAREN" ) then
+		name = "Tauren";
+	end
     local nameupper = strupper(name);
     local path = "Interface\\Glues\\Models\\UI_"..name.."\\UI_"..name..".m2";
 	if ( model == CharacterCreate ) then

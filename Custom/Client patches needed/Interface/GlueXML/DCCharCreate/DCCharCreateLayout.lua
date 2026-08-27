@@ -20,7 +20,9 @@ screen, and one nil index would take the whole screen down with it.
 Relies on DCCharCreateUI.lua having built DCCharCustomizePanel (it loads first).
 ------------------------------------------------------------------------------------------------]]
 
-local RACE_COLUMNS = 3
+-- 4 columns since Pandaren: 7 races per faction at 3 columns meant 3+3 rows and pushed
+-- the class grid off the bottom of the screen; 4 columns keeps each faction at 2 rows.
+local RACE_COLUMNS = 4
 local RACE_SPACING = 8
 -- Race icons are the focal point of stage 1 and the stock size is small on a large display.
 -- Set explicitly (not via SetScale) so the grid maths stays in one coordinate space.
@@ -68,6 +70,9 @@ local FACTION_ICON_W = 46
 -- Y of the HORDE caption inside racePanel, computed by LayoutRaceButtons and reused by
 -- BuildFactionIcons so the crest lands on the same line.
 local hordeCaptionY = 0
+
+-- The horde crest texture, once built; a re-layout moves it (and the caption anchored to it).
+local hordeCrest
 
 local PANEL_BACKDROP = {
 	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -184,6 +189,9 @@ local function BuildFactionIcons()
 	                        { "charactercreate-icon-horde", hordeHeader, hordeCaptionY } }) do
 		local atlasName, header, top = item[1], item[2], item[3]
 		local texture = racePanel:CreateTexture(nil, "OVERLAY")
+		if header == hordeHeader then
+			hordeCrest = texture
+		end
 		if ApplyAtlas(texture, atlasName) then
 			texture:SetWidth(FACTION_ICON_W)
 			texture:SetHeight(FACTION_ICON_H)
@@ -242,9 +250,20 @@ local function ScaleIconChildren(buttonName)
 end
 
 --- Re-anchor the stock race buttons into two faction grids.
---- Buttons 1-6 are Alliance and 7-12 Horde: that ordering is baked into the stock XML (button 1
---- anchors TOP x=-50, button 7 TOP x=+50, each chaining downward) and independently confirmed by
---- GetSelectedRace() returning list index 10 for Troll (Horde slot 4).
+--- The button index space IS the enumeration index space (button 1 anchors TOP x=-50, button 7
+--- TOP x=+50 in the stock XML; GetSelectedRace() returns list index 10 for Troll). The client
+--- orders the Alliance block first, then Horde - but the SIZE of each block moved when Pandaren
+--- (races 22/23) was added, so the split is resolved per index via GetFactionForRace instead of
+--- the old fixed 1-6/7-12 rule (which dropped race 13 into the Horde grid and never re-anchored
+--- buttons 13/14 at all).
+local function RaceButtonFaction(index)
+	local ok, _, faction = pcall(GetFactionForRace, index)
+	if ok and (faction == "Alliance" or faction == "Horde") then
+		return faction
+	end
+	return nil
+end
+
 local function LayoutRaceButtons()
 	local first = Frame("CharacterCreateRaceButton1")
 	if not first then
@@ -252,21 +271,45 @@ local function LayoutRaceButtons()
 	end
 
 	local step = RACE_BUTTON_SIZE + RACE_SPACING
-	local rows = math.ceil(6 / RACE_COLUMNS)
+
+	local factions, total, allianceCount = {}, 0, 0
+	for index = 1, (MAX_RACES or 14) do
+		if not Frame("CharacterCreateRaceButton" .. index) then
+			break
+		end
+		total = index
+		factions[index] = RaceButtonFaction(index) or ((index <= 6) and "Alliance" or "Horde")
+		if factions[index] == "Alliance" then
+			allianceCount = allianceCount + 1
+		end
+	end
+
+	local allianceRows = math.ceil(math.max(allianceCount, 1) / RACE_COLUMNS)
+	local hordeRows = math.ceil(math.max(total - allianceCount, 1) / RACE_COLUMNS)
 	local allianceTop = -HEADER_INSET
-	local hordeTop = allianceTop - rows * step - FACTION_GAP
+	local hordeTop = allianceTop - allianceRows * step - FACTION_GAP
 
 	-- Sit the caption just above its own grid. The first attempt added a row step here, which put
 	-- HORDE on top of the Alliance second row instead.
 	hordeCaptionY = hordeTop + HEADER_INSET + HEADER_TOP
-	hordeHeader:SetPoint("TOPLEFT", PANEL_PADDING, hordeCaptionY)
+	if hordeCrest then
+		-- Re-layout (OnShow): the caption is anchored LEFT of the crest, so moving the
+		-- crest carries it. Re-anchoring the caption itself would stack a second point.
+		hordeCrest:ClearAllPoints()
+		hordeCrest:SetPoint("TOPLEFT", racePanel, "TOPLEFT", PANEL_PADDING, hordeCaptionY + 2)
+	else
+		hordeHeader:SetPoint("TOPLEFT", PANEL_PADDING, hordeCaptionY)
+	end
 
 	local placed = 0
-	for index = 1, 12 do
+	local slots = { Alliance = 0, Horde = 0 }
+	for index = 1, total do
 		local button = Frame("CharacterCreateRaceButton" .. index)
 		if button then
-			local slot = (index <= 6) and (index - 1) or (index - 7)
-			local top = (index <= 6) and allianceTop or hordeTop
+			local faction = factions[index]
+			local slot = slots[faction]
+			slots[faction] = slot + 1
+			local top = (faction == "Alliance") and allianceTop or hordeTop
 			local column = slot % RACE_COLUMNS
 			local row = math.floor(slot / RACE_COLUMNS)
 
@@ -292,7 +335,7 @@ local function LayoutRaceButtons()
 	end
 
 	-- Park the race-name captions inside the panel, under the Horde grid.
-	local captionTop = hordeTop - rows * step - 4
+	local captionTop = hordeTop - hordeRows * step - 4
 	for _, name in ipairs(RACE_NAME_REGIONS) do
 		local caption = Frame(name)
 		if caption and caption.ClearAllPoints then
@@ -387,7 +430,7 @@ end
 -- ---------------------------------------------------------------------------------- stages
 
 local function SetRaceAndClassShown(shown)
-	for index = 1, 12 do
+	for index = 1, (MAX_RACES or 14) do
 		SetShown(Frame("CharacterCreateRaceButton" .. index), shown)
 	end
 	for index = 1, 10 do
@@ -470,6 +513,9 @@ function CharacterCreate_OnShow(...)
 		a, b, c, d = stockOnShow(...)
 	end
 	-- Stock re-Shows race/class buttons here, so the stage must be re-applied afterwards.
+	-- Re-run the race grid too: enumeration has now happened, so the per-index faction
+	-- lookup is authoritative (at file-load it may fall back to the legacy 6/6 split).
+	LayoutRaceButtons()
 	stage = STAGE_CHOOSE
 	ApplyStage()
 	return a, b, c, d

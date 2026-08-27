@@ -502,6 +502,16 @@
 									<Anchor point="TOPLEFT" relativeTo="CharacterCreateRaceButton5" relativePoint="BOTTOMLEFT" x="0" y="-10"/>
 								</Anchors>
 							</CheckButton>
+							<CheckButton name="CharacterCreateRaceButton13" inherits="CharacterCreateRaceButtonTemplate" id="13">
+								<Anchors>
+									<Anchor point="TOPLEFT" relativeTo="CharacterCreateRaceButton6" relativePoint="BOTTOMLEFT" x="0" y="-10"/>
+								</Anchors>
+							</CheckButton>
+							<CheckButton name="CharacterCreateRaceButton14" inherits="CharacterCreateRaceButtonTemplate" id="14">
+								<Anchors>
+									<Anchor point="TOPLEFT" relativeTo="CharacterCreateRaceButton11" relativePoint="BOTTOMLEFT" x="0" y="-10"/>
+								</Anchors>
+							</CheckButton>
 							<CheckButton name="CharacterCreateGenderButtonMale" inherits="CharacterCreateGenderButtonTemplate">
 								<Anchors>
 									<Anchor point="TOP" x="-20" y="-392"/>
