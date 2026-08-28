@@ -30,6 +30,29 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+namespace
+{
+    // Zandalari Troll racial City of Gold (291628).
+    constexpr uint32 SPELL_RACIAL_CITY_OF_GOLD = 291628;
+
+    /**
+     * @brief Adds the City of Gold bonus to one looter's coin.
+     *
+     * Applied per player rather than to Loot::gold so a mixed group pays the bonus only to the
+     * trolls in it, and after the play-time reduction so it cannot revive a share that had already
+     * rounded away.
+     * @param looter  the player receiving this share.
+     * @param gold    the share in copper, after every other reduction.
+     * @return the share to award.
+     */
+    uint32 ApplyCityOfGold(Player const* looter, uint32 gold)
+    {
+        if (!gold || !looter->HasAura(SPELL_RACIAL_CITY_OF_GOLD))
+            return gold;
+        return gold + gold / 50;   // +2%
+    }
+}
+
 void WorldSession::HandleAutostoreLootItemOpcode(WorldPacket& recvData)
 {
     LOG_DEBUG("network", "WORLD: CMSG_AUTOSTORE_LOOT_ITEM");
@@ -231,6 +254,8 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
                         continue;
                 }
 
+                finalGold = ApplyCityOfGold(*i, finalGold);
+
                 (*i)->ModifyMoney(finalGold);
                 (*i)->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, finalGold);
 
@@ -252,6 +277,8 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
                 // a halved amount that rounds down to nothing is not worth announcing
                 award = finalGold != 0;
             }
+
+            finalGold = ApplyCityOfGold(player, finalGold);
 
             // fire the hook regardless of the CAIS reduction, matching OnLootMoney below
             sScriptMgr->OnPlayerAfterCreatureLootMoney(player);

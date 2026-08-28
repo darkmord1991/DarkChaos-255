@@ -56,18 +56,32 @@ GlueAmbienceTracks["WORGEN"] = "GlueScreenHuman";
 -- like CharacterSelect_OnShow index this table DIRECTLY with the raw race name and pass
 -- the result straight to PlayGlueAmbience, which errors on nil ("Usage: PlayGlueAmbience..").
 -- That path bypasses the substitution in SetBackgroundModel, so it needs its own entry.
+-- No Pandaren sound kit exists in 3.3.5, and PlayGlueAmbience errors on an unknown
+-- name, so the scene keeps a stock track.
 GlueAmbienceTracks["PANDAREN"] = "GlueScreenTauren";
 GlueAmbienceTracks["VULPERA"] = "GlueScreenOrcTroll";
 GlueAmbienceTracks["ZANDALARITROLL"] = "GlueScreenOrcTroll";
+-- SetBackgroundModel keys ambience off the name AFTER the mapping above, so the
+-- Zandalari scene needs the mapped name as well as the raw one.
+GlueAmbienceTracks["ZANDALARI"] = "GlueScreenOrcTroll";
+GlueAmbienceTracks["DARKIRONDWARF"] = "GlueScreenDwarfGnome";
 GlueAmbienceTracks["KULTIRAN"] = "GlueScreenHuman";
 
--- Custom races have no UI_<Race>.m2 glue scene of their own; borrow a thematically
--- close stock one. Keyed by the UPPERCASE ChrRaces ClientFileString.
+-- Custom races with no UI_<Race>.m2 glue scene of their own borrow a thematically close
+-- stock one. Keyed by the UPPERCASE ChrRaces ClientFileString.
+--
+-- Nearly empty now. Retail still ships the legacy glue scenes, including ones authored for
+-- races 3.3.5 never had, so Pandaren, Vulpera, Kul Tiran and Zandalari all use their own
+-- (downported to v264 and packed into patch-5). Retail also has UI_Troll and UI_Gnome, which
+-- this client has never had, plus a scene for every Tier-1 allied race.
 DC_GLUE_SCENE_SUBSTITUTE = {
-	["PANDAREN"] = "Tauren",
-	["VULPERA"] = "Orc",
-	["ZANDALARITROLL"] = "Orc",
-	["KULTIRAN"] = "Human",
+	-- Not a substitute: the scene exists, its folder is just named UI_Zandalari while our
+	-- ChrRaces ClientFileString is ZandalariTroll. Mapping the name here is cheaper than
+	-- renaming the .m2/.skin files, whose texture paths point back into ui_zandalari.
+	["ZANDALARITROLL"] = "Zandalari",
+	-- Dark Iron: retail HAS a ui_darkirondwarf scene; it is not downported yet, so for now
+	-- the race borrows its parent's.
+	["DARKIRONDWARF"] = "Dwarf",
 };
 
 -- RaceLights[] duplicates the 3.2.2 color values in the models. Henceforth, the models no longer contain directional lights
@@ -87,6 +101,32 @@ RaceLights = {
         {1,     0,  -0.88314,       0.42916,        -0.18945,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.44706,    0.67451,    0.760785},
     },
     TAUREN = {
+        {1,     0,  -0.48073,       0.71827,        -0.50297,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.65,       0.397645,   0.2727},
+        {1,     0,  -0.49767,       -0.78677,       0.36513,    1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.60000,    0.47059,    0.32471},
+    },
+    -- Pandaren: SetLighting() indexes RaceLights with the name AFTER substitution, so while
+    -- Pandaren borrowed the Tauren scene it was also borrowing these lights. Seeded with the
+    -- same values so swapping in the real UI_Pandaren scene cannot regress to an unlit stage;
+    -- retune against the Wandering Isle backdrop rather than Mulgore.
+    -- Vulpera / Zandalari / Kul Tiran: same reasoning as PANDAREN below -- these are the
+    -- light sets each was already rendering under while it borrowed the Orc or Human scene,
+    -- kept so the real scenes cannot come in unlit. Retune against the actual backdrops.
+    VULPERA = {
+        {1,     0,  0.00000,        0.00000,        -1.00000,   1.0,    0.15000,    0.15000,    0.15000,    1.0,    0.00000,    0.00000,    0.00000},
+        {1,     0,  -0.74919,       0.35208,        -0.56103,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.44706,    0.54510,    0.73725},
+        {1,     0,  0.53162,        -0.84340,       0.07780,    1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.55,       0.338625,   0.148825},
+    },
+    ZANDALARI = {
+        {1,     0,  0.00000,        0.00000,        -1.00000,   1.0,    0.15000,    0.15000,    0.15000,    1.0,    0.00000,    0.00000,    0.00000},
+        {1,     0,  -0.74919,       0.35208,        -0.56103,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.44706,    0.54510,    0.73725},
+        {1,     0,  0.53162,        -0.84340,       0.07780,    1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.55,       0.338625,   0.148825},
+    },
+    KULTIRAN = {
+        {1,     0,  0.000000,       0.000000,       -1.000000,   1.0,   0.27,       0.27,       .27,        1.0,    0,          0,          0},
+        {1,     0,  -0.45756075,    -0.58900136,    -0.66611975, 1.0,   0.000000,   0.000000,   0.000000,   1.0,    0.19882353, 0.34921569, 0.43588236 },
+        {1,     0,  -0.64623469,    0.57582057,     -0.50081086, 1.0,   0.000000,   0.000000,   0.000000,   2.0,    0.52196085, 0.44,       0.29764709 },
+    },
+    PANDAREN = {
         {1,     0,  -0.48073,       0.71827,        -0.50297,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.65,       0.397645,   0.2727},
         {1,     0,  -0.49767,       -0.78677,       0.36513,    1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.60000,    0.47059,    0.32471},
     },

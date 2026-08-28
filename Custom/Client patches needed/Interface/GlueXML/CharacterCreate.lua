@@ -1,5 +1,5 @@
 CHARACTER_FACING_INCREMENT = 2;
-MAX_RACES = 17;
+MAX_RACES = 18;
 MAX_CLASSES_PER_RACE = 10;
 NUM_CHAR_CUSTOMIZATIONS = 5;
 MIN_CHAR_NAME_LENGTH = 2;
@@ -65,6 +65,11 @@ RACE_ICON_TCOORDS = {
 	["KULTIRAN_FEMALE"]		= {0.4375, 0.5, 0.5, 0.75},
 	["VULPERA_MALE"]		= {0.4375, 0.5, 0.25, 0.5},
 	["VULPERA_FEMALE"]		= {0.4375, 0.5, 0.75, 1.0},
+	-- Dark Iron Dwarf takes atlas column 9. The cell is currently the DWARF art: the race
+	-- is a dwarf reskin and its own portrait has not been composited in yet.
+	["DARKIRONDWARF_MALE"]	= {0.0625, 0.125, 0, 0.25},
+	["DARKIRONDWARF_FEMALE"]	= {0.0625, 0.125, 0.5, 0.75},
+
 	["ZANDALARITROLL_MALE"]	= {0.5, 0.5625, 0.25, 0.5},
 	["ZANDALARITROLL_FEMALE"]	= {0.5, 0.5625, 0.75, 1.0},
 };

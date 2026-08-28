@@ -149,6 +149,7 @@ local EYE_HEIGHT = {
 	[24] = { [0] = 1.05, [1] = 1.00 },  -- Vulpera: goblin-sized
 	[25] = { [0] = 2.05, [1] = 1.90 },  -- Zandalari Troll
 	[26] = { [0] = 2.05, [1] = 1.85 },  -- Kul Tiran
+	[27] = { [0] = 1.25, [1] = 1.20 },  -- Dark Iron Dwarf: dwarf model, dwarf eye height
 }
 
 -- Per-race face-framing trims on top of the analytic camera math, from in-client review
@@ -182,7 +183,7 @@ local BODY_TUNE = {
 	[22] = { back = 2.4 },   -- r3: 1.2 -> 1.6 was still too tight, bigger step out
 	[23] = { back = 2.4 },
 	-- First guesses pending in-client review; bulky frames crop like pandaren did.
-	[25] = { back = 0.8 },
+	[25] = { back = 2.0 },   -- r1: 0.8 still cropped a very tall frame, out toward pandaren's step
 	[26] = { back = 1.4 },
 }
 

@@ -20,13 +20,22 @@ screen, and one nil index would take the whole screen down with it.
 Relies on DCCharCreateUI.lua having built DCCharCustomizePanel (it loads first).
 ------------------------------------------------------------------------------------------------]]
 
--- 4 columns since Pandaren: 7 races per faction at 3 columns meant 3+3 rows and pushed
--- the class grid off the bottom of the screen; 4 columns keeps each faction at 2 rows.
+-- Column count and icon size are FITTED per layout, not fixed: see FitRaceGrid. A hardcoded 4
+-- columns was right for 7 races per faction but leaves an orphan on a third row at 9 (Horde today),
+-- and would spend a whole extra row per faction once the Tier-1 reskins land at 11 each.
+-- These two are the starting values; LayoutRaceButtons overwrites them before anything reads them.
 local RACE_COLUMNS = 4
 local RACE_SPACING = 8
 -- Race icons are the focal point of stage 1 and the stock size is small on a large display.
 -- Set explicitly (not via SetScale) so the grid maths stays in one coordinate space.
 local RACE_BUTTON_SIZE = 68
+
+-- Fit budget. The grid may grow sideways to save a row, but not past RACE_GRID_MAX_WIDTH -- the
+-- left column also carries the gender and class panels and has to leave the 3D stage visible.
+-- Below RACE_BUTTON_MIN the portraits stop being readable, so past that point spend a row instead.
+local RACE_GRID_MAX_WIDTH = 380
+local RACE_BUTTON_MIN = 50
+local RACE_BUTTON_MAX = 68
 
 -- CharacterCreateIconButtonTemplate is 38x38 and carries child regions with HARDCODED sizes,
 -- anchored CENTER. Only the NormalTexture stretches with the button - the rest keep their original
@@ -264,13 +273,29 @@ local function RaceButtonFaction(index)
 	return nil
 end
 
+-- Pick the column count and icon size for the bigger faction: fewest rows whose columns still fit
+-- the width budget, shrinking the icon only as far as RACE_BUTTON_MIN before spending a row.
+-- 9 races -> 5 columns x 2 rows at full size (was 4 columns, 2 rows plus a single orphan).
+-- 11 races -> 6 columns x 2 rows at 56px, instead of 4 columns x 3 rows.
+local function FitRaceGrid(perFaction)
+	perFaction = math.max(perFaction, 1)
+	for rows = 1, 6 do
+		local columns = math.ceil(perFaction / rows)
+		local size = math.floor((RACE_GRID_MAX_WIDTH + RACE_SPACING) / columns) - RACE_SPACING
+		if size > RACE_BUTTON_MAX then
+			size = RACE_BUTTON_MAX
+		end
+		if size >= RACE_BUTTON_MIN or rows == 6 then
+			return columns, math.max(size, RACE_BUTTON_MIN)
+		end
+	end
+end
+
 local function LayoutRaceButtons()
 	local first = Frame("CharacterCreateRaceButton1")
 	if not first then
 		return 0
 	end
-
-	local step = RACE_BUTTON_SIZE + RACE_SPACING
 
 	local factions, total, allianceCount = {}, 0, 0
 	for index = 1, (MAX_RACES or 14) do
@@ -284,8 +309,14 @@ local function LayoutRaceButtons()
 		end
 	end
 
+	-- Fit before anything reads the two: ScaleIconChildren and ApplySelectionRing below both size
+	-- themselves from RACE_BUTTON_SIZE.
+	local hordeCount = total - allianceCount
+	RACE_COLUMNS, RACE_BUTTON_SIZE = FitRaceGrid(math.max(allianceCount, hordeCount))
+	local step = RACE_BUTTON_SIZE + RACE_SPACING
+
 	local allianceRows = math.ceil(math.max(allianceCount, 1) / RACE_COLUMNS)
-	local hordeRows = math.ceil(math.max(total - allianceCount, 1) / RACE_COLUMNS)
+	local hordeRows = math.ceil(math.max(hordeCount, 1) / RACE_COLUMNS)
 	local allianceTop = -HEADER_INSET
 	local hordeTop = allianceTop - allianceRows * step - FACTION_GAP
 

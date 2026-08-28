@@ -702,6 +702,10 @@ ABILITY_INFO_ZANDALARITROLL1 = "- Call upon the loa for a blessing.";
 ABILITY_INFO_ZANDALARITROLL2 = "- Regenerate health rapidly, even in combat.";
 ABILITY_INFO_ZANDALARITROLL3 = "- Summon a pterrordax to slow your fall.";
 ABILITY_INFO_ZANDALARITROLL4 = "- Increased skill with all weapons.";
+RACE_INFO_DARKIRONDWARF = "Exiled beneath Blackrock Mountain for generations, the Dark Iron clan bent fire and shadow to their will and paid for it in ash. Hardened by sorcery and grudge alike, they have at last set aside an age-old feud to stand with their kin.";
+ABILITY_INFO_DARKIRONDWARF1 = "- Resistant to fire.";
+ABILITY_INFO_DARKIRONDWARF2 = "- Hardened by a life underground.";
+
 RACE_INFO_KULTIRAN = "The seafaring humans of Kul Tiras have ruled the waves for generations. Broad-shouldered and stubborn, raised on storm-lashed coasts, they command the greatest naval power Azeroth has ever known and carry the sea in their blood.";
 ABILITY_INFO_KULTIRAN1 = "- Shrug off damage with your considerable bulk.";
 ABILITY_INFO_KULTIRAN2 = "- Deliver a devastating haymaker punch.";

@@ -1,0 +1,105 @@
+-- ---------------------------------------------------------------------------
+-- 304  Round 46 -- the 16 heirloom armour Subclass mismatches
+-- ---------------------------------------------------------------------------
+--     Item (Entry: 300341) has wrong Subclass value (2) for class 4, must be (3).
+--     ... 16 lines, entries 300341-300363
+--
+-- The last large block in the boot log, and the log line is the least
+-- interesting part of it: ObjectMgr.cpp:3514-3517 does
+--     itemTemplate.SubClass = dbcitem->SubclassID;
+-- so the core OVERRIDES item_template with Item.dbc and the mismatch has no
+-- runtime effect at all. What the mismatch exposed is a real design defect
+-- underneath it.
+--
+-- ---------------------------------------------------------------------------
+-- What the set actually is
+-- ---------------------------------------------------------------------------
+-- 300341-300364 is a clean three-tier heirloom armour set: 8 slots (head,
+-- shoulder, chest, wrist, hands, waist, legs, feet) x 3 stat lines, keyed by
+-- stat_type1:
+--     7 Strength  300341 344 347 350 353 356 359 362   plate-flavoured names
+--     4 Agility   300342 345 348 351 354 357 360 363   agility-flavoured names
+--     5 Intellect 300343 346 349 352 355 358 361 364   already Cloth, no error
+--
+-- Before this change:
+--     item_template   Strength = 2 Leather   Agility = 2 Leather   Int = 1 Cloth
+--     Item.dbc        Strength = 3 Mail      Agility = 3 Mail      Int = 1 Cloth
+-- The Intellect tier agreed on Cloth, which is exactly why only 16 of the 24
+-- items logged.
+--
+-- 🔴 THE AGILITY TIER WAS UNEQUIPPABLE BY ITS OWN TARGET CLASSES. Because the
+-- DBC wins, all 16 were Mail in game -- and **rogues and druids have no Mail
+-- proficiency at any level**, so eight agility heirlooms could never be worn by
+-- the two classes they are named for, and hunters/shamans not until 60. For
+-- items with RequiredLevel 1 that defeats the point of an heirloom. The
+-- Strength tier being Mail is correct and deliberate by contrast: warriors,
+-- paladins and death knights have Mail from level 1 and cannot wear Plate until
+-- 40, so Mail is the only sensible choice for a level-1 strength heirloom.
+--
+-- Resolved as a split rather than by blindly making the DB agree with the DBC:
+--     Strength tier -> Mail    (item_template 2 -> 3, THIS FILE, server only)
+--     Agility  tier -> Leather (Item.dbc 3 -> 2, client side, ALREADY DEPLOYED)
+--     Intellect tier -> Cloth  (untouched, already correct)
+-- Result: Str Mail / Agi Leather / Int Cloth, every tier wearable from level 1
+-- by the classes its stats are for, and all 16 log lines clear.
+--
+-- CLIENT HALF, ALREADY DONE. Item.csv rows for the 8 agility entries changed
+-- SubclassID 3 -> 2, recompiled with dbc-compile.py and gated: 154,942 records
+-- in and out, **0 lost, 0 gained, exactly 8 rows changed** and those 8 are the
+-- intended entries. Deployed to patch-4 + enGB/patch-enGB-3 (both verified
+-- byte-identical), the three WXL checkouts and the server mirror. Item.dbc is
+-- safe to recompile from CSV -- its CSV and DBC are in exact parity, unlike the
+-- 234-field fork Spell.dbc.
+--
+-- ---------------------------------------------------------------------------
+-- 1) Strength tier -> Mail
+-- ---------------------------------------------------------------------------
+-- Guarded on the current value AND on stat_type1 = 7, so it cannot touch the
+-- agility or intellect tiers even if run out of order.
+UPDATE acore_world.`item_template`
+   SET `subclass` = 3
+ WHERE `entry` IN (300341,300344,300347,300350,300353,300356,300359,300362)
+   AND `class` = 4 AND `subclass` = 2 AND `stat_type1` = 7;
+
+-- ---------------------------------------------------------------------------
+-- 2) Agility tier -- nothing to do here
+-- ---------------------------------------------------------------------------
+-- 300342, 300345, 300348, 300351, 300354, 300357, 300360, 300363 already carry
+-- subclass 2 (Leather) in item_template; it was the DBC that disagreed, and
+-- that half was fixed client-side. Asserted rather than assumed:
+--     SELECT COUNT(*) FROM item_template
+--      WHERE entry IN (300342,300345,300348,300351,300354,300357,300360,300363)
+--        AND subclass = 2;                                                 -> 8
+--
+-- ---------------------------------------------------------------------------
+-- Verify after apply
+-- ---------------------------------------------------------------------------
+--  1  SELECT entry, subclass FROM item_template
+--      WHERE entry BETWEEN 300341 AND 300364 ORDER BY entry;
+--     Expected, by tier: Strength rows 3, Agility rows 2, Intellect rows 1.
+--  2  REQUIRES THE REFRESHED Item.dbc ON THE LIVE SERVER. The server reads
+--     Item.dbc too -- without the push, the 8 agility items will log the
+--     mismatch in the OTHER direction ("wrong Subclass value (2) ... must be
+--     (3)") and be forced back to Mail at runtime. Push data/dbc BEFORE the
+--     restart.
+--  3  Next boot: all 16 lines gone.
+--  4  In game: a rogue or druid should now be able to equip the agility pieces
+--     (Battle Helm, Shoulders of Valor, Battleplate, Bracers of Battle, Grips of
+--     Precision, Belt of Agility, Leggings of Swiftness, Boots of Haste) from
+--     level 1, and the strength pieces should stay warrior/paladin/DK-only.
+--
+-- ---------------------------------------------------------------------------
+-- Noticed while in here, NOT changed
+-- ---------------------------------------------------------------------------
+-- * `ScalingStatDistribution` IS wired on these items (509-537), contradicting
+--   the older note that all 3003xx heirlooms had SSD = 0 -- that has since been
+--   fixed by someone.
+-- * `ScalingStatValue` looks wrong though: the values are 1, 33, 40, 65, 72,
+--   262144, 1048584, 2097160 -- a mix of small integers and what are plainly
+--   bitmasks (0x40000, 0x100008, 0x200008). SSV is meant to be a single
+--   ScalingStatValues row index, so the large ones are almost certainly an
+--   armour/stat budget flag written into the wrong column. That would make the
+--   affected pieces scale wrongly rather than not at all, and it is a separate
+--   investigation from this log fix -- flagged, not guessed at.
+-- * Nothing here touches the weapon heirlooms (300332-300340), which use class
+--   2 and log no mismatch.
