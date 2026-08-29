@@ -7,8 +7,8 @@ DC.COLLECTION_STATIC_MANIFEST = {
             collectionType = 1,
             serverType = "mount",
             serverSource = "table+index",
-            definitionCount = 1525,
-            expectedCount = 1521,
+            definitionCount = 1526,
+            expectedCount = 1522,
             indexAvailable = true,
             authoritative = true,
             requestSkip = true,
@@ -33,8 +33,8 @@ DC.COLLECTION_STATIC_MANIFEST = {
             collectionType = 4,
             serverType = "heirloom",
             serverSource = "table",
-            definitionCount = 352,
-            expectedCount = 352,
+            definitionCount = 392,
+            expectedCount = 392,
             indexAvailable = false,
             authoritative = true,
             requestSkip = true,
@@ -92,9 +92,9 @@ DC.COLLECTION_STATIC_MANIFEST = {
     },
     dataRevisions = {
         collectionCategories = 1684590543,
-        collectionSources = 314065445,
+        collectionSources = 39978998,
         collectionShop = 96056661,
-        collectionSets = 1390334361,
+        collectionSets = 786799120,
     },
 }
 DC.COLLECTION_STATIC_MANIFEST_VERSION = 1

@@ -1,8 +1,9 @@
 #include "CreatureScript.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
-#include "ScriptedGossip.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "WorldSession.h"
+#include <array>
 
 // Custom DBC taxi nodes (must match your client+DBC import)
 enum : uint32
@@ -14,263 +15,67 @@ enum : uint32
     DBC_TAXI_NODE_L70  = 445
 };
 
-// Gossip action IDs (stable values, used only server-side)
-enum GossipAction : uint32
+static constexpr std::array<uint32, 5> kCraterTaxiNodes =
 {
-    // Camp (StartCamp)
-    GA_TOUR_30    = 1,
-    GA_L50_DIRECT = 2,
-    GA_L0_TO_65   = 3,
-    GA_L0_TO_70   = 13,
-
-    // Level 30+
-    GA_RETURN_STARTCAMP = 4,
-    GA_L30_TO_50        = 5,
-    GA_L30_TO_65        = 6,
-    GA_L30_TO_70        = 14,
-
-    // Level 50+
-    GA_L50_BACK_TO_30   = 7,
-    GA_L50_TO_65        = 8,
-    GA_L50_BACK_TO_0    = 12,
-    GA_L50_TO_70        = 15,
-
-    // Level 65+
-    GA_L65_BACK_TO_50 = 9,
-    GA_L65_BACK_TO_30 = 10,
-    GA_L65_BACK_TO_0  = 11,
-    GA_L65_TO_70      = 16,
-
-    // Level 70+
-    GA_L70_BACK_TO_0  = 17,
-    GA_L70_BACK_TO_30 = 18,
-    GA_L70_BACK_TO_50 = 19,
-    GA_L70_BACK_TO_65 = 20
+    DBC_TAXI_NODE_CAMP, DBC_TAXI_NODE_L30, DBC_TAXI_NODE_L50, DBC_TAXI_NODE_L65, DBC_TAXI_NODE_L70
 };
 
-static std::string MakeFlightText(std::string const& text)
-{
-    return DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Mount_Wyvern_01", text);
-}
-
-static bool StartDbcTaxiFlight(Player* player, Creature* creature, std::initializer_list<uint32> nodeList)
+// Right-clicking any of the five crater flight masters opens the native taxi map
+// (Interface\TaxiFrame\TaxiMap37.blp, registered against the world by
+// WorldMapContinent id 11) directly -- no intermediate gossip window.
+//
+// WHY A SCRIPT IS STILL NEEDED, when maps 750/751 got the same frame by simply
+// clearing their ScriptName: the taxi frame draws only the nodes a player has
+// already DISCOVERED, and the crater's camps are reachable ONLY by flying. A new
+// player at the Startcamp would open a map holding one dot and nowhere to go,
+// because SendLearnNewTaxiNode teaches just the node he is standing on. So the
+// whole five-node local network is granted on every interaction. The gossip-list
+// UI this replaced never gated on discovery either, so nothing is lost.
+//
+// The other route to the frame -- dropping npcflag bit 1 so the client sends
+// MSG_TAXI_QUERY_AVAILABLE_NODES itself -- would open the map with no server code
+// at all, but it also bypasses every hook, leaving nowhere to hand out the mask.
+// These NPCs keep npcflag 8193 for that reason.
+static bool OpenFlightMap(Player* player, Creature* creature)
 {
     if (!player || !creature)
         return false;
 
-    if (nodeList.size() < 2)
+    // No node resolves here (bad spawn position, or the taxi DBCs never deployed):
+    // fall through to the default gossip menu, whose OptionType 4 entry still
+    // reaches the taxi frame, rather than answering the client with nothing.
+    if (!sObjectMgr->GetNearestTaxiNode(*creature, player->GetTeamId(true)))
         return false;
 
-    // SpellId must be non-zero to avoid InstantTaxi teleport behavior.
-    std::vector<uint32> nodes;
-    nodes.reserve(nodeList.size());
-    for (uint32 node : nodeList)
-    {
-        if (!node)
-            return false;
-        nodes.push_back(node);
-    }
-    if (nodes.front() == nodes.back())
-        return false;
-    return player->ActivateTaxiPathTo(nodes, creature, 1);
+    for (uint32 node : kCraterTaxiNodes)
+        player->m_taxi.SetTaximaskNode(node);
+
+    // Deliberately no CloseGossipMenuFor: stock GOSSIP_OPTION_TAXIVENDOR calls
+    // SendTaxiMenu straight from the open gossip window (PlayerGossip.cpp), and the
+    // client swaps the frames itself.
+    player->GetSession()->SendTaxiMenu(creature);
+    return true;
 }
 
-// Camp flightmaster (NPC 800010)
-class acflightmaster0 : public CreatureScript
+// One behaviour, five ScriptNames -- creature_template binds each camp's flight
+// master to its own name (acflightmaster0/30/50/65/70), so all five must stay
+// registered even though they no longer differ.
+class acflightmaster : public CreatureScript
 {
 public:
-    acflightmaster0() : CreatureScript("acflightmaster0") { }
+    acflightmaster(char const* scriptName) : CreatureScript(scriptName) { }
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 30+"), GOSSIP_SENDER_MAIN, GA_TOUR_30);
-        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 50+"), GOSSIP_SENDER_MAIN, GA_L50_DIRECT);
-        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 65+"), GOSSIP_SENDER_MAIN, GA_L0_TO_65);
-        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 70+"), GOSSIP_SENDER_MAIN, GA_L0_TO_70);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        ClearGossipMenuFor(player);
-        CloseGossipMenuFor(player);
-
-        if (action == GA_TOUR_30)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_CAMP, DBC_TAXI_NODE_L30 });
-        else if (action == GA_L50_DIRECT)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_CAMP, DBC_TAXI_NODE_L50 });
-        else if (action == GA_L0_TO_65)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_CAMP, DBC_TAXI_NODE_L65 });
-        else if (action == GA_L0_TO_70)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_CAMP, DBC_TAXI_NODE_L30, DBC_TAXI_NODE_L70 });
-        else
-            return true;
-        return true;
-    }
-};
-
-// Level 30+ flightmaster (NPC 800012)
-class acflightmaster30 : public CreatureScript
-{
-public:
-    acflightmaster30() : CreatureScript("acflightmaster30") { }
-
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Camp"), GOSSIP_SENDER_MAIN, GA_RETURN_STARTCAMP);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Level 50+"), GOSSIP_SENDER_MAIN, GA_L30_TO_50);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Level 65+"), GOSSIP_SENDER_MAIN, GA_L30_TO_65);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Level 70+"), GOSSIP_SENDER_MAIN, GA_L30_TO_70);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        ClearGossipMenuFor(player);
-        CloseGossipMenuFor(player);
-
-        if (action == GA_RETURN_STARTCAMP)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L30, DBC_TAXI_NODE_CAMP });
-        else if (action == GA_L30_TO_50)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L30, DBC_TAXI_NODE_L50 });
-        else if (action == GA_L30_TO_65)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L30, DBC_TAXI_NODE_L65 });
-        else if (action == GA_L30_TO_70)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L30, DBC_TAXI_NODE_L70 });
-        else
-            return true;
-        return true;
-    }
-};
-
-// Level 50+ flightmaster (NPC 800013)
-class acflightmaster50 : public CreatureScript
-{
-public:
-    acflightmaster50() : CreatureScript("acflightmaster50") { }
-
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Camp"), GOSSIP_SENDER_MAIN, GA_L50_BACK_TO_0);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Level 30+"), GOSSIP_SENDER_MAIN, GA_L50_BACK_TO_30);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Level 65+"), GOSSIP_SENDER_MAIN, GA_L50_TO_65);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Level 70+"), GOSSIP_SENDER_MAIN, GA_L50_TO_70);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        ClearGossipMenuFor(player);
-        CloseGossipMenuFor(player);
-
-        if (action == GA_L50_BACK_TO_0)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L50, DBC_TAXI_NODE_CAMP });
-        else if (action == GA_L50_BACK_TO_30)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L50, DBC_TAXI_NODE_L30 });
-        else if (action == GA_L50_TO_65)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L50, DBC_TAXI_NODE_L65 });
-        else if (action == GA_L50_TO_70)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L50, DBC_TAXI_NODE_L70 });
-        else
-            return true;
-        return true;
-    }
-};
-
-// Level 65+ flightmaster (NPC 800014)
-class acflightmaster65 : public CreatureScript
-{
-public:
-    acflightmaster65() : CreatureScript("acflightmaster65") { }
-
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Camp"), GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_0);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Level 30+"), GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_30);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Level 50+"), GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_50);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Level 70+"), GOSSIP_SENDER_MAIN, GA_L65_TO_70);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        ClearGossipMenuFor(player);
-        CloseGossipMenuFor(player);
-
-        if (action == GA_L65_BACK_TO_0)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L65, DBC_TAXI_NODE_CAMP });
-        else if (action == GA_L65_BACK_TO_30)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L65, DBC_TAXI_NODE_L30 });
-        else if (action == GA_L65_BACK_TO_50)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L65, DBC_TAXI_NODE_L50 });
-        else if (action == GA_L65_TO_70)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L65, DBC_TAXI_NODE_L50, DBC_TAXI_NODE_L70 });
-        else
-            return true;
-        return true;
-    }
-};
-
-// Level 70+ flightmaster (NPC 800015)
-class acflightmaster70 : public CreatureScript
-{
-public:
-    acflightmaster70() : CreatureScript("acflightmaster70") { }
-
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Camp"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_0);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Level 30+"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_30);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Level 50+"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_50);
-        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Level 65+"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_65);
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        ClearGossipMenuFor(player);
-        CloseGossipMenuFor(player);
-
-        if (action == GA_L70_BACK_TO_0)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L70, DBC_TAXI_NODE_L30, DBC_TAXI_NODE_CAMP });
-        else if (action == GA_L70_BACK_TO_30)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L70, DBC_TAXI_NODE_L30 });
-        else if (action == GA_L70_BACK_TO_50)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L70, DBC_TAXI_NODE_L50 });
-        else if (action == GA_L70_BACK_TO_65)
-            StartDbcTaxiFlight(player, creature, { DBC_TAXI_NODE_L70, DBC_TAXI_NODE_L50, DBC_TAXI_NODE_L65 });
-        else
-            return true;
-
-        return true;
+        return OpenFlightMap(player, creature);
     }
 };
 
 void AddSC_flightmasters()
 {
-    new acflightmaster0();
-    new acflightmaster30();
-    new acflightmaster50();
-    new acflightmaster65();
-    new acflightmaster70();
+    new acflightmaster("acflightmaster0");
+    new acflightmaster("acflightmaster30");
+    new acflightmaster("acflightmaster50");
+    new acflightmaster("acflightmaster65");
+    new acflightmaster("acflightmaster70");
 }

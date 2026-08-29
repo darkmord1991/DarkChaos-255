@@ -119,4 +119,10 @@ SET
     `RewardChoiceItemQuantity5` = CASE WHEN `QuestLevel` BETWEEN 31 AND 80 THEN 1 ELSE 0 END,
     `RewardChoiceItemQuantity6` = CASE WHEN `QuestLevel` BETWEEN 31 AND 80 THEN 1 ELSE 0 END
 WHERE `QuestSortID` = 268
-    AND `ID` BETWEEN 300100 AND 300966;
+    AND `ID` BETWEEN 300100 AND 300966
+    -- 300100 opted out 2026-08-29: its rewards are owned by
+    -- 2026_08_29_00_dc_take_up_the_watch_level1_rewards.sql (level-1 reward clones
+    -- 303140-303143, and no heirloom shirt - 820058 grants that one). Re-running this
+    -- sweep without the exclusion would restore both. The `WHEN ID = 300100 THEN 300365`
+    -- branch in the `RewardItem1` CASE above is now unreachable and kept only as history.
+    AND `ID` <> 300100;

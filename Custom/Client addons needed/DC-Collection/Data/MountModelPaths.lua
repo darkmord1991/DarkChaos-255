@@ -1267,4 +1267,5 @@ DC.MountModelPaths = DC.MountModelPaths or {
     [503851] = "mountpreview\\pigmyowlmount\\pigmyowlmount_503851.m2",
     [503852] = "mountpreview\\serpentgolemmount\\serpentgolemmount_503852.m2",
     [503853] = "mountpreview\\serpentgolemmountnemesis\\serpentgolemmountnemesis_503853.m2",
+    [503920] = "mountpreview\\oxhomemount\\oxhomemount_503920.m2",
 }
