@@ -44,7 +44,7 @@ INSERT INTO `dc_dungeon_setup`
 
 INSERT INTO `dc_dungeon_entrances`
     (`dungeon_map`, `entrance_map`, `entrance_x`, `entrance_y`, `entrance_z`, `entrance_o`, `comment`) VALUES
-    (824, 750, 4833.1, -1731.7, 1196.215, 0.785, 'Emerald Sanctum - world-side door on map 750');
+    (824, 750, 5110.93, -1751.19, 1334.10, 3.831, 'Emerald Sanctum - world-side door on map 750');
 
 -- Deliberately NOT in `dc_mplus_dungeons`: Mythic+ keystones are built for 5-man
 -- content and this is a 20-man raid, so mythic_plus_enabled stays 0 above.

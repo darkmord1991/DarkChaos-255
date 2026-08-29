@@ -1,4 +1,50 @@
 -- =====================================================================
+-- STATUS (verified against the live server 2026-08-28) - READ FIRST
+-- =====================================================================
+-- Every `INSERT/DELETE/UPDATE ... spell_dbc` statement below is DISABLED
+-- (wrapped in a block comment). Only the `spell_script_names` half of this
+-- file is live and safe to run. Two independent reasons:
+--
+-- 1. spell_dbc is NOT the live source for these spells. `acore_world`.`spell_dbc`
+--    holds ZERO rows for 800001-800044; the worldserver reads 800001, 800010-800019,
+--    800020-800029 and 800040-800044 straight out of `data/dbc/Spell.dbc` (the
+--    234-field fork layout). This file's spell_dbc half was never applied.
+--
+-- 2. Applying it would DESTROY those rows. DBCStorage loads Spell.dbc first, then
+--    calls DBCDatabaseLoader::Load(), which writes the COMPLETE 234-field record
+--    from the SQL row for any id present in the table - it does not merge column by
+--    column. The INSERTs below list 13 of 234 columns, and every spell_dbc column
+--    defaults to 0, so an applied row would silently get EquippedItemClass = 0
+--    ("requires a weapon equipped", instead of -1 = no requirement), RangeIndex 0,
+--    SchoolMask 0, SpellIconID 0, DurationIndex 0 and so on. The trailing
+--    `UPDATE spell_dbc SET EquippedItemClass = -1` was papering over exactly that.
+--    Only a full 234-column INSERT is safe here - see worlddb/Hotspot/spell.sql
+--    for one that is written correctly.
+--
+-- Where the behaviour actually lives now: src/server/game/Spells/SpellInfoCorrections.cpp,
+-- at the end of SpellMgr::LoadSpellInfoCorrections(). Two DarkChaos blocks there
+-- patch the loaded SpellInfo in memory, which needs no client patch and no DBC rebuild:
+--
+--   * 800001 / 800010-800019 / 800040-800044 get SpellFamilyName cleared to
+--     SPELLFAMILY_GENERIC with zero SpellFamilyFlags. The Spell.dbc rows were cloned
+--     from a mage donor and carry SpellFamilyName 3 + SpellFamilyFlags[0] 0x400, which
+--     SpellInfo::LoadSpellSpecific() reads as SPELL_SPECIFIC_MAGE_ARCANE_BRILLANCE - an
+--     exclusive specific. That made these buffs strip each other (entering a hotspot
+--     removed the prestige aura) and made real Arcane Intellect / Arcane Brilliance
+--     strip them too.
+--
+--   * 800010-800019 get Effects[0].ApplyAuraName forced to 137
+--     (SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE) with MiscValue -1 (all stats). The live
+--     Spell.dbc rows carry aura 4 (SPELL_AURA_DUMMY), so the prestige stat bonus was
+--     computed by PrestigeBonusAuraScript and then thrown away.
+--
+-- If you ever want these values in the DBC instead of patched at load, edit
+-- data/dbc/Spell.dbc with the spell-dbc-append tooling (the fork layout is 234
+-- fields - a csv2wdbc rebuild would destroy it) and delete the corrections. Do NOT
+-- re-enable the statements below.
+-- =====================================================================
+
+-- =====================================================================
 -- DarkChaos-255 Custom Buff System - Complete Implementation
 -- =====================================================================
 -- This file creates all custom buff spells for DarkChaos-255:
@@ -15,8 +61,12 @@
 -- Step 1: Remove old spell entries
 -- =====================================================================
 
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800001 AND 800028;
+*/
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800040 AND 800044;
+*/
 
 -- =====================================================================
 -- Step 1.5: Clear Equipment Requirements for Custom Spells
@@ -41,12 +91,14 @@ DELETE FROM `spell_dbc` WHERE `ID` BETWEEN 800040 AND 800044;
 -- CRITICAL: SpellIconID must match client Spell.dbc for buff icon to display!
 -- ImplicitTargetA_1: 1 = TARGET_UNIT_CASTER (self) - MUST match client
 -- DurationIndex: 42 = matches client (not 21!)
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 INSERT INTO `spell_dbc` 
 (`ID`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
  `SpellIconID`, `SchoolMask`, `Name_Lang_enUS`)
 VALUES
 (800001, 0x10010, 1, 42, 1, 6, 59, 0, 1, 4, 4124, 1, 'DC Hotspot - XP Buff 100%');
+*/
 
 -- =====================================================================
 -- Step 3: Create Prestige Bonus Aura Spells
@@ -62,6 +114,7 @@ VALUES
 -- CRITICAL: Aura type 137 is VISIBLE and applies stat bonuses server-side
 -- =====================================================================
 
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 INSERT INTO `spell_dbc` 
 (`ID`, `Attributes`, `AttributesEx`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
@@ -87,6 +140,7 @@ VALUES
 (800018, 0x10, 0x0, 1, 21, 1, 6, 8, 0, 21, 137, 1, 'DC Prestige 9 - Enhanced Stats'),
 -- Prestige Level 10: 10% All Stats
 (800019, 0x10, 0x0, 1, 21, 1, 6, 9, 0, 21, 137, 1, 'DC Prestige 10 - Enhanced Stats');
+*/
 
 -- =====================================================================
 -- Step 4: Create Challenge Mode Aura Spells
@@ -100,6 +154,7 @@ VALUES
 -- Attributes: 0x10 (treat as ability so the visible aura can be cancelled)
 -- =====================================================================
 
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 INSERT INTO `spell_dbc` 
 (`ID`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
@@ -123,6 +178,7 @@ VALUES
 (800027, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Iron Man Mode - Hardcore + Self-Crafted + Item Restrictions'),
 -- Challenge Combinations (800028)
 (800028, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Challenge Mode Active - Multiple Challenges Enabled');
+*/
 
 -- =====================================================================
 -- Step 5: Create Alt XP Bonus Aura Spells
@@ -134,6 +190,7 @@ VALUES
 -- DurationIndex: 21 (permanent)
 -- =====================================================================
 
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 INSERT INTO `spell_dbc` 
 (`ID`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`,
  `Effect_1`, `EffectBasePoints_1`, `EffectMechanic_1`, `ImplicitTargetA_1`, `EffectAura_1`,
@@ -149,11 +206,13 @@ VALUES
 (800043, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 20% XP (4 Max-Level Alts)'),
 -- 25% Alt XP Bonus (5+ max-level alts)
 (800044, 0x10, 1, 21, 1, 6, 0, 0, 21, 4, 1, 'DC Alt Bonus - 25% XP (5+ Max-Level Alts)');
+*/
 
 -- =====================================================================
 -- Integration Instructions
 -- =====================================================================
--- 1. Run this SQL script on your world database
+-- 1. Run this SQL script on your world database. Only the spell_script_names
+--    statements execute - the spell_dbc half is disabled, see the STATUS banner.
 -- 2. Rebuild the DarkChaos server (./acore.sh compiler build)
 -- 3. Restart the world server
 -- 4. For Prestige: Re-login with a prestige character
@@ -172,6 +231,7 @@ VALUES
 -- Spell Summary Table
 -- =====================================================================
 -- 
+-- INTENDED design (see STATUS banner for what is actually live):
 -- ID Range | Type          | Quantity | Purpose
 -- ---------|---------------|----------|------------------------------------------
 -- 800001   | Hotspot Buff  | 1        | XP bonus marker for hotspot zones
@@ -225,10 +285,13 @@ VALUES
 --    These show in buff bar for player visibility/identification
 --
 -- Aura Type 137: SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE
---    Used for: Prestige bonuses (800010-800019)
+--    Intended for: Prestige bonuses (800010-800019)
 --    Purpose: Apply percentage bonuses to ALL stats
---    This is critical - must match C++ code in dc_prestige_spells.cpp
---    Hooks registered for aura type 137 only!
+--    LIVE STATE: the Spell.dbc rows actually carry aura 4 (SPELL_AURA_DUMMY) with
+--    EffectBasePoints_1 = 0, so this was never true on the server. The aura type is
+--    now forced to 137 with MiscValue -1 (all stats) by the DarkChaos block in
+--    SpellMgr::LoadSpellInfoCorrections(). dc_prestige_spells.cpp binds SPELL_AURA_ANY
+--    rather than 137, so the script itself was never the blocker - the aura was.
 --
 -- =====================================================================
 -- Prestige Spell Details
@@ -240,9 +303,11 @@ VALUES
 --   ... continues to ...
 --   9 = +10% stats (prestige level 10)
 --
--- CRITICAL: Aura type 137 matches the C++ code in dc_prestige_spells.cpp
--- which expects SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE (enum value 137)
--- If this doesn't match, C++ hooks won't fire and stats won't apply!
+-- NOTE: PrestigeBonusAuraScript::CalculateAmount overrides the amount anyway
+-- (Prestige.StatBonusPercent per prestige level, plus the accumulated
+-- prestige-challenge bonus), so EffectBasePoints_1 only matters as a fallback and
+-- for the positive/negative classification. The load-time correction sets it to the
+-- nominal prestige level (1-10).
 --
 -- =====================================================================
 -- Hotspot Spell Details
@@ -272,19 +337,25 @@ VALUES
 -- Verification Queries
 -- =====================================================================
 
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 UPDATE `spell_dbc`
 SET EquippedItemClass = -1,
     EquippedItemSubclass = 0,
     EquippedItemInvTypes = 0
 WHERE ID >= 800000 AND ID < 900000;
+*/
 
 -- Also clear for Sayge's buff (hotspot detection spell)
+/* DISABLED - see the STATUS banner at the top of this file. Kept as the record of intent.
 UPDATE `spell_dbc`
 SET EquippedItemClass = -1,
     EquippedItemSubclass = 0,
     EquippedItemInvTypes = 0
 WHERE ID = 23768;
+*/
 
+-- NOTE: these SELECTs return 0 rows - spell_dbc has no rows for 800001-800044 and
+-- is not the live source. To check the real values use the server's data/dbc/Spell.dbc.
 -- Verify all spells were created:
 SELECT COUNT(*) as total_spells FROM `spell_dbc` WHERE `ID` BETWEEN 800001 AND 800028;
 
@@ -307,12 +378,13 @@ SELECT `ID`, `Name_Lang_enUS`, `EffectAura_1` FROM `spell_dbc` WHERE `ID` BETWEE
 -- The spell_script_names table links spell IDs to their C++ script handlers.
 -- =====================================================================
 
--- Clear existing entries
-DELETE FROM `spell_script_names` WHERE `spell_id` BETWEEN 800001 AND 800044;
-
--- Hotspot XP Buff Script
-INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
-(800001, 'spell_hotspot_buff_800001_aura');
+-- Clear existing entries.
+-- Range starts at 800010, NOT 800001: spell 800001 (the Hotspot XP buff) is
+-- owned by worlddb/Hotspot/spell.sql. This file used to delete 800001 and
+-- re-insert it, so whichever of the two files was applied last silently won -
+-- and a later edit to spell.sql could be undone just by re-running this one.
+-- Do not widen this range back over 800001.
+DELETE FROM `spell_script_names` WHERE `spell_id` BETWEEN 800010 AND 800044;
 
 -- Prestige Bonus Scripts (800010-800019)
 INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
@@ -347,5 +419,7 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 (800043, 'spell_alt_bonus_20'),
 (800044, 'spell_alt_bonus_25');
 
--- Verify spell_script_names registration:
+-- Verify spell_script_names registration.
+-- Deliberately spans 800001 too, so a missing Hotspot row (owned by
+-- worlddb/Hotspot/spell.sql) is visible here rather than only at runtime.
 SELECT spell_id, ScriptName FROM `spell_script_names` WHERE spell_id BETWEEN 800001 AND 800050 ORDER BY spell_id;

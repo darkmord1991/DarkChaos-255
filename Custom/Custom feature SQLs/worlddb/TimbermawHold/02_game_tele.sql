@@ -6,7 +6,7 @@
 -- The id this file originally claimed for dctimbermaw (10640) was never taken -- the live row
 -- was added in game and landed on 10643 -- so the file now writes the live id. Its position is
 -- likewise the live one and is NOT the same spot as the player-facing arrival point: the
--- gossip teleport and areatrigger 607002 both land at -8153.15/-3456.87/222.4, which was
+-- gossip teleport and areatrigger 6923 both land at -8153.15/-3456.87/222.4, which was
 -- measured with `.gps` and is confirmed working in both directions. Do not "reconcile" the two;
 -- this row is a convenience, that one is the door.
 --

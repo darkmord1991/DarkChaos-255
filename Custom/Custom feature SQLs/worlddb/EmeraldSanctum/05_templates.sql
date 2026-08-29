@@ -30,7 +30,6 @@
 -- Re-runnable.
 -- =====================================================================================
 
-
 DELETE FROM `creature_template_model` WHERE `CreatureID` BETWEEN 4030001 AND 4030199;
 DELETE FROM `creature_template` WHERE `entry` BETWEEN 4030001 AND 4030199;
 
@@ -56,13 +55,35 @@ INSERT INTO `creature_template`
     (4030151, 'Vethiss the Unwaking', 'Rare', 130, 130, 2, 16, 0, 2, 1, 2, 4030151, 'SmartAI', '', 1, 120, 12, 1, 2000, 0, 1),
     (4030152, 'Mother Rootwither', 'Rare', 130, 130, 2, 16, 0, 2, 2, 7, 4030152, 'SmartAI', '', 1, 120, 12, 1, 2000, 0, 1);
 
+-- Boss models and scales. Sizes below are the raw M2 bounding-box heights read out of the
+-- deployed models, not estimates, so the scales are derived rather than eyeballed:
+--
+--     nightmaredryad            3.77   <- what Erennius used to be
+--     keeperofthegrove2         5.11
+--     nightmareent              5.72   <- what he is now
+--     dreambear                 5.80
+--     nightmaredrake           23.09   <- Taerar
+--     yseradragon_nightmare    60.21 ) the other three
+--     nightmaredragon          60.18 ) Wakeners, all
+--     dragonpestilencenofx     60.20 ) the same size
+--
+-- Erennius 503765 -> 503770 (Creature/nightmareent/nightmareent.m2) at scale 2.0. The dryad
+-- was the smallest model in the raid and read as trash; it is also still used by Mother
+-- Rootwither (4030152), so the two bosses were visually identical. 503770 is the ent variant
+-- with the largest collision (model_info radius 1.2 / reach 4.0) -- 503771 and 503244 point at
+-- the same M2 but carry 0.7/2.5.
+--
+-- Taerar keeps nightmaredrake but takes scale 2.61 = 60.20 / 23.09, the ratio that puts him
+-- exactly level with his three siblings. He is a DRAKE where they are full dragons, which is
+-- why he alone looked undersized. Scale lives on this row (CreatureID-keyed), so Vethiss the
+-- Unwaking (4030151), which shares display 503763, is unaffected.
 INSERT INTO `creature_template_model`
     (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
-    (4030001, 0, 503765, 1, 1, 0),
+    (4030001, 0, 503770, 2.0, 1, 0),
     (4030002, 0, 503757, 1, 1, 0),
     (4030003, 0, 503759, 1, 1, 0),
     (4030004, 0, 503761, 1, 1, 0),
-    (4030005, 0, 503763, 1, 1, 0),
+    (4030005, 0, 503763, 2.61, 1, 0),
     (4030101, 0, 503773, 1, 1, 0),
     (4030102, 0, 503765, 1, 1, 0),
     (4030103, 0, 503771, 1, 1, 0),

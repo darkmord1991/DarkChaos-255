@@ -7,8 +7,15 @@
 --      to never send CMSG_AREATRIGGER for these rows - neither 607009 nor 6101.
 --   v3 (THIS): mechanism switched to an invisible SmartAI trigger NPC at the well bottom
 --      (OOC LOS range 6 -> teleport invoker). 100% server-side, no client data involved.
---      The v2 areatrigger/areatrigger_teleport rows are kept below - they are harmless,
---      and if the client-side mystery is ever solved they'd start working as a bonus.
+--      The v2 areatrigger/areatrigger_teleport rows are kept below.
+--   v4 2026-08-29: ids renumbered 607008/607009 -> 6929/6930, and the v2 mystery is SOLVED
+--      (see the 2026-08-13 investigation). Two separate client-data bugs, both since fixed:
+--      (a) ids above 65535 overflow the client's 16-BIT trigger table (0xFFFF sentinel,
+--          Wow.exe VA 0x00831686) - that killed 607009 and crashed the client with
+--          ERROR #132 on map changes; (b) the CSV->DBC round-trip had degraded 63 stock
+--          AreaTrigger rows, and the client's trigger scan is gated on the table loading at
+--          all, so NOTHING fired - which is why the low-id 6101 was silent too. The v3
+--          SmartAI NPC remains the live mechanism; these rows are a working bonus now.
 -- Requires worldserver RESTART after applying (new template + spawns + SmartAI).
 
 -- ---------- v3: invisible SmartAI well trigger NPCs ----------
@@ -48,19 +55,23 @@ DROP TABLE `_dc_tmp_wellspawn`;
 DELETE FROM `smart_scripts` WHERE `entryorguid` IN (3500900, 3500901) AND `source_type` = 0;
 INSERT INTO `smart_scripts` (`entryorguid`, `source_type`, `id`, `link`, `event_type`, `event_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `event_param5`, `event_param6`, `action_type`, `action_param1`, `action_param2`, `action_param3`, `action_param4`, `action_param5`, `action_param6`, `target_type`, `target_param1`, `target_param2`, `target_param3`, `target_param4`, `target_x`, `target_y`, `target_z`, `target_o`, `comment`) VALUES
 (3500900, 0, 0, 0, 10, 0, 100, 0, 2, 5, 1000, 1000, 1, 0, 62, 1409, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 1061.46, 1011.69, 499.26, 1.539, 'GuildHouse Well 1409 - OOC LOS - Teleport player to Underbelly'),
-(3500901, 0, 0, 0, 10, 0, 100, 0, 2, 5, 1000, 1000, 1, 0, 62, 1413, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 1061.46, 1011.69, 499.26, 1.539, 'GuildHouse Well 1413 - OOC LOS - Teleport player to Underbelly');
+(3500901, 0, 0, 0, 10, 0, 100, 0, 2, 5, 1000, 1000, 1, 0, 62, 1413, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 1113.08, 1030.18, 496.10, 3.60, 'GuildHouse Well 1413 - OOC LOS - Teleport player to Underbelly');
 
 -- ---------- v2 rows (kept, currently inert client-side) ----------
-DELETE FROM `areatrigger` WHERE `entry` IN (607008, 607009, 6100, 6101);
+DELETE FROM `areatrigger` WHERE `entry` IN (6929, 6930, 6100, 6101);
 INSERT INTO `areatrigger` (`entry`, `map`, `x`, `y`, `z`, `radius`, `length`, `width`, `height`, `orientation`) VALUES
-(607008, 1409, 1046.05, 1018.64, 523.96, 6, 0, 0, 0, 0),
-(607009, 1413, 1046.05, 1018.64, 523.96, 6, 0, 0, 0, 0),
+(6929, 1409, 1046.05, 1018.64, 523.96, 6, 0, 0, 0, 0),
+(6930, 1413, 1046.05, 1018.64, 523.96, 6, 0, 0, 0, 0),
 (6100, 1409, 1046.05, 1018.64, 521.0, 6, 0, 0, 0, 0),
 (6101, 1413, 1046.05, 1018.64, 521.0, 6, 0, 0, 0, 0);
 
-DELETE FROM `areatrigger_teleport` WHERE `ID` IN (607008, 607009, 6100, 6101);
+DELETE FROM `areatrigger_teleport` WHERE `ID` IN (6929, 6930, 6100, 6101);
 INSERT INTO `areatrigger_teleport` (`ID`, `Name`, `target_map`, `target_position_x`, `target_position_y`, `target_position_z`, `target_orientation`) VALUES
-(607008, 'GuildHouse Dalaran (1409) - Well teleporter', 1409, 1061.46, 1011.69, 499.26, 1.539),
-(607009, 'GuildHouse Dalaran Legion (1413) - Well teleporter', 1413, 1061.46, 1011.69, 499.26, 1.539),
+-- The 1413 targets are the CORRECTED ones from 2026_08_11_08_dc_underbelly_fixups.sql
+-- (the old 1061.46/1011.69/499.26 is the WotLK pipe exit run through the transform and
+-- lands inside rock on the Legion sewer layout). Folded in here so re-running this file
+-- cannot regress that fix.
+(6929, 'GuildHouse Dalaran (1409) - Well teleporter', 1409, 1061.46, 1011.69, 499.26, 1.539),
+(6930, 'GuildHouse Dalaran Legion (1413) - Well teleporter', 1413, 1113.08, 1030.18, 496.10, 3.60),
 (6100, 'GuildHouse Dalaran (1409) - Well teleporter (low id)', 1409, 1061.46, 1011.69, 499.26, 1.539),
-(6101, 'GuildHouse Dalaran Legion (1413) - Well teleporter (low id)', 1413, 1061.46, 1011.69, 499.26, 1.539);
+(6101, 'GuildHouse Dalaran Legion (1413) - Well teleporter (low id)', 1413, 1113.08, 1030.18, 496.10, 3.60);

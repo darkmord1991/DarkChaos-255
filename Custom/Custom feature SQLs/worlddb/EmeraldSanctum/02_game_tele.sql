@@ -1,7 +1,7 @@
 -- Emerald Sanctum (map 824) -- `.tele dcemeraldsanctum` / `.tele dcemeraldsanctumgate`.
 --
 -- dcemeraldsanctum     = GM shortcut to the arrival point inside the raid.
--- dcemeraldsanctumgate = the world-side entrance on map 750, Hyjal, ~170 yd from Nordrassil.
+-- dcemeraldsanctumgate = the world-side entrance on map 750, in the Grove of Aessina.
 --
 -- The in-raid Z is the strongest number in this whole import: the sampler (worldserver's own
 -- MCVT -> V9/V8 -> getHeightFromFloat maths, run over the shipped ADTs) computes 30.099 at
@@ -19,4 +19,4 @@ DELETE FROM `game_tele` WHERE `id` IN (10647, 10648)
    OR `name` IN ('dcemeraldsanctum', 'dcemeraldsanctumgate');
 INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orientation`, `map`, `name`) VALUES
     (10647, 2767.4, 2959.0, 30.10, 0.785, 824, 'dcemeraldsanctum'),
-    (10648, 4833.10, -1731.70, 1196.215, 4.712, 750, 'dcemeraldsanctumgate');
+    (10648, 5110.93, -1751.19, 1334.10, 3.831, 750, 'dcemeraldsanctumgate');

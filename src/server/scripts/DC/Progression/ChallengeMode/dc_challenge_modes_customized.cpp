@@ -518,6 +518,12 @@ public:
         // DarkChaos-255: LEVEL CHECK REMOVED - Usable at any level including 255
         // Original had: if (player->getLevel() > 5) return false;
 
+        // Onboarding quest credit: returning true below short-circuits GameObject::Use(),
+        // so the GAMEOBJECT_TYPE_GOOBER path that would normally hand out the quest
+        // credit for this object never runs. Award it here instead - KillCreditGO is a
+        // no-op unless the player actually has a quest that requires this object.
+        player->KillCreditGO(go->GetEntry(), go->GetGUID());
+
         ClearGossipMenuFor(player);
 
         // Title and instructions

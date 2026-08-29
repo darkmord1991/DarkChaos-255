@@ -1,0 +1,63 @@
+-- ===========================================================================
+-- Heirloom Adventurer's Haversack - blue ErrorCube box on the character's back
+-- ===========================================================================
+--
+-- SYMPTOM: characters carrying the Haversack show a blue-and-white checkered
+-- box floating at the neck/upper back. It is welded to the model (does not
+-- animate), shows on the character-select and character-creation screens, and
+-- in-world it comes and goes with model re-composition (gone on a fresh login,
+-- back after an equipment change). It has nothing to do with race or class -
+-- every affected character simply carries this bag.
+--
+-- WHAT THE BOX IS: `Spells\ErrorCube.m2` textured with `Spells\FrankCube.blp`.
+-- That is the client's placeholder for a MODEL IT COULD NOT OPEN (a missing
+-- texture renders white instead, which is a different symptom).
+--
+-- ROOT CAUSE - a copy-pasted template row in ItemDisplayInfo.dbc:
+--
+--   item 300366 "Heirloom Adventurer's Haversack"  class=1, InventoryType=18,
+--   displayid=50026, and ItemDisplayInfo row 50026 carries
+--   ModelName_1 = 'Buckler_Damaged_A_01.mdx'.
+--
+-- InventoryType 18 makes the client resolve that slot's component model out of
+-- `Item\ObjectComponents\Quiver\`. Bucklers live in `Shield\` - there is no
+-- buckler anywhere in `Quiver\` - so the client asks for
+-- `Item\ObjectComponents\Quiver\Buckler_Damaged_A_01.m2`, which exists in NONE
+-- of the 32 client archives, and substitutes ErrorCube at the quiver
+-- attachment point: the back.
+--
+-- The bogus model name was pasted across the whole DC heirloom display block
+-- (50026-50032, 50035-50037, 50300, 50301) while each row got its own icon.
+-- Only 50026 is visible, because it is the only one on a slot the client
+-- resolves a model for; the rest sit on neck / cloak / finger / trinket, which
+-- are not modeled slots. They are still wrong data.
+--
+-- TWO WAYS TO FIX. They are independent - either one removes the box.
+--
+--   1. THE REAL FIX (client-side, done separately): blank ModelName_1 and
+--      ModelTexture_1 on those 12 rows in Custom/CSV DBC/ItemDisplayInfo.csv,
+--      recompile and deploy. NOTE the client reads ItemDisplayInfo.dbc from
+--      enGB\patch-enGB-3.MPQ, NOT patch-4.MPQ - the locale archives shadow it,
+--      so a deploy that only updates patch-4 will silently do nothing.
+--      Needs every player to take the patch.
+--
+--   2. THIS FILE (server-side): repoint the Haversacks at a display that has
+--      no model at all. Works immediately for everyone with no client patch.
+--
+-- Display 8270 is stock (Courier's Bag / Sunstrider Book Satchel): verified
+-- ModelName_1 and ModelTexture_1 are both EMPTY, so it cannot resolve a model,
+-- and its icon is INV_Misc_Bag_04 - a satchel. That is also a straight
+-- improvement over INV_Shield_06, which is a SHIELD icon on a bag.
+--
+-- Idempotent: guarded on the current displayid, so re-running is a no-op.
+-- ===========================================================================
+
+UPDATE `item_template`
+SET `displayid` = 8270
+WHERE `entry` IN (300366, 302607, 302608, 302609, 302610, 302611)
+  AND `displayid` = 50026;
+
+-- Verification - expect 6 rows, all displayid 8270:
+-- SELECT entry, name, class, InventoryType, displayid
+-- FROM item_template
+-- WHERE entry IN (300366, 302607, 302608, 302609, 302610, 302611);

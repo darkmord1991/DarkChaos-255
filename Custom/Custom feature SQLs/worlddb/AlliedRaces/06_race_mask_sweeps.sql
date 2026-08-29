@@ -1,3 +1,9 @@
+-- NOTE (2026-08-28): the per-faction test below keys on the HUMAN bit for Alliance and the ORC
+-- bit for Horde. That is too narrow -- anything allowed to e.g. Troll + Tauren but NOT Orc never
+-- opened to the new races, which cost ~3,060 items and ~90 quests per race. 14_playability_fixes.sql
+-- redoes both sweeps against ANY stock race of the faction (Alliance 3149, Horde 946) and is the
+-- version to copy for the next race. Left as-is here because it is idempotent and 14_ supersedes it.
+
 -- Allied races: open race-gated content to bits 23/24 (Horde) and 25 (Alliance).
 -- All-race sentinels are pinned FIRST (Worgoblin's sweep-order lesson). The running
 -- all-races mask grows each port: 4095 -> 6295551 (pandaren) -> 65015807 (these three).

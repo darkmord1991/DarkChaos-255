@@ -5250,6 +5250,45 @@ void SpellMgr::LoadSpellInfoCorrections()
         spellInfo->AttributesEx3 |= SPELL_ATTR3_ALWAYS_HIT;
     });
 
+    // DarkChaos custom marker buffs: hotspot XP, prestige ranks and the alt-character
+    // XP bonus were all cloned from the same mage donor row in Spell.dbc, so they carry
+    // SpellFamilyName 3 (SPELLFAMILY_MAGE) with SpellFamilyFlags[0] 0x400. That makes
+    // SpellInfo::LoadSpellSpecific() classify every one of them as
+    // SPELL_SPECIFIC_MAGE_ARCANE_BRILLANCE, which IsAuraExclusiveBySpecificWith() treats
+    // as exclusive with itself - so any two of these buffs (and real Arcane Intellect /
+    // Arcane Brilliance) mutually strip each other: walking into a hotspot removed the
+    // prestige aura. Clearing the family restores plain generic stacking. This runs
+    // before LoadSpellSpecificAndAuraState(), so no Spell.dbc or client patch is needed.
+    ApplySpellFix({
+        800001,                                 // DC Hotspot - XP Buff
+        800010, 800011, 800012, 800013, 800014, // DC Prestige 1-5
+        800015, 800016, 800017, 800018, 800019, // DC Prestige 6-10
+        800040, 800041, 800042, 800043, 800044  // DC Alt Bonus - 5/10/15/20/25% XP
+        }, [](SpellInfo* spellInfo)
+    {
+        spellInfo->SpellFamilyName = SPELLFAMILY_GENERIC;
+        spellInfo->SpellFamilyFlags = flag96(0, 0, 0);
+    });
+
+    // DC Prestige 1-10: the live Spell.dbc rows carry EffectAura_1 = 4
+    // (SPELL_AURA_DUMMY) with EffectBasePoints_1 = 0, so the prestige stat bonus never
+    // reached the player - PrestigeBonusAuraScript computed an amount that a dummy aura
+    // has no use for. Restore the intended aura: SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE
+    // with MiscValue -1 (all stats, see AuraEffect::HandleModTotalPercentStat). Base
+    // points are set to the nominal prestige level so the effect reads as positive and
+    // still behaves sanely if the aura script fails to load; the live amount comes from
+    // PrestigeBonusAuraScript::CalculateAmount (Prestige.StatBonusPercent per level plus
+    // the accumulated prestige-challenge bonus).
+    ApplySpellFix({
+        800010, 800011, 800012, 800013, 800014, // DC Prestige 1-5
+        800015, 800016, 800017, 800018, 800019  // DC Prestige 6-10
+        }, [](SpellInfo* spellInfo)
+    {
+        spellInfo->Effects[EFFECT_0].ApplyAuraName = SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE;
+        spellInfo->Effects[EFFECT_0].MiscValue = -1;
+        spellInfo->Effects[EFFECT_0].BasePoints = int32(spellInfo->Id - 800009);
+    });
+
     for (uint32 i = 0; i < GetSpellInfoStoreSize(); ++i)
     {
         SpellInfo* spellInfo = mSpellInfoMap[i];

@@ -4,7 +4,7 @@
 -- Wires the clone into the world: instance binding, the level gates for its three
 -- difficulties, the walk-in entrance on map 750, and a GM teleport.
 --
--- The AreaTrigger BOXES live in AreaTrigger.dbc (ids 607004/607005, added by
+-- The AreaTrigger BOXES live in AreaTrigger.dbc (ids 6925/6926, added by
 -- Custom/BlackfathomAshenvale/add_bfd820_dbc_rows.py) and must be compiled and deployed to
 -- the client before these rows do anything.
 -- =====================================================================================
@@ -55,15 +55,15 @@ INSERT INTO `dungeon_access_template`
 -- BOTH BOXES WERE RE-MEASURED IN GAME and moved in `Custom/CSV DBC/AreaTrigger.csv`; this
 -- file only supplies their teleport targets. **The DBC must be recompiled and redeployed to
 -- the client or neither trigger fires** -- the client reads AreaTrigger.dbc itself and only
--- sends CMSG_AREATRIGGER for boxes it knows about, which is why 607004 was silent while
--- Timbermaw's 607002 worked: 607002 had been deployed, 607004 had not.
+-- sends CMSG_AREATRIGGER for boxes it knows about, which is why 6925 was silent while
+-- Timbermaw's 6923 worked: 6923 had been deployed, 6925 had not.
 --
---   607004 entrance, map 750: 4250.2705 / 748.8062 / -23.281  (was 4252.37 / 756.97 / -23.06,
+--   6925 entrance, map 750: 4250.2705 / 748.8062 / -23.281  (was 4252.37 / 756.97 / -23.06,
 --     which came off stock trigger 257 on map 1 -- VANILLA Zoram Strand, not map 750's Cata one)
---   607005 exit,     map 820: -176.8639 / 51.55968 / -49.6351 (was sitting on the arrival point)
+--   6926 exit,     map 820: -176.8639 / 51.55968 / -49.6351 (was sitting on the arrival point)
 --
--- Both now use the radius-0, 8x8x10 box shape that 607002 already proves fires in game. The
--- old 607004 used Radius 12, and THAT is what made the pair unsafe: the exit drops the player
+-- Both now use the radius-0, 8x8x10 box shape that 6923 already proves fires in game. The
+-- old 6925 used Radius 12, and THAT is what made the pair unsafe: the exit drops the player
 -- 11.53 yd from the entrance box, inside a 12-yd sphere, so walking out would have teleported
 -- them straight back in. Against an 8-wide box (half-extent 4) the 10.48 yd Y-separation is
 -- clear. Clearances, all verified: exit landing -> entrance box 11.53 yd; entrance box ->
@@ -71,11 +71,11 @@ INSERT INTO `dungeon_access_template`
 -- the NPC, which is the bug Timbermaw's gate had); exit box -> arrival point 61.55 yd.
 -- Re-check all three if you move any of them.
 -- -------------------------------------------------------------------------------------
-DELETE FROM `areatrigger_teleport` WHERE `ID` IN (607004, 607005);
+DELETE FROM `areatrigger_teleport` WHERE `ID` IN (6925, 6926);
 INSERT INTO `areatrigger_teleport`
     (`ID`, `Name`, `target_map`, `target_position_x`, `target_position_y`, `target_position_z`, `target_orientation`) VALUES
-    (607004, 'Blackfathom Deeps Ashenvale (Entrance)', 820, -151.89, 106.96, -39.87, 4.53),
-    (607005, 'Blackfathom Deeps Ashenvale (Exit)', 750, 4246.28, 738.322, -25.9246, 1.86366);
+    (6925, 'Blackfathom Deeps Ashenvale (Entrance)', 820, -151.89, 106.96, -39.87, 4.53),
+    (6926, 'Blackfathom Deeps Ashenvale (Exit)', 750, 4246.28, 738.322, -25.9246, 1.86366);
 
 -- -------------------------------------------------------------------------------------
 -- game_tele -- `.tele dcbfd`.
@@ -97,5 +97,5 @@ INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orient
 -- -------------------------------------------------------------------------------------
 SELECT 'instance_template' AS `check`, CAST(COUNT(*) AS CHAR) AS result FROM `instance_template` WHERE `map` = 820
 UNION ALL SELECT 'access rows (want 3)', CAST(COUNT(*) AS CHAR) FROM `dungeon_access_template` WHERE `map_id` = 820
-UNION ALL SELECT 'areatrigger_teleport (want 2)', CAST(COUNT(*) AS CHAR) FROM `areatrigger_teleport` WHERE `ID` IN (607004, 607005)
+UNION ALL SELECT 'areatrigger_teleport (want 2)', CAST(COUNT(*) AS CHAR) FROM `areatrigger_teleport` WHERE `ID` IN (6925, 6926)
 UNION ALL SELECT 'game_tele dcbfd (want 1)', CAST(COUNT(*) AS CHAR) FROM `game_tele` WHERE `name` = 'dcbfd';

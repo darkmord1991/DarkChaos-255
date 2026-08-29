@@ -79,6 +79,19 @@ WHERE l.`Entry` IN (26865, 27222, 27638, 27645, 27715, 27729, 36096,
 --
 -- Checked first: areatrigger_involvedrelation has no rows for any of the seven,
 -- so no quest depends on them.
+--
+-- SUPERSEDED IN PART, 2026-08-29. The premise above -- "607000/607001 are not in
+-- AreaTrigger.dbc" -- was true of those IDS but not of the triggers. The whole
+-- custom band had been renumbered by `_shared/renumber_areatrigger_ids.sql`
+-- (607000/607001 -> 6921/6922, 9861/9862 -> 6807/6808) because the 3.3.5 client
+-- keeps trigger ids in a 16-bit table and anything over 65535 crashes it with
+-- ERROR #132. Read back 2026-08-29: 6807/6808 and 6921/6922 ARE present in the
+-- live server AreaTrigger.dbc and in the client's patch-4, so those four were
+-- never really orphans -- only their retired ids were. Karazhan Crypts' rows have
+-- been restored at 6921/6922 by KarazhanCrypts/03_areatrigger_teleport.sql, which
+-- also adds the `areatrigger` definition rows this file's D) section never had.
+-- The DELETEs below are now no-ops for the renumbered ids; do NOT extend them to
+-- 6807/6808/6921/6922. 6194/6581/5876 remain genuinely absent from the DBC.
 -- ---------------------------------------------------------------------------
 DELETE FROM `areatrigger_teleport` WHERE `ID` IN (6194, 6581, 9861, 9862, 607000, 607001, 5876);
 DELETE FROM `areatrigger_scripts` WHERE `entry` IN (6194, 6581, 9861, 9862, 607000, 607001, 5876);

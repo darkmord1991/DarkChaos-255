@@ -80,7 +80,7 @@ WHERE `source_type` IN (0, 9) AND `action_type` = 1 AND `target_type` = 7
 UPDATE `areatrigger_teleport`
 SET `target_position_x` = 1113.08, `target_position_y` = 1030.18,
     `target_position_z` = 496.10,  `target_orientation` = 3.60
-WHERE `ID` IN (6101, 607009);
+WHERE `ID` IN (6101, 6930);
 
 UPDATE `smart_scripts`
 SET `target_x` = 1113.08, `target_y` = 1030.18, `target_z` = 496.10, `target_o` = 3.60

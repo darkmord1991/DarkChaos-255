@@ -93,6 +93,11 @@ enum Races
     RACE_VULPERA            = 24, // TITLE Vulpera
     RACE_ZANDALARI_TROLL    = 25, // TITLE Zandalari Troll
     RACE_KUL_TIRAN          = 26, // TITLE Kul Tiran
+    // DC: Tier-1 reskins share a stock race's MODEL and differ only in textures, so
+    // ChrRaces.ClientFileString points at the parent (dwarf) and CharSections carries the
+    // new appearance. Nothing here is required to CREATE one -- the core has no MAX_RACES
+    // and reads races from ChrRaces at runtime; the entry exists for typed use by racials.
+    RACE_DARK_IRON_DWARF    = 27, // TITLE Dark Iron Dwarf
     //RACE_NAGA           = 13,
     //RACE_BROKEN         = 14,
     //RACE_SKELETON       = 15,
