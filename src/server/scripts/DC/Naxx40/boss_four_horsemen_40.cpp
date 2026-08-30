@@ -26,9 +26,12 @@ enum Spells
 {
     SPELL_BERSERK                    = 26662,
     // Marks
+    // 28834 used to be flagged "requires Spell DBC Edit". Checked against the live
+    // Spell.dbc (2026-08-30): 28832-28835 all exist and are identical in attributes,
+    // effect (6 = APPLY_AURA), targets (22/15) and aura (4 = DUMMY). No edit needed.
     SPELL_MARK_OF_KORTHAZZ           = 28832,
     SPELL_MARK_OF_BLAUMEUX           = 28833,
-    SPELL_MARK_OF_MOGRAINE           = 28834, // TODO: Requires Spell DBC Edit
+    SPELL_MARK_OF_MOGRAINE           = 28834,
     SPELL_MARK_OF_ZELIEK             = 28835,
     SPELL_MARK_DAMAGE                = 28836,
     // Korth'azz

@@ -83,12 +83,20 @@ namespace Seasons
 
     void ResetItemUpgradeWeeklyEarned()
     {
-        // Note: `dc_player_upgrade_tokens.last_transaction_at` will update due to ON UPDATE.
-        CharacterDatabase.DirectExecute(
-            "UPDATE dc_player_upgrade_tokens SET weekly_earned = 0 "
-            "WHERE currency_type = 'upgrade_token' AND weekly_earned <> 0");
-
-        LOG_INFO("module.dc", "[WeeklyReset] ItemUpgrades weekly_earned reset");
+        // Deliberately does nothing. This used to zero
+        // `dc_player_upgrade_tokens.weekly_earned`, but that table was retired when
+        // upgrade currency became item-based: nothing has written the column for a
+        // long time, so the UPDATE was clearing a value no reader consulted and
+        // logging a reset that had not happened.
+        //
+        // The weekly earn cap now derives its total from `dc_token_transaction_log`
+        // (see IsAtWeeklyTokenCap in ItemUpgrades/ItemUpgradeTokenHooks.cpp). That
+        // counter is keyed by week start and re-seeds itself when the week rolls
+        // over, so it needs no reset step here.
+        //
+        // Kept as a named no-op rather than deleted: it is part of the documented
+        // weekly-reset sequence, and a future per-week counter that does need
+        // clearing belongs here.
     }
 
     void RunWeeklyResetIfNeeded()

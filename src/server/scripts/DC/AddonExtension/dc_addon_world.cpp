@@ -33,6 +33,7 @@
 #include "DC/RareSpawns/dc_rare_spawns.h"
 
 #include <ctime>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -114,8 +115,11 @@ namespace World
         uint64 expiresAtMs = 0;
     };
 
+    // Held behind a shared_ptr so a cache hit costs a refcount bump instead of
+    // deep-copying the ~1.2 KB snapshot string plus one string per world boss.
+    // Every GET_CONTENT request and every handshake snapshot goes through here.
     static std::mutex sWorldContentCacheLock;
-    static CachedWorldContentPayload sCachedWorldContentPayload;
+    static std::shared_ptr<CachedWorldContentPayload const> sCachedWorldContentPayload;
 
     // Helper: Build hotspots array from the in-memory authoritative grid
     // (sHotspotMgr), avoiding a world-thread DB round-trip on every
@@ -214,18 +218,22 @@ namespace World
         return payload;
     }
 
-    static CachedWorldContentPayload GetCachedWorldContentPayload()
+    static std::shared_ptr<CachedWorldContentPayload const> GetCachedWorldContentPayload()
     {
         uint64 const nowMs = static_cast<uint64>(
             GameTime::GetGameTimeMS().count());
 
         {
             std::lock_guard<std::mutex> lock(sWorldContentCacheLock);
-            if (sCachedWorldContentPayload.expiresAtMs > nowMs)
+            if (sCachedWorldContentPayload
+                && sCachedWorldContentPayload->expiresAtMs > nowMs)
                 return sCachedWorldContentPayload;
         }
 
-        CachedWorldContentPayload payload = BuildWorldContentPayload();
+        // Two callers can race into a rebuild here; last writer wins, as before.
+        // Readers that already took a pointer keep the payload they got alive.
+        auto payload = std::make_shared<CachedWorldContentPayload const>(
+            BuildWorldContentPayload());
 
         std::lock_guard<std::mutex> lock(sWorldContentCacheLock);
         sCachedWorldContentPayload = payload;
@@ -234,16 +242,17 @@ namespace World
 
     void SendWorldContentSnapshot(Player* player)
     {
-        CachedWorldContentPayload payload = GetCachedWorldContentPayload();
+        std::shared_ptr<CachedWorldContentPayload const> const payload =
+            GetCachedWorldContentPayload();
 
         JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
-        response.SetPreEncodedJson(payload.snapshotJson);
+        response.SetPreEncodedJson(payload->snapshotJson);
         SendWorldMessage(player, response);
 
         // Compatibility / robustness:
         // Even with JSON chunking, some clients may fail to reassemble or may miss large snapshots.
         // Send each boss as a small SMSG_UPDATE payload so DC-InfoBar can always populate the list.
-        for (std::string const& bossUpdateJson : payload.bossUpdateJsons)
+        for (std::string const& bossUpdateJson : payload->bossUpdateJsons)
         {
             JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
             upd.SetPreEncodedJson(bossUpdateJson);

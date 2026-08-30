@@ -51,6 +51,7 @@
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -528,9 +529,20 @@ namespace DCQoS
         }
     };
 
+    // One entry caches both halves of an enrichment response under a single
+    // expiry: the flat `line`, and the structured v2 `lines[]` payload. The two
+    // are filled by separate calls, so each carries its own validity flag
+    // rather than relying on the order they happen to be requested in.
     struct SpellTooltipLineCacheEntry
     {
         std::string line;
+        bool hasLine = false;
+
+        // Shared so a cache hit costs a refcount bump: the JsonValue tree is a
+        // vector of objects, each holding a std::map of strings.
+        std::shared_ptr<DCAddon::JsonValue const> lines;
+        bool linesFamilyMetadata = false;
+
         time_t expiresAt = 0;
     };
 
@@ -4344,6 +4356,107 @@ namespace DCQoS
         return lines;
     }
 
+    // Drops expired entries once the cache passes its soft cap.
+    // Caller holds s_SpellTooltipLineCacheMutex.
+    static void PruneSpellTooltipCacheLocked(time_t now)
+    {
+        if (s_SpellTooltipLineCache.size() < SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP)
+            return;
+
+        for (auto itr = s_SpellTooltipLineCache.begin();
+            itr != s_SpellTooltipLineCache.end(); )
+        {
+            if (itr->second.expiresAt <= now)
+                itr = s_SpellTooltipLineCache.erase(itr);
+            else
+                ++itr;
+        }
+
+        // Still oversized after pruning expired entries: drop all to keep
+        // memory bounded (rare with a short TTL).
+        if (s_SpellTooltipLineCache.size() >= SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP * 2)
+            s_SpellTooltipLineCache.clear();
+    }
+
+    // Returns the entry for `key`, resetting it first when it is new or expired
+    // so both halves always share one expiry. Filling the second half of a live
+    // entry deliberately does not extend that expiry - the TTL is what bounds
+    // staleness after a gear change, and refreshing it on every touch would let
+    // a frequently requested tooltip go stale indefinitely.
+    // Caller holds s_SpellTooltipLineCacheMutex.
+    static SpellTooltipLineCacheEntry& OpenSpellTooltipCacheEntryLocked(
+        SpellTooltipLineKey const& key, time_t now, uint32 ttlSeconds)
+    {
+        // Before operator[]: pruning can clear the map and invalidate references.
+        PruneSpellTooltipCacheLocked(now);
+
+        SpellTooltipLineCacheEntry& entry = s_SpellTooltipLineCache[key];
+        if (entry.expiresAt <= now)
+        {
+            entry = SpellTooltipLineCacheEntry();
+            entry.expiresAt = now + static_cast<time_t>(ttlSeconds);
+        }
+
+        return entry;
+    }
+
+    // Structured (v2) counterpart of GetOrBuildSpellTooltipLine, sharing its
+    // cache, key and TTL.
+    //
+    // BuildSpellTooltipEnrichmentLines() is the expensive half of an enrichment
+    // response - power cost, cast time and range are recomputed from live player
+    // stats and the description templates are rendered - and it used to run on
+    // every single request even when the flat line came straight from the cache.
+    // SMSG_SPELL_TOOLTIP_ENRICHMENT is the highest-volume message on the realm,
+    // so that was the bulk of what the module cost.
+    //
+    // includeFamilyMetadata is an input to the build but not part of the key
+    // (it is a per-player setting that rarely changes), so a mismatch counts as
+    // a miss and rebuilds.
+    static std::shared_ptr<DCAddon::JsonValue const> GetOrBuildSpellTooltipLines(
+        Player* player, uint32 spellId, uint32 contextHash,
+        SpellInfo const* spellInfo, std::string const& line,
+        bool includeFamilyMetadata)
+    {
+        auto build = [&]()
+        {
+            return std::make_shared<DCAddon::JsonValue const>(
+                BuildSpellTooltipEnrichmentLines(player, spellId, contextHash,
+                    spellInfo, line, includeFamilyMetadata));
+        };
+
+        uint32 const ttlSeconds = sConfigMgr->GetOption<uint32>(
+            "DC.QoS.TooltipEnrichment.CacheTtlSeconds", 60);
+        if (ttlSeconds == 0 || !player)
+            return build();
+
+        SpellTooltipLineKey const key{ player->GetGUID().GetCounter(), spellId,
+            contextHash };
+        time_t const now = time(nullptr);
+
+        {
+            std::lock_guard<std::mutex> lock(s_SpellTooltipLineCacheMutex);
+            auto itr = s_SpellTooltipLineCache.find(key);
+            if (itr != s_SpellTooltipLineCache.end()
+                && itr->second.expiresAt > now
+                && itr->second.lines
+                && itr->second.linesFamilyMetadata == includeFamilyMetadata)
+                return itr->second.lines;
+        }
+
+        std::shared_ptr<DCAddon::JsonValue const> lines = build();
+
+        {
+            std::lock_guard<std::mutex> lock(s_SpellTooltipLineCacheMutex);
+            SpellTooltipLineCacheEntry& entry =
+                OpenSpellTooltipCacheEntryLocked(key, now, ttlSeconds);
+            entry.lines = lines;
+            entry.linesFamilyMetadata = includeFamilyMetadata;
+        }
+
+        return lines;
+    }
+
     // AddonProtocol skeleton for the mixed tooltip architecture:
     // request payload order: requestId, spellId, contextHash
     // JSON response fields: requestId, spellId, contextHash, status, line, lines[]
@@ -4366,14 +4479,14 @@ namespace DCQoS
         SpellTooltipTransportDecision transportDecision =
             ResolveSpellTooltipTransportDecision(player, protocolRequestId,
                 transportPreference);
-        DCAddon::JsonValue structuredLines;
+        std::shared_ptr<DCAddon::JsonValue const> structuredLines;
         DCAddon::JsonValue const* structuredLinesPtr = nullptr;
 
         if (status == 0 && spellInfo)
         {
-            structuredLines = BuildSpellTooltipEnrichmentLines(player, spellId,
+            structuredLines = GetOrBuildSpellTooltipLines(player, spellId,
                 contextHash, spellInfo, line, includeFamilyMetadata);
-            structuredLinesPtr = &structuredLines;
+            structuredLinesPtr = structuredLines.get();
         }
 
         if (IsTooltipTransportDebugEnabled())
@@ -4418,7 +4531,7 @@ namespace DCQoS
         if (structuredLinesPtr)
         {
             msg.Set("source", "server-v2");
-            msg.Set("lines", structuredLines);
+            msg.Set("lines", *structuredLinesPtr);
         }
 
         msg.Send(player);
@@ -4442,7 +4555,8 @@ namespace DCQoS
         {
             std::lock_guard<std::mutex> lock(s_SpellTooltipLineCacheMutex);
             auto itr = s_SpellTooltipLineCache.find(key);
-            if (itr != s_SpellTooltipLineCache.end() && itr->second.expiresAt > now)
+            if (itr != s_SpellTooltipLineCache.end() && itr->second.expiresAt > now
+                && itr->second.hasLine)
                 return itr->second.line;
         }
 
@@ -4451,26 +4565,10 @@ namespace DCQoS
 
         {
             std::lock_guard<std::mutex> lock(s_SpellTooltipLineCacheMutex);
-            if (s_SpellTooltipLineCache.size() >= SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP)
-            {
-                for (auto itr = s_SpellTooltipLineCache.begin();
-                    itr != s_SpellTooltipLineCache.end(); )
-                {
-                    if (itr->second.expiresAt <= now)
-                        itr = s_SpellTooltipLineCache.erase(itr);
-                    else
-                        ++itr;
-                }
-
-                // Still oversized after pruning expired entries: drop all to
-                // keep memory bounded (rare with a short TTL).
-                if (s_SpellTooltipLineCache.size()
-                    >= SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP * 2)
-                    s_SpellTooltipLineCache.clear();
-            }
-
-            s_SpellTooltipLineCache[key] = SpellTooltipLineCacheEntry{
-                line, now + static_cast<time_t>(ttlSeconds) };
+            SpellTooltipLineCacheEntry& entry =
+                OpenSpellTooltipCacheEntryLocked(key, now, ttlSeconds);
+            entry.line = line;
+            entry.hasLine = true;
         }
 
         return line;

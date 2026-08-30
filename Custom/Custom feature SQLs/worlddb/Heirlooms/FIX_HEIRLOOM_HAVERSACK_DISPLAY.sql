@@ -61,3 +61,26 @@ WHERE `entry` IN (300366, 302607, 302608, 302609, 302610, 302611)
 -- SELECT entry, name, class, InventoryType, displayid
 -- FROM item_template
 -- WHERE entry IN (300366, 302607, 302608, 302609, 302610, 302611);
+
+-- ===========================================================================
+-- ADDENDUM 2026-08-30 - the UPDATE above is NOT self-sufficient.
+-- ===========================================================================
+-- ObjectMgr::LoadItemTemplates (ObjectMgr.cpp:3534) runs enforceDBCAttributes:
+-- it OVERWRITES item_template.displayid with Item.dbc's DisplayInfoID and logs
+--   "Item (Entry: 300366) does not have a correct display id (8270),
+--    must be 50026."
+-- So with only this UPDATE applied, the server still handed out 50026 (the
+-- INV_Shield_06 icon) on every item query, and the boot log carried six errors.
+--
+-- Fixed by aligning the DBC to the DB: Custom/CSV DBC/Item.csv rows for
+-- 300366 / 302607-302611 repointed 50026 -> 8270, recompiled with
+--   python K:/Dark-Chaos/wow.export-main/tools/dbc-compile.py --only Item
+-- (154987 records, verify = 0 field diffs; diff vs the pre-change CSV = exactly
+-- those 6 cells), deployed to patch-4.MPQ + enGB/patch-enGB-3.MPQ, staged to
+-- K:/Dark-Chaos/Server/data/dbc/Item.dbc, synced to the 3 host candidate dirs.
+-- The live box needs Custom/DBCs/Item.dbc pushed to
+-- /home/wowcore/azeroth-server/data/dbc before the errors stop.
+--
+-- Item.dbc row 191135 also still points at display 50026 (same bag/shield-icon
+-- template) but has no item_template row, so it is inert.
+-- ===========================================================================

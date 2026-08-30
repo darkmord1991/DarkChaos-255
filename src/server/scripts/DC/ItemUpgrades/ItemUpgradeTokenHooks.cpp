@@ -24,7 +24,13 @@
 #include "Map.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DatabaseEnv.h"
+#include "StringFormat.h"
 #include "Common.h"
+#include <algorithm>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -292,14 +298,134 @@ namespace DarkChaos
                 player_guid, currency_type, amount, safeTransaction, safeReason);
         }
 
-        // NOTE: Weekly cap tracking removed - dc_player_upgrade_tokens table deprecated
-        // Item-based currency doesn't support weekly tracking in this path.
-        // Weekly caps can be re-implemented via addon tracking if needed
-        [[maybe_unused]] static bool IsAtWeeklyTokenCap([[maybe_unused]] uint32 player_guid, [[maybe_unused]] uint32 season = 1)
+        // =====================================================================
+        // Weekly Token Cap
+        // =====================================================================
+        //
+        // The currency is item-based now, so there is no balance row to read a
+        // weekly counter off: `dc_player_upgrade_tokens.weekly_earned` is dead
+        // (nothing writes it -- see DCWeeklyResetHub::ResetItemUpgradeWeeklyEarned).
+        //
+        // No new table is needed, though. Every award path below already writes
+        // an audit row via LogTokenTransaction(), so `dc_token_transaction_log`
+        // IS the weekly-earned ledger -- it carries player_guid, currency_type,
+        // amount and created_at, and is indexed on player_guid and created_at.
+        //
+        // That table cannot be queried on the award path itself: OnCreatureKill
+        // fires for every elite kill, and a synchronous SELECT there would put a
+        // DB round-trip in combat. Instead each player's weekly total is held in
+        // memory, seeded once per week by an async query and incremented locally
+        // as awards are made. A restart re-seeds from the log, so the counter
+        // survives it.
+        struct WeeklyEarnedEntry
         {
-            // Weekly cap disabled - return false to allow unlimited earning
-            // TODO: Re-implement via separate tracking table if weekly caps needed
-            return false;
+            uint32 weekStart = 0;   // GetVaultWeekStartTimestamp() this total belongs to
+            uint32 earned = 0;      // upgrade tokens earned during that week
+            bool seeded = false;    // false while the seeding query is still in flight
+        };
+
+        static std::mutex s_weeklyEarnedMutex;
+        static std::unordered_map<uint32, WeeklyEarnedEntry> s_weeklyEarned;
+
+        // 0 disables the cap. Shared with the addon-facing readers in
+        // dc_addon_seasons.cpp and dc_addon_welcome.cpp so the number the client
+        // displays is the number the server enforces.
+        static uint32 GetWeeklyTokenCap()
+        {
+            return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyTokenCap", 0);
+        }
+
+        // Queue the one-per-player-per-week seeding query. Caller holds the lock.
+        static void SeedWeeklyEarnedAsync(uint32 player_guid, uint32 weekStart)
+        {
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(
+                Acore::StringFormat(
+                    // SUM() over an INT UNSIGNED column yields DECIMAL; cast so the
+                    // driver hands back an integer field rather than a decimal one.
+                    "SELECT CAST(COALESCE(SUM(amount), 0) AS UNSIGNED) FROM dc_token_transaction_log "
+                    "WHERE player_guid = {} AND currency_type = 'upgrade_token' "
+                    "AND transaction_type IN ('earn', 'reward') AND created_at >= FROM_UNIXTIME({})",
+                    player_guid, weekStart))
+                .WithCallback([player_guid, weekStart](QueryResult result)
+                {
+                    uint64 const loggedRaw = result ? result->Fetch()[0].Get<uint64>() : 0u;
+                    uint32 const logged = static_cast<uint32>(
+                        std::min<uint64>(loggedRaw, std::numeric_limits<uint32>::max()));
+
+                    std::lock_guard<std::mutex> guard(s_weeklyEarnedMutex);
+                    WeeklyEarnedEntry& entry = s_weeklyEarned[player_guid];
+
+                    // A late callback for a week that has since rolled over must not
+                    // resurrect the old total.
+                    if (entry.weekStart != weekStart)
+                        return;
+
+                    // Awards granted while the query was in flight were counted
+                    // optimistically into entry.earned; the log now includes them,
+                    // so take the log's value rather than adding to it.
+                    entry.earned = std::max(entry.earned, logged);
+                    entry.seeded = true;
+                }));
+        }
+
+        static bool IsAtWeeklyTokenCap(uint32 player_guid, [[maybe_unused]] uint32 season = 1)
+        {
+            uint32 const cap = GetWeeklyTokenCap();
+            if (cap == 0)
+                return false;
+
+            uint32 const weekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
+
+            std::lock_guard<std::mutex> guard(s_weeklyEarnedMutex);
+            WeeklyEarnedEntry& entry = s_weeklyEarned[player_guid];
+
+            if (entry.weekStart != weekStart)
+            {
+                // First check this week (or the week just rolled over): reset and seed.
+                entry.weekStart = weekStart;
+                entry.earned = 0;
+                entry.seeded = false;
+                SeedWeeklyEarnedAsync(player_guid, weekStart);
+            }
+
+            // Fail open until the seed lands. This matches the behaviour the cap
+            // had while it was disabled and keeps one DB round-trip from denying
+            // a reward the player actually earned.
+            if (!entry.seeded)
+                return false;
+
+            return entry.earned >= cap;
+        }
+
+        // Count an award against the in-memory weekly total. Call this only for
+        // upgrade tokens; artifact essence is not capped.
+        static void RecordWeeklyTokensEarned(uint32 player_guid, uint32 amount)
+        {
+            if (amount == 0 || GetWeeklyTokenCap() == 0)
+                return;
+
+            uint32 const weekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
+
+            std::lock_guard<std::mutex> guard(s_weeklyEarnedMutex);
+            WeeklyEarnedEntry& entry = s_weeklyEarned[player_guid];
+
+            if (entry.weekStart != weekStart)
+            {
+                entry.weekStart = weekStart;
+                entry.earned = 0;
+                entry.seeded = false;
+                SeedWeeklyEarnedAsync(player_guid, weekStart);
+            }
+
+            entry.earned += amount;
+        }
+
+        // Drop a logged-out player's counter so the map stays bounded by online
+        // players; it re-seeds from the log on their next award.
+        static void ForgetWeeklyEarned(uint32 player_guid)
+        {
+            std::lock_guard<std::mutex> guard(s_weeklyEarnedMutex);
+            s_weeklyEarned.erase(player_guid);
         }
 
         static bool IsSeasonalConsolidationEnabled()
@@ -316,8 +442,15 @@ namespace DarkChaos
         public:
             PlayerTokenHooks() : PlayerScript("PlayerTokenHooks",
             {
-                PLAYERHOOK_ON_ACHI_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_PVP_KILL
+                PLAYERHOOK_ON_ACHI_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_PVP_KILL,
+                PLAYERHOOK_ON_LOGOUT
             }) {}
+
+            void OnPlayerLogout(Player* player) override
+            {
+                if (player)
+                    ForgetWeeklyEarned(player->GetGUID().GetCounter());
+            }
 
             void OnPlayerPVPKill(Player* killer, Player* victim) override
             {
@@ -347,6 +480,8 @@ namespace DarkChaos
                 uint32 killerGuid = killer->GetGUID().GetCounter();
                 DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                     killerGuid, CURRENCY_UPGRADE_TOKEN, reward, season, killer, true);
+
+                RecordWeeklyTokensEarned(killerGuid, reward);
 
                 // Log transaction
                 std::ostringstream reason;
@@ -398,6 +533,8 @@ namespace DarkChaos
                 uint32 playerGuid = player->GetGUID().GetCounter();
                 DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                     playerGuid, CURRENCY_UPGRADE_TOKEN, reward, season, player, true);
+
+                RecordWeeklyTokensEarned(playerGuid, reward);
 
                 // Log transaction
                 std::ostringstream reason;
@@ -551,6 +688,8 @@ namespace DarkChaos
                 {
                     DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                         playerGuid, CURRENCY_UPGRADE_TOKEN, token_reward, season, player, true);
+
+                    RecordWeeklyTokensEarned(playerGuid, token_reward);
                 }
                 if (essence_reward > 0)
                 {

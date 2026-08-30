@@ -25,6 +25,13 @@
 -- Sothann / Firelands Forgeworks 84-85 south), so the native 84-85 elite belt
 -- lands at 125-130 -- that IS the endgame elite pocket, no rect geometry needed.
 --
+-- SCOPE NOTE (added by 307_): every UPDATE below is guarded by
+-- `entry BETWEEN 3600000 AND 3799999`, so map-750 spawns in the 7,3xx,xxx clone
+-- band are silently skipped -- 5 Hyjal elites sat at level 85-86 for that
+-- reason until 307_ re-levelled them by pinned entry. The guard is deliberate
+-- (widening it would re-level DC-authored NPCs such as 830021 Encampment
+-- Guard), so new clone bands need a catch-up file, not a wider range here.
+--
 -- ORDERING: run AFTER 231_ (needs dc_map750_entryzone) and AFTER 101_ (its
 -- rank-4 88-90 lift is overwritten here by absolute assignment; its
 -- HealthModifier/DamageModifier bumps are RELATIVE and stay wanted).

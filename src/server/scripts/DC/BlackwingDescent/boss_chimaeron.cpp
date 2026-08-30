@@ -454,7 +454,17 @@ struct npc_chimaeron_bile_o_tron : public ScriptedAI
             case ACTION_ACTIVATE_BILE_O_TRON:
                 Talk(SAY_ACTIVATED);
                 DoCastSelf(SPELL_FINKLES_MIXTURE);
-                me->AddAura(SPELL_FINKLES_MIXTURE, me); // tempfix. spell has player only attribute so we gotta add the aura manually for now
+                // Not a temporary hack -- this is the correct 3.3.5 handling.
+                // 82705 is APPLY_AREA_AURA_FRIEND (effect 128) on TARGET_UNIT_CASTER
+                // and carries SPELL_ATTR3_ONLY_ON_PLAYER (AttributesEx3 0x100, verified
+                // in the live Spell.dbc). That attribute makes the core reject the
+                // Bile-O-Tron -- a creature -- as a target of its own cast, so the
+                // carrier aura never lands and the raid-wide area aura never radiates.
+                // Forcing the carrier on with AddAura keeps the attribute doing its real
+                // job: restricting who the area aura reaches to players, as on retail.
+                // Do NOT "fix" this by clearing 0x100 in the DBC -- that would let the
+                // mixture buff nearby creatures and adds too.
+                me->AddAura(SPELL_FINKLES_MIXTURE, me);
                 DoCastSelf(SPELL_FINKLES_MIXTURE_VISUAL);
                 me->GetMotionMaster()->MovePath(me->GetEntry() * 100);
                 break;
@@ -467,7 +477,9 @@ struct npc_chimaeron_bile_o_tron : public ScriptedAI
                 break;
             case ACTION_BILE_O_TRON_BACK_ONLINE:
                 me->RemoveAurasDueToSpell(SPELL_SYSTEM_FAILURE);
-                me->AddAura(SPELL_FINKLES_MIXTURE, me); // tempfix. spell has player only attribute so we gotta add the aura manually for now
+                // See ACTION_ACTIVATE_BILE_O_TRON above for why the carrier aura is
+                // applied directly rather than cast.
+                me->AddAura(SPELL_FINKLES_MIXTURE, me);
                 Talk(SAY_ONLINE);
                 break;
             case ACTION_SHUT_DOWN:

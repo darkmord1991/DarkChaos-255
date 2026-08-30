@@ -16,6 +16,7 @@
 #include "World.h"
 #include <sstream>
 #include <algorithm>
+#include <ctime>
 
 namespace DarkChaos
 {
@@ -230,12 +231,21 @@ namespace DarkChaos
                 if (from_season_id == to_season_id)
                     return true;
 
-                auto from_season = GetSeason(from_season_id);
-                auto to_season = GetSeason(to_season_id);
-
-                if (!from_season || !to_season)
+                // TransitionSeason has always required BOTH seasons to exist -- the
+                // caller falls back to a direct SetActiveSeason() when this returns
+                // false. IsValidSeasonTransition() is deliberately more permissive
+                // (it accepts from_season 0 as "no season running"), so the stricter
+                // source check stays here rather than widening this entry point.
+                if (!GetSeason(from_season_id) || !GetSeason(to_season_id))
                 {
                     LOG_ERROR("seasonal", "TransitionSeason: Invalid season IDs (from={}, to={})",
+                             from_season_id, to_season_id);
+                    return false;
+                }
+
+                if (!IsValidSeasonTransition(from_season_id, to_season_id))
+                {
+                    LOG_ERROR("seasonal", "TransitionSeason: Rejected transition (from={}, to={})",
                              from_season_id, to_season_id);
                     return false;
                 }
@@ -686,9 +696,67 @@ namespace DarkChaos
             }
         }
 
-        bool IsValidSeasonTransition(uint32 /*from_season*/, uint32 /*to_season*/)
+        bool IsValidSeasonTransition(uint32 from_season, uint32 to_season)
         {
-            // TODO: Implement season transition validation logic
+            // Moving a season onto itself is a no-op, which TransitionSeason already
+            // treats as success -- report it as valid so both agree.
+            if (from_season == to_season)
+                return true;
+
+            auto manager = GetSeasonalManager();
+
+            SeasonDefinition* from = from_season ? manager->GetSeason(from_season) : nullptr;
+            SeasonDefinition* to = manager->GetSeason(to_season);
+
+            // The target must exist; the source may legitimately be 0 (first season
+            // ever started, or a realm coming up with no active season).
+            if (!to)
+            {
+                LOG_ERROR("seasonal", "IsValidSeasonTransition: target season {} does not exist", to_season);
+                return false;
+            }
+
+            if (from_season && !from)
+            {
+                LOG_ERROR("seasonal", "IsValidSeasonTransition: source season {} does not exist", from_season);
+                return false;
+            }
+
+            // A season under maintenance is deliberately withheld from players.
+            if (to->season_state == SEASON_STATE_MAINTENANCE)
+            {
+                LOG_ERROR("seasonal", "IsValidSeasonTransition: target season {} is in maintenance", to_season);
+                return false;
+            }
+
+            // Starting a season that has already elapsed would activate a season whose
+            // rewards and resets are already past due.
+            time_t const now = time(nullptr);
+            if (to->end_timestamp > 0 && to->end_timestamp <= now)
+            {
+                LOG_ERROR("seasonal", "IsValidSeasonTransition: target season {} ended at {} (now {})",
+                          to_season, static_cast<uint64>(to->end_timestamp), static_cast<uint64>(now));
+                return false;
+            }
+
+            // Scheduled seasons may be started early by an admin, but that is worth a
+            // record in the log because the advertised start date no longer holds.
+            if (to->season_type == SEASON_TYPE_TIME_BASED && to->start_timestamp > now)
+            {
+                LOG_WARN("seasonal", "IsValidSeasonTransition: target season {} starts at {}, activating {} seconds early",
+                         to_season, static_cast<uint64>(to->start_timestamp),
+                         static_cast<uint64>(to->start_timestamp - now));
+            }
+
+            // Transitioning away from a season that was not the one running means the
+            // caller's view of the world is stale; allow it (the transition rewrites
+            // every season's state anyway) but leave a trail.
+            if (from && from->season_state != SEASON_STATE_ACTIVE)
+            {
+                LOG_WARN("seasonal", "IsValidSeasonTransition: source season {} was not active (state {})",
+                         from_season, static_cast<uint32>(from->season_state));
+            }
+
             return true;
         }
 

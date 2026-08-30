@@ -15,6 +15,7 @@
 #include "DC/MythicPlus/dc_mythicplus_constants.h"
 #include "StringFormat.h"
 #include <cstdlib>
+#include <sstream>
 
 using namespace Acore::ChatCommands;
 using namespace MythicPlusConstants;
@@ -453,8 +454,17 @@ public:
 
             if (!affixes.empty())
             {
-                handler->SendSysMessage(Acore::StringFormat("Active Affixes: |cffffffff{}|r", static_cast<uint32>(affixes.size())));
-                // TODO: Display affix names
+                std::ostringstream affixLine;
+                bool firstAffix = true;
+                for (AffixType affix : affixes)
+                {
+                    if (!firstAffix)
+                        affixLine << ", ";
+                    firstAffix = false;
+                    affixLine << sAffixMgr->GetAffixName(affix);
+                }
+
+                handler->SendSysMessage(Acore::StringFormat("Active Affixes: |cffffffff{}|r", affixLine.str()));
             }
         }
 

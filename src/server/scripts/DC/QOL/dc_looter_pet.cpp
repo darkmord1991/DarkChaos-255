@@ -108,10 +108,12 @@ static std::unordered_map<ObjectGuid, LooterPetState> sLooterPetStates;
 // nothing and does not resurrect it.
 static std::mutex sLooterPetStatesMutex;
 
-// Writes a snapshotted entry's mutable fields back on scope exit, so the
-// per-tick hook can keep its many early returns without repeating the lock
-// dance at each one. `enabled` is deliberately not written back: only the
-// enable/disable and logout paths own that field.
+// Writes a snapshotted entry's companion binding back on scope exit, so the
+// pulse path can keep its many early returns without repeating the lock dance
+// at each one. `enabled` is deliberately not written back: only the
+// enable/disable and logout paths own that field. `elapsedMs` is not written
+// back either - the pulse gate in OnPlayerUpdate advances and resets it under
+// the same lock it takes to snapshot, so this must not stomp it afterwards.
 struct LooterPetStateWriteBack
 {
     ObjectGuid guid;
@@ -124,7 +126,6 @@ struct LooterPetStateWriteBack
         if (it == sLooterPetStates.end())
             return;   // disabled or logged out mid-tick - do not resurrect
 
-        it->second.elapsedMs = state.elapsedMs;
         it->second.boundCompanionGuid = state.boundCompanionGuid;
     }
 };
@@ -267,35 +268,69 @@ public:
         it->second.boundCompanionGuid.Clear();
     }
 
+    // Runs once per player per world tick (20 Hz), on whichever of the eight
+    // map-update threads owns the player's map. Everything below the pulse gate
+    // is therefore reached only once per PulseMs, not once per tick: the gate
+    // used to sit at the very bottom, so a global mutex, a second global
+    // recursive mutex inside IsMythicPlusActive(), a four-branch companion
+    // lookup and a motion-master query all ran 20 times a second per player to
+    // decide, almost always, to do nothing.
     void OnPlayerUpdate(Player* player, uint32 diff) override
     {
         if (!sLooterPetConfig.enabled || !player)
             return;
 
-        // Snapshot under the lock, then release it: everything below calls into
-        // the engine (companion lookup, loot release, chat) and must not hold a
-        // global lock while doing so.
+        // Plain flag reads, no locks and no map lookups - cheapest gates first.
+        // As before, none of these states advance the pulse timer.
+        if (!player->IsAlive() || player->IsFlying())
+            return;
+
+        // Autonomous looter pulses are intentionally out-of-combat only.
+        if (player->IsInCombat())
+            return;
+
+        // Snapshot and advance the timer under one lock, then release it:
+        // everything below calls into the engine (companion lookup, loot
+        // release, chat) and must not hold a global lock while doing so.
+        //
+        // The timer is consumed whether or not the pulse below actually fires.
+        // A blocked attempt therefore waits another full interval instead of
+        // re-running the expensive checks on every subsequent tick.
         LooterPetState state;
+        bool pulseDue = false;
         {
             std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
             auto it = sLooterPetStates.find(player->GetGUID());
             if (it == sLooterPetStates.end() || !it->second.enabled)
                 return;
 
+            it->second.elapsedMs += diff;
+            if (it->second.elapsedMs >= sLooterPetConfig.pulseMs)
+            {
+                it->second.elapsedMs = 0;
+                pulseDue = true;
+            }
+
             state = it->second;
         }
+
+        // Reclaiming a companion that finished a loot walk stays on the per-tick
+        // path so the pet does not idle at a corpse for up to a full interval.
+        // Only a companion we bound ourselves can be mid-walk, so resolve the
+        // stored guid directly rather than re-running the full lookup.
+        if (state.boundCompanionGuid)
+        {
+            if (Unit* bound = ObjectAccessor::GetUnit(*player, state.boundCompanionGuid))
+                RestoreCompanionFollow(player, bound);
+        }
+
+        if (!pulseDue)
+            return;
 
         if (!DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID()))
             return;
 
         if (sMythicRuns->IsMythicPlusActive(player->GetMap()))
-            return;
-
-        if (!player->IsAlive() || player->IsFlying())
-            return;
-
-        // Autonomous looter pulses are intentionally out-of-combat only.
-        if (player->IsInCombat())
             return;
 
         if (ObjectGuid const lootGuid = player->GetLootGUID())
@@ -316,7 +351,7 @@ public:
             player->SendLootRelease(lootGuid);
         }
 
-        // Publishes the two mutable fields back on every exit path below.
+        // Publishes boundCompanionGuid back on every exit path below.
         LooterPetStateWriteBack writeBack{ player->GetGUID(), state };
 
         Unit* companion = GetActiveLooterCompanion(player);
@@ -325,10 +360,6 @@ public:
             state.boundCompanionGuid.Clear();
             return;
         }
-
-        // Before the leash check: a pet that walked out of leash range on the
-        // previous pulse would otherwise never be reclaimed.
-        RestoreCompanionFollow(player, companion);
 
         ObjectGuid const companionGuid = companion->GetGUID();
         if (state.boundCompanionGuid != companionGuid)
@@ -349,14 +380,6 @@ public:
             return;
         }
 
-        uint32 const elapsed = state.elapsedMs + diff;
-        if (elapsed < sLooterPetConfig.pulseMs)
-        {
-            state.elapsedMs = elapsed;
-            return;
-        }
-
-        state.elapsedMs = 0;
         bool const didLoot = DCAoELootExt::TriggerLooterPetLootPulse(player, companion);
         if (!didLoot && sLooterPetConfig.fallbackToPlayerAnchor)
             DCAoELootExt::TriggerLooterPetLootPulse(player, player);

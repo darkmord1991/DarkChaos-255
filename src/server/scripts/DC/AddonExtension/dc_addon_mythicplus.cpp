@@ -1341,22 +1341,18 @@ namespace MythicPlus
         LOG_INFO("dc.addon", "Mythic+ module handlers registered (includes HUD cache manager)");
     }
 
-    // Broadcast run update to all party members
-    void BroadcastRunUpdate(uint32 /*runId*/, uint32 /*elapsed*/, uint32 /*remaining*/,
-                           uint32 /*deaths*/, uint32 /*bossesKilled*/, uint32 /*bossesTotal*/,
-                           uint32 /*enemiesKilled*/, bool /*failed*/, bool /*completed*/)
-    {
-        // This would be called from MythicPlusRunManager
-        // Get all players in the run and send updates
-
-        // For now, placeholder - actual implementation needs RunManager integration
-    }
-
-    // Send HUD update to player (pipe-delimited)
-    void SendHUDUpdate(Player* player, std::string const& jsonData)
-    {
-        SendHudSnapshot(player, jsonData);
-    }
+    // BroadcastRunUpdate() and SendHUDUpdate() used to sit here as empty stubs
+    // waiting on "RunManager integration". Removed (2026-08-30): no header
+    // declared them and nothing called them -- they only survived -Wunused
+    // because free functions in a namespace have external linkage.
+    //
+    // Both jobs are already done elsewhere, and that is where to extend them:
+    //   - Live run updates to spectators:
+    //     MythicSpectatorManager::BroadcastRunUpdate(instanceId) in
+    //     MythicPlus/dc_mythicplus_spectator.cpp, which already carries the
+    //     elapsed/remaining, deaths and boss-count fields the stub enumerated.
+    //   - HUD updates to the players in the run: HudCacheMgr below, which serves
+    //     CMSG_REQUEST_HUD out of the dc_mplus_hud_cache table.
 
     // ========================================================================
     // HUD CACHE MANAGER - Migrated from DCMythicPlusHUD.lua

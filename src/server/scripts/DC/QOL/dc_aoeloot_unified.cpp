@@ -38,6 +38,7 @@
 
 #include <vector>
 #include <list>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -243,6 +244,20 @@ static std::unordered_map<ObjectGuid, DetailedLootStats> sDetailedStats;
 static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
 static std::unordered_map<ObjectGuid, uint64> sPlayerAutoStoreTimestamp;
 
+// The live realm runs MapUpdate.Threads = 8, so anything reached from
+// Map::Update() - PerformAoELoot via the loot packet, and the looter-pet hook in
+// dc_looter_pet.cpp, which reads IsPlayerAoELootEnabled() - runs on several
+// threads at once, while commands, the addon handlers and the login/logout
+// callbacks mutate these maps from the world thread. An operator[] insert on
+// behalf of one player can rehash the whole table under a find() running for
+// another, so all four maps share one lock. dc_looter_pet.cpp already guards its
+// own per-player map this way.
+//
+// The lock is never held across a call into the engine or into another helper in
+// this file (several of which lock themselves, and this mutex is not recursive).
+// Long paths snapshot the fields they need, release, and write back.
+static std::mutex sAoELootStateMutex;
+
 // Preference-column schema now lives in DC/dc_aoeloot_schema.h, shared with
 // the addon protocol path so the two can no longer drift apart.
 using DCAoELoot::PreferenceSchemaInfo;
@@ -337,42 +352,37 @@ inline char const* GetPresetName(LootPreset preset)
 // Set player's active preset
 inline void SetPlayerLootPreset(ObjectGuid guid, LootPreset preset)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     PlayerLootPreferences& prefs = sPlayerPrefs[guid];
     prefs.activePreset = static_cast<uint8>(preset);
     prefs.minQuality = GetPresetMinQuality(preset);
 }
 
 // =============================================================================
-// Smart Item Detection - Highlights upgrades and new collectibles
+// Smart Item Detection - NOT IMPLEMENTED
 // =============================================================================
-
-struct LootItemHighlight
-{
-    bool isUpgrade = false;       // Item is ilvl upgrade for player
-    bool isTransmogNew = false;   // Appearance not yet collected
-    bool isCollectionNew = false; // Mount/pet/toy not collected
-    uint32 itemId = 0;
-    int32 ilvlDelta = 0;          // How much of an upgrade (+5, +10, etc)
-};
-
-// Get full highlight info for an item (currently unused)
-/*
-static LootItemHighlight GetItemHighlight(Player* player, uint32 itemId)
-{
-    LootItemHighlight highlight;
-    highlight.itemId = itemId;
-
-    if (!player) return highlight;
-
-    // Check if upgrade
-    highlight.isUpgrade = IsItemUpgrade(player, itemId, highlight.ilvlDelta);
-
-    // Note: isTransmogNew and isCollectionNew would require integration with
-    // the CollectionSystem (dc_collection_*.cpp) - placeholder for now
-
-    return highlight;
-}
-*/
+//
+// A "highlight upgrades and new collectibles" pass over looted items was
+// sketched here and never built. The sketch was removed (2026-08-30) because it
+// was commented-out code calling IsItemUpgrade(), a function that does not exist
+// anywhere in the tree, so it could not have compiled if uncommented.
+//
+// Building it for real needs three things that do not exist yet:
+//   1. An ilvl-comparison helper (the missing IsItemUpgrade) that resolves the
+//      player's currently equipped item for the loot item's InventoryType and
+//      returns the delta. Must handle two-hand vs. dual-wield and bag slots.
+//   2. Collectible lookups. DCCollection::GetPlayerCache(accountId) already
+//      carries mounts (by spell_id), pets (by pet_entry), toys (by item_id) and
+//      transmogDisplayIds -- see DC/CollectionSystem/CollectionCore.h. Only the
+//      toy check is a direct item_id hit; mounts and pets need item -> taught
+//      spell -> entry resolution, and the cache must be consulted ONLY when
+//      IsCollectionCacheValid() is true, because looting is a hot path and
+//      LoadPlayerCollectionToCache() hits the character DB synchronously.
+//   3. A consumer. Nothing displays highlights today; the loot summary below is
+//      the natural place, but that is a gameplay/UX decision, not a code gap.
+//
+// Do not restore the sketch without (1) and (3) -- an unused helper will not
+// survive -Werror.
 
 // =============================================================================
 // Helper Functions
@@ -382,6 +392,8 @@ static bool IsItemIgnoredByPlayer(Player* player, uint32 itemId)
 {
     if (!player || itemId == 0)
         return false;
+
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
 
     auto prefIt = sPlayerPrefs.find(player->GetGUID());
     if (prefIt == sPlayerPrefs.end())
@@ -414,6 +426,8 @@ static void CreditAutoVendorGold(Player* player, uint32 copper, uint32 vendoredI
 
     player->ModifyMoney(static_cast<int32>(credited));
 
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+
     DetailedLootStats& stats = sDetailedStats[player->GetGUID()];
     if (credited > std::numeric_limits<uint32>::max() - stats.goldFromVendor)
         stats.goldFromVendor = std::numeric_limits<uint32>::max();
@@ -436,12 +450,14 @@ static void CreditAutoVendorGold(Player* player, uint32 copper, uint32 vendoredI
 
 bool GetPlayerShowMessages(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.showMessages : true;
 }
 
 void SetPlayerShowMessages(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].showMessages = value;
 }
 
@@ -454,28 +470,33 @@ namespace DCAoELootExt
 
 bool IsPlayerAoELootEnabled(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.aoeLootEnabled : true;
 }
 
 bool GetPlayerShowMessages(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.showMessages : true;
 }
 
 void SetPlayerAoELootEnabled(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].aoeLootEnabled = value;
 }
 
 void SetPlayerShowMessages(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].showMessages = value;
 }
 
 uint8 GetPlayerMinQuality(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.minQuality : 0;
 }
@@ -483,50 +504,59 @@ uint8 GetPlayerMinQuality(ObjectGuid playerGuid)
 void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality)
 {
     if (quality > 6) quality = 6;
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].minQuality = quality;
 }
 
 bool GetPlayerAutoSkin(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.autoSkin : true;
 }
 
 void SetPlayerAutoSkin(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].autoSkin = value;
 }
 
 bool GetPlayerSmartLoot(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.smartLootEnabled : true;
 }
 
 void SetPlayerSmartLoot(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].smartLootEnabled = value;
 }
 
 bool GetPlayerAutoVendorPoor(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.autoVendorPoor : false;
 }
 
 void SetPlayerAutoVendorPoor(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].autoVendorPoor = value;
 }
 
 bool GetPlayerGoldOnly(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.goldOnly : false;
 }
 
 void SetPlayerGoldOnly(ObjectGuid playerGuid, bool value)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].goldOnly = value;
 }
 
@@ -577,6 +607,7 @@ uint32 GetLooterPetPathMaxChecks()
 
 float GetPlayerLootRange(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sPlayerPrefs.find(playerGuid);
     return it != sPlayerPrefs.end() ? it->second.lootRange : sConfig.range;
 }
@@ -587,6 +618,8 @@ void SetPlayerLootRange(ObjectGuid playerGuid, float value)
         value = 5.0f;
     if (value > 100.0f)
         value = 100.0f;
+
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     sPlayerPrefs[playerGuid].lootRange = value;
 }
 
@@ -595,6 +628,7 @@ void TogglePlayerIgnoredItem(ObjectGuid playerGuid, uint32 itemId)
     if (!itemId)
         return;
 
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto& ignored = sPlayerPrefs[playerGuid].ignoredItemIds;
     auto it = ignored.find(itemId);
     if (it == ignored.end())
@@ -608,6 +642,7 @@ bool IsPlayerItemIgnored(ObjectGuid playerGuid, uint32 itemId)
     if (!itemId)
         return false;
 
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto prefIt = sPlayerPrefs.find(playerGuid);
     if (prefIt == sPlayerPrefs.end())
         return false;
@@ -617,12 +652,14 @@ bool IsPlayerItemIgnored(ObjectGuid playerGuid, uint32 itemId)
 
 uint32 GetPlayerIgnoredCount(ObjectGuid playerGuid)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto prefIt = sPlayerPrefs.find(playerGuid);
     return prefIt != sPlayerPrefs.end() ? static_cast<uint32>(prefIt->second.ignoredItemIds.size()) : 0;
 }
 
 void GetDetailedStats(ObjectGuid playerGuid, uint32& itemsLooted, uint32& goldLooted, uint32& upgradesFound)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sDetailedStats.find(playerGuid);
     if (it != sDetailedStats.end())
     {
@@ -644,6 +681,7 @@ void GetQualityStats(ObjectGuid playerGuid,
                      uint32& filtPoor, uint32& filtCommon, uint32& filtUncommon,
                      uint32& filtRare, uint32& filtEpic, uint32& filtLegendary)
 {
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     auto it = sDetailedStats.find(playerGuid);
     if (it != sDetailedStats.end())
     {
@@ -676,6 +714,8 @@ void GetQualityStats(ObjectGuid playerGuid,
 void UpdateDetailedStats(ObjectGuid playerGuid, uint32 itemsLooted, uint32 goldLooted, uint32 upgradesFound)
 {
     if (!sConfig.trackDetailedStats) return;
+
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     DetailedLootStats& stats = sDetailedStats[playerGuid];
     stats.totalItemsLooted += itemsLooted;
     stats.totalGoldLooted += goldLooted;
@@ -685,6 +725,8 @@ void UpdateDetailedStats(ObjectGuid playerGuid, uint32 itemsLooted, uint32 goldL
 void UpdateQualityStats(ObjectGuid playerGuid, uint8 quality)
 {
     if (!sConfig.trackDetailedStats) return;
+
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     DetailedLootStats& stats = sDetailedStats[playerGuid];
     switch (quality)
     {
@@ -702,6 +744,8 @@ void UpdateQualityStats(ObjectGuid playerGuid, uint8 quality)
 void UpdateFilteredStats(ObjectGuid playerGuid, uint8 quality)
 {
     if (!sConfig.trackDetailedStats) return;
+
+    std::lock_guard<std::mutex> lock(sAoELootStateMutex);
     DetailedLootStats& stats = sDetailedStats[playerGuid];
     switch (quality)
     {
@@ -781,8 +825,23 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
     Loot* mainLoot = &mainCreature->loot;
     if (!mainLoot) return false;
 
-    PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-    float lootRange = prefs.lootRange;
+    // Snapshot the preferences this call needs and drop the lock: everything
+    // below walks the grid and manipulates loot, and must not hold a global lock
+    // while doing so. Membership tests against the ignore list go through
+    // IsItemIgnoredByPlayer(), which takes the lock itself.
+    float lootRange;
+    bool goldOnly;
+    bool autoVendorPoor;
+    bool hasIgnoredItems;
+    {
+        std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+        PlayerLootPreferences const& prefs = sPlayerPrefs[player->GetGUID()];
+        lootRange = prefs.lootRange;
+        goldOnly = prefs.goldOnly;
+        autoVendorPoor = prefs.autoVendorPoor;
+        hasIgnoredItems = !prefs.ignoredItemIds.empty();
+    }
+
     if (lootRange < 5.0f || lootRange > 100.0f)
         lootRange = sConfig.range;
 
@@ -804,9 +863,6 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
     uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
     if (player->GetGroup())
         playerMinQuality = 0;
-
-    bool const goldOnly = prefs.goldOnly;
-    bool const autoVendorPoor = prefs.autoVendorPoor;
 
     uint32 autoVendoredItems = 0;
     uint32 autoVendoredCopper = 0;
@@ -864,6 +920,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         if (sConfig.autoLoot == 1) return true;
         if (sConfig.autoLoot == 2)
         {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
             auto it = sPlayerAutoStoreTimestamp.find(p->GetGUID());
             if (it == sPlayerAutoStoreTimestamp.end()) return false;
             uint64 now = GameTime::GetGameTime().count();
@@ -874,7 +931,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
 
     if (nearby.empty())
     {
-        if (playerMinQuality > 0 || goldOnly || autoVendorPoor || !prefs.ignoredItemIds.empty())
+        if (playerMinQuality > 0 || goldOnly || autoVendorPoor || hasIgnoredItems)
         {
             size_t initialItems = mainLoot->items.size();
             mainLoot->items.erase(
@@ -978,7 +1035,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
     const size_t MAX_MERGE_SLOTS = sConfig.maxMergeSlots;
 
     // Filter main loot
-    if (playerMinQuality > 0 || goldOnly || autoVendorPoor || !prefs.ignoredItemIds.empty())
+    if (playerMinQuality > 0 || goldOnly || autoVendorPoor || hasIgnoredItems)
     {
         size_t initialItems = mainLoot->items.size();
         mainLoot->items.erase(
@@ -1056,9 +1113,23 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
     mainLoot->gold = totalGold;
     uint32 mergedGold = totalGold;
 
-    PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
-    data.lastAoELoot = GameTime::GetGameTime().count();
-    data.lootedThisSession += processed;
+    {
+        std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+        PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
+        data.lastAoELoot = GameTime::GetGameTime().count();
+        data.lootedThisSession += processed;
+    }
+
+    // Taken freshly at each call site below rather than holding a reference for
+    // the rest of the function: every one of them follows a ModifyMoney() call,
+    // and the lock must not span that.
+    auto recordCreditedGold = [player](uint32 credited)
+    {
+        std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+        PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
+        data.lastCreditedGold = credited;
+        data.accumulatedCreditedGold += credited;
+    };
 
     if (Group* group = player->GetGroup())
     {
@@ -1097,9 +1168,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
 
         if (mainLoot->gold > 0)
         {
-            player->ModifyMoney(mainLoot->gold);
-            data.lastCreditedGold = mainLoot->gold;
-            data.accumulatedCreditedGold += mainLoot->gold;
+            uint32 const credited = mainLoot->gold;
+            player->ModifyMoney(credited);
+            recordCreditedGold(credited);
             mainLoot->gold = 0;
         }
 
@@ -1134,8 +1205,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         uint32 credited = mainLoot->gold;
         player->ModifyMoney(credited);
         mainLoot->gold = 0;
-        data.lastCreditedGold = credited;
-        data.accumulatedCreditedGold += credited;
+        recordCreditedGold(credited);
     }
 
     if (shouldAutoLootForPlayer(player))
@@ -1373,11 +1443,19 @@ public:
         {
             Player* player = session->GetPlayer();
             if (!player) return true;
-            sPlayerAutoStoreTimestamp[player->GetGUID()] = GameTime::GetGameTime().count();
+            bool goldOnly;
+            bool hasIgnoredItems;
+            {
+                std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+                sPlayerAutoStoreTimestamp[player->GetGUID()] = GameTime::GetGameTime().count();
 
-            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+                PlayerLootPreferences const& prefs = sPlayerPrefs[player->GetGUID()];
+                goldOnly = prefs.goldOnly;
+                hasIgnoredItems = !prefs.ignoredItemIds.empty();
+            }
+
             uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
-            if (playerMinQuality > 0 || prefs.goldOnly || !prefs.ignoredItemIds.empty())
+            if (playerMinQuality > 0 || goldOnly || hasIgnoredItems)
             {
                 WorldPacket p(packet);
                 p.rpos(0);
@@ -1402,7 +1480,7 @@ public:
                     if (!lootItem.needs_quest)
                     {
                         uint32 itemId = lootItem.itemid;
-                        if (prefs.goldOnly)
+                        if (goldOnly)
                             return false;
                         if (IsItemIgnoredByPlayer(player, itemId))
                             return false;
@@ -1449,17 +1527,20 @@ public:
         if (!player) return;
 
         // Initialize preferences
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.aoeLootEnabled = true;
-        prefs.showMessages = true;
-        prefs.minQuality = 0;
-        prefs.autoSkin = sConfig.autoSkinEnabled;
-        prefs.smartLootEnabled = true;
-        prefs.autoVendorPoor = sConfig.autoVendorPoorItems;
-        prefs.goldOnly = false;
-        prefs.lootRange = sConfig.range;
-        prefs.ignoredItemIds.clear();
-        prefs.activePreset = 0;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.aoeLootEnabled = true;
+            prefs.showMessages = true;
+            prefs.minQuality = 0;
+            prefs.autoSkin = sConfig.autoSkinEnabled;
+            prefs.smartLootEnabled = true;
+            prefs.autoVendorPoor = sConfig.autoVendorPoorItems;
+            prefs.goldOnly = false;
+            prefs.lootRange = sConfig.range;
+            prefs.ignoredItemIds.clear();
+            prefs.activePreset = 0;
+        }
 
         PreferenceSchemaInfo const& schema = GetPreferenceSchemaInfo();
 
@@ -1489,8 +1570,10 @@ public:
             DCUtils::JoinStringList(columns), player->GetGUID().GetCounter());
 
         // Initialize session data
-        PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
-        data = PlayerAoELootData();
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            sPlayerLootData[player->GetGUID()] = PlayerAoELootData();
+        }
 
         // Defaults above are usable immediately; the saved preferences are
         // loaded asynchronously so a relog never blocks the world thread on
@@ -1500,6 +1583,9 @@ public:
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(query)
             .WithCallback([guid, schema](QueryResult result)
         {
+            {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+
             auto prefIt = sPlayerPrefs.find(guid);
             if (prefIt == sPlayerPrefs.end())
                 return; // logged out before the load finished
@@ -1542,6 +1628,7 @@ public:
                         prefs.activePreset = 0;
                 }
             }
+            }   // lock released: ShouldShowMessage() locks for itself
 
             if (Player* player = ObjectAccessor::FindPlayer(guid))
                 if (ShouldShowMessage(player))
@@ -1564,6 +1651,8 @@ public:
             {
                 if (!statsResult)
                     return;
+
+                std::lock_guard<std::mutex> lock(sAoELootStateMutex);
 
                 if (sPlayerPrefs.find(guid) == sPlayerPrefs.end())
                     return; // logged out before the load finished
@@ -1599,11 +1688,42 @@ public:
     {
         if (!player) return;
 
-        // Save preferences
-        auto prefIt = sPlayerPrefs.find(player->GetGUID());
-        if (prefIt != sPlayerPrefs.end())
+        // Take the state out under the lock, then build and issue the SQL
+        // outside it: string formatting and a database round-trip must not run
+        // with a global lock held.
+        PlayerLootPreferences prefs;
+        DetailedLootStats stats;
+        bool hasPrefs = false;
+        bool hasStats = false;
         {
-            PlayerLootPreferences& prefs = prefIt->second;
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+
+            auto prefIt = sPlayerPrefs.find(player->GetGUID());
+            if (prefIt != sPlayerPrefs.end())
+            {
+                prefs = prefIt->second;
+                hasPrefs = true;
+                sPlayerPrefs.erase(prefIt);
+            }
+
+            if (sConfig.trackDetailedStats)
+            {
+                auto statsIt = sDetailedStats.find(player->GetGUID());
+                if (statsIt != sDetailedStats.end())
+                {
+                    stats = statsIt->second;
+                    hasStats = true;
+                    sDetailedStats.erase(statsIt);
+                }
+            }
+
+            sPlayerLootData.erase(player->GetGUID());
+            sPlayerAutoStoreTimestamp.erase(player->GetGUID());
+        }
+
+        // Save preferences
+        if (hasPrefs)
+        {
             PreferenceSchemaInfo const& schema = GetPreferenceSchemaInfo();
 
             std::vector<std::string> columns =
@@ -1685,37 +1805,26 @@ public:
             CharacterDatabase.Execute(Acore::StringFormat(
                 "INSERT INTO dc_aoeloot_preferences ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}",
                 DCUtils::JoinStringList(columns), DCUtils::JoinStringList(values), DCUtils::JoinStringList(updates)));
-
-            sPlayerPrefs.erase(prefIt);
         }
 
         // Save detailed stats
-        if (sConfig.trackDetailedStats)
+        if (hasStats)
         {
-            auto statsIt = sDetailedStats.find(player->GetGUID());
-            if (statsIt != sDetailedStats.end())
-            {
-                DetailedLootStats& stats = statsIt->second;
-                CharacterDatabase.Execute(
-                    "REPLACE INTO dc_aoeloot_detailed_stats "
-                    "(player_guid, total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
-                    "quality_poor, quality_common, quality_uncommon, quality_rare, quality_epic, quality_legendary, "
-                    "filtered_poor, filtered_common, filtered_uncommon, filtered_rare, filtered_epic, filtered_legendary, "
-                    "mythic_bonus_items) "
-                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-                    player->GetGUID().GetCounter(),
-                    stats.totalItemsLooted, stats.totalGoldLooted, stats.poorItemsVendored,
-                    stats.goldFromVendor, stats.skinnedCorpses, stats.minedNodes, stats.herbedNodes, stats.upgradesFound,
-                    stats.qualityPoor, stats.qualityCommon, stats.qualityUncommon, stats.qualityRare,
-                    stats.qualityEpic, stats.qualityLegendary, stats.filteredPoor, stats.filteredCommon,
-                    stats.filteredUncommon, stats.filteredRare, stats.filteredEpic, stats.filteredLegendary,
-                    stats.mythicBonusItems);
-                sDetailedStats.erase(statsIt);
-            }
+            CharacterDatabase.Execute(
+                "REPLACE INTO dc_aoeloot_detailed_stats "
+                "(player_guid, total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
+                "quality_poor, quality_common, quality_uncommon, quality_rare, quality_epic, quality_legendary, "
+                "filtered_poor, filtered_common, filtered_uncommon, filtered_rare, filtered_epic, filtered_legendary, "
+                "mythic_bonus_items) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+                player->GetGUID().GetCounter(),
+                stats.totalItemsLooted, stats.totalGoldLooted, stats.poorItemsVendored,
+                stats.goldFromVendor, stats.skinnedCorpses, stats.minedNodes, stats.herbedNodes, stats.upgradesFound,
+                stats.qualityPoor, stats.qualityCommon, stats.qualityUncommon, stats.qualityRare,
+                stats.qualityEpic, stats.qualityLegendary, stats.filteredPoor, stats.filteredCommon,
+                stats.filteredUncommon, stats.filteredRare, stats.filteredEpic, stats.filteredLegendary,
+                stats.mythicBonusItems);
         }
-
-        sPlayerLootData.erase(player->GetGUID());
-        sPlayerAutoStoreTimestamp.erase(player->GetGUID());
     }
 };
 
@@ -1759,9 +1868,15 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return true;
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.aoeLootEnabled = enabled.value_or(!prefs.aoeLootEnabled);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r {}", prefs.aoeLootEnabled ? "Enabled" : "Disabled");
+        bool next;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.aoeLootEnabled = enabled.value_or(!prefs.aoeLootEnabled);
+            next = prefs.aoeLootEnabled;
+        }
+
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r {}", next ? "Enabled" : "Disabled");
         return true;
     }
 
@@ -1769,7 +1884,11 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return true;
-        sPlayerPrefs[player->GetGUID()].aoeLootEnabled = true;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            sPlayerPrefs[player->GetGUID()].aoeLootEnabled = true;
+        }
+
         handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Enabled");
         return true;
     }
@@ -1778,7 +1897,11 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return true;
-        sPlayerPrefs[player->GetGUID()].aoeLootEnabled = false;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            sPlayerPrefs[player->GetGUID()].aoeLootEnabled = false;
+        }
+
         handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Disabled");
         return true;
     }
@@ -1787,9 +1910,15 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return true;
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.showMessages = enabled.value_or(!prefs.showMessages);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Messages: {}", prefs.showMessages ? "On" : "Off");
+        bool next;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.showMessages = enabled.value_or(!prefs.showMessages);
+            next = prefs.showMessages;
+        }
+
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Messages: {}", next ? "On" : "Off");
         return true;
     }
 
@@ -1798,7 +1927,11 @@ public:
         Player* player = handler->GetPlayer();
         if (!player) return true;
         if (quality > 6) quality = 6;
-        sPlayerPrefs[player->GetGUID()].minQuality = quality;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            sPlayerPrefs[player->GetGUID()].minQuality = quality;
+        }
+
         handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Min quality: {}", DCUtils::GetQualityName(quality));
         return true;
     }
@@ -1807,9 +1940,15 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return true;
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.autoSkin = enabled.value_or(!prefs.autoSkin);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-Skin: {}", prefs.autoSkin ? "On" : "Off");
+        bool next;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.autoSkin = enabled.value_or(!prefs.autoSkin);
+            next = prefs.autoSkin;
+        }
+
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-Skin: {}", next ? "On" : "Off");
         return true;
     }
 
@@ -1817,9 +1956,15 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return true;
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.smartLootEnabled = enabled.value_or(!prefs.smartLootEnabled);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Smart Loot: {}", prefs.smartLootEnabled ? "On" : "Off");
+        bool next;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.smartLootEnabled = enabled.value_or(!prefs.smartLootEnabled);
+            next = prefs.smartLootEnabled;
+        }
+
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Smart Loot: {}", next ? "On" : "Off");
         return true;
     }
 
@@ -1828,9 +1973,15 @@ public:
         Player* player = handler->GetPlayer();
         if (!player) return true;
 
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.goldOnly = enabled.value_or(!prefs.goldOnly);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Gold-only mode: {}", prefs.goldOnly ? "On" : "Off");
+        bool next;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.goldOnly = enabled.value_or(!prefs.goldOnly);
+            next = prefs.goldOnly;
+        }
+
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Gold-only mode: {}", next ? "On" : "Off");
         return true;
     }
 
@@ -1839,9 +1990,15 @@ public:
         Player* player = handler->GetPlayer();
         if (!player) return true;
 
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
-        prefs.autoVendorPoor = enabled.value_or(!prefs.autoVendorPoor);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-vendor poor items: {}", prefs.autoVendorPoor ? "On" : "Off");
+        bool next;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+            prefs.autoVendorPoor = enabled.value_or(!prefs.autoVendorPoor);
+            next = prefs.autoVendorPoor;
+        }
+
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-vendor poor items: {}", next ? "On" : "Off");
         return true;
     }
 
@@ -1855,18 +2012,27 @@ public:
             return true;
         }
 
-        auto& ignored = sPlayerPrefs[player->GetGUID()].ignoredItemIds;
-        auto it = ignored.find(itemId);
-        if (it == ignored.end())
+        bool added;
         {
-            ignored.insert(itemId);
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            auto& ignored = sPlayerPrefs[player->GetGUID()].ignoredItemIds;
+            auto it = ignored.find(itemId);
+            if (it == ignored.end())
+            {
+                ignored.insert(itemId);
+                added = true;
+            }
+            else
+            {
+                ignored.erase(it);
+                added = false;
+            }
+        }
+
+        if (added)
             handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Item {} added to ignore list.", itemId);
-        }
         else
-        {
-            ignored.erase(it);
             handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Item {} removed from ignore list.", itemId);
-        }
         return true;
     }
 
@@ -1875,7 +2041,23 @@ public:
         Player* player = handler->GetPlayer();
         if (!player) return true;
 
-        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        // Copy both records, then print: PSendSysMessage builds and queues a
+        // packet and must not run with the state lock held.
+        PlayerLootPreferences prefs;
+        DetailedLootStats stats;
+        bool hasStats = false;
+        {
+            std::lock_guard<std::mutex> lock(sAoELootStateMutex);
+            prefs = sPlayerPrefs[player->GetGUID()];
+
+            auto it = sDetailedStats.find(player->GetGUID());
+            if (it != sDetailedStats.end())
+            {
+                stats = it->second;
+                hasStats = true;
+            }
+        }
+
         handler->SendSysMessage("|cff00ff00========== AoE LOOT SETTINGS ==========|r");
         handler->PSendSysMessage("Enabled: {}", prefs.aoeLootEnabled ? "Yes" : "No");
         handler->PSendSysMessage("Messages: {}", prefs.showMessages ? "On" : "Off");
@@ -1886,14 +2068,12 @@ public:
         handler->PSendSysMessage("Auto-Vendor Poor: {}", prefs.autoVendorPoor ? "On" : "Off");
         handler->PSendSysMessage("Ignored Items: {}", static_cast<uint32>(prefs.ignoredItemIds.size()));
 
-        auto it = sDetailedStats.find(player->GetGUID());
-        if (it != sDetailedStats.end())
+        if (hasStats)
         {
-            DetailedLootStats& s = it->second;
             handler->SendSysMessage("|cff00ff00========== STATISTICS ==========|r");
-            handler->PSendSysMessage("Items Looted: {}", s.totalItemsLooted);
-            handler->PSendSysMessage("Gold Looted: {}", DCUtils::FormatCoinsVerbose(s.totalGoldLooted));
-            handler->PSendSysMessage("Skinned: {}", s.skinnedCorpses);
+            handler->PSendSysMessage("Items Looted: {}", stats.totalItemsLooted);
+            handler->PSendSysMessage("Gold Looted: {}", DCUtils::FormatCoinsVerbose(stats.totalGoldLooted));
+            handler->PSendSysMessage("Skinned: {}", stats.skinnedCorpses);
         }
         return true;
     }

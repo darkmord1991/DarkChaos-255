@@ -6,11 +6,19 @@
 #include "DataMap.h"
 #include "dc_update_profiler.h"
 
+#include <string>
+
 // Per-player poll throttle, stored on the player object so it dies with it.
 struct HotspotCheckTimer : public DataMap::Base
 {
     uint32 elapsed = 0;
 };
+
+// DataMap is keyed by std::string, and this key is 16 characters - one past the
+// small-string capacity on both libstdc++ and MSVC. Passing the literal built a
+// heap-allocated temporary on every lookup, and the lookup runs once per player
+// per world tick. Hold the key instead.
+static std::string const HOTSPOT_CHECK_TIMER_KEY = "dc_hotspot_check";
 
 class HotspotsWorldScript : public WorldScript
 {
@@ -89,7 +97,7 @@ public:
     {
         if (!sHotspotsConfig.enabled || !player) return;
 
-        auto* timer = player->CustomData.GetDefault<HotspotCheckTimer>("dc_hotspot_check");
+        auto* timer = player->CustomData.GetDefault<HotspotCheckTimer>(HOTSPOT_CHECK_TIMER_KEY);
         timer->elapsed += diff;
         if (timer->elapsed < 2000) return;
         timer->elapsed = 0;
