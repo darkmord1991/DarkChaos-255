@@ -2,7 +2,8 @@
  * Seasonal Reward System - DarkChaos
  *
  * Core C++ implementation for seasonal rewards, caps, and progression
- * Client communication handled via Eluna AIO bridge
+ * Client communication goes through the native DC addon protocol (DCAddon::).
+ * The Eluna AIO bridge this once used is gone -- do not add AIO paths here.
  *
  * Author: DarkChaos Development Team
  * Date: November 22, 2025

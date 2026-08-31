@@ -9,7 +9,7 @@
 #include "DC/HinterlandBG/HLBGService.h"
 #include "DC/HinterlandBG/dc_hlbg_spectator.h"
 #include "DC/HinterlandBG/hlbg_constants.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include <sstream>
 #include <algorithm>
 #include "DatabaseEnv.h"

@@ -9,7 +9,8 @@
 #include "DC/AddonExtension/dc_addon_breaking_news.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
+#include "Player.h"
 
 #include <ctime>
 #include <sstream>

@@ -61,7 +61,7 @@
 #include "ScriptedGossip.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include <string>
 #include <cstdio>

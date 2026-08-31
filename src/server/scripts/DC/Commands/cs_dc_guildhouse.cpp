@@ -305,7 +305,9 @@ public:
         uint32 guildId = 0;
         Guild* guild = nullptr;
         bool hasLevel = false;
-        uint8 level = 1;
+        // Held as uint32 so the "must be 0..4" check below sees the value the user typed.
+        // Narrowing to uint8 at parse time let 256 wrap to 0 and pass validation.
+        uint32 level = 1;
 
         std::string firstToken;
         std::string remainder;
@@ -321,13 +323,14 @@ public:
             TrimString(remainder);
         }
 
-        if (IsAllDigits(firstToken))
+        uint32 parsed = 0;
+        if (TryParseUInt32(firstToken, parsed))
         {
-            guildId = static_cast<uint32>(std::stoul(firstToken));
+            guildId = parsed;
             guild = sGuildMgr->GetGuildById(guildId);
-            if (!remainder.empty() && IsAllDigits(remainder))
+            if (!remainder.empty() && TryParseUInt32(remainder, parsed))
             {
-                level = static_cast<uint8>(std::stoul(remainder));
+                level = parsed;
                 hasLevel = true;
             }
         }
@@ -338,9 +341,9 @@ public:
             if (lastSpace != std::string::npos)
             {
                 std::string maybeLevel = guildName.substr(lastSpace + 1);
-                if (IsAllDigits(maybeLevel))
+                if (TryParseUInt32(maybeLevel, parsed))
                 {
-                    level = static_cast<uint8>(std::stoul(maybeLevel));
+                    level = parsed;
                     hasLevel = true;
                     guildName = guildName.substr(0, lastSpace);
                     TrimString(guildName);
@@ -380,7 +383,7 @@ public:
             return false;
         }
 
-        if (!GuildHouseManager::SetGuildHouseLevel(guildId, level))
+        if (!GuildHouseManager::SetGuildHouseLevel(guildId, static_cast<uint8>(level)))
         {
             handler->SendSysMessage("Failed to update guild house level.");
             handler->SetSentErrorMessage(true);
@@ -401,6 +404,28 @@ public:
     static bool IsAllDigits(std::string const& str)
     {
         return !str.empty() && std::all_of(str.begin(), str.end(), [](unsigned char ch) { return std::isdigit(ch); });
+    }
+
+    // Digit-and-range checked parse. IsAllDigits alone does not bound length, so feeding
+    // its output to std::stoul throws std::out_of_range on an over-long run of digits --
+    // and nothing between here and WorldSession::Update catches that, so a mistyped
+    // argument would take the realm down. Accumulates in uint64 and rejects on overflow
+    // instead of throwing.
+    static bool TryParseUInt32(std::string const& str, uint32& out)
+    {
+        if (!IsAllDigits(str))
+            return false;
+
+        uint64 parsed = 0;
+        for (unsigned char ch : str)
+        {
+            parsed = parsed * 10 + uint64(ch - '0');
+            if (parsed > 0xFFFFFFFFull)
+                return false;
+        }
+
+        out = static_cast<uint32>(parsed);
+        return true;
     }
 
     static bool HandleAdminBuyCommand(ChatHandler* handler, char const* args)
@@ -435,12 +460,13 @@ public:
             TrimString(remainder);
         }
 
-        if (IsAllDigits(firstToken))
+        uint32 parsed = 0;
+        if (TryParseUInt32(firstToken, parsed))
         {
-            guildId = static_cast<uint32>(std::stoul(firstToken));
+            guildId = parsed;
             guild = sGuildMgr->GetGuildById(guildId);
-            if (!remainder.empty() && IsAllDigits(remainder))
-                locationId = static_cast<uint32>(std::stoul(remainder));
+            if (!remainder.empty() && TryParseUInt32(remainder, parsed))
+                locationId = parsed;
         }
         else
         {
@@ -449,9 +475,9 @@ public:
             if (lastSpace != std::string::npos)
             {
                 std::string maybeId = guildName.substr(lastSpace + 1);
-                if (IsAllDigits(maybeId))
+                if (TryParseUInt32(maybeId, parsed))
                 {
-                    locationId = static_cast<uint32>(std::stoul(maybeId));
+                    locationId = parsed;
                     guildName = guildName.substr(0, lastSpace);
                     TrimString(guildName);
                 }

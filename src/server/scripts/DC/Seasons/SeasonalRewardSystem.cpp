@@ -1022,8 +1022,9 @@ namespace DarkChaos
 
         void SeasonalRewardManager::NotifyPlayer(Player* player, uint32 tokens, uint32 essence, std::string const& source)
         {
-            // This will be handled by Eluna AIO bridge
-            // For now, just send chat message
+            // Chat notification. (The comment that used to sit here promised an Eluna AIO
+            // bridge would take this over; AIO is gone, so chat is the final behaviour --
+            // route through the native addon protocol if a richer UI is ever wanted.)
             if (tokens > 0 && essence > 0)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(

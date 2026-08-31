@@ -25,15 +25,12 @@
 #include "dc_mythicplus_affixes.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
+#include "ObjectGuid.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_mythicplus.h"
 #include "Player.h"
 #include "StringFormat.h"
-
-#ifdef HAS_AIO
-#include "AIO.h"
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -96,11 +93,7 @@ bool IsAddonProtocolEnabled()
 
 bool HasKeystoneReadyCheckUiTransport()
 {
-#ifdef HAS_AIO
-    return true;
-#else
     return IsAddonProtocolEnabled();
-#endif
 }
 
 std::string EscapeJson(std::string_view input)
@@ -283,39 +276,6 @@ std::string BuildPartyMembersJson(std::vector<ReadyMemberInfo> const& members)
     return stream.str();
 }
 
-#ifdef HAS_AIO
-std::string BuildReadyCheckPayload(std::string const& dungeonName, uint32 mapId,
-    std::string const& shortName, std::string const& iconPath, uint32 level,
-    uint32 timeLimit, uint32 countdown, uint32 healthPct, uint32 damagePct,
-    std::string const& affixesJson, std::string const& membersJson,
-    uint32 readyCount, uint32 totalCount, bool isLeader, bool allReady)
-{
-    std::ostringstream stream;
-    stream << "{"
-        << "\"dungeonName\":\"" << EscapeJson(dungeonName) << "\""
-        << ",\"mapId\":" << mapId
-        << ",\"level\":" << level
-        << ",\"timeLimit\":" << timeLimit
-        << ",\"countdown\":" << countdown
-        << ",\"healthPct\":" << healthPct
-        << ",\"damagePct\":" << damagePct
-        << ",\"readyCount\":" << readyCount
-        << ",\"totalCount\":" << totalCount
-        << ",\"isLeader\":" << (isLeader ? "true" : "false")
-        << ",\"allReady\":" << (allReady ? "true" : "false")
-        << ",\"affixes\":" << affixesJson
-        << ",\"partyMembers\":" << membersJson;
-
-    if (!shortName.empty())
-        stream << ",\"shortName\":\"" << EscapeJson(shortName) << "\"";
-    if (!iconPath.empty())
-        stream << ",\"iconPath\":\"" << EscapeJson(iconPath) << "\"";
-
-    stream << "}";
-    return stream.str();
-}
-#endif
-
 void SendReadyCheckPayload(Player* member, std::string const& dungeonName,
     uint32 mapId, DungeonUiInfo const& uiInfo, uint32 level, uint32 timeLimit,
     uint32 countdown, uint32 healthPct, uint32 damagePct,
@@ -327,14 +287,6 @@ void SendReadyCheckPayload(Player* member, std::string const& dungeonName,
 
     bool const isLeader = !member->GetGroup() ||
         member->GetGroup()->IsLeader(member->GetGUID());
-
-#ifdef HAS_AIO
-    AIO().Handle(member, "MPLUS", "KEYSTONE_ACTIVATE",
-        BuildReadyCheckPayload(dungeonName, mapId, uiInfo.shortName,
-            uiInfo.iconPath, level, timeLimit, countdown, healthPct,
-            damagePct, affixesJson, membersJson, readyCount, totalCount,
-            isLeader, allReady));
-#endif
 
     if (!IsAddonProtocolEnabled())
         return;
@@ -374,18 +326,6 @@ void SendReadyStatusUpdate(PendingKeystoneActivation const& pending,
     {
         if (Player* member = ObjectAccessor::FindConnectedPlayer(memberGuid))
         {
-#ifdef HAS_AIO
-            AIO().Handle(member, "MPLUS", "KEYSTONE_STATUS", Acore::StringFormat(
-                "{{\"playerGuid\":\"{}\",\"playerName\":\"{}\",\"state\":{},\"ready\":{},\"declined\":{},\"allReady\":{},\"readyCount\":{},\"totalCount\":{}}}",
-                EscapeJson(actor->GetGUID().ToString()),
-                EscapeJson(actor->GetName()),
-                accepted ? 1 : 2,
-                accepted ? "true" : "false",
-                accepted ? "false" : "true",
-                pending.allReady ? "true" : "false",
-                readyCount,
-                totalCount));
-#endif
 
             if (!IsAddonProtocolEnabled())
                 continue;
@@ -412,10 +352,6 @@ void SendCountdownStarted(PendingKeystoneActivation const& pending,
     {
         if (Player* member = ObjectAccessor::FindConnectedPlayer(memberGuid))
         {
-#ifdef HAS_AIO
-            AIO().Handle(member, "MPLUS", "KEYSTONE_COUNTDOWN", Acore::StringFormat(
-                "{{\"seconds\":{}}}", seconds));
-#endif
 
             if (!IsAddonProtocolEnabled())
                 continue;
@@ -435,10 +371,6 @@ void NotifyPendingCancellation(PendingKeystoneActivation const& pending,
     {
         if (Player* member = ObjectAccessor::FindConnectedPlayer(memberGuid))
         {
-#ifdef HAS_AIO
-            AIO().Handle(member, "MPLUS", "KEYSTONE_CANCEL", Acore::StringFormat(
-                "{{\"reason\":\"{}\"}}", EscapeJson(reason)));
-#endif
 
             if (IsAddonProtocolEnabled())
             {

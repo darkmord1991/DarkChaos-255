@@ -4,7 +4,7 @@
 #include "Chat.h"
 #include "ScriptedGossip.h"
 #include "dc_guildhouse.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
 
 #include <string>

@@ -22,7 +22,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 
 // Expose constants at file scope to allow usage inside classes (avoid in-class using namespace)
 using namespace HinterlandBGConstants;

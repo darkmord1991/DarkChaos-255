@@ -17,7 +17,8 @@
 #include "Log.h"
 #include "Chat.h"
 #include "StringFormat.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
+#include "ObjectGuid.h"
 #include "DC/dc_aoeloot_schema.h"
 #include <algorithm>
 #include <cctype>

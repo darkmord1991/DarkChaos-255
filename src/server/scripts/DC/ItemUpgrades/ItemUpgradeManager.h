@@ -215,10 +215,21 @@ namespace DarkChaos
 
             // Item upgrade state functions
             virtual ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) = 0;
+            // Cache-only lookup: returns nullptr on a miss instead of issuing a blocking
+            // SELECT. The core calls the stat-application hooks once per stat line of
+            // _ApplyItemBonuses, so those paths MUST use this and never the blocking
+            // variant. A miss is corrected when PrefetchPlayerItemStatesAsync lands and
+            // forces a stat refresh.
+            virtual ItemUpgradeState* GetCachedItemUpgradeState(uint32 /*item_guid*/) { return nullptr; }
             // Batch-warm the per-item state cache with one async query so the
             // login / first-proc paths never pay a blocking SELECT per item.
             // items = (item_guid, item_entry) pairs owned by owner_guid.
             virtual void PrefetchItemStatesAsync(std::vector<std::pair<uint32, uint32>> /*items*/, uint32 /*owner_guid*/) { }
+            // Warm every upgraded item owned by a player with a single joined query.
+            // Usable before the inventory is loaded (it keys off player_guid, not the
+            // in-memory item list), which is what lets it run from OnPlayerLoadFromDB --
+            // ahead of the synchronous _ApplyAllItemMods inside LoadFromDB.
+            virtual void PrefetchPlayerItemStatesAsync(uint32 /*player_guid*/) { }
             virtual bool BuildTooltipSnapshot(Item* item, ItemUpgradeTooltipSnapshot& out) = 0;
             virtual uint32 GetTooltipRevision(uint32 item_guid) = 0;
             virtual void InvalidateTooltipSnapshot(uint32 item_guid) = 0;

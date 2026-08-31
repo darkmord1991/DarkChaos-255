@@ -14,7 +14,7 @@
 #include "ObjectMgr.h"
 #include "WorldSession.h"
 #include "DC/QOL/dc_questgiver_status_override.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 
 namespace
 {

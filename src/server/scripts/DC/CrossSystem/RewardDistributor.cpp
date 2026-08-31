@@ -6,6 +6,7 @@
  */
 
 #include "RewardDistributor.h"
+#include "CrossSystemCommon.h"
 #include "CrossSystemManager.h"
 #include "SessionContext.h"
 #include "DC/CollectionSystem/CollectionGrant.h"
@@ -84,18 +85,46 @@ namespace CrossSystem
                 std::string key = fields[0].Get<std::string>();
                 std::string value = fields[1].Get<std::string>();
 
+                // dc_seasonal_reward_config.config_value is a free-form string column.
+                // Parsing it with std::stoul/std::stof threw on any non-numeric or
+                // out-of-range row, and LoadConfiguration is called from
+                // CrossSystemManager init with no catch anywhere up the stack -- one
+                // bad row edit killed the worldserver at startup. Reject the row and
+                // keep the compiled-in default instead.
+                auto applyUInt32 = [&key, &value](uint32& target)
+                {
+                    uint32 parsed = 0;
+                    if (DCUtils::TryParseUInt32(value, parsed))
+                        target = parsed;
+                    else
+                        LOG_ERROR("dc.crosssystem.rewards",
+                            "dc_seasonal_reward_config: ignoring row '{}' -- '{}' is not a valid unsigned integer (keeping default {}).",
+                            key, value, target);
+                };
+
+                auto applyFloat = [&key, &value](float& target)
+                {
+                    float parsed = 0.0f;
+                    if (DCUtils::TryParseFloat(value, parsed))
+                        target = parsed;
+                    else
+                        LOG_ERROR("dc.crosssystem.rewards",
+                            "dc_seasonal_reward_config: ignoring row '{}' -- '{}' is not a valid number (keeping default {}).",
+                            key, value, target);
+                };
+
                 if (key == "reward_weekly_token_cap")
-                    weeklyTokenCap_ = std::stoul(value);
+                    applyUInt32(weeklyTokenCap_);
                 else if (key == "reward_weekly_essence_cap")
-                    weeklyEssenceCap_ = std::stoul(value);
+                    applyUInt32(weeklyEssenceCap_);
                 else if (key == "reward_base_token_multiplier")
-                    multiplierConfig_.baseTokenMultiplier = std::stof(value);
+                    applyFloat(multiplierConfig_.baseTokenMultiplier);
                 else if (key == "reward_base_essence_multiplier")
-                    multiplierConfig_.baseEssenceMultiplier = std::stof(value);
+                    applyFloat(multiplierConfig_.baseEssenceMultiplier);
                 else if (key == "reward_prestige_bonus_per_level")
-                    multiplierConfig_.prestigeBonusPerLevel = std::stof(value);
+                    applyFloat(multiplierConfig_.prestigeBonusPerLevel);
                 else if (key == "reward_mythic_plus_level_bonus")
-                    multiplierConfig_.mythicPlusLevelBonus = std::stof(value);
+                    applyFloat(multiplierConfig_.mythicPlusLevelBonus);
             }
             while (result->NextRow());
         }

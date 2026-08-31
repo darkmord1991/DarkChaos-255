@@ -24,30 +24,41 @@ namespace
         // This is intentionally aligned with SeasonalRewards.WeeklyResetDay/Hour and
         // the schema intent for dc_weekly_vault.week_start ("Unix Tuesday reset").
         time_t now = time(nullptr);
-        tm* timeInfo = localtime(&now);
-        if (!timeInfo)
+        tm const* localInfo = localtime(&now);
+        if (!localInfo)
             return static_cast<uint32>(now);
+
+        tm resetTm = *localInfo;
 
         uint8 resetDay = sConfigMgr->GetOption<uint8>("SeasonalRewards.WeeklyResetDay", DEFAULT_WEEKLY_RESET_DAY);
         uint8 resetHour = sConfigMgr->GetOption<uint8>("SeasonalRewards.WeeklyResetHour", DEFAULT_WEEKLY_RESET_HOUR);
 
-        // Calculate days since last reset day.
-        int daysSinceReset = timeInfo->tm_wday - resetDay;
+        // Calculate days back to the most recent reset day.
+        int daysSinceReset = resetTm.tm_wday - int(resetDay);
         if (daysSinceReset < 0)
             daysSinceReset += 7;
 
-        // Calculate seconds since the start of the current day + days since reset.
-        time_t secondsSinceReset = time_t(daysSinceReset) * 86400 +
-            time_t(timeInfo->tm_hour) * 3600 +
-            time_t(timeInfo->tm_min) * 60 +
-            time_t(timeInfo->tm_sec);
+        // If today is reset day but we haven't reached reset hour yet, the current week
+        // started on the previous occurrence of the reset day.
+        if (daysSinceReset == 0 && resetTm.tm_hour < int(resetHour))
+            daysSinceReset = 7;
 
-        time_t resetHourOffset = time_t(resetHour) * 3600;
-        time_t weekTimestamp = now - secondsSinceReset + resetHourOffset;
+        // Rebuild the reset instant as a local calendar date rather than subtracting a
+        // wall-clock offset from `now`. Deriving the key by arithmetic on localtime fields
+        // shifts it by the UTC-offset delta whenever DST changes, which both fires a
+        // spurious mid-week reset and orphans every row already keyed by week_start
+        // (dc_weekly_vault, dc_vault_reward_pool, the weekly token cap window).
+        // mktime resolves tm_isdst per-date, so the same calendar reset instant maps to
+        // the same epoch before and after a transition.
+        resetTm.tm_mday -= daysSinceReset;   // mktime normalizes month/year underflow
+        resetTm.tm_hour = int(resetHour);
+        resetTm.tm_min = 0;
+        resetTm.tm_sec = 0;
+        resetTm.tm_isdst = -1;               // let the C library pick the offset for that date
 
-        // If today is reset day but we haven't reached reset hour yet, go back one week.
-        if (timeInfo->tm_wday == resetDay && timeInfo->tm_hour < resetHour)
-            weekTimestamp -= 604800; // 7 days
+        time_t weekTimestamp = mktime(&resetTm);
+        if (weekTimestamp == time_t(-1))
+            return static_cast<uint32>(now);
 
         return static_cast<uint32>(weekTimestamp);
     }

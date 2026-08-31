@@ -708,6 +708,18 @@ namespace DarkChaos
             // Item State Functions
             // ====================================================================
 
+            ItemUpgradeState* GetCachedItemUpgradeState(uint32 item_guid) override
+            {
+                if (ItemUpgradeState* cached = item_state_cache.Get(item_guid))
+                {
+                    stats.cache_hits++;
+                    return cached;
+                }
+
+                stats.cache_misses++;
+                return nullptr;
+            }
+
             ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) override
             {
                 // Check cache first
@@ -762,6 +774,92 @@ namespace DarkChaos
                 // Cache and return
                 item_state_cache.Set(item_guid, state);
                 return item_state_cache.Get(item_guid);
+            }
+
+            void PrefetchPlayerItemStatesAsync(uint32 player_guid) override
+            {
+                if (!player_guid)
+                    return;
+
+                // Keyed by player_guid rather than by a list of item guids, so this can run
+                // from OnPlayerLoadFromDB -- before _LoadInventory exists to enumerate.
+                // item_instance is joined in to supply item_entry directly; without it the
+                // continuation's EnsureStateMetadata would fall back to a blocking
+                // per-item item_instance SELECT on the world thread, which is the very
+                // cost this prefetch exists to remove.
+                std::string sql = Acore::StringFormat(
+                    "SELECT u.item_guid, u.player_guid, u.base_item_name, u.tier_id, u.upgrade_level, "
+                    "u.tokens_invested, u.essence_invested, u.stat_multiplier, u.first_upgraded_at, "
+                    "u.last_upgraded_at, u.season, ii.itemEntry "
+                    "FROM {} u LEFT JOIN item_instance ii ON ii.guid = u.item_guid "
+                    "WHERE u.player_guid = {}",
+                    ITEM_UPGRADES_TABLE, player_guid);
+
+                DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                    .WithCallback([this, player_guid](QueryResult result)
+                {
+                    if (!result)
+                        return;
+
+                    bool warmed = false;
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        ItemUpgradeState state;
+                        state.item_guid = fields[0].Get<uint32>();
+                        state.player_guid = fields[1].Get<uint32>();
+                        state.base_item_name = fields[2].Get<std::string>();
+                        state.tier_id = fields[3].Get<uint8>();
+                        state.upgrade_level = fields[4].Get<uint8>();
+                        state.tokens_invested = fields[5].Get<uint32>();
+                        state.essence_invested = fields[6].Get<uint32>();
+                        state.stat_multiplier = fields[7].Get<float>();
+                        state.first_upgraded_at = fields[8].Get<time_t>();
+                        state.last_upgraded_at = fields[9].Get<time_t>();
+                        state.season = fields[10].Get<uint32>();
+                        state.item_entry = fields[11].Get<uint32>();
+                        state.has_persisted_state = true;
+
+                        if (state.player_guid == 0)
+                            state.player_guid = player_guid;
+
+                        if ((state.tier_id == 0 || state.tier_id == TIER_INVALID) && state.item_entry)
+                        {
+                            uint8 mappedTier = GetItemTier(state.item_entry);
+                            state.tier_id = (mappedTier == TIER_INVALID) ? TIER_LEVELING : mappedTier;
+                        }
+
+                        if (state.item_entry)
+                        {
+                            if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(state.item_entry))
+                            {
+                                if (state.base_item_level == 0)
+                                    state.base_item_level = itemTemplate->ItemLevel;
+                                if (state.base_item_name.empty() && !itemTemplate->Name1.empty())
+                                    state.base_item_name = itemTemplate->Name1;
+                            }
+                        }
+
+                        EnsureStateMetadata(state, state.player_guid);
+
+                        // Don't clobber a state that appeared meanwhile (e.g. an upgrade
+                        // committed between the query going out and landing).
+                        if (!item_state_cache.Get(state.item_guid))
+                        {
+                            item_state_cache.Set(state.item_guid, state);
+                            warmed = true;
+                        }
+                    } while (result->NextRow());
+
+                    if (!warmed)
+                        return;
+
+                    // The stat hooks ran cache-cold during LoadFromDB and applied base
+                    // stats. Now that the multipliers are resident, recompute so the
+                    // player actually sees their upgrades.
+                    if (Player* onlinePlayer = FindPlayerWithContext(player_guid))
+                        ForcePlayerStatUpdate(onlinePlayer);
+                }));
             }
 
             void PrefetchItemStatesAsync(std::vector<std::pair<uint32, uint32>> items, uint32 owner_guid) override

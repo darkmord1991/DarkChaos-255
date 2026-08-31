@@ -8236,7 +8236,6 @@ namespace DCCollection
         struct CharacterTransmogCache
         {
             std::unordered_map<uint8, CachedTransmogRow> bySlot;
-            uint32 loadedAtMs = 0;
             bool loadedOnce = false;
         };
 
@@ -8252,13 +8251,10 @@ namespace DCCollection
             return cache;
         }
 
-        static constexpr uint32 TRANSMOG_CACHE_TTL_MS = 1000;
-
         static CharacterTransmogCache LoadCharacterTransmogCache(uint32 guid)
         {
             CharacterTransmogCache cache;
             cache.bySlot.clear();
-            cache.loadedAtMs = getMSTime();
             cache.loadedOnce = true;
 
             QueryResult result = CharacterDatabase.Query(
@@ -8286,14 +8282,19 @@ namespace DCCollection
 
         static bool TryGetCachedTransmogRow(uint32 guid, uint8 slot, CachedTransmogRow& outRow)
         {
-            uint32 now = getMSTime();
-
-            // Fast path: use cache if fresh.
+            // Fast path: the cache is authoritative for the whole session.
+            //
+            // This used to additionally expire after a 1s TTL, which bought nothing --
+            // every write path already calls InvalidateCharacterTransmogCache, and logout
+            // erases the entry. What the TTL did buy was a blocking SELECT on the world
+            // thread on the first gear change of every burst more than a second apart,
+            // including mid-combat weapon swaps, since this runs from
+            // OnPlayerAfterSetVisibleItemSlot.
             {
                 std::lock_guard<std::mutex> lock(TransmogCacheMutex());
                 auto& byGuid = TransmogCacheByGuid();
                 auto it = byGuid.find(guid);
-                if (it != byGuid.end() && it->second.loadedOnce && (now - it->second.loadedAtMs) <= TRANSMOG_CACHE_TTL_MS)
+                if (it != byGuid.end() && it->second.loadedOnce)
                 {
                     auto itSlot = it->second.bySlot.find(slot);
                     if (itSlot == it->second.bySlot.end())
@@ -8303,7 +8304,8 @@ namespace DCCollection
                 }
             }
 
-            // Slow path: refresh from DB.
+            // Slow path: a genuine miss only -- first touch of the session, or an entry
+            // invalidated by a write.
             CharacterTransmogCache refreshed = LoadCharacterTransmogCache(guid);
             {
                 std::lock_guard<std::mutex> lock(TransmogCacheMutex());
@@ -8731,7 +8733,6 @@ namespace DCCollection
         if (it != byGuid.end())
         {
             it->second.loadedOnce = false;
-            it->second.loadedAtMs = 0;
             it->second.bySlot.clear();
         }
     }

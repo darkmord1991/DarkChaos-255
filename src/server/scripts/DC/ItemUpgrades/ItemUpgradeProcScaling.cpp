@@ -447,9 +447,10 @@ namespace ItemUpgrade
     class ItemUpgradeProcPlayerScript : public PlayerScript
     {
     public:
-        ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript", { PLAYERHOOK_ON_LOGIN }) {}
+        ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript",
+            { PLAYERHOOK_ON_LOAD_FROM_DB, PLAYERHOOK_ON_LOGIN }) {}
 
-        void OnPlayerLogin(Player* player) override
+        void OnPlayerLoadFromDB(Player* player) override
         {
             if (!player) return;
 
@@ -457,20 +458,29 @@ namespace ItemUpgrade
             if (!mgr)
                 return;
 
-            // Warm the per-item upgrade-state cache with ONE async query. A
-            // cold cache costs a blocking SELECT (plus an item_instance
-            // fallback) per equipped item — previously paid right here at
-            // login, or worse, mid-combat on the first scaled proc.
-            std::vector<std::pair<uint32, uint32>> equipped;
-            equipped.reserve(EQUIPMENT_SLOT_END);
-            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-                if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-                    equipped.emplace_back(item->GetGUID().GetCounter(), item->GetEntry());
+            // Warm the per-item upgrade-state cache with ONE async query, issued as early
+            // in the load as possible.
+            //
+            // Why here and not OnPlayerLogin: the core applies item stats synchronously
+            // inside LoadFromDB (_LoadInventory -> _ApplyAllItemMods), which runs BEFORE
+            // OnPlayerLogin fires. Warming at login was therefore always too late -- every
+            // equipped item took a blocking cache-miss SELECT during the stat pass, ~19
+            // per player, all on the world thread and all at once during a post-restart
+            // login wave.
+            //
+            // The inventory does not exist yet at this point, so the prefetch keys off
+            // player_guid instead of the in-memory item list. The stat hooks are
+            // cache-only and simply apply base stats while it is in flight; the
+            // continuation calls ForcePlayerStatUpdate to fold the multipliers in.
+            mgr->PrefetchPlayerItemStatesAsync(player->GetGUID().GetCounter());
+        }
 
-            if (equipped.empty())
+        void OnPlayerLogin(Player* player) override
+        {
+            if (!player) return;
+
+            if (!GetUpgradeManager())
                 return;
-
-            mgr->PrefetchItemStatesAsync(std::move(equipped), player->GetGUID().GetCounter());
 
             // Defer the informational hint until the prefetch has landed so
             // the scan below is served entirely from cache.

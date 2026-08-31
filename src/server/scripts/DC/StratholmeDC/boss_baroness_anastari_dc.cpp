@@ -96,6 +96,16 @@ public:
             instance->SetData(TYPE_ZIGGURAT1, IN_PROGRESS);
         }
 
+        // Clear the possession state and re-arm the next possession. Must run on every
+        // exit path out of the possession watchdog, including the one where the possessed
+        // player can no longer be resolved.
+        void EndPossession()
+        {
+            me->RemoveAurasDueToSpell(SPELL_POSSESS_INV);
+            _possessedTargetGuid.Clear();
+            SchedulePossession();
+        }
+
         void SchedulePossession()
         {
             _scheduler.Schedule(20s, 30s, [this](TaskContext context){
@@ -115,14 +125,21 @@ public:
                             {
                                 possessedTarget->RemoveAurasDueToSpell(SPELL_POSSESS);
                                 possessedTarget->RemoveAurasDueToSpell(SPELL_POSSESSED);
-                                me->RemoveAurasDueToSpell(SPELL_POSSESS_INV);
-                                _possessedTargetGuid.Clear();
-                                SchedulePossession();
+                                EndPossession();
                             }
                             else
                             {
                                 possessionContext.Repeat(1s);
                             }
+                        }
+                        else
+                        {
+                            // The possessed player is gone (logout, teleport out, death removing
+                            // them from the map). This watchdog is the only thing that strips
+                            // SPELL_POSSESS_INV and re-arms possession, so returning here without
+                            // rescheduling left the boss permanently invisible and never
+                            // possessing again -- the group would have to force an evade.
+                            EndPossession();
                         }
                     });
                 }

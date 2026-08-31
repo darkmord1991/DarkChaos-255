@@ -191,9 +191,6 @@ namespace MythicPlusConstants
         constexpr uint32 BOSS_ENTRY_BASE       = WORLD_STATE_BASE + 32;
         constexpr uint32 BOSS_KILLTIME_BASE    = WORLD_STATE_BASE + 64;
         constexpr uint32 MAX_TRACKED_BOSSES    = 12;
-
-        constexpr char const* AIO_ADDON_NAME   = "DCMythicPlusHUD";
-        constexpr char const* AIO_MSG_UPDATE   = "HUD";
     }
 }
 

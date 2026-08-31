@@ -20,7 +20,9 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "DC/CrossSystem/CrossSystemAffixes.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
+#include "DC/CrossSystem/SeasonResolver.h"
+#include "ObjectGuid.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_constants.h"
 #include "dc_mythicplus_affixes.h"
@@ -35,9 +37,6 @@
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_mythicplus.h"
 #include "DC/GreatVault/GreatVault.h"
-#ifdef HAS_AIO
-#include "AIO.h"
-#endif
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -3250,8 +3249,6 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     if (!state || !map)
         return;
 
-    bool aioEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.Aio.Enabled", true);
-
     uint32 intervalMs = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Aio.IntervalMS", 1500u);
     uint64 nowMs = GameTime::GetGameTimeMS().count();
     if (!forceBroadcast && intervalMs > 0 && nowMs < state->lastAioBroadcast + intervalMs)
@@ -3365,20 +3362,6 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
 
     std::string data = payload.str();
     PersistHudSnapshot(state, data, forceBroadcast);
-
-    if (!aioEnabled)
-        return;
-
-#ifndef HAS_AIO
-    (void)map;
-#else
-    Map::PlayerList const& players = map->GetPlayers();
-    for (auto const& ref : players)
-    {
-        if (Player* player = ref.GetSource())
-            AIO().Msg(player, MythicPlusConstants::Hud::AIO_ADDON_NAME, MythicPlusConstants::Hud::AIO_MSG_UPDATE, data);
-    }
-#endif
 }
 
 // Also lock-free, for the same reason as IsRecognizedBoss: it reads only

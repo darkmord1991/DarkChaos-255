@@ -14,7 +14,7 @@
 #include "Map.h"
 #include "BattlegroundHLBG.h"
 #include "HLBGService.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include <string>
 #include <sstream>
 #include <ctime>

@@ -11,7 +11,7 @@
 #ifndef DC_LEADERBOARD_UTILS_H
 #define DC_LEADERBOARD_UTILS_H
 
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include <string>
 #include <vector>
 #include <cstdint>

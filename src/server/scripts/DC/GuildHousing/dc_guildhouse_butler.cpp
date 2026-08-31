@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 
 namespace
 {

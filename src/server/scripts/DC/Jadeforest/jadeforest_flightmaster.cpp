@@ -20,7 +20,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "Player.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 
 // Jadeforest Flightmaster
 class jadeforest_flightmaster : public CreatureScript

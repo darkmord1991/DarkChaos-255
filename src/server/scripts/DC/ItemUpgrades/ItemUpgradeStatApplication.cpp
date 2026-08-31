@@ -47,8 +47,13 @@ namespace DarkChaos
                 if (!mgr)
                     return nullptr;
 
+                // Cache-only on purpose: the core calls the stat hooks once per stat line
+                // of _ApplyItemBonuses, so a blocking SELECT here multiplies into ~19
+                // synchronous queries per player during LoadFromDB. A cold miss applies
+                // base stats; PrefetchPlayerItemStatesAsync corrects it moments later via
+                // ForcePlayerStatUpdate.
                 ItemUpgradeState* state =
-                    mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+                    mgr->GetCachedItemUpgradeState(item->GetGUID().GetCounter());
                 if (!state || state->upgrade_level == 0)
                     return nullptr;
 
@@ -74,8 +79,9 @@ namespace DarkChaos
                     if (!item)
                         continue;
 
+                    // Cache-only -- see the note in GetUpgradeStateForSlot.
                     ItemUpgradeState* state =
-                        mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+                        mgr->GetCachedItemUpgradeState(item->GetGUID().GetCounter());
                     if (!state || state->upgrade_level == 0)
                         continue;
 
@@ -114,24 +120,18 @@ namespace DarkChaos
             if (!player)
                 return;
 
-            // Method 1: Update all stats
-            // This triggers the stat recalculation for all primary and derived stats
-            player->UpdateAllStats();
+            // _ApplyAllStatBonuses() ADDS every item and aura modifier; it does not
+            // recompute from a clean slate. Calling it on a player whose modifiers are
+            // already applied therefore doubles their entire item stat block (and doubles
+            // again on the next call). It must be paired with the matching removal --
+            // this is exactly how the core does it in
+            // Player::InitStatsForLevel(reapplyMods = true).
+            player->_RemoveAllStatBonuses();
+            player->_ApplyAllStatBonuses();   // ends with UpdateAllStats()
 
-            // Method 2: Apply all stat bonuses
-            // This ensures all bonuses from items, auras, etc. are recalculated
-            player->_ApplyAllStatBonuses();
-
-            // Method 3: Update all ratings
-            // Ensures combat ratings are recalculated
+            // Combat ratings and the outgoing unit fields still need a nudge.
             player->UpdateAllRatings();
-
-            // Method 4: Update creature data if applicable
-            // Ensures client gets updated unit data
             player->UpdateObjectVisibility();
-
-            // Optional: Send debug message if enabled
-            // ChatHandler(player->GetSession()).SendSysMessage("Stats updated!");
         }
 
         class ItemUpgradeStatScalingScript : public PlayerScript

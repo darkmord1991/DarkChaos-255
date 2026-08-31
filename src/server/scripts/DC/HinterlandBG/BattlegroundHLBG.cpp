@@ -13,7 +13,8 @@
 #include "WorldStateDefines.h"
 
 #include "DC/AddonExtension/dc_addon_hlbg.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
+#include "ObjectGuid.h"
 #include "HLBGService.h"
 #include "hlbg.h"
 #include "hlbg_constants.h"

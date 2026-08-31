@@ -24,7 +24,7 @@
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
 #include "StringFormat.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include <algorithm>
 #include <cmath>
 #include <iterator>

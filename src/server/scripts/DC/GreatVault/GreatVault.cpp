@@ -20,7 +20,8 @@
 #include "ScriptMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/RewardDistributor.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
+#include "ObjectGuid.h"
 #include <algorithm>
 #include <unordered_set>
 

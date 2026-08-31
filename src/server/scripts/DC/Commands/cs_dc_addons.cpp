@@ -38,7 +38,7 @@
 #include "ScriptMgr.h"
 #include "Map.h"
 #include "Group.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include "DC/MythicPlus/dc_mythicplus_difficulty_scaling.h"
 #include "DC/Progression/FirstStart/dc_firststart_learnspells.h"
 

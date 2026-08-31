@@ -1951,12 +1951,17 @@ class spell_nefarians_end_dominion_portal_trigger : public SpellScript
             init.SetWalk(true);
             init.SetVelocity(3.5f);
             init.MoveTo(caster->GetPositionX(), caster->GetPositionY(), caster->GetPositionZ(), false); // Todo: enable pathfinding when mmaps for transports have arrived
-            target->m_Events.AddEventAtOffset([target, caster]()
+            // The event is owned by target's event map, so capturing target is safe: the
+            // event dies with it. The portal creature has an independent lifetime (it is a
+            // boss summon and is destroyed by SummonList::DespawnAll on wipe/reset), so it
+            // must be captured by guid and re-resolved when the event fires.
+            ObjectGuid casterGuid = caster->GetGUID();
+            target->m_Events.AddEventAtOffset([target, casterGuid]()
             {
                 if (target->HasAura(SPELL_DOMINION_OVERRIDE_ACTION_BAR))
                     target->CastSpell(target, SPELL_INSTAKILL_SELF, true);
 
-                if (Creature* creature = caster->ToCreature())
+                if (Creature* creature = ObjectAccessor::GetCreature(*target, casterGuid))
                     creature->DespawnOrUnsummon();
             }, Milliseconds(init.Launch()));
         }

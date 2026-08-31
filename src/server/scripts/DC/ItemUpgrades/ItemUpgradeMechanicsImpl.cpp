@@ -13,7 +13,7 @@
 #include "ItemUpgradeMechanics.h"
 #include "ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
-#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemCommon.h"
 #include "ScriptMgr.h"
 #include "Item.h"
 #include "Player.h"
