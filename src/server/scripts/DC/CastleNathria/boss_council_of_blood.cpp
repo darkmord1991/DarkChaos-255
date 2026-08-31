@@ -20,9 +20,9 @@
 // 3.3.5a idioms. One shared encounter (DATA_COUNCIL_OF_BLOOD) across the three
 // co-bosses Baroness Frieda (166969), Castellan Niklaus (166971) and Lord
 // Stavros (166970); the encounter only completes once all three are dead.
-// Shadowlands-only spell ids are kept and tagged TODO(spell_dbc) - they are
-// inert until spell_dbc rows are authored. AreaTrigger-driven mechanics are
-// re-expressed with 3.3.5 constructs or stubbed with TODO(port) notes.
+// The Shadowlands spell ids used here all have authored Spell.dbc rows (verified
+// 2026-08-30 against the live 54221-record Spell.dbc). AreaTrigger-driven mechanics
+// are re-expressed with 3.3.5 constructs or stubbed with TODO(port) notes.
 
 #include "InstanceScript.h"
 #include "Map.h"
@@ -40,52 +40,52 @@ namespace CastleNathria::CouncilOfBlood
 enum Spells
 {
     // Shared
-    SPELL_DANSE_MACABRE_MOD_DAMAGE_TAKEN    = 330959,   // TODO(spell_dbc) - unused, see StartDanseMacabre()
-    SPELL_DANSE_MACABRE_DUMMY               = 328497,   // TODO(spell_dbc) - unused, see StartDanseMacabre()
-    SPELL_DANSE_MACABRE_CREATE_AT           = 328485,   // TODO(spell_dbc) - AreaTrigger creator, unused on 3.3.5
-    SPELL_DANSE_MACABRE_AURA                = 328495,   // TODO(spell_dbc) - unused, see StartDanseMacabre()
-    SPELL_DANSE_MACABRE_CREATE_AT_TWO       = 344181,   // TODO(spell_dbc) - AreaTrigger creator, unused on 3.3.5
-    SPELL_OPRESSIVE_ATMOSPHERE              = 334909,   // TODO(spell_dbc)
+    SPELL_DANSE_MACABRE_MOD_DAMAGE_TAKEN    = 330959,   // unused, see StartDanseMacabre()
+    SPELL_DANSE_MACABRE_DUMMY               = 328497,   // unused, see StartDanseMacabre()
+    SPELL_DANSE_MACABRE_CREATE_AT           = 328485,   // AreaTrigger creator, unused on 3.3.5
+    SPELL_DANSE_MACABRE_AURA                = 328495,   // unused, see StartDanseMacabre()
+    SPELL_DANSE_MACABRE_CREATE_AT_TWO       = 344181,   // AreaTrigger creator, unused on 3.3.5
+    SPELL_OPRESSIVE_ATMOSPHERE              = 334909,
     SPELL_BERSERK                           = 26662,    // real 3.3.5 spell
 
     // Baroness Frieda
-    SPELL_DREADBOLT_VOLLEY                  = 337110,   // TODO(spell_dbc)
-    SPELL_DRAIN_ESSENCE_CHANNEL             = 346654,   // TODO(spell_dbc)
-    SPELL_DRAIN_ESSENCE_PERIODIC_DAMAGE     = 346651,   // TODO(spell_dbc)
-    SPELL_DRAIN_ESSENCE_MOD_HEALTH          = 327773,   // TODO(spell_dbc)
-    SPELL_PRIDEFUL_ERUPTION_CAST            = 346657,   // TODO(spell_dbc)
-    SPELL_PRIDEFUL_ERUPTION_MISSILE         = 346661,   // TODO(spell_dbc)
-    SPELL_PRIDEFUL_ERUPTION_DAMAGE          = 346660,   // TODO(spell_dbc)
-    SPELL_SOUL_SPIKES_DEBUFF                = 346681,   // TODO(spell_dbc)
-    SPELL_SOUL_SPIKES_PERIODIC_DUMMY        = 346762,   // TODO(spell_dbc)
-    SPELL_SOUL_SPIKES_DAMAGE                = 346685,   // TODO(spell_dbc)
+    SPELL_DREADBOLT_VOLLEY                  = 337110,
+    SPELL_DRAIN_ESSENCE_CHANNEL             = 346654,
+    SPELL_DRAIN_ESSENCE_PERIODIC_DAMAGE     = 346651,
+    SPELL_DRAIN_ESSENCE_MOD_HEALTH          = 327773,
+    SPELL_PRIDEFUL_ERUPTION_CAST            = 346657,
+    SPELL_PRIDEFUL_ERUPTION_MISSILE         = 346661,
+    SPELL_PRIDEFUL_ERUPTION_DAMAGE          = 346660,
+    SPELL_SOUL_SPIKES_DEBUFF                = 346681,
+    SPELL_SOUL_SPIKES_PERIODIC_DUMMY        = 346762,
+    SPELL_SOUL_SPIKES_DAMAGE                = 346685,
 
     // Castellan Niklaus
-    SPELL_DUELIST_RISPOSE                   = 346690,   // TODO(spell_dbc)
-    SPELL_UNDYING_SHIELD                    = 346694,   // TODO(spell_dbc)
-    SPELL_DREDGER_SERVANT                   = 330978,   // TODO(spell_dbc) - unused, summon done directly
-    SPELL_THROW_FOOD                        = 330968,   // TODO(spell_dbc) - unused (Begrudging Waiter ability)
-    SPELL_CASTELLANS_CADRE                  = 330965,   // TODO(spell_dbc) - unused, summon done directly
+    SPELL_DUELIST_RISPOSE                   = 346690,
+    SPELL_UNDYING_SHIELD                    = 346694,
+    SPELL_DREDGER_SERVANT                   = 330978,   // unused, summon done directly
+    SPELL_THROW_FOOD                        = 330968,   // unused (Begrudging Waiter ability)
+    SPELL_CASTELLANS_CADRE                  = 330965,   // unused, summon done directly
 
     // Lord Stavros
-    SPELL_EVASIVE_LUNGE_DAMAGE              = 327610,   // TODO(spell_dbc)
-    SPELL_EVASIVE_LUNGE_TELEPORT            = 327497,   // TODO(spell_dbc)
-    SPELL_DARK_RECITAL                      = 331634,   // TODO(spell_dbc)
-    SPELL_DARK_RECITAL_TRIGGER              = 334741,   // TODO(spell_dbc)
-    SPELL_WALTZ_OF_BLOOD_STUN               = 327619,   // TODO(spell_dbc) - unused (Waltz of Blood not ported)
-    SPELL_DANCING_FOOLS                     = 330964,   // TODO(spell_dbc) - unused (Dancing Fools not ported)
-    SPELL_VIOLENT_UPROAR                    = 346303,   // TODO(spell_dbc) - unused (Danger Fools enrage)
+    SPELL_EVASIVE_LUNGE_DAMAGE              = 327610,
+    SPELL_EVASIVE_LUNGE_TELEPORT            = 327497,   // SPELL_EFFECT_CHARGE to the target
+    SPELL_DARK_RECITAL                      = 331634,
+    SPELL_DARK_RECITAL_TRIGGER              = 334741,
+    SPELL_WALTZ_OF_BLOOD_STUN               = 327619,   // unused (Waltz of Blood not ported)
+    SPELL_DANCING_FOOLS                     = 330964,   // unused (Dancing Fools not ported)
+    SPELL_VIOLENT_UPROAR                    = 346303,   // unused (Danger Fools enrage)
 
     // Heroic (retail Heroic+)
-    SPELL_MANIFEST_PAIN_CREATE_AT           = 346944,   // TODO(spell_dbc) - AreaTrigger creator
-    SPELL_MANIFEST_PAIN_AT_DAMAGE           = 346945,   // TODO(spell_dbc)
-    SPELL_TWISTED_PAIN                      = 346939,   // TODO(spell_dbc) - unused
-    SPELL_TWISTED_PAIN_CREATE_AT            = 346937,   // TODO(spell_dbc) - AreaTrigger creator, unused
-    SPELL_CASTELLANS_FURY                   = 346934,   // TODO(spell_dbc) - unused
-    SPELL_TWO_LEFT_FEET                     = 346932,   // TODO(spell_dbc) - unused
+    SPELL_MANIFEST_PAIN_CREATE_AT           = 346944,   // ground zone: persistent area aura ticking 346945
+    SPELL_MANIFEST_PAIN_AT_DAMAGE           = 346945,
+    SPELL_TWISTED_PAIN                      = 346939,   // unused
+    SPELL_TWISTED_PAIN_CREATE_AT            = 346937,   // AreaTrigger creator, unused
+    SPELL_CASTELLANS_FURY                   = 346934,   // unused
+    SPELL_TWO_LEFT_FEET                     = 346932,   // unused
 
     // Mythic (mapped to 3.3.5 heroic)
-    SPELL_DANCING_FEVER_AURA                = 347350    // TODO(spell_dbc)
+    SPELL_DANCING_FEVER_AURA                = 347350
 };
 
 enum Texts

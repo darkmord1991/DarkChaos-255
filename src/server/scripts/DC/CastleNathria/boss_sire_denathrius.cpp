@@ -52,7 +52,8 @@ namespace CastleNathria::SireDenathrius
 {
 enum Spells
 {
-    // Shared / phase one. All ids below are Shadowlands ids — TODO(spell_dbc) as a family.
+    // Shared / phase one. All ids below are Shadowlands ids; their Spell.dbc rows
+    // are authored (verified 2026-08-30 against the live Spell.dbc).
     SPELL_OVERRIDE_POWER_COLOR_RAGE         = 299970, // shadowcore SharedDefines aura (red energy bar)
     SPELL_MARCH_OF_THE_PENITENT_SEND_EVENT  = 328117,
     SPELL_DESOLATION_CREATE_AT              = 327982, // source: "pizza" AreaTrigger
@@ -313,7 +314,7 @@ struct npc_remornia : public ScriptedAI
                 }
 
                 if (inside && player->IsAlive() && !player->HasAura(auraId))
-                    me->AddAura(auraId, player); // TODO(spell_dbc)
+                    me->AddAura(auraId, player);
                 else if (!inside && player->HasAura(auraId))
                     player->RemoveAurasDueToSpell(auraId);
             }
@@ -325,7 +326,7 @@ struct npc_remornia : public ScriptedAI
         switch (action)
         {
             case ACTION_REMORNIA_EVENTS:
-                me->AddAura(SPELL_CARNAGE, me); // TODO(spell_dbc)
+                me->AddAura(SPELL_CARNAGE, me);
                 events.ScheduleEvent(EVENT_IMPALE, 10s);
                 break;
             case ACTION_REMORNIA_RETIRE:
@@ -395,7 +396,7 @@ private:
         SelectTargetList(targets, urand(3, 4), SelectTargetMethod::Random, 0, 100.0f, true);
         for (Unit* target : targets)
         {
-            me->CastSpell(target, SPELL_IMPALE_MARK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+            me->CastSpell(target, SPELL_IMPALE_MARK, TRIGGERED_FULL_MASK);
             ObjectGuid targetGuid = target->GetGUID();
             scheduler.Schedule(6100ms, [this, targetGuid](TaskContext /*context*/)
             {
@@ -403,9 +404,9 @@ private:
                 if (!target)
                     return;
 
-                me->CastSpell(target, SPELL_IMPALE_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                me->CastSpell(target, SPELL_IMPALE_DAMAGE, TRIGGERED_FULL_MASK);
                 if (target->HasAura(SPELL_CARNAGE_PERIODIC))
-                    me->CastSpell(target, SPELL_CARNAGE_PERIODIC, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_CARNAGE_PERIODIC, TRIGGERED_FULL_MASK);
 
                 if (IsHeroic())
                 {
@@ -435,7 +436,7 @@ struct boss_sire_denathrius : public BossAI
         me->setPowerType(POWER_ENERGY);
         me->SetMaxPower(POWER_ENERGY, 100);
         me->SetPower(POWER_ENERGY, 0);
-        me->AddAura(SPELL_OVERRIDE_POWER_COLOR_RAGE, me); // TODO(spell_dbc)
+        me->AddAura(SPELL_OVERRIDE_POWER_COLOR_RAGE, me);
         me->LoadEquipment(2, true); // set 2: empty-handed while Remornia hovers beside him
     }
 
@@ -460,7 +461,7 @@ struct boss_sire_denathrius : public BossAI
             Player* player = ref.GetSource();
             if (!player || !player->IsAlive())
                 continue;
-            me->AddAura(SPELL_BURDEN_OF_SIN_PERIODIC_DUMMY, player); // TODO(spell_dbc)
+            me->AddAura(SPELL_BURDEN_OF_SIN_PERIODIC_DUMMY, player);
             if (Aura* burdenOfSin = player->GetAura(SPELL_BURDEN_OF_SIN_PERIODIC_DUMMY))
                 burdenOfSin->SetStackAmount(4);
         }
@@ -477,8 +478,8 @@ struct boss_sire_denathrius : public BossAI
                 events.Repeat(1s);
                 break;
             case EVENT_CLEANSING_PAIN:
-                me->AddAura(SPELL_CLEANSING_PAIN_ALLOW_CAST, me); // TODO(spell_dbc)
-                DoCastVictim(SPELL_CLEANSING_PAIN);               // TODO(spell_dbc)
+                me->AddAura(SPELL_CLEANSING_PAIN_ALLOW_CAST, me);
+                DoCastVictim(SPELL_CLEANSING_PAIN);
                 events.Repeat(25s);
                 break;
             case EVENT_FEEDING_TIME:
@@ -488,28 +489,28 @@ struct boss_sire_denathrius : public BossAI
                 DoBloodPrice(); // one-shot in the source
                 break;
             case EVENT_WRACKING_PAIN:
-                me->AddAura(SPELL_WRACKING_PAIN_ALLOW_CAST, me); // TODO(spell_dbc)
-                DoCastVictim(SPELL_WRACKING_PAIN);               // TODO(spell_dbc)
+                me->AddAura(SPELL_WRACKING_PAIN_ALLOW_CAST, me);
+                DoCastVictim(SPELL_WRACKING_PAIN);
                 events.Repeat(20s);
                 break;
             case EVENT_HAND_OF_DESTRUCTION:
-                me->CastSpell(nullptr, SPELL_HAND_OF_DESTRUCTION_CAST); // TODO(spell_dbc)
+                me->CastSpell(nullptr, SPELL_HAND_OF_DESTRUCTION_CAST);
                 me->SummonCreature(NPC_HAND_OF_DESTRUCTION, me->GetRandomNearPosition(15.0f), TEMPSUMMON_MANUAL_DESPAWN);
                 events.Repeat(45s);
                 break;
             case EVENT_INDIGNATION:
-                me->CastSpell(nullptr, SPELL_INDIGNATION_CREATE_AT, TRIGGERED_FULL_MASK); // TODO(spell_dbc): SL AreaTrigger visual
-                me->CastSpell(nullptr, SPELL_INDIGNATION); // TODO(spell_dbc)
+                me->CastSpell(nullptr, SPELL_INDIGNATION_CREATE_AT, TRIGGERED_FULL_MASK);   // SL AreaTrigger visual
+                me->CastSpell(nullptr, SPELL_INDIGNATION);
                 break;
             case EVENT_SHATTERING_PAIN:
-                me->AddAura(SPELL_SHATTERING_PAIN_ALLOW_CAST, me);        // TODO(spell_dbc)
-                me->CastSpell(nullptr, SPELL_SHATTERING_PAIN_TRIGGER); // TODO(spell_dbc)
+                me->AddAura(SPELL_SHATTERING_PAIN_ALLOW_CAST, me);
+                me->CastSpell(nullptr, SPELL_SHATTERING_PAIN_TRIGGER);
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 25.0f, true))
                 {
-                    me->CastSpell(target, SPELL_SHATTERING_PAIN_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_SHATTERING_PAIN_DAMAGE, TRIGGERED_FULL_MASK);
                     scheduler.Schedule(3100ms, [this](TaskContext /*context*/)
                     {
-                        me->CastSpell(nullptr, SPELL_SHATTERING_PAIN_DAMAGE_KNOCK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                        me->CastSpell(nullptr, SPELL_SHATTERING_PAIN_DAMAGE_KNOCK, TRIGGERED_FULL_MASK);
                     });
                 }
                 events.Repeat(25s);
@@ -649,7 +650,7 @@ private:
         if (_stageThree)
         {
             me->StopMoving();
-            me->CastSpell(nullptr, SPELL_SINISTER_REFLECTION); // TODO(spell_dbc)
+            me->CastSpell(nullptr, SPELL_SINISTER_REFLECTION);
             scheduler.Schedule(2s, [this](TaskContext /*context*/)
             {
                 // TODO(port): source spawned at marker bunny 600600 (not in DC DB).
@@ -660,7 +661,7 @@ private:
         {
             me->StopMoving();
             Talk(SAY_MASSACRE); // NOTE: no creature_text in DB yet
-            me->CastSpell(nullptr, SPELL_COMMAND_MASSACRE); // TODO(spell_dbc)
+            me->CastSpell(nullptr, SPELL_COMMAND_MASSACRE);
             scheduler.Schedule(2s, [this](TaskContext /*context*/)
             {
                 DoMassacreVolley();
@@ -669,7 +670,7 @@ private:
         else
         {
             Talk(SAY_RAVAGE); // NOTE: no creature_text in DB yet
-            me->CastSpell(nullptr, SPELL_COMMAND_RAVAGE); // TODO(spell_dbc)
+            me->CastSpell(nullptr, SPELL_COMMAND_RAVAGE);
             scheduler.Schedule(2s, [this](TaskContext /*context*/)
             {
                 DoRavageOrder();
@@ -688,7 +689,7 @@ private:
         if (!target)
             return;
 
-        remornia->CastSpell(target, SPELL_RAVAGE_CAST_DUMMY); // TODO(spell_dbc)
+        remornia->CastSpell(target, SPELL_RAVAGE_CAST_DUMMY);
         ObjectGuid remorniaGuid = remornia->GetGUID();
         ObjectGuid targetGuid = target->GetGUID();
         scheduler.Schedule(6100ms, [this, remorniaGuid, targetGuid](TaskContext /*context*/)
@@ -755,7 +756,7 @@ private:
         {
             for (Unit* target : targets)
             {
-                me->CastSpell(target, SPELL_FEEDING_TIME_MARK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                me->CastSpell(target, SPELL_FEEDING_TIME_MARK, TRIGGERED_FULL_MASK);
                 ObjectGuid targetGuid = target->GetGUID();
                 scheduler.Schedule(5100ms, [this, targetGuid](TaskContext /*context*/)
                 {
@@ -767,7 +768,7 @@ private:
                     // until the summon spell exists in spell_dbc.
                     for (uint8 i = 0; i < 2; ++i)
                         me->SummonCreature(NPC_ECHO_OF_SIN, target->GetRandomNearPosition(8.0f), TEMPSUMMON_MANUAL_DESPAWN);
-                    me->CastSpell(target, SPELL_FEEDING_TIME_DRAIN_HEALTH, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_FEEDING_TIME_DRAIN_HEALTH, TRIGGERED_FULL_MASK);
                 });
             }
         }
@@ -775,7 +776,7 @@ private:
         {
             for (Unit* target : targets)
             {
-                me->AddAura(SPELL_NIGHT_HUNTER_MARK, target); // TODO(spell_dbc)
+                me->AddAura(SPELL_NIGHT_HUNTER_MARK, target);
                 ObjectGuid targetGuid = target->GetGUID();
                 scheduler.Schedule(6100ms, [this, targetGuid](TaskContext /*context*/)
                 {
@@ -783,8 +784,8 @@ private:
                     if (!target)
                         return;
 
-                    target->CastSpell(target, SPELL_NIGHT_HUNTER_MISSILE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
-                    me->CastSpell(target, SPELL_NIGHT_HUNTER_DAMAGE, TRIGGERED_FULL_MASK);      // TODO(spell_dbc)
+                    target->CastSpell(target, SPELL_NIGHT_HUNTER_MISSILE, TRIGGERED_FULL_MASK);
+                    me->CastSpell(target, SPELL_NIGHT_HUNTER_DAMAGE, TRIGGERED_FULL_MASK);
                 });
             }
         }
@@ -792,7 +793,7 @@ private:
 
     void DoBloodPrice()
     {
-        me->CastSpell(nullptr, SPELL_BLOOD_PRICE_CHANNEL); // TODO(spell_dbc)
+        me->CastSpell(nullptr, SPELL_BLOOD_PRICE_CHANNEL);
         Map::PlayerList const& players = me->GetMap()->GetPlayers();
         for (auto const& ref : players)
         {
@@ -802,7 +803,7 @@ private:
 
             // TODO(port): source issued a malformed MoveCharge (boolean z); the immobilize aura
             // alone anchors the player here.
-            me->AddAura(SPELL_BLOOD_PRICE_IMMOBILIZE, player); // TODO(spell_dbc)
+            me->AddAura(SPELL_BLOOD_PRICE_IMMOBILIZE, player);
             ObjectGuid playerGuid = player->GetGUID();
             scheduler.Schedule(3600ms, [this, playerGuid](TaskContext /*context*/)
             {
@@ -810,9 +811,9 @@ private:
                 if (!player)
                     return;
 
-                me->CastSpell(player, SPELL_BLOOD_PRICE_EFFECT, TRIGGERED_FULL_MASK);    // TODO(spell_dbc)
-                me->CastSpell(player, SPELL_BLOOD_PRICE_DAMAGE, TRIGGERED_FULL_MASK);    // TODO(spell_dbc)
-                me->CastSpell(player, SPELL_BLOOD_PRICE_KNOCKBACK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                me->CastSpell(player, SPELL_BLOOD_PRICE_EFFECT, TRIGGERED_FULL_MASK);
+                me->CastSpell(player, SPELL_BLOOD_PRICE_DAMAGE, TRIGGERED_FULL_MASK);
+                me->CastSpell(player, SPELL_BLOOD_PRICE_KNOCKBACK, TRIGGERED_FULL_MASK);
             });
         }
     }
@@ -823,7 +824,7 @@ private:
         SelectTargetList(targets, urand(3, 4), SelectTargetMethod::Random, 0, 100.0f, true);
         for (Unit* target : targets)
         {
-            me->AddAura(SPELL_FATAL_FINESSE_PERIODIC_DAMAGE, target); // TODO(spell_dbc)
+            me->AddAura(SPELL_FATAL_FINESSE_PERIODIC_DAMAGE, target);
             if (IsHeroic())
             {
                 ObjectGuid targetGuid = target->GetGUID();
@@ -835,8 +836,8 @@ private:
 
                     // TODO(port): Smoldering Ire spawned SL AreaTriggers; casts kept for the
                     // DB-authoring phase.
-                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT, TRIGGERED_FULL_MASK);   // TODO(spell_dbc)
-                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT_2, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT, TRIGGERED_FULL_MASK);
+                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT_2, TRIGGERED_FULL_MASK);
                 });
             }
         }
@@ -852,7 +853,7 @@ private:
         me->SetReactState(REACT_PASSIVE);
         me->AttackStop();
         me->StopMoving();
-        me->CastSpell(nullptr, SPELL_MARCH_OF_THE_PENITENT_SEND_EVENT); // TODO(spell_dbc): retail scene trigger
+        me->CastSpell(nullptr, SPELL_MARCH_OF_THE_PENITENT_SEND_EVENT);   // retail scene trigger
         if (Creature* remornia = GetRemornia())
             if (npc_remornia* remorniaAI = CAST_AI(npc_remornia, remornia->AI()))
                 remorniaAI->ClearGroundZones(); // source removed the Desolation AreaTrigger here
@@ -905,7 +906,7 @@ struct npc_hand_of_destruction : public ScriptedAI
             instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
         scheduler.Schedule(6s, [this](TaskContext /*context*/)
         {
-            DoCastAOE(SPELL_HAND_OF_DESTRUCTION_DAMAGE, true); // TODO(spell_dbc)
+            DoCastAOE(SPELL_HAND_OF_DESTRUCTION_DAMAGE, true);
             if (InstanceScript* instance = me->GetInstanceScript())
                 instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             me->DespawnOrUnsummon();
@@ -936,14 +937,14 @@ struct npc_crimson_cabalist : public ScriptedAI
 
     void IsSummonedBy(WorldObject* /*summoner*/) override
     {
-        me->CastSpell(nullptr, SPELL_CRIMSON_CHORUS); // TODO(spell_dbc)
+        me->CastSpell(nullptr, SPELL_CRIMSON_CHORUS);
     }
 
     void JustDied(Unit* /*killer*/) override
     {
         // TODO(port): source fired on heroic and mythic; mythic does not exist on 3.3.5.
         if (IsHeroic())
-            me->CastSpell(nullptr, SPELL_CRESCENDO_MISSILE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+            me->CastSpell(nullptr, SPELL_CRESCENDO_MISSILE, TRIGGERED_FULL_MASK);
     }
 };
 
@@ -967,7 +968,7 @@ struct npc_echo_of_sin : public ScriptedAI
     {
         me->GetMotionMaster()->MoveIdle();
         me->SetReactState(REACT_PASSIVE);
-        me->CastSpell(nullptr, SPELL_PAINFUL_MEMORIES_CHANNEL); // TODO(spell_dbc)
+        me->CastSpell(nullptr, SPELL_PAINFUL_MEMORIES_CHANNEL);
     }
 };
 
@@ -984,16 +985,16 @@ struct npc_nightcloak : public ScriptedAI
         switch (me->GetEntry())
         {
             case NPC_LADY_SINSEAR:
-                me->CastSpell(nullptr, SPELL_HYMN_SINSEAR_PERIODIC_DUMMY); // TODO(spell_dbc)
+                me->CastSpell(nullptr, SPELL_HYMN_SINSEAR_PERIODIC_DUMMY);
                 break;
             case NPC_LORD_EVERSHADE:
-                me->CastSpell(nullptr, SPELL_HYMN_EVERSHADE_PERIODIC_DUMMY); // TODO(spell_dbc)
+                me->CastSpell(nullptr, SPELL_HYMN_EVERSHADE_PERIODIC_DUMMY);
                 break;
             case NPC_BARON_DUSKHOLLOW:
-                me->CastSpell(nullptr, SPELL_HYMN_DUSKHOLLOW_PERIODIC_DUMMY); // TODO(spell_dbc)
+                me->CastSpell(nullptr, SPELL_HYMN_DUSKHOLLOW_PERIODIC_DUMMY);
                 break;
             case NPC_COUNTESS_GLOOMVEIL:
-                me->CastSpell(nullptr, SPELL_HYMN_GLOOMVEIL_PERIODIC_DUMMY); // TODO(spell_dbc)
+                me->CastSpell(nullptr, SPELL_HYMN_GLOOMVEIL_PERIODIC_DUMMY);
                 break;
             default:
                 break;
@@ -1047,7 +1048,7 @@ class spell_wracking_pain : public SpellScript
 
     void Register() override
     {
-        // TODO(spell_dbc): align the target type with the authored spell_dbc row (source bound
+   // align the target type with the authored spell_dbc row (source bound
         // against SPELL_EFFECT_SCHOOL_DAMAGE on EFFECT_0).
         OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_wracking_pain::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
@@ -1067,16 +1068,16 @@ class aura_nathrian_hymn : public AuraScript
         switch (caster->GetEntry())
         {
             case NPC_LADY_SINSEAR:
-                caster->CastSpell(nullptr, SPELL_HYMN_SINSEAR_DAMAGE); // TODO(spell_dbc)
+                caster->CastSpell(nullptr, SPELL_HYMN_SINSEAR_DAMAGE);
                 break;
             case NPC_LORD_EVERSHADE:
-                caster->CastSpell(nullptr, SPELL_HYMN_EVERSHADE_DAMAGE); // TODO(spell_dbc)
+                caster->CastSpell(nullptr, SPELL_HYMN_EVERSHADE_DAMAGE);
                 break;
             case NPC_BARON_DUSKHOLLOW:
-                caster->CastSpell(nullptr, SPELL_HYMN_DUSKHOLLOW_DAMAGE); // TODO(spell_dbc)
+                caster->CastSpell(nullptr, SPELL_HYMN_DUSKHOLLOW_DAMAGE);
                 break;
             case NPC_COUNTESS_GLOOMVEIL:
-                caster->CastSpell(nullptr, SPELL_HYMN_GLOOMVEIL_DAMAGE); // TODO(spell_dbc)
+                caster->CastSpell(nullptr, SPELL_HYMN_GLOOMVEIL_DAMAGE);
                 break;
             default:
                 break;
@@ -1100,7 +1101,7 @@ class aura_burden_sin : public AuraScript
         if (!GetCaster() || !GetTarget())
             return;
 
-        GetCaster()->CastSpell(GetTarget(), SPELL_BURDEN_OF_SIN_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+        GetCaster()->CastSpell(GetTarget(), SPELL_BURDEN_OF_SIN_DAMAGE, TRIGGERED_FULL_MASK);
     }
 
     void Register() override
@@ -1120,7 +1121,7 @@ class aura_painful_memories : public AuraScript
         if (!caster) // source guard was inverted (`if (GetCaster()) return;`)
             return;
 
-        caster->CastSpell(nullptr, SPELL_PAINFUL_MEMORIES_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+        caster->CastSpell(nullptr, SPELL_PAINFUL_MEMORIES_DAMAGE, TRIGGERED_FULL_MASK);
     }
 
     void Register() override

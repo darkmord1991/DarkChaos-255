@@ -49,29 +49,29 @@ namespace CastleNathria::Sludgefist
 {
 enum Spells
 {
-    SPELL_GIANT_FISTS_DUMMY             = 335297,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GIANT_FISTS_DAMAGE            = 335298,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_HATEFUL_GAZE_MARK             = 331209,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_HEADLESS_CHARGE_MAIN          = 339067,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_HEADLESS_CHARGE_APPLY_AT      = 339068,   // TODO(spell_dbc): AreaTrigger creator, unused -- see charge tick
-    SPELL_HEADLESS_CHARGE_CREATE_AT     = 339069,   // TODO(spell_dbc): AreaTrigger creator, unused on 3.3.5
-    SPELL_DESTRUCTIVE_IMPACT            = 332969,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_CRUMBLING_FOUNDATION_PERIODIC = 332443,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_CRUMBLING_FOUNDATION_DAMAGE   = 332444,   // TODO(spell_dbc): unused, triggered by the periodic
-    SPELL_COLLAPSING_FOUNDATION         = 332197,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DESTRUCTIVE_STOMP             = 332318,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_FALLING_RUMBLE_MISSILE        = 332552,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_STONEQUAKE_AT_DAMAGE          = 335361,   // TODO(spell_dbc): SL spell, needs downport row (was at_stonequake)
-    SPELL_STONEQUAKE_CREATE_AT_ONE      = 335371,   // TODO(spell_dbc): AreaTrigger creator (author as persistent-area-aura)
-    SPELL_STONEQUAKE_CREATE_AT_TWO      = 348698,   // TODO(spell_dbc): AreaTrigger creator (author as persistent-area-aura)
-    SPELL_COLOSSAL_ROAR_CAST            = 332687,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_COLOSSAL_ROAR_DAMAGE          = 332698,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GRUESOME_RAGE                 = 341250,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_GIANT_FISTS_DUMMY             = 335297,
+    SPELL_GIANT_FISTS_DAMAGE            = 335298,
+    SPELL_HATEFUL_GAZE_MARK             = 331209,
+    SPELL_HEADLESS_CHARGE_MAIN          = 339067,
+    SPELL_HEADLESS_CHARGE_APPLY_AT      = 339068,   // AreaTrigger creator, unused -- see charge tick
+    SPELL_HEADLESS_CHARGE_CREATE_AT     = 339069,   // AreaTrigger creator, unused on 3.3.5
+    SPELL_DESTRUCTIVE_IMPACT            = 332969,
+    SPELL_CRUMBLING_FOUNDATION_PERIODIC = 332443,
+    SPELL_CRUMBLING_FOUNDATION_DAMAGE   = 332444,   // unused, triggered by the periodic
+    SPELL_COLLAPSING_FOUNDATION         = 332197,
+    SPELL_DESTRUCTIVE_STOMP             = 332318,
+    SPELL_FALLING_RUMBLE_MISSILE        = 332552,
+    SPELL_STONEQUAKE_AT_DAMAGE          = 335361,   // was at_stonequake
+    SPELL_STONEQUAKE_CREATE_AT_ONE      = 335371,   // AreaTrigger creator (author as persistent-area-aura)
+    SPELL_STONEQUAKE_CREATE_AT_TWO      = 348698,   // AreaTrigger creator (author as persistent-area-aura)
+    SPELL_COLOSSAL_ROAR_CAST            = 332687,
+    SPELL_COLOSSAL_ROAR_DAMAGE          = 332698,
+    SPELL_GRUESOME_RAGE                 = 341250,
 
     // Mythic (runs on 3.3.5 heroic)
-    SPELL_SEISMIC_SHIFT_TRIGGER         = 340803,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SEISMIC_SHIFT_DAMAGE          = 341087,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SEISMIC_SHIFT_TARGET_DEBUFF   = 340817    // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_SEISMIC_SHIFT_TRIGGER         = 340803,
+    SPELL_SEISMIC_SHIFT_DAMAGE          = 341087,
+    SPELL_SEISMIC_SHIFT_TARGET_DEBUFF   = 340817
 };
 
 enum Events

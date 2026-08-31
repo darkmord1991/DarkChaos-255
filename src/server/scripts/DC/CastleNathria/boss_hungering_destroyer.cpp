@@ -43,27 +43,27 @@ namespace CastleNathria::HungeringDestroyer
 {
 enum Spells
 {
-    SPELL_GROWING_HUNGER_BUFF               = 332295,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_OVERWHELM                         = 329774,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GLUTTONOUS_MIASMA                 = 329298,   // TODO(spell_dbc): SL spell, needs downport row -- every 24s
-    SPELL_GLUTTONOUS_MIASMA_DAMAGE          = 330590,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GLUTTONOUS_MIASMA_HEAL            = 329314,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DESOLATE                          = 329455,   // TODO(spell_dbc): SL spell, needs downport row -- 22s on combat, then every minute
-    SPELL_VOLATILE_EJECTION_CAST            = 334266,   // TODO(spell_dbc): SL spell, needs downport row -- every 30s
-    SPELL_VOLATILE_EJECTION_DAMAGE_TAKEN_DEBUFF = 334228,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_VOLATILE_EJECTION_MARK            = 334064,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_VOLATILE_EJECTION_EXP_VISUAL      = 334191,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_EXPUNGE_CAST                      = 329758,   // TODO(spell_dbc): SL spell, needs downport row (never scheduled by the source AI)
-    SPELL_EXPUNGE_DAMAGE                    = 329742,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_EXPUNGE_APPLY_AT                  = 329725,   // TODO(spell_dbc): SL spell, needs downport row (aura_expunge hooks its removal)
-    SPELL_CONSUME                           = 334522,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_GROWING_HUNGER_BUFF               = 332295,   // unused in source too
+    SPELL_OVERWHELM                         = 329774,
+    SPELL_GLUTTONOUS_MIASMA                 = 329298,   // every 24s
+    SPELL_GLUTTONOUS_MIASMA_DAMAGE          = 330590,
+    SPELL_GLUTTONOUS_MIASMA_HEAL            = 329314,
+    SPELL_DESOLATE                          = 329455,   // 22s on combat, then every minute
+    SPELL_VOLATILE_EJECTION_CAST            = 334266,   // every 30s
+    SPELL_VOLATILE_EJECTION_DAMAGE_TAKEN_DEBUFF = 334228,   // unused in source too
+    SPELL_VOLATILE_EJECTION_MARK            = 334064,   // unused in source too
+    SPELL_VOLATILE_EJECTION_EXP_VISUAL      = 334191,   // unused in source too
+    SPELL_EXPUNGE_CAST                      = 329758,   // never scheduled by the source AI
+    SPELL_EXPUNGE_DAMAGE                    = 329742,   // unused in source too
+    SPELL_EXPUNGE_APPLY_AT                  = 329725,   // aura_expunge hooks its removal
+    SPELL_CONSUME                           = 334522,
 
     // Heroic
-    SPELL_OBLITERATING_RIFT_CREATE_AT       = 332375,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_OBLITERATING_RIFT_DAMAGE          = 329835,   // TODO(spell_dbc): SL spell, needs downport row (unused -- was at_obliterating_rift)
+    SPELL_OBLITERATING_RIFT_CREATE_AT       = 332375,   // author as persistent-area-aura
+    SPELL_OBLITERATING_RIFT_DAMAGE          = 329835,   // unused -- was at_obliterating_rift
 
     // Mythic (source also fired it on heroic; kept that behaviour)
-    SPELL_ESSENCE_SAP                       = 334755    // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_ESSENCE_SAP                       = 334755
     // The remaining events reuse their spell ids, as in the source.
 };
 

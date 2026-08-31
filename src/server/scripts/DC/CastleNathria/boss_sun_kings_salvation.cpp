@@ -47,28 +47,28 @@ namespace CastleNathria::SunKingsSalvation
 {
 enum Spells
 {
-    SPELL_GREATER_CASTIGNATION_CAST         = 328885,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GREATER_CASTIGNATION_PERI_DUMMY   = 328889,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_GREATER_CASTIGNATION_CHANNEL      = 328894,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_GREATER_CASTIGNATION_DAMAGE       = 328890,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_FIERY_STRIKE                      = 326455,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_BURNING_REMNANTS                  = 326456,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_BLAZING_SURGE                     = 329518,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_BLAZING_SURGE_MISSILE             = 329515,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SMOLDERING_REMNANTS_AT_DAMAGE     = 328579,   // TODO(spell_dbc): SL spell, needs downport row (was at_smoldering_remnants)
-    SPELL_SMOLDERING_REMNANTS_CREATE_AT_ONE = 328658,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_SMOLDERING_REMNANTS_CREATE_AT_TWO = 328578,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_SMOLDERING_REMNANTS_CREATE_AT_THREE = 328600, // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_SMOLDERING_PLUMAGE_PERIODIC_TRIGER = 328659,  // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SMOLDERING_PLUMAGE_DAMAGE         = 340499,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EMBER_BLAST_CAST                  = 325877,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_LINGERING_EMBERS_PERIODIC         = 326430,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_SOUL_INFUSION                     = 325665,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_DRAINED_SOUL_DEBUFF               = 339251,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_SUMMON_ESSENCE_FONT               = 329565,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_GREATER_CASTIGNATION_CAST         = 328885,
+    SPELL_GREATER_CASTIGNATION_PERI_DUMMY   = 328889,   // unused in source
+    SPELL_GREATER_CASTIGNATION_CHANNEL      = 328894,   // unused in source
+    SPELL_GREATER_CASTIGNATION_DAMAGE       = 328890,   // unused in source
+    SPELL_FIERY_STRIKE                      = 326455,
+    SPELL_BURNING_REMNANTS                  = 326456,   // unused in source
+    SPELL_BLAZING_SURGE                     = 329518,
+    SPELL_BLAZING_SURGE_MISSILE             = 329515,
+    SPELL_SMOLDERING_REMNANTS_AT_DAMAGE     = 328579,   // was at_smoldering_remnants
+    SPELL_SMOLDERING_REMNANTS_CREATE_AT_ONE = 328658,   // author as persistent-area-aura
+    SPELL_SMOLDERING_REMNANTS_CREATE_AT_TWO = 328578,   // unused in source
+    SPELL_SMOLDERING_REMNANTS_CREATE_AT_THREE = 328600,   // unused in source
+    SPELL_SMOLDERING_PLUMAGE_PERIODIC_TRIGER = 328659,
+    SPELL_SMOLDERING_PLUMAGE_DAMAGE         = 340499,
+    SPELL_EMBER_BLAST_CAST                  = 325877,
+    SPELL_LINGERING_EMBERS_PERIODIC         = 326430,   // unused in source
+    SPELL_SOUL_INFUSION                     = 325665,   // unused in source
+    SPELL_DRAINED_SOUL_DEBUFF               = 339251,   // unused in source
+    SPELL_SUMMON_ESSENCE_FONT               = 329565,
 
     // Heroic
-    SPELL_FRAGMENTATION                     = 336398,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_FRAGMENTATION                     = 336398,
 
     // Mythic -- unreferenced after the Cloak of Flames cut, kept for downport reference
     SPELL_CLOAK_OF_FLAMES_ABSORB            = 343026,

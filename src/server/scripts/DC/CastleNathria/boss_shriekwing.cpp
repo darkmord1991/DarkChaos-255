@@ -43,27 +43,27 @@ namespace CastleNathria::Shriekwing
 {
 enum Spells
 {
-    SPELL_BLOOD_SHROUD_CAST             = 343995,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SANGUINE_ICHOR_CREATE_AT      = 340299,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_EARSPITTING_SHRIEK_CAST       = 330711,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EARSPITTING_SHRIEK_PERIODIC   = 330713,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SANGUINE_ICHOR_AT_DAMAGE      = 340324,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ECHOLOCATION_MARK             = 342077,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DESCENT                       = 342923,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DEADLY_DESCENT                = 343021,   // TODO(spell_dbc): SL spell, needs downport row (unused -- was at_echoing_screech)
-    SPELL_EXSANGUINATING_BITE           = 328857,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EXSANGUINATED_DEBUFF          = 328897,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_BLIND_SWIPE_CAST              = 343005,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_WAVE_OF_BLOOD                 = 345397,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ECHOING_SONAR_CAST            = 329362,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ECHOING_SONAR_CREATE_AT       = 329002,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_ECHOING_SONAR_DAMAGE          = 343022,   // TODO(spell_dbc): SL spell, needs downport row (unused -- was at_echoing_sonar)
-    SPELL_BERSERK                       = 343364,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_HORRIFIED                     = 343024,   // TODO(spell_dbc): SL spell, needs downport row (unused -- was at_echoing_screech)
+    SPELL_BLOOD_SHROUD_CAST             = 343995,
+    SPELL_SANGUINE_ICHOR_CREATE_AT      = 340299,   // author as persistent-area-aura
+    SPELL_EARSPITTING_SHRIEK_CAST       = 330711,
+    SPELL_EARSPITTING_SHRIEK_PERIODIC   = 330713,
+    SPELL_SANGUINE_ICHOR_AT_DAMAGE      = 340324,
+    SPELL_ECHOLOCATION_MARK             = 342077,
+    SPELL_DESCENT                       = 342923,
+    SPELL_DEADLY_DESCENT                = 343021,   // unused -- was at_echoing_screech
+    SPELL_EXSANGUINATING_BITE           = 328857,
+    SPELL_EXSANGUINATED_DEBUFF          = 328897,
+    SPELL_BLIND_SWIPE_CAST              = 343005,
+    SPELL_WAVE_OF_BLOOD                 = 345397,
+    SPELL_ECHOING_SONAR_CAST            = 329362,
+    SPELL_ECHOING_SONAR_CREATE_AT       = 329002,   // author as persistent-area-aura
+    SPELL_ECHOING_SONAR_DAMAGE          = 343022,   // unused -- was at_echoing_sonar
+    SPELL_BERSERK                       = 343364,   // unused in source too
+    SPELL_HORRIFIED                     = 343024,   // unused -- was at_echoing_screech
 
     // Heroic
-    SPELL_ECHOING_SCREECH_CAST          = 342864,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ECHOING_SCREECH_CREATE_AT     = 342865,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
+    SPELL_ECHOING_SCREECH_CAST          = 342864,
+    SPELL_ECHOING_SCREECH_CREATE_AT     = 342865,   // author as persistent-area-aura
 
     // Mythic -- unreferenced after the Blood Lantern cut, kept for downport reference
     SPELL_BLOOD_LANTER_APPLY_AT         = 344124,

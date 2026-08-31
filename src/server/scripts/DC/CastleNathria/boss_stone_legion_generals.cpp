@@ -55,34 +55,34 @@ namespace CastleNathria::StoneLegionGenerals
 enum Spells
 {
     // General Grashaal
-    SPELL_STONE_SPIKE_MISSILE                   = 170926,   // TODO(spell_dbc): needs downport row
-    SPELL_STONE_BREAKERS_COMBO                  = 339645,   // TODO(spell_dbc): unused, combo done via channel + burst
-    SPELL_CRYSTALIZE_CHANNEL                    = 339690,   // TODO(spell_dbc): needs downport row
-    SPELL_CRYSTALLINE_BURST_DAMAGE              = 339693,   // TODO(spell_dbc): needs downport row
-    SPELL_PULVERIZING_METEOR_MISSILE            = 342544,   // TODO(spell_dbc): needs downport row
-    SPELL_STONE_FIST                            = 342425,   // TODO(spell_dbc): needs downport row
-    SPELL_SEISMIC_UPHEAVAL_MISSILE              = 337595,   // TODO(spell_dbc): needs downport row
-    SPELL_REVERBERATING_ERUPTION_MARK           = 344496,   // TODO(spell_dbc): needs downport row
-    SPELL_REVERBERATING_ERUPTION_DAMAGE_SUMMON  = 344500,   // TODO(spell_dbc): summon spell; stalker summoned directly
+    SPELL_STONE_SPIKE_MISSILE                   = 170926,
+    SPELL_STONE_BREAKERS_COMBO                  = 339645,   // unused, combo done via channel + burst
+    SPELL_CRYSTALIZE_CHANNEL                    = 339690,
+    SPELL_CRYSTALLINE_BURST_DAMAGE              = 339693,
+    SPELL_PULVERIZING_METEOR_MISSILE            = 342544,
+    SPELL_STONE_FIST                            = 342425,
+    SPELL_SEISMIC_UPHEAVAL_MISSILE              = 337595,
+    SPELL_REVERBERATING_ERUPTION_MARK           = 344496,
+    SPELL_REVERBERATING_ERUPTION_DAMAGE_SUMMON  = 344500,   // summon spell; stalker summoned directly
 
     // General Kaal
-    SPELL_SERRATED_SWIPE                        = 334929,   // TODO(spell_dbc): needs downport row
-    SPELL_HEART_REND                            = 334765,   // TODO(spell_dbc): needs downport row
-    SPELL_HEART_HEMORRAGE                       = 334771,   // TODO(spell_dbc): unused, triggers from rend on dispel/expire
-    SPELL_WICKED_BLADE                          = 333387,   // TODO(spell_dbc): needs downport row
-    SPELL_HARDENED_STONEFORM                    = 329636,   // TODO(spell_dbc): needs downport row
-    SPELL_ANIMA_ORB_CREATE_AT                   = 332393,   // TODO(spell_dbc): AreaTrigger creator, kept for later authoring
-    SPELL_RICOCHETING_SHURIKEN                  = 343086,   // TODO(spell_dbc): needs downport row
+    SPELL_SERRATED_SWIPE                        = 334929,
+    SPELL_HEART_REND                            = 334765,
+    SPELL_HEART_HEMORRAGE                       = 334771,   // unused, triggers from rend on dispel/expire
+    SPELL_WICKED_BLADE                          = 333387,
+    SPELL_HARDENED_STONEFORM                    = 329636,
+    SPELL_ANIMA_ORB_CREATE_AT                   = 332393,   // TODO(spell_dbc): intentionally bodyless -- the anima grant is done in C++ on Commando death; giving this a body would double-apply
+    SPELL_RICOCHETING_SHURIKEN                  = 343086,
 
     // Prince Renathal
-    SPELL_SHATTERING_BLAST                      = 332683,   // TODO(spell_dbc): needs downport row
+    SPELL_SHATTERING_BLAST                      = 332683,
 
     // Reverberation Stalker
-    SPELL_UNSTABLE_GROUND_APPLY_AT              = 344503,   // TODO(spell_dbc): AreaTrigger creator (author as persistent-area-aura)
-    SPELL_ECHOING_ANNIHILATION                  = 344721,   // TODO(spell_dbc): needs downport row
-    SPELL_REVERBERATING_VULNERABILITY           = 344655,   // TODO(spell_dbc): needs downport row
-    SPELL_ECHOING_BLAST                         = 344740,   // TODO(spell_dbc): unused in source too
-    SPELL_SOLDIERS_OATH                         = 336212    // TODO(spell_dbc): needs downport row
+    SPELL_UNSTABLE_GROUND_APPLY_AT              = 344503,   // AreaTrigger creator (author as persistent-area-aura)
+    SPELL_ECHOING_ANNIHILATION                  = 344721,
+    SPELL_REVERBERATING_VULNERABILITY           = 344655,
+    SPELL_ECHOING_BLAST                         = 344740,   // unused in source too
+    SPELL_SOLDIERS_OATH                         = 336212
 };
 
 enum Events

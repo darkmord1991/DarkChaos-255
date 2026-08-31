@@ -42,43 +42,43 @@ namespace CastleNathria::ArtificerXymox
 {
 enum Spells
 {
-    SPELL_DIMENSIONAL_TEAR_CAST         = 328437,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DIMENSIONAL_TEAR_DEBUFF       = 328448,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DIMENSIONAL_TEAR_EXP          = 328545,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_WORMHOLE_A_SUMMON             = 328308,   // TODO(spell_dbc): SL spell, needs downport row (unused -- summons 168726)
-    SPELL_WORMHOLE_B_SUMMON             = 328312,   // TODO(spell_dbc): SL spell, needs downport row (unused -- summons 168730)
-    SPELL_GLYPH_OF_DESTRUCTION          = 325361,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GLYPH_OF_DESTRUCTION_PERIODIC = 325236,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_GLYPH_OF_DESTRUCTION_EXP      = 325324,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_RIFT_BLAST_CAST               = 335013,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_RIFT_BLAST_DAMAGE             = 329256,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_RIFT_BLAST_SUMMON             = 329459,   // TODO(spell_dbc): SL spell, needs downport row (unused -- summon done directly)
-    SPELL_HYPERLIGHT_SPARK              = 325399,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_CRYSTAL_OF_PHANTASM           = 327887,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_POSSESION                     = 327414,   // TODO(spell_dbc): SL spell, needs downport row (source typo preserved)
-    SPELL_SOUL_SINGE                    = 340824,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
+    SPELL_DIMENSIONAL_TEAR_CAST         = 328437,
+    SPELL_DIMENSIONAL_TEAR_DEBUFF       = 328448,
+    SPELL_DIMENSIONAL_TEAR_EXP          = 328545,
+    SPELL_WORMHOLE_A_SUMMON             = 328308,   // unused -- summons 168726
+    SPELL_WORMHOLE_B_SUMMON             = 328312,   // unused -- summons 168730
+    SPELL_GLYPH_OF_DESTRUCTION          = 325361,
+    SPELL_GLYPH_OF_DESTRUCTION_PERIODIC = 325236,
+    SPELL_GLYPH_OF_DESTRUCTION_EXP      = 325324,
+    SPELL_RIFT_BLAST_CAST               = 335013,
+    SPELL_RIFT_BLAST_DAMAGE             = 329256,
+    SPELL_RIFT_BLAST_SUMMON             = 329459,   // unused -- summon done directly
+    SPELL_HYPERLIGHT_SPARK              = 325399,
+    SPELL_CRYSTAL_OF_PHANTASM           = 327887,
+    SPELL_POSSESION                     = 327414,   // source typo preserved
+    SPELL_SOUL_SINGE                    = 340824,   // unused in source
 
     // Phase 2
-    SPELL_ROOT_OF_EXTINCTION_CAST       = 329770,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ROOT_OF_EXTINCTION_VISUAL     = 329243,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ROOT_OF_EXTINCTION_CREATE_AT  = 329982,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_SEED_OF_EXTINCTION_BUTTON     = 329090,   // TODO(spell_dbc): SL spell, needs downport row (spellclick disarm, unused in source)
-    SPELL_SEED_OF_EXTINCTION_CAST       = 329834,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SEED_OF_EXTINCTION_EXP        = 329107,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_WITHERING_TOUCH_MISSILE       = 340854,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_WITHERING_TOUCH_PERIODIC      = 340860,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
+    SPELL_ROOT_OF_EXTINCTION_CAST       = 329770,
+    SPELL_ROOT_OF_EXTINCTION_VISUAL     = 329243,
+    SPELL_ROOT_OF_EXTINCTION_CREATE_AT  = 329982,   // TODO(spell_dbc): no body yet; needs a design call on what the ground zone does (no paired damage spell exists)
+    SPELL_SEED_OF_EXTINCTION_BUTTON     = 329090,   // spellclick disarm, unused in source
+    SPELL_SEED_OF_EXTINCTION_CAST       = 329834,
+    SPELL_SEED_OF_EXTINCTION_EXP        = 329107,
+    SPELL_WITHERING_TOUCH_MISSILE       = 340854,
+    SPELL_WITHERING_TOUCH_PERIODIC      = 340860,   // unused in source
 
     // Phase 3
-    SPELL_EDGE_OF_ANNIHILATION_CAST     = 328880,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EDGE_OF_ANNIHILATION_VISUAL   = 258832,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EDGE_OF_ANNIHILATION_KNOCKBACK = 329613,  // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_AURA_OF_DREAD                 = 340870,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_EDGE_OF_ANNIHILATION_CAST     = 328880,
+    SPELL_EDGE_OF_ANNIHILATION_VISUAL   = 258832,
+    SPELL_EDGE_OF_ANNIHILATION_KNOCKBACK = 329613,   // unused in source
+    SPELL_AURA_OF_DREAD                 = 340870,
 
     // Heroic
-    SPELL_STASIS_TRAP_CAST              = 326271,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_STASIS_TRAP_TRIGGER           = 326272,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_STASIS_TRAP_CREATE_AT         = 326275,   // TODO(spell_dbc): SL spell, needs downport row (was at_stasis_trap)
-    SPELL_STASIS_TRAP_STUN              = 326302    // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_STASIS_TRAP_CAST              = 326271,
+    SPELL_STASIS_TRAP_TRIGGER           = 326272,
+    SPELL_STASIS_TRAP_CREATE_AT         = 326275,   // was at_stasis_trap
+    SPELL_STASIS_TRAP_STUN              = 326302
 };
 
 enum Events

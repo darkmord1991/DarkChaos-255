@@ -45,41 +45,41 @@ namespace CastleNathria::LadyInervaDarkvein
 {
 enum Spells
 {
-    SPELL_LOOSE_ANIMA_PERIODIC_DAMAGE   = 325184,   // TODO(spell_dbc): SL spell, needs downport row (unused -- container minigame)
-    SPELL_CONTAINER_BREACH              = 325225,   // TODO(spell_dbc): SL spell, needs downport row (unused -- container minigame)
-    SPELL_FOCUS_ANIMA_CREATE_AT         = 331844,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_EXPOSE_DESIRES                = 325379,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EXPOSE_DESIRES_DAMAGE         = 341621,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_WARPED_DESIRES_DEBUFF         = 325382,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_EXPOSE_COGNITION              = 341623,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_SHARED_COGNITION              = 325908,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_LOOSE_ANIMA_PERIODIC_DAMAGE   = 325184,   // unused -- container minigame
+    SPELL_CONTAINER_BREACH              = 325225,   // unused -- container minigame
+    SPELL_FOCUS_ANIMA_CREATE_AT         = 331844,   // unused in source
+    SPELL_EXPOSE_DESIRES                = 325379,
+    SPELL_EXPOSE_DESIRES_DAMAGE         = 341621,
+    SPELL_WARPED_DESIRES_DEBUFF         = 325382,
+    SPELL_EXPOSE_COGNITION              = 341623,   // unused in source
+    SPELL_SHARED_COGNITION              = 325908,
 
     // Exposed
-    SPELL_CHANGE_OF_HEART_TRIGGER       = 340452,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_CHANGE_OF_HEART_DAMAGE        = 325384,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_BOTTLED_ANIMA_CAST            = 339557,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_BOTTLED_ANIMA                 = 342280,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_BOTTLED_ANIMA_MISSILE         = 339556,   // TODO(spell_dbc): SL spell, needs downport row (was at_bottled_anima)
-    SPELL_BOTTLED_ANIMA_CREATE_AT       = 329620,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_UNLEASHED_VOLATILY            = 329618,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_LINGERING_ANIMA_CREATE_AT     = 325718,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_LINGERING_ANIMA_AT_DAMAGE     = 325713,   // TODO(spell_dbc): SL spell, needs downport row (was at_lingering_anima)
-    SPELL_LESSER_SINS_AND_SUFFERING     = 342287,   // TODO(spell_dbc): SL spell, needs downport row (unused -- summons done directly)
-    SPELL_ANIMA_WEB                     = 326139,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SINS_OF_THE_PAST_DAMAGE       = 326040,   // TODO(spell_dbc): SL spell, needs downport row (unused -- 166766 ability)
-    SPELL_INDEMNIFICATION_PERIODIC      = 331527,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SHARED_SUFFERING              = 324983,   // TODO(spell_dbc): SL spell, needs downport row (source: "missing data")
-    SPELL_GREATER_SINS_OF_SUFFERING     = 342290,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_LIGHTLY_CONCETRATED_ANIMA     = 342320,   // TODO(spell_dbc): SL spell, needs downport row (source typo preserved)
-    SPELL_CONCENTRATED_ANIMA            = 342321,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ROOTED_IN_ANIMA               = 341746,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_ANIMA_WEB_CREATE_AT           = 339614,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_ANIMA_WEB_CREATE_AT_2         = 326094,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_ANIMA_WEB_AT_DAMAGE           = 339612,   // TODO(spell_dbc): SL spell, needs downport row (unused in source)
-    SPELL_CONCETRATED_ANIMA_PERIODIC    = 332664,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_HIGHLY_CONCETRATED_ANIMA_CAST = 342322,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_FRAGMENTS_OF_SHADOW_DAMAGE    = 325596,   // TODO(spell_dbc): SL spell, needs downport row (was at_fragments_of_shadow)
-    SPELL_FRAGHMENTS_OF_SHADOW_CREATE_AT = 327125   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
+    SPELL_CHANGE_OF_HEART_TRIGGER       = 340452,
+    SPELL_CHANGE_OF_HEART_DAMAGE        = 325384,
+    SPELL_BOTTLED_ANIMA_CAST            = 339557,
+    SPELL_BOTTLED_ANIMA                 = 342280,   // unused in source
+    SPELL_BOTTLED_ANIMA_MISSILE         = 339556,   // was at_bottled_anima
+    SPELL_BOTTLED_ANIMA_CREATE_AT       = 329620,   // author as persistent-area-aura
+    SPELL_UNLEASHED_VOLATILY            = 329618,   // unused in source
+    SPELL_LINGERING_ANIMA_CREATE_AT     = 325718,   // author as persistent-area-aura
+    SPELL_LINGERING_ANIMA_AT_DAMAGE     = 325713,   // was at_lingering_anima
+    SPELL_LESSER_SINS_AND_SUFFERING     = 342287,   // unused -- summons done directly
+    SPELL_ANIMA_WEB                     = 326139,
+    SPELL_SINS_OF_THE_PAST_DAMAGE       = 326040,   // unused -- 166766 ability
+    SPELL_INDEMNIFICATION_PERIODIC      = 331527,
+    SPELL_SHARED_SUFFERING              = 324983,   // source: "missing data"
+    SPELL_GREATER_SINS_OF_SUFFERING     = 342290,   // unused in source
+    SPELL_LIGHTLY_CONCETRATED_ANIMA     = 342320,   // source typo preserved
+    SPELL_CONCENTRATED_ANIMA            = 342321,
+    SPELL_ROOTED_IN_ANIMA               = 341746,
+    SPELL_ANIMA_WEB_CREATE_AT           = 339614,   // unused in source
+    SPELL_ANIMA_WEB_CREATE_AT_2         = 326094,   // unused in source
+    SPELL_ANIMA_WEB_AT_DAMAGE           = 339612,   // unused in source
+    SPELL_CONCETRATED_ANIMA_PERIODIC    = 332664,
+    SPELL_HIGHLY_CONCETRATED_ANIMA_CAST = 342322,
+    SPELL_FRAGMENTS_OF_SHADOW_DAMAGE    = 325596,   // was at_fragments_of_shadow
+    SPELL_FRAGHMENTS_OF_SHADOW_CREATE_AT = 327125   // author as persistent-area-aura
 };
 
 enum Events

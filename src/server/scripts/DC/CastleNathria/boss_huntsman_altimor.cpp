@@ -44,36 +44,36 @@ namespace CastleNathria::HuntsmanAltimor
 {
 enum Spells
 {
-    SPELL_SPREADSHOT                    = 334404,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SINSEEKER                     = 335114,   // TODO(spell_dbc): SL spell, needs downport row -- every 45s, 3 targets
-    SPELL_SINSEEKER_PERIODIC_DAMAGE     = 335304,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SINSEEKER_INIT_DAMAGE         = 335116,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_SINSEEKER_CONVERSATION        = 335488,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
-    SPELL_HUNTSMAN_BLOOD                = 334504,   // TODO(spell_dbc): SL spell, needs downport row (shared-health link)
+    SPELL_SPREADSHOT                    = 334404,
+    SPELL_SINSEEKER                     = 335114,   // every 45s, 3 targets
+    SPELL_SINSEEKER_PERIODIC_DAMAGE     = 335304,
+    SPELL_SINSEEKER_INIT_DAMAGE         = 335116,
+    SPELL_SINSEEKER_CONVERSATION        = 335488,   // unused in source too
+    SPELL_HUNTSMAN_BLOOD                = 334504,   // shared-health link
 
     // Margore 165067
-    SPELL_JAGGED_CLAWS                  = 334971,   // TODO(spell_dbc): SL spell, needs downport row -- 10-20s, tank
-    SPELL_VICIOUS_LUNGE_CIRCLE          = 334939,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_VICIOUS_LUNGE_MARK            = 334945,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_VICIOUS_LUNGE_CHARGE          = 266947,   // TODO(spell_dbc): BfA spell, needs downport row
+    SPELL_JAGGED_CLAWS                  = 334971,   // 10-20s, tank
+    SPELL_VICIOUS_LUNGE_CIRCLE          = 334939,
+    SPELL_VICIOUS_LUNGE_MARK            = 334945,
+    SPELL_VICIOUS_LUNGE_CHARGE          = 266947,
 
     // Bargast 169457
-    SPELL_RIP_SOUL                      = 334797,   // TODO(spell_dbc): SL spell, needs downport row (event id only in source)
-    SPELL_DEVOUR_SOUL                   = 334884,   // TODO(spell_dbc): SL spell, needs downport row (heals Altimor when a soul reaches him)
-    SPELL_SHADES_OF_BARGAST             = 334757,   // TODO(spell_dbc): SL spell, needs downport row (summons NPC_SHADE_OF_BARGAST)
-    SPELL_DEATHLY_ROAR                  = 334708,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_DESTABILIZE                   = 334695,   // TODO(spell_dbc): SL spell, needs downport row (unused in source too)
+    SPELL_RIP_SOUL                      = 334797,   // event id only in source
+    SPELL_DEVOUR_SOUL                   = 334884,   // heals Altimor when a soul reaches him
+    SPELL_SHADES_OF_BARGAST             = 334757,   // summons NPC_SHADE_OF_BARGAST
+    SPELL_DEATHLY_ROAR                  = 334708,
+    SPELL_DESTABILIZE                   = 334695,   // unused in source too
 
     // Hecutis 169458
-    SPELL_CRUSHING_STONE                = 334860,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_PETRIFYING_HOWL               = 334852,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_PETRIFYING_HOWL_CREATE_AT     = 334889,   // TODO(spell_dbc): SL spell, needs downport row (author as persistent-area-aura)
-    SPELL_STONE_SHARDS_AT_DAMAGE        = 334893,   // TODO(spell_dbc): SL spell, needs downport row (unused -- was at_stone_shards)
-    SPELL_CHARGE                        = 343259,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_CRUSHING_STONE                = 334860,
+    SPELL_PETRIFYING_HOWL               = 334852,
+    SPELL_PETRIFYING_HOWL_CREATE_AT     = 334889,   // author as persistent-area-aura
+    SPELL_STONE_SHARDS_AT_DAMAGE        = 334893,   // unused -- was at_stone_shards
+    SPELL_CHARGE                        = 343259,
 
     // Heroic
-    SPELL_VICIOUS_WOUND                 = 334960,   // TODO(spell_dbc): SL spell, needs downport row
-    SPELL_RIPPED_SOUL_AOE               = 339638,   // TODO(spell_dbc): SL spell, needs downport row
+    SPELL_VICIOUS_WOUND                 = 334960,
+    SPELL_RIPPED_SOUL_AOE               = 339638,
 
     // Mythic -- unreferenced after the mythic cut, kept for downport reference
     SPELL_SHATTER_SHOT_DAMAGE           = 338593
