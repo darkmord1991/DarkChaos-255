@@ -516,8 +516,15 @@ typedef std::map<uint32, PetAura> SpellPetAuraMap;
 enum ICCBuff
 {
     ICC_AREA              = 4812,
-    ICC_RACEMASK_HORDE    =  690,
-    ICC_RACEMASK_ALLIANCE = 1101
+    // Every playable race, not just the stock eleven. Goblin (9), Worgen (12) and the custom
+    // races 22-27 are all playable here, and a racemask that omits them silently denies those
+    // characters the ICC raid buff. Keep in step with the DC race enum in SharedDefines.h.
+    // Horde:    Orc | Undead | Tauren | Troll | Goblin | Blood Elf
+    //           | Pandaren H | Vulpera | Zandalari
+    ICC_RACEMASK_HORDE    = 29361074,
+    // Alliance: Human | Dwarf | Night Elf | Gnome | Draenei | Worgen
+    //           | Pandaren A | Kul Tiran | Dark Iron
+    ICC_RACEMASK_ALLIANCE = 102763597
 };
 
 struct SpellArea

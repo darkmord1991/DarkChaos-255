@@ -701,7 +701,23 @@ bool Player::Create(ObjectGuid::LowType guidlow, CharacterCreateInfo* createInfo
                     voucherId = 20938; break; // Falconwing Square Gift Voucher
                 case RACE_DRAENEI:
                     voucherId = 22888; break; // Azure Watch Gift Voucher
+                // The custom races have no starter town of their own, so each takes the
+                // voucher of the stock race it is closest to. Without these they fell through
+                // to the default and a Collector's Edition account got nothing at all.
+                case RACE_WORGEN:
+                case RACE_PANDAREN_ALLIANCE:
+                case RACE_KUL_TIRAN:
+                    voucherId = 14646; break; // Goldshire Gift Voucher
+                case RACE_DARK_IRON_DWARF:
+                    voucherId = 14647; break; // Kharanos Gift Voucher
+                case RACE_GOBLIN:
+                case RACE_PANDAREN_HORDE:
+                case RACE_VULPERA:
+                case RACE_ZANDALARI_TROLL:
+                    voucherId = 14649; break; // Razor Hill Gift Voucher
                 default:
+                    // Any race added later still gets its faction's voucher rather than none.
+                    voucherId = TeamIdForRace(createInfo->Race) == TEAM_ALLIANCE ? 14646 : 14649;
                     break;
             }
         }

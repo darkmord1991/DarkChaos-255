@@ -1124,20 +1124,57 @@ local function UpsertRareEntityFromServerRecord(r)
     local mapId = tonumber(r.mapId) or tonumber(r.zoneId) or nil
     local nx, ny = NormalizePossibleNormalizedPos(r.nx, r.ny)
 
+    -- Match in three separate passes, strongest key first. Trying all three
+    -- inside a SINGLE pass let an earlier entity win on NAME over a later one
+    -- that matched on ENTRY, which silently merged two different rares that
+    -- happen to share a name. Azshara Crater (map 37) is a classic-rare rework
+    -- and reuses four names the Plaguelands continent (map 751) also carries:
+    -- Molok the Crusher, Razortalon, Scarlet Interrogator, Scarlet High
+    -- Clerist. Each pair collapsed into one pin whose map and position were
+    -- whichever record the server happened to send last, so on one of the two
+    -- maps the pin sat at the other map's coordinates -- pointing at empty
+    -- ground -- while the twin had no pin at all.
+    local needle = name and NormalizeNameForMatch(name) or nil
+
     local function findExisting()
-        for _, ent in ipairs(state.db.entities.list) do
-            if ent and ent.kind == "rare" then
-                if entry and ent.entry and tonumber(ent.entry) == entry then
-                    return ent
-                end
-                if spawnId and ent.spawnId and tonumber(ent.spawnId) == spawnId then
-                    return ent
-                end
-                if name and ent.name and NormalizeNameForMatch(ent.name) == NormalizeNameForMatch(name) then
+        local list = state.db.entities.list
+
+        -- Entry is authoritative: the server sends it for every rare it owns.
+        if entry then
+            for _, ent in ipairs(list) do
+                if ent and ent.kind == "rare" and ent.entry and tonumber(ent.entry) == entry then
                     return ent
                 end
             end
         end
+
+        -- creature.guid is globally unique, but never adopt an entity that is
+        -- already claimed by a different entry.
+        if spawnId then
+            for _, ent in ipairs(list) do
+                if ent and ent.kind == "rare" and ent.spawnId and tonumber(ent.spawnId) == spawnId
+                    and not (entry and ent.entry and tonumber(ent.entry) ~= entry) then
+                    return ent
+                end
+            end
+        end
+
+        -- Name is the last resort and only adopts an entity with no entry of
+        -- its own: a manual "/dcmap add rare" pin, or one created before the
+        -- server started sending entries. Adopting sets ent.entry below, so the
+        -- first claimant wins and a same-named twin gets its own entity. The
+        -- zone guard keeps two rares sharing a name on different maps apart
+        -- even while both are still entry-less.
+        if needle then
+            for _, ent in ipairs(list) do
+                if ent and ent.kind == "rare" and not ent.entry
+                    and ent.name and NormalizeNameForMatch(ent.name) == needle
+                    and not (mapId and ent.mapId and tonumber(ent.mapId) ~= mapId) then
+                    return ent
+                end
+            end
+        end
+
         return nil
     end
 
