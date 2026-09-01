@@ -1133,7 +1133,11 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
     if (!player) return;
 
     ObjectGuid const playerGuid = player->GetGUID();
-    Hotspot const* hotspot = GetPlayerHotspot(player);
+    // Snapshot copy: this runs on a map-worker thread; a pointer into the grid
+    // could dangle when the world thread removes an expired hotspot.
+    Hotspot hotspotCopy;
+    bool const inHotspot = GetPlayerHotspotSnapshot(player, hotspotCopy);
+    Hotspot const* hotspot = inHotspot ? &hotspotCopy : nullptr;
 
     if (!hotspot)
     {
@@ -1289,10 +1293,12 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
     if (!sHotspotsConfig.objectivesEnabled || !victim)
         return;
 
-    // Only kills inside the hotspot count toward the objective.
-    Hotspot const* cur = GetPlayerHotspot(player);
-    if (!cur)
+    // Only kills inside the hotspot count toward the objective. Snapshot copy:
+    // this hook runs on a map-worker thread (see CheckPlayerHotspotStatus).
+    Hotspot curCopy;
+    if (!GetPlayerHotspotSnapshot(player, curCopy))
         return;
+    Hotspot const* cur = &curCopy;
 
     uint32 killCount = 0;
     bool goalReached = false;
@@ -1375,8 +1381,18 @@ uint32 GetHotspotXPBonusPercentage()
 
 Hotspot const* HotspotMgr::GetPlayerHotspot(Player* player)
 {
+    // World-thread-only (returns a pointer into the grid; the grid is mutated
+    // by the world-thread OnUpdate). Map-worker callers use the snapshot below.
     if (!player) return nullptr;
     return _grid.GetForPlayer(player);
+}
+
+bool HotspotMgr::GetPlayerHotspotSnapshot(Player* player, Hotspot& out)
+{
+    // Safe from map-worker threads: CheckPlayerHotspotStatus and OnPlayerGiveXP
+    // run inside Map::Update while the world thread adds/removes hotspots.
+    if (!player) return false;
+    return _grid.GetForPlayerSnapshot(player, out);
 }
 
 uint32 HotspotMgr::GetZoneHotspotCount(uint32 zoneId)

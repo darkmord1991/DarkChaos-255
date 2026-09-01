@@ -300,11 +300,12 @@ void MythicPlusRunManager::ClearHudSnapshot(InstanceState* state)
 //
 // _mapBossEntries and _mapFinalBossEntries are populated once by
 // CacheBossMetadata() during OnStartup and are read-only afterwards, so no lock
-// is needed - and taking one here would be actively harmful. The affix handlers
-// call this (via IsBossCreature) while MythicPlusAffixManager holds _affixMutex,
+// is needed - and taking one here would be actively harmful. Historically the
+// affix handlers called this while MythicPlusAffixManager held its global
+// dispatch lock (now gone - handlers run unlocked and guard their own state),
 // whereas TryActivateKeystone takes _stateMutex and then calls into
-// sAffixMgr->ActivateAffixes. Locking here would close that cycle into a
-// classic lock-order inversion between the two managers.
+// sAffixMgr->ActivateAffixes. Locking here would risk re-creating that
+// lock-order inversion between the two managers.
 bool MythicPlusRunManager::IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const
 {
     auto itr = _mapBossEntries.find(mapId);
@@ -937,8 +938,9 @@ void MythicPlusRunManager::ResetWeeklyVaultProgress(Player* player)
     uint32 nowWeek = GetWeekStartTimestamp();
     uint32 guidLow = player->GetGUID().GetCounter();
     uint32 keepFrom = nowWeek - (7 * 24 * 60 * 60);
-    CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
-    CharacterDatabase.DirectExecute("DELETE FROM dc_vault_reward_pool WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
+    // Async: the confirmation below does not depend on the delete landing.
+    CharacterDatabase.Execute("DELETE FROM dc_weekly_vault WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
+    CharacterDatabase.Execute("DELETE FROM dc_vault_reward_pool WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
     ChatHandler(player->GetSession()).SendSysMessage("Your weekly vault progress was reset.");
 }
 

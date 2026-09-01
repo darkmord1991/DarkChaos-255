@@ -1413,6 +1413,20 @@ Hotspots.Objectives.ShowProgress = 1
 ###############################################################################
 
 # -----------------------------------------------------------------------------
+# Restrictions
+# -----------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.BlockInCombat
+#        Description: Refuse item and heirloom upgrade requests while the player is in
+#                     combat. An upgrade rebuilds the player's whole stat block, so
+#                     allowing it mid-fight hands out a free stat/resource refresh.
+#                     GM mode (.gm on) always bypasses this.
+#        Default:     1 (Enabled)
+#
+ItemUpgrade.BlockInCombat = 1
+
+# -----------------------------------------------------------------------------
 # Performance Tuning
 # -----------------------------------------------------------------------------
 

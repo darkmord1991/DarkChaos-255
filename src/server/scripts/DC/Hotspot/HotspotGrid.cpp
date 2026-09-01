@@ -2,6 +2,7 @@
 #include "Player.h"
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 
 HotspotGrid::GridKey HotspotGrid::GetKey(uint32 mapId, float x, float y) const
 {
@@ -35,6 +36,7 @@ void HotspotGrid::GetKeysInRange(uint32 mapId, float x, float y, float radius, s
 
 void HotspotGrid::Add(Hotspot const& hotspot)
 {
+    std::unique_lock<std::shared_mutex> guard(_lock);
     _hotspots[hotspot.id] = hotspot;
 
     // Register in the hotspot's own cell only. Registration must not depend on
@@ -46,6 +48,7 @@ void HotspotGrid::Add(Hotspot const& hotspot)
 
 void HotspotGrid::Remove(uint32 id)
 {
+    std::unique_lock<std::shared_mutex> guard(_lock);
     auto it = _hotspots.find(id);
     if (it == _hotspots.end()) return;
 
@@ -66,6 +69,7 @@ void HotspotGrid::Remove(uint32 id)
 
 void HotspotGrid::UpdateGameObjectGuid(uint32 id, ObjectGuid guid)
 {
+    std::unique_lock<std::shared_mutex> guard(_lock);
     auto it = _hotspots.find(id);
     if (it != _hotspots.end())
         it->second.gameObjectGuid = guid;
@@ -73,11 +77,12 @@ void HotspotGrid::UpdateGameObjectGuid(uint32 id, ObjectGuid guid)
 
 Hotspot const* HotspotGrid::GetById(uint32 id) const
 {
+    std::shared_lock<std::shared_mutex> guard(_lock);
     auto it = _hotspots.find(id);
     return it != _hotspots.end() ? &it->second : nullptr;
 }
 
-Hotspot const* HotspotGrid::GetForPlayer(Player* player) const
+Hotspot const* HotspotGrid::FindForPlayerUnlocked(Player* player) const
 {
     if (!player) return nullptr;
     uint32 mapId = player->GetMapId();
@@ -106,8 +111,32 @@ Hotspot const* HotspotGrid::GetForPlayer(Player* player) const
     return nullptr;
 }
 
+Hotspot const* HotspotGrid::GetForPlayer(Player* player) const
+{
+    std::shared_lock<std::shared_mutex> guard(_lock);
+    return FindForPlayerUnlocked(player);
+}
+
+bool HotspotGrid::GetForPlayerSnapshot(Player* player, Hotspot& out) const
+{
+    std::shared_lock<std::shared_mutex> guard(_lock);
+    if (Hotspot const* hotspot = FindForPlayerUnlocked(player))
+    {
+        out = *hotspot;
+        return true;
+    }
+    return false;
+}
+
+size_t HotspotGrid::Count() const
+{
+    std::shared_lock<std::shared_mutex> guard(_lock);
+    return _hotspots.size();
+}
+
 std::vector<Hotspot> HotspotGrid::GetAll() const
 {
+    std::shared_lock<std::shared_mutex> guard(_lock);
     std::vector<Hotspot> all;
     all.reserve(_hotspots.size());
     for (auto const& kv : _hotspots)

@@ -2087,6 +2087,16 @@ DC._nativeBridges = {
       kind = "generic" },
 }
 
+-- Precomputed subset of _nativeBridges that own a dedicated poller (kind ~=
+-- "generic"). _PollNativeResponses runs every frame, and only these few rows
+-- matter to it -- walking all ~22 bridges per frame was wasted work.
+DC._nativePollBridges = {}
+for _, bridge in ipairs(DC._nativeBridges) do
+    if bridge.kind ~= "generic" then
+        DC._nativePollBridges[#DC._nativePollBridges + 1] = bridge
+    end
+end
+
 local function ResolveGlobalFunction(name)
     local fn = rawget(_G, name)
     if type(fn) == "function" then
@@ -2260,26 +2270,25 @@ end
 -- Called every frame from the OnUpdate loop; a cheap no-op when idle.
 function DC:_PollNativeResponses()
     -- Dedicated per-module bridges (own request/poll fns, JSON payload).
-    for _, bridge in ipairs(self._nativeBridges or {}) do
-        if bridge.kind ~= "generic" then
-            -- Cache the resolved DLL function (this runs every frame). Only cache
-            -- once non-nil so we keep retrying until the DLL registers it.
-            local pollFn = bridge._pollFnCached
-            if not pollFn then
-                pollFn = ResolveGlobalFunction(bridge.pollFn)
-                if pollFn then bridge._pollFnCached = pollFn end
-            end
-            if pollFn then
-                local guard = 0
-                while guard < 16 do
-                    guard = guard + 1
-                    local revision, logicalOpcode, payload = pollFn()
-                    if not revision or not logicalOpcode then
-                        break
-                    end
-                    self:_DispatchNativeJSON(bridge.module,
-                        tonumber(logicalOpcode) or 0, payload or "{}")
+    -- _nativePollBridges holds only the rows with dedicated pollers.
+    for _, bridge in ipairs(self._nativePollBridges) do
+        -- Cache the resolved DLL function (this runs every frame). Only cache
+        -- once non-nil so we keep retrying until the DLL registers it.
+        local pollFn = bridge._pollFnCached
+        if not pollFn then
+            pollFn = ResolveGlobalFunction(bridge.pollFn)
+            if pollFn then bridge._pollFnCached = pollFn end
+        end
+        if pollFn then
+            local guard = 0
+            while guard < 16 do
+                guard = guard + 1
+                local revision, logicalOpcode, payload = pollFn()
+                if not revision or not logicalOpcode then
+                    break
                 end
+                self:_DispatchNativeJSON(bridge.module,
+                    tonumber(logicalOpcode) or 0, payload or "{}")
             end
         end
     end
@@ -2441,6 +2450,12 @@ DC.RequestJSON = DC.Request
 
 -- JSON string escaping helper (security: proper escape sequences)
 local function EscapeJSONString(s)
+    -- Fast path: most strings (including every object key) need no escaping.
+    -- The class covers everything the gsubs below touch: backslash, double
+    -- quote, and %c (all control bytes, which includes \n, \r and \t).
+    if not string.find(s, "[%c\\\"]") then
+        return s
+    end
     -- Order matters: escape backslash first to avoid double-escaping
     s = string.gsub(s, "\\", "\\\\")
     s = string.gsub(s, "\"", "\\\"")
@@ -2480,16 +2495,15 @@ function DC:_EncodeJSONValue(val, seen, depth)
         local isArr = (val[1] ~= nil)
         if isArr then
             for i = 1, #val do
-                table.insert(parts, self:_EncodeJSONValue(val[i], seen, depth + 1))
+                parts[#parts + 1] = self:_EncodeJSONValue(val[i], seen, depth + 1)
             end
             seen[val] = nil
             return "[" .. table.concat(parts, ",") .. "]"
         else
             for k, v in pairs(val) do
-                table.insert(parts,
+                parts[#parts + 1] =
                     "\"" .. EscapeJSONString(tostring(k)) .. "\":"
                     .. self:_EncodeJSONValue(v, seen, depth + 1)
-                )
             end
             seen[val] = nil
             return "{" .. table.concat(parts, ",") .. "}"

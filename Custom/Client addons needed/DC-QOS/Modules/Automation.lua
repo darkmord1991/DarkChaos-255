@@ -311,34 +311,10 @@ end
 -- Auto Stand (when eating/drinking interrupted)
 -- ============================================================
 local function SetupAutoStand()
-    local frame = CreateFrame("Frame")
-    frame:RegisterEvent("UNIT_AURA")
-    
-    local wasEatingDrinking = false
-    
-    frame:SetScript("OnEvent", function(self, event, unit)
-        local settings = addon.settings.automation
-        if not settings.enabled or not settings.autoStand then return end
-        if unit ~= "player" then return end
-        
-        -- Check if currently eating or drinking
-        local isEatingDrinking = false
-        for i = 1, 40 do
-            local name = UnitBuff("player", i)
-            if not name then break end
-            if name == "Food" or name == "Drink" or name == "Refreshment" then
-                isEatingDrinking = true
-                break
-            end
-        end
-        
-        -- If was eating/drinking but now not, and sitting, stand up
-        if wasEatingDrinking and not isEatingDrinking then
-            -- DoEmote("stand") -- Stand up if needed
-        end
-        
-        wasEatingDrinking = isEatingDrinking
-    end)
+    -- Dead code removed for perf: this used to register UNIT_AURA and scan up
+    -- to 40 player buffs on every aura change, but its only action
+    -- (DoEmote("stand")) was commented out, so the scan did nothing.
+    -- Re-registering UNIT_AURA belongs here if the feature is ever revived.
 end
 
 -- ============================================================

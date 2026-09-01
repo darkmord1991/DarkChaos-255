@@ -187,6 +187,34 @@ local function GetPlayerMapPosNormalized(lockWorldMap)
     return nil
 end
 
+-- Normalized-name -> entity index for FindEntityByName. The lookup runs per
+-- combat-log kill event and per target change; normalizing every entity name
+-- on every lookup (2 gsubs + lower each) was the expensive part.
+--
+-- Staleness handling: the index is lazily rebuilt whenever db.entities.list
+-- is replaced (new table, e.g. EnsureEntityTables/import) or its length
+-- changes (add/remove). An in-place rename cannot be detected that way, so
+-- every index hit is verified against the entity's current name and the index
+-- falls back to the linear scan (and invalidates itself) on any mismatch.
+local nameIndex = nil
+local nameIndexSource = nil
+local nameIndexCount = 0
+
+local function BuildNameIndex(list)
+    nameIndex = {}
+    nameIndexSource = list
+    nameIndexCount = #list
+    for _, ent in ipairs(list) do
+        if ent and ent.name then
+            local key = NormalizeNameForMatch(ent.name)
+            -- Keep the FIRST entity per name, matching the linear scan order.
+            if key and nameIndex[key] == nil then
+                nameIndex[key] = ent
+            end
+        end
+    end
+end
+
 function Core:FindEntityByName(name)
     local db = state.db
     if not db or not db.entities or not db.entities.list then
@@ -195,8 +223,21 @@ function Core:FindEntityByName(name)
     local needle = NormalizeNameForMatch(name)
     if not needle then return nil end
 
-    for _, ent in ipairs(db.entities.list) do
+    local list = db.entities.list
+    if not nameIndex or nameIndexSource ~= list or nameIndexCount ~= #list then
+        BuildNameIndex(list)
+    end
+
+    local hit = nameIndex[needle]
+    if hit and NormalizeNameForMatch(hit.name) == needle then
+        return hit
+    end
+
+    -- Index miss (or stale hit after an in-place rename): fall back to the
+    -- linear scan and rebuild the index on the next lookup.
+    for _, ent in ipairs(list) do
         if ent and ent.name and NormalizeNameForMatch(ent.name) == needle then
+            nameIndex = nil
             return ent
         end
     end
@@ -902,10 +943,14 @@ function Core:COMBAT_LOG_EVENT_UNFILTERED(...)
         eventType = subevent
         destName = dn
     else
-        -- WotLK signature
-        local args = {...}
-        eventType = args[2]
-        destName = args[9]
+        -- WotLK signature. Read the subevent via select and bail before
+        -- unpacking anything else -- building an args table here allocated
+        -- for EVERY combat log event, not just the handled ones.
+        eventType = select(2, ...)
+        if eventType ~= "UNIT_DIED" and eventType ~= "PARTY_KILL" then
+            return
+        end
+        destName = select(9, ...)
     end
 
     if eventType ~= "UNIT_DIED" and eventType ~= "PARTY_KILL" then

@@ -16,6 +16,7 @@
 #include <list>
 #include <ctime>
 #include <cstdint>
+#include <mutex>
 
 namespace DarkChaos
 {
@@ -134,6 +135,21 @@ public:
 
 // =============================================================================
 // LRU Cache - Bounded size with least-recently-used eviction
+//
+// Internally synchronized: the ItemUpgrade instances are read from map-worker
+// threads (the _ApplyItemBonuses stat hooks and the proc-scaling UnitScript
+// hooks run inside Map::Update) while the world thread and async DB
+// continuations write. Get() mutates the LRU list, so even lookups need the
+// lock.
+//
+// Pointer contract: Get() returns a pointer into a std::list node, which is
+// stable across splices and other inserts. It is only freed by eviction of
+// that same entry, Invalidate, or Clear -- and a just-returned entry sits at
+// the front of the LRU, so evicting it takes _maxSize intervening inserts.
+// Callers may use the pointer within the current call/tick but must not store
+// it. Set() on an existing key overwrites the value in place; concurrent
+// readers of non-POD members must tolerate that (current callers only read
+// PODs from worker threads).
 // =============================================================================
 
 template<typename K, typename V>
@@ -148,6 +164,7 @@ class LRUCache
     std::list<Node> _lru;
     std::unordered_map<K, typename std::list<Node>::iterator> _map;
     size_t _maxSize;
+    mutable std::mutex _mutex;
 
 public:
     explicit LRUCache(size_t maxSize = 10000)
@@ -156,6 +173,7 @@ public:
     // Get entry, moves to front (most recently used)
     V* Get(K const& key)
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         auto it = _map.find(key);
         if (it == _map.end())
             return nullptr;
@@ -168,6 +186,7 @@ public:
     // Set entry, evicts LRU if full
     void Set(K const& key, V const& value)
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         auto it = _map.find(key);
         if (it != _map.end())
         {
@@ -193,6 +212,7 @@ public:
     // Invalidate specific entry
     void Invalidate(K const& key)
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         auto it = _map.find(key);
         if (it != _map.end())
         {
@@ -201,11 +221,17 @@ public:
         }
     }
 
-    size_t Size() const { return _map.size(); }
+    size_t Size() const
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        return _map.size();
+    }
+
     size_t MaxSize() const { return _maxSize; }
 
     void Clear()
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         _lru.clear();
         _map.clear();
     }
@@ -214,6 +240,7 @@ public:
     template<typename Pred>
     size_t InvalidateIf(Pred pred)
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         size_t removed = 0;
         for (auto it = _lru.begin(); it != _lru.end(); )
         {

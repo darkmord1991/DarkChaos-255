@@ -21,8 +21,8 @@ MythicPlusAffixManager* MythicPlusAffixManager::instance()
 
 void MythicPlusAffixManager::RegisterAffix(std::unique_ptr<IAffixHandler> handler)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
+    // Called only from RegisterMythicPlusAffixHandlers() during single-threaded
+    // script registration; _handlers is read-only once the world is running.
     if (!handler)
         return;
 
@@ -33,8 +33,6 @@ void MythicPlusAffixManager::RegisterAffix(std::unique_ptr<IAffixHandler> handle
 
 bool MythicPlusAffixManager::HasHandler(AffixType affix) const
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     return affix != AFFIX_NONE && _handlers.find(affix) != _handlers.end();
 }
 
@@ -54,16 +52,18 @@ std::string MythicPlusAffixManager::GetAffixDescription(AffixType affix) const
 
 void MythicPlusAffixManager::ActivateAffixes(Map* map, std::vector<AffixType> const& affixes, uint8 keystoneLevel)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!map)
         return;
 
-    uint64 key = MakeInstanceKey(map);
-    auto& state = _instanceStates[key];
-    state.activeAffixes = affixes;
-    state.keystoneLevel = keystoneLevel;
+    {
+        std::unique_lock<std::shared_mutex> guard(_stateMutex);
+        uint64 key = MakeInstanceKey(map);
+        auto& state = _instanceStates[key];
+        state.activeAffixes = affixes;
+        state.keystoneLevel = keystoneLevel;
+    }
 
+    // Handler lifecycle callbacks run unlocked; handlers guard their own state.
     for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
@@ -78,17 +78,22 @@ void MythicPlusAffixManager::ActivateAffixes(Map* map, std::vector<AffixType> co
 
 void MythicPlusAffixManager::DeactivateAffixes(Map* map)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!map)
         return;
 
-    uint64 key = MakeInstanceKey(map);
-    auto itr = _instanceStates.find(key);
-    if (itr == _instanceStates.end())
-        return;
+    std::vector<AffixType> affixes;
+    {
+        std::unique_lock<std::shared_mutex> guard(_stateMutex);
+        uint64 key = MakeInstanceKey(map);
+        auto itr = _instanceStates.find(key);
+        if (itr == _instanceStates.end())
+            return;
 
-    for (AffixType affix : itr->second.activeAffixes)
+        affixes = std::move(itr->second.activeAffixes);
+        _instanceStates.erase(itr);
+    }
+
+    for (AffixType affix : affixes)
     {
         auto handlerItr = _handlers.find(affix);
         if (handlerItr != _handlers.end())
@@ -96,23 +101,18 @@ void MythicPlusAffixManager::DeactivateAffixes(Map* map)
             handlerItr->second->OnAffixDeactivate(map);
         }
     }
-
-    _instanceStates.erase(itr);
 }
 
 void MythicPlusAffixManager::OnCreatureDeath(Creature* creature, Unit* killer)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!creature)
         return;
 
-    Map* map = creature->GetMap();
-    InstanceAffixState* state = GetInstanceState(map);
-    if (!state)
+    std::vector<AffixType> affixes;
+    if (!GetActiveAffixesSnapshot(creature->GetMap(), affixes))
         return;
 
-    for (AffixType affix : state->activeAffixes)
+    for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end() && itr->second)
@@ -122,17 +122,14 @@ void MythicPlusAffixManager::OnCreatureDeath(Creature* creature, Unit* killer)
 
 void MythicPlusAffixManager::OnCreatureDamageDone(Creature* attacker, Unit* victim, uint32& damage)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!attacker || !victim)
         return;
 
-    Map* map = attacker->GetMap();
-    InstanceAffixState* state = GetInstanceState(map);
-    if (!state)
+    std::vector<AffixType> affixes;
+    if (!GetActiveAffixesSnapshot(attacker->GetMap(), affixes))
         return;
 
-    for (AffixType affix : state->activeAffixes)
+    for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end() && itr->second)
@@ -142,17 +139,14 @@ void MythicPlusAffixManager::OnCreatureDamageDone(Creature* attacker, Unit* vict
 
 void MythicPlusAffixManager::OnCreatureDamageTaken(Creature* victim, Unit* attacker, uint32& damage)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!victim || !attacker)
         return;
 
-    Map* map = victim->GetMap();
-    InstanceAffixState* state = GetInstanceState(map);
-    if (!state)
+    std::vector<AffixType> affixes;
+    if (!GetActiveAffixesSnapshot(victim->GetMap(), affixes))
         return;
 
-    for (AffixType affix : state->activeAffixes)
+    for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end() && itr->second)
@@ -162,17 +156,14 @@ void MythicPlusAffixManager::OnCreatureDamageTaken(Creature* victim, Unit* attac
 
 void MythicPlusAffixManager::OnPlayerDamageTaken(Player* player, Unit* attacker, uint32& damage)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!player || !attacker)
         return;
 
-    Map* map = player->GetMap();
-    InstanceAffixState* state = GetInstanceState(map);
-    if (!state)
+    std::vector<AffixType> affixes;
+    if (!GetActiveAffixesSnapshot(player->GetMap(), affixes))
         return;
 
-    for (AffixType affix : state->activeAffixes)
+    for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end() && itr->second)
@@ -182,17 +173,14 @@ void MythicPlusAffixManager::OnPlayerDamageTaken(Player* player, Unit* attacker,
 
 void MythicPlusAffixManager::OnCreatureSelectLevel(Creature* creature)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!creature)
         return;
 
-    Map* map = creature->GetMap();
-    InstanceAffixState* state = GetInstanceState(map);
-    if (!state)
+    std::vector<AffixType> affixes;
+    if (!GetActiveAffixesSnapshot(creature->GetMap(), affixes))
         return;
 
-    for (AffixType affix : state->activeAffixes)
+    for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end() && itr->second)
@@ -202,17 +190,14 @@ void MythicPlusAffixManager::OnCreatureSelectLevel(Creature* creature)
 
 void MythicPlusAffixManager::OnPlayerUpdate(Player* player, uint32 diff)
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!player)
         return;
 
-    Map* map = player->GetMap();
-    InstanceAffixState* state = GetInstanceState(map);
-    if (!state)
+    std::vector<AffixType> affixes;
+    if (!GetActiveAffixesSnapshot(player->GetMap(), affixes))
         return;
 
-    for (AffixType affix : state->activeAffixes)
+    for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end() && itr->second)
@@ -222,23 +207,17 @@ void MythicPlusAffixManager::OnPlayerUpdate(Player* player, uint32 diff)
 
 std::vector<AffixType> MythicPlusAffixManager::GetActiveAffixes(Map* map) const
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
-    if (!map)
-        return {};
-
-    uint64 key = MakeInstanceKey(map);
-    auto itr = _instanceStates.find(key);
-    return (itr != _instanceStates.end()) ? itr->second.activeAffixes : std::vector<AffixType>{};
+    std::vector<AffixType> affixes;
+    GetActiveAffixesSnapshot(map, affixes);
+    return affixes;
 }
 
 uint8 MythicPlusAffixManager::GetKeystoneLevel(Map* map) const
 {
-    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
-
     if (!map)
         return 0;
 
+    std::shared_lock<std::shared_mutex> guard(_stateMutex);
     uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? itr->second.keystoneLevel : 0;
@@ -255,12 +234,17 @@ uint64 MythicPlusAffixManager::MakeInstanceKey(Map const* map) const
     return (static_cast<uint64>(map->GetId()) << 32) | uint32(map->GetInstanceId());
 }
 
-MythicPlusAffixManager::InstanceAffixState* MythicPlusAffixManager::GetInstanceState(Map* map)
+bool MythicPlusAffixManager::GetActiveAffixesSnapshot(Map* map, std::vector<AffixType>& out) const
 {
     if (!map)
-        return nullptr;
+        return false;
 
+    std::shared_lock<std::shared_mutex> guard(_stateMutex);
     uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
-    return (itr != _instanceStates.end()) ? &itr->second : nullptr;
+    if (itr == _instanceStates.end() || itr->second.activeAffixes.empty())
+        return false;
+
+    out = itr->second.activeAffixes;
+    return true;
 }

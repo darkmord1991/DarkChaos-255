@@ -27,6 +27,7 @@
 #include "dc_addon_mythicplus.h"
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -1383,12 +1384,14 @@ namespace MythicPlus
         bool m_queryInFlight = false;
         std::optional<QueryCallback> m_pendingQuery;
         std::unordered_set<uint64> m_refreshInFlight;  // keys with an async single-key refresh outstanding
+        time_t m_lastPruneAt = 0;
 
         static constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
         static constexpr uint32 POLL_INTERVAL_MS = 1000;
         static constexpr uint64 INSTANCE_KEY_FACTOR = 4294967296ULL;  // 2^32
         static constexpr uint32 BACKOFF_SECONDS = 2;
         static constexpr uint32 CACHE_REVALIDATE_SECONDS = 2;
+        static constexpr time_t PRUNE_INTERVAL_SECONDS = 300;
 
         HudCacheMgr() = default;
 
@@ -1654,9 +1657,39 @@ namespace MythicPlus
         }
 
         // Main update loop (called periodically)
+        // m_missingKeys / m_cacheValidation are keyed by instance key and were
+        // only ever cleared wholesale by ClearCache(), so they accumulated one
+        // entry per instance the server had ever seen. Both are pure
+        // backoff/validation bookkeeping: dropping a stale entry only costs one
+        // extra refresh, so prune anything older than the window that uses it.
+        void PruneStaleKeyBookkeeping()
+        {
+            time_t const now = time(nullptr);
+            constexpr time_t MISSING_KEY_TTL = 300;      // >> BACKOFF_SECONDS
+            constexpr time_t VALIDATION_TTL = 3600;
+
+            for (auto it = m_missingKeys.begin(); it != m_missingKeys.end();)
+                it = (now - it->second) > MISSING_KEY_TTL ? m_missingKeys.erase(it) : std::next(it);
+
+            for (auto it = m_cacheValidation.begin(); it != m_cacheValidation.end();)
+            {
+                // Keep validation stamps for keys still resident in m_cache;
+                // the entry is what suppresses their re-validation queries.
+                bool const stale = (now - it->second) > VALIDATION_TTL
+                    && m_cache.find(it->first) == m_cache.end();
+                it = stale ? m_cacheValidation.erase(it) : std::next(it);
+            }
+        }
+
         void Update()
         {
             ProcessPendingQuery();
+
+            if (time(nullptr) - m_lastPruneAt >= PRUNE_INTERVAL_SECONDS)
+            {
+                m_lastPruneAt = time(nullptr);
+                PruneStaleKeyBookkeeping();
+            }
 
             // Iterate all online players
             bool anyInstancePlayer = false;

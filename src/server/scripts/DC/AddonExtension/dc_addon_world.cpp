@@ -245,18 +245,44 @@ namespace World
         std::shared_ptr<CachedWorldContentPayload const> const payload =
             GetCachedWorldContentPayload();
 
+        // Resolve the transport once for the whole snapshot rather than once
+        // per message (this used to run per boss update too).
+        bool const useNative = ResolveWorldTransport(player).UsesNative();
+
         JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
         response.SetPreEncodedJson(payload->snapshotJson);
-        SendWorldMessage(player, response);
+        if (useNative)
+            SendNativeWorldPayload(player, response.GetOpcode(), payload->snapshotJson);
+        else
+            response.Send(player);
 
         // Compatibility / robustness:
         // Even with JSON chunking, some clients may fail to reassemble or may miss large snapshots.
         // Send each boss as a small SMSG_UPDATE payload so DC-InfoBar can always populate the list.
-        for (std::string const& bossUpdateJson : payload->bossUpdateJsons)
+        //
+        // Skipped on the native transport: SMSG_WORLD_CONTENT delivers the
+        // snapshot as ONE packet (the client DLL has no chunk-reassembly path
+        // -- large payloads arrive whole), so the failure this guards against
+        // cannot occur there and the fan-out is pure duplication. It was the
+        // single largest S2C byte consumer in the protocol telemetry: ~3.5
+        // redundant per-boss copies of data already inside the snapshot.
+        // The size gate keeps the fallback for any payload big enough to
+        // approach a client-side buffer cap.
+        constexpr std::size_t NATIVE_WHOLE_PAYLOAD_LIMIT = 8000;
+        bool const nativeDeliveredWhole = useNative
+            && payload->snapshotJson.size() < NATIVE_WHOLE_PAYLOAD_LIMIT;
+
+        if (!nativeDeliveredWhole)
         {
-            JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
-            upd.SetPreEncodedJson(bossUpdateJson);
-            SendWorldMessage(player, upd);
+            for (std::string const& bossUpdateJson : payload->bossUpdateJsons)
+            {
+                JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
+                upd.SetPreEncodedJson(bossUpdateJson);
+                if (useNative)
+                    SendNativeWorldPayload(player, upd.GetOpcode(), bossUpdateJson);
+                else
+                    upd.Send(player);
+            }
         }
 
         // Rares are per-player (filtered to the player's map), so they cannot ride

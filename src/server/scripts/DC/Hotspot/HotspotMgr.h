@@ -96,7 +96,10 @@ public:
     void RefillSpawnPool();
 
     // Player interactions
+    // Pointer variant is world-thread-only; the snapshot variant is safe from
+    // map-worker threads (PlayerScript hooks inside Map::Update).
     Hotspot const* GetPlayerHotspot(Player* player);
+    bool GetPlayerHotspotSnapshot(Player* player, Hotspot& out);
     void CheckPlayerHotspotStatus(Player* player);
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim);
     void OnPlayerLogout(Player* player);

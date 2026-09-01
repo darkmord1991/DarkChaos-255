@@ -161,6 +161,7 @@ namespace Matchmaking
         uint32 _nextProposalId = 1;
         uint32 _matchTimerMs   = 0;
         uint32 _statusTimerMs  = 0;
+        uint32 _proposalTimerMs = 0;
 
         // Config
         bool _enabled               = true;

@@ -19,6 +19,10 @@ DCInfoBar.serverData = {}           -- Cached server data
 -- DCAddonProtocol reference
 local DC = nil
 
+-- Hoisted: the 10 Hz update loop iterates both sides every tick; building a
+-- fresh {"left", "right"} table there churned the GC.
+local SIDES = { "left", "right" }
+
 -- Token info (from DCAddonProtocol if available)
 DCInfoBar.TokenInfo = nil
 
@@ -1650,7 +1654,7 @@ function DCInfoBar:OnUpdate(elapsed)
     end
     
     -- Update each active plugin (always, regardless of button visibility, so plugins can control their own visibility)
-    for _, side in ipairs({"left", "right"}) do
+    for _, side in ipairs(SIDES) do
         for _, plugin in ipairs(self.activePlugins[side]) do
             if plugin.button then
                 plugin._elapsed = (plugin._elapsed or 0) + elapsed
@@ -1677,7 +1681,7 @@ function DCInfoBar:ForceUpdateAllPlugins()
         return
     end
 
-    for _, side in ipairs({"left", "right"}) do
+    for _, side in ipairs(SIDES) do
         for _, plugin in ipairs(self.activePlugins[side] or {}) do
             if plugin and plugin.button and plugin.OnUpdate then
                 local ok, label, value, color = pcall(plugin.OnUpdate, plugin, 0)

@@ -1236,7 +1236,14 @@ namespace DCAddon
         if (capabilityState)
         {
             decision.hasCapabilityState = true;
-            decision.capabilityState = *capabilityState;
+            decision.capabilityState.clientCapabilities =
+                capabilityState->clientCapabilities;
+            decision.capabilityState.negotiatedCapabilities =
+                capabilityState->negotiatedCapabilities;
+            decision.capabilityState.versionCompatible =
+                capabilityState->versionCompatible;
+            decision.capabilityState.nativeBuildFingerprint =
+                capabilityState->nativeBuildFingerprint;
             decision.capabilityFromPersistedFallback =
                 capabilityState->loadedFromPersistedFallback;
             decision.capabilitySource =
@@ -1272,7 +1279,7 @@ namespace DCAddon
             return decision;
         }
 
-        if (!decision.capabilityState.versionCompatible)
+        if (!capabilityState->versionCompatible)
         {
             decision.transport = request.allowAddonFallback
                 ? TransportMode::AddonProtocol
@@ -1281,7 +1288,7 @@ namespace DCAddon
             return decision;
         }
 
-        if (!decision.capabilityState.HasClientCapability(
+        if (!capabilityState->HasClientCapability(
                 request.nativeCapability))
         {
             decision.transport = request.allowAddonFallback
@@ -1291,7 +1298,7 @@ namespace DCAddon
             return decision;
         }
 
-        if (!decision.capabilityState.HasNegotiatedCapability(
+        if (!capabilityState->HasNegotiatedCapability(
                 request.nativeCapability))
         {
             decision.transport = request.allowAddonFallback
@@ -1315,16 +1322,43 @@ namespace DCAddon
         return decision;
     }
 
+    // Shared per-session resolve. Resolves against the registry entry IN
+    // PLACE under the registry lock instead of copying the whole
+    // SessionCapabilityState (strings + revision map + metadata JSON) per
+    // call - this runs inside every Message/JsonMessage::Send per recipient.
+    // Registry hits mirror TryGetLiveSessionCapabilityStateByAccount's
+    // semantics: any resident entry counts as live (source
+    // "session-registry", no persisted-fallback flag).
+    static TransportPolicyDecision ResolveTransportPolicyForAccount(
+        uint32 accountId, TransportPolicyRequest const& request)
+    {
+        if (accountId != 0)
+        {
+            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+            auto itr = s_SessionCapabilityRegistry.find(accountId);
+            if (itr != s_SessionCapabilityRegistry.end())
+            {
+                TransportPolicyDecision decision =
+                    ResolveTransportPolicy(&itr->second, request);
+                decision.capabilityFromPersistedFallback = false;
+                decision.capabilitySource = "session-registry";
+                return decision;
+            }
+        }
+
+        // Registry miss (logout->handshake window): kick the deduplicated
+        // async warm-up and degrade gracefully, exactly like
+        // TryGetSessionCapabilityState.
+        WarmSessionCapabilityStateByAccountAsync(accountId);
+        return ResolveTransportPolicy(
+            static_cast<SessionCapabilityState const*>(nullptr), request);
+    }
+
     TransportPolicyDecision ResolveTransportPolicy(Player* player,
         TransportPolicyRequest const& request)
     {
-        SessionCapabilityState capabilityState;
-        TransportPolicyDecision decision;
-        if (TryGetSessionCapabilityState(player, capabilityState))
-            decision = ResolveTransportPolicy(&capabilityState, request);
-        else
-            decision = ResolveTransportPolicy(
-                static_cast<SessionCapabilityState const*>(nullptr), request);
+        TransportPolicyDecision decision = ResolveTransportPolicyForAccount(
+            GetSessionCapabilityRegistryKey(player), request);
 
         RecordTransportObservation(player, request, decision);
         return decision;
@@ -1333,13 +1367,8 @@ namespace DCAddon
     TransportPolicyDecision ResolveTransportPolicy(WorldSession* session,
         TransportPolicyRequest const& request)
     {
-        SessionCapabilityState capabilityState;
-        TransportPolicyDecision decision;
-        if (TryGetSessionCapabilityState(session, capabilityState))
-            decision = ResolveTransportPolicy(&capabilityState, request);
-        else
-            decision = ResolveTransportPolicy(
-                static_cast<SessionCapabilityState const*>(nullptr), request);
+        TransportPolicyDecision decision = ResolveTransportPolicyForAccount(
+            GetSessionCapabilityRegistryKey(session), request);
 
         if (session)
             RecordTransportObservation(session->GetPlayer(), request, decision);
@@ -1445,9 +1474,17 @@ namespace DCAddon
 
         // Generic native bridge: route over the dedicated native opcode when this
         // module has a negotiated native capability. Body = pipe-joined fields,
-        // so the client reconstructs an identical plain addon message.
+        // so the client reconstructs an identical plain addon message. The
+        // eligibility probe runs first so addon-transport recipients never pay
+        // for a speculative body concatenation.
+        if (CanUseModuleNativeMessage(player, _module))
         {
+            std::size_t bodySize = _data.empty() ? 0 : _data.size() - 1;
+            for (auto const& field : _data)
+                bodySize += field.size();
+
             std::string nativeBody;
+            nativeBody.reserve(bodySize);
             for (auto const& field : _data)
             {
                 if (!nativeBody.empty())
@@ -1468,17 +1505,11 @@ namespace DCAddon
                 effectiveRequestId = ctxReqId;
         }
 
-        std::string fullMessage;
-        if (!effectiveRequestId.empty() && effectiveRequestId != _requestId)
-        {
-            Message tmp = *this;
-            tmp.SetRequestId(effectiveRequestId);
-            fullMessage = tmp.Build();
-        }
-        else
-        {
-            fullMessage = Build();
-        }
+        // BuildWithRequestId substitutes the routing context's id without the
+        // old deep copy of the whole _data vector. effectiveRequestId equals
+        // _requestId unless the routing context supplied one, so this covers
+        // both branches of the old copy-then-Build.
+        std::string fullMessage = BuildWithRequestId(effectiveRequestId);
 
         // Log S2C message if enabled
         if (g_S2CLoggingEnabled)
@@ -2595,10 +2626,25 @@ namespace DCAddon
             ? ProtocolVersion::Capability::GENERIC_MESSAGE_NATIVE : 0;
     }
 
+    bool CanUseModuleNativeMessage(Player* player, std::string const& module)
+    {
+        if (!player || !player->GetSession())
+            return false;
+
+        uint32 capability = GetModuleNativeCapability(module);
+        if (capability == 0)
+            return false;
+
+        TransportPolicyRequest request;
+        request.featureName = module.c_str();
+        request.nativeCapability = capability;
+        return ResolveTransportPolicy(player, request).UsesNative();
+    }
+
     bool TrySendModuleNativeMessage(Player* player, std::string const& module,
         uint8 opcode, std::string const& body)
     {
-        if (!player || !player->GetSession())
+        if (!CanUseModuleNativeMessage(player, module))
             return false;
 
         // The client DLL reads the native body into a fixed 64 KB buffer
@@ -2615,16 +2661,6 @@ namespace DCAddon
                 static_cast<uint32>(opcode));
             return false;
         }
-
-        uint32 capability = GetModuleNativeCapability(module);
-        if (capability == 0)
-            return false;
-
-        TransportPolicyRequest request;
-        request.featureName = module.c_str();
-        request.nativeCapability = capability;
-        if (!ResolveTransportPolicy(player, request).UsesNative())
-            return false;
 
         WorldPacket data(::SMSG_DC_NATIVE_MESSAGE,
             module.size() + body.size() + sizeof(uint32) + 2);

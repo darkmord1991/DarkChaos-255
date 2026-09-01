@@ -73,8 +73,8 @@ namespace
         return sConfigMgr->GetOption<uint32>(ConfigKey::SAVE_INTERVAL, 300);
     }
 
-    // Cached for OnPlayerUpdate, which runs once per player per world tick and
-    // must not hit the config store. Refreshed from OnAfterConfigLoad.
+    // Cached for the periodic save sweep in WorldScript::OnUpdate, which must
+    // not hit the config store. Refreshed from OnAfterConfigLoad.
     uint32 gSaveIntervalMs = 300 * IN_MILLISECONDS;
 
     /**
@@ -444,8 +444,7 @@ namespace
     public:
         DCAccountWideFriendlistPlayerScript() : PlayerScript("DCAccountWideFriendlistPlayerScript",
         {
-            PLAYERHOOK_ON_BEFORE_LOGOUT, PLAYERHOOK_ON_DELETE, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT,
-            PLAYERHOOK_ON_UPDATE
+            PLAYERHOOK_ON_BEFORE_LOGOUT, PLAYERHOOK_ON_DELETE, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT
         }) { }
 
         void OnPlayerLogin(Player* player) override
@@ -456,29 +455,6 @@ namespace
             uint32 accountId = player->GetSession()->GetAccountId();
 
             gPools.EnsureLoaded(player, SelectSql(accountId), ParsePool, SyncPoolToCharacter);
-        }
-
-        /**
-         * The core exposes no hook for adding or removing a friend, so the pool
-         * is refreshed on a slow per-player timer as well as at logout. Without
-         * it a crash loses everything added since login - and with StrictSync on,
-         * the next login would then delete those friends from the character too.
-         */
-        void OnPlayerUpdate(Player* player, uint32 diff) override
-        {
-            if (!gSaveIntervalMs || !player)
-                return;
-
-            uint32& elapsed = _saveTimers[player->GetGUID().GetCounter()];
-            elapsed += diff;
-
-            if (elapsed < gSaveIntervalMs)
-                return;
-
-            elapsed = 0;
-
-            if (IsEnabled() && gSyncedPlayers.Has(player))
-                SavePoolFromCharacter(player);
         }
 
         void OnPlayerBeforeLogout(Player* player) override
@@ -494,7 +470,6 @@ namespace
             if (!player)
                 return;
 
-            _saveTimers.erase(player->GetGUID().GetCounter());
             gSyncedPlayers.Remove(player);
 
             if (uint32 accountId = DCAccountWide::AccountIdOf(player))
@@ -524,9 +499,6 @@ namespace
                 LOG_INFO("module.dc", "[DCFriends] Removed deleted character {} from all pools", lowGuid);
             }
         }
-
-    private:
-        std::unordered_map<uint32, uint32> _saveTimers;
     };
 
     class DCAccountWideFriendlistWorldScript : public WorldScript
@@ -550,11 +522,44 @@ namespace
                 GetSaveIntervalSeconds());
         }
 
+        /**
+         * The core exposes no hook for adding or removing a friend, so pools are
+         * refreshed on a slow timer as well as at logout. Without it a crash
+         * loses everything added since login - and with StrictSync on, the next
+         * login would then delete those friends from the character too.
+         *
+         * This runs here (world thread) and not in PlayerScript::OnPlayerUpdate:
+         * that hook fires on map-worker threads, and PoolCache / PlayerGuidSet /
+         * the pools themselves are world-thread-only by contract (see
+         * dc_accountwide_pool.h). One session per account suffices - the pool is
+         * account-wide, so saving from each logged-in character of the account
+         * would just merge the same data repeatedly.
+         */
         void OnUpdate(uint32 diff) override
         {
             if (gEvictionTimer.Tick(diff))
                 gPools.EvictOfflineAccounts();
+
+            if (!gSaveIntervalMs || !IsEnabled())
+                return;
+
+            _saveElapsedMs += diff;
+            if (_saveElapsedMs < gSaveIntervalMs)
+                return;
+
+            _saveElapsedMs = 0;
+
+            for (auto const& [accountId, session] : sWorldSessionMgr->GetAllSessions())
+            {
+                (void)accountId;
+                Player* player = session ? session->GetPlayer() : nullptr;
+                if (player && player->IsInWorld() && gSyncedPlayers.Has(player))
+                    SavePoolFromCharacter(player);
+            }
         }
+
+    private:
+        uint32 _saveElapsedMs = 0;
     };
 }
 

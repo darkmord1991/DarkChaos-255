@@ -269,7 +269,13 @@ namespace ItemUpgrade
         if (!mgr)
             return 1.0f;
 
-        ItemUpgradeState* state = mgr->GetItemUpgradeState(sourceItem->GetGUID().GetCounter());
+        // Cache-only on purpose: these hooks run per combat event on map-worker
+        // threads, where a blocking SELECT is forbidden (see the contract on
+        // GetCachedItemUpgradeState in ItemUpgradeManager.h). The equipped set --
+        // including items WITHOUT an upgrade row, as negative entries -- is warmed
+        // by PrefetchItemStatesAsync at login and on equip, so a miss here means
+        // the warm is still in flight and the proc simply goes unscaled once.
+        ItemUpgradeState* state = mgr->GetCachedItemUpgradeState(sourceItem->GetGUID().GetCounter());
         if (!state || state->upgrade_level == 0 || state->stat_multiplier <= 1.0f)
             return 1.0f;
 
@@ -323,7 +329,10 @@ namespace ItemUpgrade
             if (!item)
                 continue;
 
-            ItemUpgradeState* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+            // Cache-only: the login hint below runs after the equipped-set
+            // prefetch, and the GM command path tolerates a cold miss (the row
+            // just doesn't show until the async warm lands).
+            ItemUpgradeState* state = mgr->GetCachedItemUpgradeState(item->GetGUID().GetCounter());
             if (state && state->upgrade_level > 0 && state->stat_multiplier > 1.0f)
             {
                 // Check if this item has any procs
@@ -444,11 +453,34 @@ namespace ItemUpgrade
     // Player Script (Login Notification)
     // =====================================================================
 
+    // Warm the state cache for every equipped item. Unlike
+    // PrefetchPlayerItemStatesAsync (which only loads rows that exist in
+    // dc_item_upgrades), PrefetchItemStatesAsync also inserts NEGATIVE entries
+    // for items without an upgrade row -- without those, every proc from an
+    // un-upgraded item would miss the cache forever.
+    static void PrefetchEquippedItemStates(Player* player)
+    {
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+            return;
+
+        std::vector<std::pair<uint32, uint32>> equipped;
+        equipped.reserve(EQUIPMENT_SLOT_END - EQUIPMENT_SLOT_START);
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                equipped.emplace_back(item->GetGUID().GetCounter(), item->GetEntry());
+        }
+
+        if (!equipped.empty())
+            mgr->PrefetchItemStatesAsync(std::move(equipped), player->GetGUID().GetCounter());
+    }
+
     class ItemUpgradeProcPlayerScript : public PlayerScript
     {
     public:
         ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript",
-            { PLAYERHOOK_ON_LOAD_FROM_DB, PLAYERHOOK_ON_LOGIN }) {}
+            { PLAYERHOOK_ON_LOAD_FROM_DB, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_EQUIP }) {}
 
         void OnPlayerLoadFromDB(Player* player) override
         {
@@ -475,12 +507,32 @@ namespace ItemUpgrade
             mgr->PrefetchPlayerItemStatesAsync(player->GetGUID().GetCounter());
         }
 
+        void OnPlayerEquip(Player* player, Item* item, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
+        {
+            // Skip the per-item equips replayed during _LoadInventory (player not
+            // in world yet) -- the OnPlayerLogin batch below covers those in one
+            // query instead of ~19.
+            if (!player || !item || !player->IsInWorld())
+                return;
+
+            UpgradeManager* mgr = GetUpgradeManager();
+            if (!mgr)
+                return;
+
+            mgr->PrefetchItemStatesAsync({ { item->GetGUID().GetCounter(), item->GetEntry() } },
+                player->GetGUID().GetCounter());
+        }
+
         void OnPlayerLogin(Player* player) override
         {
             if (!player) return;
 
             if (!GetUpgradeManager())
                 return;
+
+            // Batch-warm the full equipped set (with negative entries) so the
+            // combat hooks' cache-only lookups are servable before first combat.
+            PrefetchEquippedItemStates(player);
 
             // Defer the informational hint until the prefetch has landed so
             // the scan below is served entirely from cache.

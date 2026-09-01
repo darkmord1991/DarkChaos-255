@@ -19,8 +19,16 @@
 #include "CellImpl.h"
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <unordered_set>
 #include <vector>
+
+// Thread model: the affix manager dispatches these handlers UNLOCKED from
+// map-worker threads (one per running instance) plus lifecycle calls, so any
+// handler with mutable per-instance state guards it with its own mutex. The
+// locks are scoped to the map/timer bookkeeping only - grid searches
+// (Cell::VisitObjects) and combat side effects always run outside them, which
+// is the whole point of dropping the old global manager lock.
 
 // ============================================================================
 // BOLSTERING AFFIX
@@ -145,6 +153,7 @@ public:
 class GrievousAffixHandler : public IAffixHandler
 {
 private:
+    std::mutex _mutex; // guards _playerTimers (multiple instance threads)
     std::unordered_map<uint64 /* instanceKey */, std::unordered_map<ObjectGuid, uint32>> _playerTimers;
     static constexpr uint32 CHECK_INTERVAL = 3000; // 3 seconds
 
@@ -159,11 +168,13 @@ public:
 
     void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
     void OnAffixDeactivate(Map* map) override
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
@@ -183,15 +194,18 @@ public:
             return;
 
         ObjectGuid guid = player->GetGUID();
-        uint32& timer = _playerTimers[sAffixMgr->MakeInstanceKey(map)][guid];
-
-        if (timer > diff)
         {
-            timer -= diff;
-            return;
-        }
+            std::lock_guard<std::mutex> guard(_mutex);
+            uint32& timer = _playerTimers[sAffixMgr->MakeInstanceKey(map)][guid];
 
-        timer = CHECK_INTERVAL;
+            if (timer > diff)
+            {
+                timer -= diff;
+                return;
+            }
+
+            timer = CHECK_INTERVAL;
+        }
 
         float healthPct = player->GetHealthPct();
 
@@ -413,6 +427,7 @@ private:
 
     // Keyed per instance so concurrent runs of the same dungeon cannot see each
     // other's pools.
+    std::mutex _mutex; // guards _pools/_tickAccumulator (multiple instance threads)
     std::unordered_map<uint64 /* instanceKey */, std::vector<SanguinePool>> _pools;
     std::unordered_map<uint64 /* instanceKey */, uint32> _tickAccumulator;
 
@@ -441,6 +456,7 @@ public:
     void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
     {
         uint64 key = sAffixMgr->MakeInstanceKey(map);
+        std::lock_guard<std::mutex> guard(_mutex);
         _pools.erase(key);
         _tickAccumulator.erase(key);
     }
@@ -448,6 +464,7 @@ public:
     void OnAffixDeactivate(Map* map) override
     {
         uint64 key = sAffixMgr->MakeInstanceKey(map);
+        std::lock_guard<std::mutex> guard(_mutex);
         _pools.erase(key);
         _tickAccumulator.erase(key);
     }
@@ -467,7 +484,9 @@ public:
         pool.z = creature->GetPositionZ();
         pool.expiresAt = GameTime::GetGameTime().count() + POOL_DURATION_SECONDS;
 
-        _pools[sAffixMgr->MakeInstanceKey(map)].push_back(pool);
+        uint64 key = sAffixMgr->MakeInstanceKey(map);
+        std::lock_guard<std::mutex> guard(_mutex);
+        _pools[key].push_back(pool);
     }
 
     void OnCreatureDamageDone(Creature* /*attacker*/, Unit* /*victim*/, uint32& /*damage*/) override { }
@@ -485,24 +504,32 @@ public:
             return;
 
         uint64 key = sAffixMgr->MakeInstanceKey(map);
-        auto poolItr = _pools.find(key);
-        if (poolItr == _pools.end() || poolItr->second.empty())
-            return;
 
-        // One shared accumulator per instance rather than per player, so the
-        // pool ticks at a fixed rate no matter how many players are inside it.
-        uint32& accumulator = _tickAccumulator[key];
-        accumulator += diff;
-        if (accumulator < TICK_INTERVAL_MS)
-            return;
-        accumulator = 0;
+        // Bookkeeping under the lock, combat work on a local copy outside it.
+        std::vector<SanguinePool> activePools;
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            auto poolItr = _pools.find(key);
+            if (poolItr == _pools.end() || poolItr->second.empty())
+                return;
 
-        uint64 now = GameTime::GetGameTime().count();
-        PruneExpired(poolItr->second, now);
-        if (poolItr->second.empty())
-            return;
+            // One shared accumulator per instance rather than per player, so the
+            // pool ticks at a fixed rate no matter how many players are inside it.
+            uint32& accumulator = _tickAccumulator[key];
+            accumulator += diff;
+            if (accumulator < TICK_INTERVAL_MS)
+                return;
+            accumulator = 0;
 
-        for (SanguinePool const& pool : poolItr->second)
+            uint64 now = GameTime::GetGameTime().count();
+            PruneExpired(poolItr->second, now);
+            if (poolItr->second.empty())
+                return;
+
+            activePools = poolItr->second;
+        }
+
+        for (SanguinePool const& pool : activePools)
         {
             if (!player->IsWithinDist3d(pool.x, pool.y, pool.z, POOL_RADIUS))
                 continue;
@@ -546,6 +573,7 @@ public:
 class VolcanicAffixHandler : public IAffixHandler
 {
 private:
+    std::mutex _mutex; // guards _playerTimers (multiple instance threads)
     std::unordered_map<uint64 /* instanceKey */, std::unordered_map<ObjectGuid, uint32>> _playerTimers;
 
     static constexpr uint32 CHECK_INTERVAL_MS = 8000;
@@ -564,11 +592,13 @@ public:
 
     void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
     void OnAffixDeactivate(Map* map) override
     {
+        std::lock_guard<std::mutex> guard(_mutex);
         _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
@@ -587,13 +617,18 @@ public:
         if (!map)
             return;
 
-        uint32& timer = _playerTimers[sAffixMgr->MakeInstanceKey(map)][player->GetGUID()];
-        if (timer > diff)
         {
-            timer -= diff;
-            return;
+            std::lock_guard<std::mutex> guard(_mutex);
+            uint32& timer = _playerTimers[sAffixMgr->MakeInstanceKey(map)][player->GetGUID()];
+            if (timer > diff)
+            {
+                timer -= diff;
+                return;
+            }
+            timer = CHECK_INTERVAL_MS;
         }
-        timer = CHECK_INTERVAL_MS;
+
+        // The grid search below runs outside the lock on purpose.
 
         // Only players holding range are targeted - melee standing on the enemy
         // are exempt, which is what makes this a positioning affix.

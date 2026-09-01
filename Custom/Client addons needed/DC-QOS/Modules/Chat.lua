@@ -471,8 +471,11 @@ local function SetupChatFrameHooks()
         hotspotThrottleFrame:Hide()
     end
 
-    hotspotThrottleFrame:SetScript("OnUpdate", function()
+    -- The frame is Shown only while a message is pending (hidden frames get no
+    -- OnUpdate, so without the Show the deferred flush below never ran at all).
+    hotspotThrottleFrame:SetScript("OnUpdate", function(self)
         if not hotspotPending or hotspotPendingDueAt <= 0 then
+            self:Hide()
             return
         end
 
@@ -486,6 +489,7 @@ local function SetupChatFrameHooks()
         if (now - (hotspotLastShownAt or 0)) < cooldown then
             hotspotPending = nil
             hotspotPendingDueAt = 0
+            self:Hide()
             return
         end
 
@@ -499,6 +503,7 @@ local function SetupChatFrameHooks()
         hotspotLastShownAt = now
         hotspotPending = nil
         hotspotPendingDueAt = 0
+        self:Hide()
     end)
 
     local function MaybeDebounceHotspotMessage(frame, msg, r, g, b, ...)
@@ -549,6 +554,7 @@ local function SetupChatFrameHooks()
             extra = { ... },
         }
         hotspotPendingDueAt = now + debounce
+        hotspotThrottleFrame:Show()
         return true
     end
     

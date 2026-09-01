@@ -4178,6 +4178,23 @@ namespace DCCollection
     {
         std::unordered_map<uint32, bool> sCollectionMountedState;
         std::mutex sCollectionMountedStateMutex;
+
+        // Per-account mount-count cache. UpdateMountSpeedBonus fires on every
+        // mount/dismount from OnPlayerUpdate (a map-worker thread); the old
+        // implementation ran LoadCollectionCounts there - a blocking
+        // COUNT(DISTINCT) over dc_collection_items plus a title load, per
+        // toggle. The count only changes when a mount is collected, so cache
+        // it and refresh asynchronously (TTL as a safety net, explicit
+        // invalidation on mount grants).
+        struct MountCountCacheEntry
+        {
+            uint32 count = 0;
+            time_t fetchedAt = 0;
+        };
+        std::unordered_map<uint32, MountCountCacheEntry> sMountCountCache;
+        std::unordered_set<uint32> sMountCountWarmInFlight;
+        std::mutex sMountCountMutex;
+        constexpr time_t MOUNT_COUNT_CACHE_TTL_SECONDS = 300;
     }
 
     void CacheMountedState(Player* player)
@@ -4221,6 +4238,65 @@ namespace DCCollection
         sCollectionMountedState.erase(player->GetGUID().GetCounter());
     }
 
+    void InvalidateMountCountCache(uint32 accountId)
+    {
+        std::lock_guard<std::mutex> lock(sMountCountMutex);
+        sMountCountCache.erase(accountId);
+    }
+
+    static void ApplyMountSpeedTier(Player* player, uint32 mountCount)
+    {
+        // Apply appropriate tier (only highest)
+        if (mountCount >= MOUNT_THRESHOLD_TIER4)
+            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER4, true);
+        else if (mountCount >= MOUNT_THRESHOLD_TIER3)
+            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER3, true);
+        else if (mountCount >= MOUNT_THRESHOLD_TIER2)
+            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER2, true);
+        else if (mountCount >= MOUNT_THRESHOLD_TIER1)
+            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER1, true);
+    }
+
+    // Async count refresh; the continuation runs on the world thread (which
+    // never overlaps map updates) and re-applies the tier if the player is
+    // still mounted by then.
+    static void WarmMountCountAsync(uint32 accountId, ObjectGuid playerGuid)
+    {
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+        {
+            std::lock_guard<std::mutex> lock(sMountCountMutex);
+            sMountCountWarmInFlight.erase(accountId);
+            return;
+        }
+
+        std::string sql = Acore::StringFormat(
+            "SELECT COUNT(DISTINCT {}) FROM dc_collection_items "
+            "WHERE account_id = {} AND unlocked = 1 AND {}",
+            itemsEntryCol, accountId,
+            BuildItemsCollectionTypeWhereClause("collection_type", CollectionType::MOUNT));
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([accountId, playerGuid](QueryResult result)
+        {
+            uint32 mountCount = 0;
+            if (result)
+                mountCount = result->Fetch()[0].Get<uint32>();
+
+            {
+                std::lock_guard<std::mutex> lock(sMountCountMutex);
+                auto& entry = sMountCountCache[accountId];
+                entry.count = mountCount;
+                entry.fetchedAt = std::time(nullptr);
+                sMountCountWarmInFlight.erase(accountId);
+            }
+
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (player && player->IsInWorld() && player->IsMounted())
+                ApplyMountSpeedTier(player, mountCount);
+        }));
+    }
+
     void UpdateMountSpeedBonus(Player* player)
     {
         if (!player)
@@ -4242,19 +4318,35 @@ namespace DCCollection
         if (!accountId)
             return;
 
-        // Get mount count
-        auto counts = LoadCollectionCounts(accountId);
-        uint32 mountCount = counts[CollectionType::MOUNT];
+        // Cache-first: this runs per mount/dismount on a map-worker thread,
+        // where a blocking SELECT is forbidden. A cold cache applies the tier
+        // from the async continuation instead (one toggle of latency, once
+        // per session/TTL).
+        uint32 mountCount = 0;
+        bool haveCount = false;
+        bool needWarm = false;
+        {
+            std::lock_guard<std::mutex> lock(sMountCountMutex);
+            time_t const now = std::time(nullptr);
+            auto it = sMountCountCache.find(accountId);
+            if (it != sMountCountCache.end())
+            {
+                mountCount = it->second.count;
+                haveCount = true;
+                needWarm = (now - it->second.fetchedAt) >= MOUNT_COUNT_CACHE_TTL_SECONDS;
+            }
+            else
+                needWarm = true;
 
-        // Apply appropriate tier (only highest)
-        if (mountCount >= MOUNT_THRESHOLD_TIER4)
-            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER4, true);
-        else if (mountCount >= MOUNT_THRESHOLD_TIER3)
-            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER3, true);
-        else if (mountCount >= MOUNT_THRESHOLD_TIER2)
-            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER2, true);
-        else if (mountCount >= MOUNT_THRESHOLD_TIER1)
-            player->CastSpell(player, SPELL_MOUNT_SPEED_TIER1, true);
+            if (needWarm && !sMountCountWarmInFlight.insert(accountId).second)
+                needWarm = false; // a warm is already in flight
+        }
+
+        if (haveCount)
+            ApplyMountSpeedTier(player, mountCount);
+
+        if (needWarm)
+            WarmMountCountAsync(accountId, player->GetGUID());
     }
 
     // Get current mount speed bonus percentage

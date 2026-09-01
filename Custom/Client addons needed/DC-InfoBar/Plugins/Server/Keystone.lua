@@ -202,9 +202,24 @@ function KeystonePlugin:OnActivate()
         local frame = CreateFrame("Frame")
         frame:RegisterEvent("BAG_UPDATE")
         frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        -- BAG_UPDATE fires in bursts (looting, vendoring, sorting); debounce
+        -- so the full bag scan with tooltip parsing runs once per burst.
+        -- Same pattern as DC-MythicPlus (C_Timer comes from DCCompat in
+        -- DC-AddonProtocol, a hard dependency).
+        local scanQueued = false
         frame:SetScript("OnEvent", function()
-            self:ScanInventoryForKeystone()
-            self._elapsed = 999  -- Force update
+            if scanQueued then return end
+            if C_Timer and C_Timer.After then
+                scanQueued = true
+                C_Timer.After(0.2, function()
+                    scanQueued = false
+                    self:ScanInventoryForKeystone()
+                    self._elapsed = 999  -- Force update
+                end)
+            else
+                self:ScanInventoryForKeystone()
+                self._elapsed = 999  -- Force update
+            end
         end)
         DCInfoBar._keystoneBagFrame = frame
     end

@@ -14,6 +14,18 @@
 extern BattlegroundTypeId BATTLEGROUND_HLBG;
 extern BattlegroundQueueTypeId BATTLEGROUND_QUEUE_HLBG;
 
+// One pass over GetPlayers() per collection; the HUD tick collects once and
+// feeds both the snapshot key and the broadcast (previously two passes).
+struct HLBGHudMetrics
+{
+    uint32 alliancePlayers = 0;
+    uint32 hordePlayers = 0;
+    uint32 alliancePlayerKills = 0;
+    uint32 hordePlayerKills = 0;
+    uint32 allianceNpcKills = 0;
+    uint32 hordeNpcKills = 0;
+};
+
 class BattlegroundHLBG final : public Battleground
 {
 public:
@@ -83,6 +95,7 @@ private:
     void UpdateWorldStatesForAll() const;
     void SendStatusSnapshotToPlayer(Player* player) const;
     void SendStatusSnapshotToAll() const;
+    void SendStatusSnapshotToAll(HLBGHudMetrics const& metrics) const;
     void SendHudHidden(Player* player) const;
     void SendAffixSnapshotToPlayer(Player* player) const;
     void SendAffixSnapshotToAll() const;
@@ -103,7 +116,7 @@ private:
     bool IsEligibleForRewards(Player* player) const;
     bool ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& scorePoints, bool& isBoss) const;
     uint32 GetHudEndEpoch() const;
-    uint64 ComputeHudSnapshotKey() const;
+    uint64 ComputeHudSnapshotKey(HLBGHudMetrics const& metrics) const;
 
     uint32 _matchDurationSeconds = 60u * 60u;
     uint32 _afkWarnSeconds = 120u;

@@ -10,6 +10,7 @@
 #include "SharedDefines.h"
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -99,16 +100,22 @@ private:
         uint8 keystoneLevel = 0;
     };
 
-    // Same rationale as MythicPlusRunManager::_stateMutex: affixes are
-    // activated from a map thread and dispatched from every other map thread.
-    // Recursive because handlers call back into sAffixMgr (MakeInstanceKey) and
-    // into sMythicRuns while a dispatch is in flight.
-    mutable std::recursive_mutex _affixMutex;
+    // Guards _instanceStates only. Dispatch takes a shared lock just long
+    // enough to copy the (tiny) active-affix list, then runs the handlers
+    // UNLOCKED - the old global recursive_mutex was held across handler work
+    // including Cell::VisitObjects grid searches, serializing every concurrent
+    // M+ instance's per-player 20 Hz updates against each other. Handlers own
+    // their per-instance mutable state and lock it internally (see
+    // dc_mythicplus_affix_handlers.cpp); _handlers itself is only mutated
+    // during single-threaded script registration and is read-only afterwards.
+    mutable std::shared_mutex _stateMutex;
 
     std::unordered_map<AffixType, std::unique_ptr<IAffixHandler>> _handlers;
     std::unordered_map<uint64, InstanceAffixState> _instanceStates; // Key combines map ID + instance
 
-    InstanceAffixState* GetInstanceState(Map* map);
+    // Copies the active affix list for the map's instance under a shared lock.
+    // Returns false when the instance has no affix state.
+    bool GetActiveAffixesSnapshot(Map* map, std::vector<AffixType>& out) const;
 };
 
 #define sAffixMgr MythicPlusAffixManager::instance()

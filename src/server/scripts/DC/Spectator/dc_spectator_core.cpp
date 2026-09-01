@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <unordered_set>
 #include "dc_update_profiler.h"
 
 namespace DCSpectator
@@ -81,14 +82,15 @@ char const* SystemName(SystemId id)
     return "unknown";
 }
 
-void SendSnapshotPayload(Player* spectator, DCAddon::JsonValue const& payload)
+void SendSnapshotPayload(Player* spectator, DCAddon::JsonValue const& payload,
+    std::string const* preEncoded)
 {
     if (!spectator)
         return;
 
     if (ResolveLiveTransport(spectator).UsesNative())
     {
-        SendNativeSnapshot(spectator, payload.Encode());
+        SendNativeSnapshot(spectator, preEncoded ? *preEncoded : payload.Encode());
         return;
     }
 
@@ -194,15 +196,16 @@ void Registry::Update(uint32 diff)
 
             state.lastHash = hash;
             state.msSincePush = 0;
-            SendSnapshotPayload(spectator, payload);
+            // Reuse the encoding computed for the hash above.
+            SendSnapshotPayload(spectator, payload, &encoded);
         }
     }
 
     // Drop change-gating state for players no longer spectating.
+    std::unordered_set<ObjectGuid> activeSet(active.begin(), active.end());
     for (auto it = _pushState.begin(); it != _pushState.end();)
     {
-        bool const stillActive = std::find(active.begin(), active.end(),
-            it->first) != active.end();
+        bool const stillActive = activeSet.find(it->first) != activeSet.end();
         if (!stillActive && !IsSpectating(it->first))
             it = _pushState.erase(it);
         else

@@ -101,7 +101,9 @@ function Adapter:RequestLeaderboard(leaderboardType, season, limit, callback)
     self._pendingTokens[NATIVE_FEATURE_LEADERBOARD] = {
         token = requestToken,
         cacheKey = cacheKey,
+        t = GetTime(),
     }
+    self:StartNativeEnvelopePoller()
 
     -- Send request via DCAddonProtocol
     DC:Request("HLBG", 0x20, requestData)
@@ -134,7 +136,9 @@ function Adapter:RequestPlayerStats(season, callback)
     self._pendingTokens[NATIVE_FEATURE_PLAYER] = {
         token = requestToken,
         cacheKey = cacheKey,
+        t = GetTime(),
     }
+    self:StartNativeEnvelopePoller()
     DC:Request("HLBG", 0x21, { season = season, requestToken = requestToken })
     
     if not self._statsCallbacks then
@@ -155,7 +159,9 @@ function Adapter:RequestAllTimeStats(callback)
     self._pendingTokens[NATIVE_FEATURE_ALLTIME] = {
         token = requestToken,
         cacheKey = "alltime",
+        t = GetTime(),
     }
+    self:StartNativeEnvelopePoller()
     DC:Request("HLBG", 0x22, { requestToken = requestToken })
     
     if not self._allTimeCallbacks then
@@ -432,6 +438,32 @@ function Adapter:PollNativeEnvelopes()
     end
 end
 
+-- A request unanswered for this long no longer keeps the poller alive (the
+-- reply may have arrived on the legacy DCAddonProtocol path, which does not
+-- clear the pending-token table).
+local NATIVE_PENDING_TTL = 15
+-- Consecutive polls with nothing pending before the poller stops itself.
+local NATIVE_IDLE_POLLS_TO_STOP = 4
+
+-- True while at least one request is still waiting for its envelope; expired
+-- entries are dropped as a side effect.
+local function HasLivePendingTokens(adapter)
+    local pending = adapter._pendingTokens
+    if not pending then
+        return false
+    end
+    local now = GetTime() or 0
+    local live = false
+    for feature, entry in pairs(pending) do
+        if entry and entry.t and (now - entry.t) > NATIVE_PENDING_TTL then
+            pending[feature] = nil
+        elseif entry then
+            live = true
+        end
+    end
+    return live
+end
+
 function Adapter:EnsureNativeEnvelopePoller()
     if self._envelopeFrame then
         return
@@ -447,9 +479,59 @@ function Adapter:EnsureNativeEnvelopePoller()
         end
         Adapter._envelopePollElapsed = 0
         Adapter:PollNativeEnvelopes()
+
+        -- Self-stop: once the HLBG window is closed and nothing has been
+        -- pending for a few consecutive polls, hide the frame. Issuing a new
+        -- request (or reopening the window) Shows it again.
+        local hlbg = rawget(_G, "HLBG")
+        local windowShown = hlbg and hlbg.UI and hlbg.UI.Frame
+            and hlbg.UI.Frame.IsShown and hlbg.UI.Frame:IsShown()
+        if windowShown or HasLivePendingTokens(Adapter) then
+            Adapter._envelopeIdlePolls = 0
+        else
+            Adapter._envelopeIdlePolls = (Adapter._envelopeIdlePolls or 0) + 1
+            if Adapter._envelopeIdlePolls >= NATIVE_IDLE_POLLS_TO_STOP then
+                Adapter:StopNativeEnvelopePoller()
+            end
+        end
     end)
-    frame:Show()
+    -- Left hidden; started by StartNativeEnvelopePoller when a request is
+    -- issued (same gating pattern as DC-Leaderboards). Polling 4x/sec forever
+    -- from module load was pure idle cost.
     self._envelopeFrame = frame
+end
+
+function Adapter:StartNativeEnvelopePoller()
+    self:EnsureNativeEnvelopePoller()
+    self:TryHookHLBGWindow()
+    if self._envelopeFrame then
+        self._envelopeIdlePolls = 0
+        self._envelopePollElapsed = NATIVE_POLL_INTERVAL  -- poll on next tick
+        self._envelopeFrame:Show()
+    end
+end
+
+-- Restart the poller whenever the HLBG window opens, so live envelope pushes
+-- keep flowing while the player is looking at the UI. Hooked lazily because
+-- the window frame may not exist yet when this file loads.
+function Adapter:TryHookHLBGWindow()
+    if self._hlbgShowHooked then
+        return
+    end
+    local hlbg = rawget(_G, "HLBG")
+    local uiFrame = hlbg and hlbg.UI and hlbg.UI.Frame
+    if uiFrame and uiFrame.HookScript then
+        uiFrame:HookScript("OnShow", function()
+            Adapter:StartNativeEnvelopePoller()
+        end)
+        self._hlbgShowHooked = true
+    end
+end
+
+function Adapter:StopNativeEnvelopePoller()
+    if self._envelopeFrame then
+        self._envelopeFrame:Hide()
+    end
 end
 
 -- =====================================================================
@@ -458,6 +540,9 @@ end
 
 _G.HLBG_LeaderboardAdapter = Adapter
 
--- Auto-initialize when this module loads
+-- Auto-initialize when this module loads. The envelope poller frame is
+-- created hidden; it only runs while a request is pending or the HLBG window
+-- is open (StartNativeEnvelopePoller / the OnShow hook drive it).
 Adapter:Initialize()
 Adapter:EnsureNativeEnvelopePoller()
+Adapter:TryHookHLBGWindow()

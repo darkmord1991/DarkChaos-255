@@ -3044,6 +3044,37 @@ ApplyFrameClampVisual = function(frame, isClamped)
         ApplyFramePinTargetStyle(frame, frame.__dcqosIsWorldPoint == true)
     end
 end
+-- Distance label update with a change check: re-formatting "%d yd" per ping
+-- per tick churned strings even when the rounded value had not moved.
+local function SetPingDistanceText(entry, distance, mapMismatch, targetMapId)
+    local fs = entry.frame and entry.frame.DistanceText
+    if not fs then
+        return
+    end
+
+    local key
+    if distance and distance > 0 then
+        key = math_floor(distance + 0.5)
+    elseif mapMismatch and targetMapId then
+        key = "map:" .. tostring(targetMapId)
+    else
+        key = ""
+    end
+
+    if entry.lastDistanceKey == key then
+        return
+    end
+    entry.lastDistanceKey = key
+
+    if type(key) == "number" then
+        fs:SetText(string.format("%d yd", key))
+    elseif key == "" then
+        fs:SetText("")
+    else
+        fs:SetText("Map " .. tostring(targetMapId))
+    end
+end
+
 local function UpdateActivePings(_, elapsed)
     local now = GetTime() or 0
     local settings = GetSettings()
@@ -3070,14 +3101,8 @@ local function UpdateActivePings(_, elapsed)
                     local isClamped = IsProjectedPointClamped(x, y, 52)
                     UpdateSecureClampState(entry, isClamped)
 
-                    if settings.showDistance and entry.frame.DistanceText then
-                        if distance and distance > 0 then
-                            entry.frame.DistanceText:SetText(string.format("%d yd", math_floor(distance + 0.5)))
-                        elseif mapMismatch and targetMapId then
-                            entry.frame.DistanceText:SetText("Map " .. tostring(targetMapId))
-                        else
-                            entry.frame.DistanceText:SetText("")
-                        end
+                    if settings.showDistance then
+                        SetPingDistanceText(entry, distance, mapMismatch, targetMapId)
                     end
                 end
             end
@@ -3094,35 +3119,36 @@ local function UpdateActivePings(_, elapsed)
 
                     local x, y, distance, mapMismatch, targetMapId = ResolveProjection(resolved)
                     if type(x) == "number" and type(y) == "number" then
-                        entry.projectionPayload = {
-                            mapId = resolved.mapId,
-                            x = resolved.x,
-                            y = resolved.y,
-                            worldX = resolved.worldX,
-                            worldY = resolved.worldY,
-                            worldZ = resolved.worldZ,
-                            screenX = resolved.screenX,
-                            screenY = resolved.screenY,
-                            relativeRadians = resolved.relativeRadians,
-                            relativeDegrees = resolved.relativeDegrees,
-                            bearingDegrees = resolved.bearingDegrees,
-                            distance = distance,
-                            targetType = resolved.targetType,
-                        }
+                        -- Mutate the entry-owned payload in place: rebuilding
+                        -- this 13-field table per tracked ping per refresh
+                        -- tick was pure GC churn. Every field is overwritten,
+                        -- so no stale values survive.
+                        local payload = entry.projectionPayload
+                        if type(payload) ~= "table" then
+                            payload = {}
+                            entry.projectionPayload = payload
+                        end
+                        payload.mapId = resolved.mapId
+                        payload.x = resolved.x
+                        payload.y = resolved.y
+                        payload.worldX = resolved.worldX
+                        payload.worldY = resolved.worldY
+                        payload.worldZ = resolved.worldZ
+                        payload.screenX = resolved.screenX
+                        payload.screenY = resolved.screenY
+                        payload.relativeRadians = resolved.relativeRadians
+                        payload.relativeDegrees = resolved.relativeDegrees
+                        payload.bearingDegrees = resolved.bearingDegrees
+                        payload.distance = distance
+                        payload.targetType = resolved.targetType
 
                         entry.frame:ClearAllPoints()
                         entry.frame:SetPoint("CENTER", EnsureRootFrame(), "CENTER", x, y)
                         local isClamped = IsProjectedPointClamped(x, y, 52)
                         UpdateSecureClampState(entry, isClamped)
 
-                        if settings.showDistance and entry.frame.DistanceText then
-                            if distance and distance > 0 then
-                                entry.frame.DistanceText:SetText(string.format("%d yd", math_floor(distance + 0.5)))
-                            elseif mapMismatch and targetMapId then
-                                entry.frame.DistanceText:SetText("Map " .. tostring(targetMapId))
-                            else
-                                entry.frame.DistanceText:SetText("")
-                            end
+                        if settings.showDistance then
+                            SetPingDistanceText(entry, distance, mapMismatch, targetMapId)
                         end
                     end
                 end

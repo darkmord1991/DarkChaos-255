@@ -6,6 +6,14 @@
 
 local addon = DCQOS
 
+-- True only when debug output would actually be printed (addon:Debug's own
+-- gate). Checking "if addon.Debug then" is always true -- it's a function --
+-- so the string/table building before those calls ran on every event.
+local function IsDebug()
+    local comm = addon.settings and addon.settings.communication
+    return comm and comm.debugMode
+end
+
 local function NotifyBag(message, level, opts)
     if addon.Notify then
         addon:Notify(message, level or "info", opts or { title = "Bags" })
@@ -863,7 +871,7 @@ local function CreateBagFrame(frameDefName)
     
     -- Force refresh when shown
     f:SetScript("OnShow", function(self)
-        if addon.Debug then
+        if IsDebug() then
             addon:Debug("Frame " .. frameDefName .. " shown, forcing refresh")
         end
         LayoutFrame(frameDefName)
@@ -957,7 +965,7 @@ local function OnBagUpdate(bag)
     local settings = addon.settings.bags
     
     -- Debug logging
-    if addon.Debug then
+    if IsDebug() then
         addon:Debug("OnBagUpdate fired for bag: " .. ToDebugString(bag))
     end
     
@@ -971,7 +979,7 @@ local function OnBagUpdate(bag)
         -- until it was closed and reopened. A full layout refresh is cheap,
         -- so just always do it for any bag-content change while shown.
         RefreshShownFrames()
-        if addon.Debug then
+        if IsDebug() then
             addon:Debug("OneBag frame refreshed for bag " .. ToDebugString(bag))
         end
     else
@@ -1005,7 +1013,7 @@ end
 local function OpenInventory()
     if not addon.settings.bags.oneBag then return end
     local f = CreateBagFrame("inventory")
-    if addon.Debug then
+    if IsDebug() then
         addon:Debug("OpenInventory called, forcing layout refresh")
     end
     f:Show()
@@ -1299,16 +1307,15 @@ function BagEnhancements.OnEnable()
     ev:RegisterEvent("BANKFRAME_CLOSED")
     
     ev:SetScript("OnEvent", function(self, event, ...)
-        if addon.Debug then
-            local args = {...}
-            local argStr = #args > 0 and table.concat({...}, ", ") or "none"
+        if IsDebug() then
+            local argStr = select("#", ...) > 0 and table.concat({...}, ", ") or "none"
             addon:Debug("BagEnhancements event: " .. event .. " args: " .. argStr)
         end
         
         if event == "BAG_UPDATE" then
             OnBagUpdate(...)
         elseif event == "BAG_UPDATE_DELAYED" then
-            if addon.Debug then
+            if IsDebug() then
                 addon:Debug("BAG_UPDATE_DELAYED - forcing refresh")
             end
             RefreshShownFrames()
@@ -1330,7 +1337,7 @@ function BagEnhancements.OnEnable()
             local bag, slot = ...
             bag = tonumber(bag) or bag
             slot = tonumber(slot) or slot
-            if addon.Debug then
+            if IsDebug() then
                 addon:Debug("ITEM_PUSH bag=" .. ToDebugString(bag) .. " slot=" .. ToDebugString(slot))
             end
             if bag and slot then
@@ -1367,7 +1374,7 @@ function BagEnhancements.OnEnable()
         end
     end)
 
-    if addon and addon.Debug then
+    if IsDebug() then
         addon:Debug("Bag Enhancements Loaded. OneBag Mode: " .. ToDebugString(settings.oneBag))
     end
 end

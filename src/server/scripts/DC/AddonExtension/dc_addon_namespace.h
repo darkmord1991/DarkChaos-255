@@ -916,23 +916,39 @@ namespace DCAddon
         bool forceNative = false;
         bool forceAddon = false;
         bool nativeEligible = true;
-        std::string forceNativeReason = "forced-native";
-        std::string forceAddonReason = "forced-addon";
-        std::string noCapabilityStateReason = "no-capability-state";
-        std::string versionIncompatibleReason = "version-incompatible";
-        std::string clientCapabilityMissingReason =
+        // Reason labels are static literals (or long-lived char const*), not
+        // std::string: a TransportPolicyRequest is constructed inside every
+        // Message/JsonMessage::Send per recipient, and eight defaulted strings
+        // meant eight heap allocations per send for constants.
+        char const* forceNativeReason = "forced-native";
+        char const* forceAddonReason = "forced-addon";
+        char const* noCapabilityStateReason = "no-capability-state";
+        char const* versionIncompatibleReason = "version-incompatible";
+        char const* clientCapabilityMissingReason =
             "client-capability-missing";
-        std::string negotiatedCapabilityMissingReason =
+        char const* negotiatedCapabilityMissingReason =
             "native-capability-missing";
-        std::string nativeIneligibleReason = "native-ineligible";
-        std::string nativeReadyReason = "negotiated-native";
+        char const* nativeIneligibleReason = "native-ineligible";
+        char const* nativeReadyReason = "negotiated-native";
+    };
+
+    // The slice of SessionCapabilityState that transport-policy consumers
+    // actually read. The full state carries strings, a revision map and
+    // metadata JSON; copying it into every decision (per send, per recipient)
+    // was pure allocation churn.
+    struct TransportCapabilitySummary
+    {
+        uint32 clientCapabilities = 0;
+        uint32 negotiatedCapabilities = 0;
+        bool versionCompatible = false;
+        std::string nativeBuildFingerprint;
     };
 
     struct TransportPolicyDecision
     {
         TransportMode transport = TransportMode::AddonProtocol;
         std::string reason = "default-addon";
-        SessionCapabilityState capabilityState;
+        TransportCapabilitySummary capabilityState;
         bool hasCapabilityState = false;
         bool capabilityFromPersistedFallback = false;
         std::string capabilitySource = "none";
@@ -1303,15 +1319,32 @@ namespace DCAddon
         // Build final message string
         std::string Build() const
         {
-            std::string result = _module;
-            result += DELIMITER;
-            result += std::to_string(_opcode);
+            return BuildWithRequestId(_requestId);
+        }
 
-            if (!_requestId.empty())
+        // Build with a caller-supplied request id (the response path substitutes
+        // the routing context's id); avoids the old deep-copy-then-Build.
+        std::string BuildWithRequestId(std::string const& requestId) const
+        {
+            std::string const opcode = std::to_string(_opcode);
+
+            std::size_t size = _module.size() + 1 + opcode.size()
+                + (requestId.empty() ? 0 : 5 + requestId.size());
+            for (auto const& d : _data)
+                size += 1 + d.size();
+
+            std::string result;
+            result.reserve(size);
+
+            result = _module;
+            result += DELIMITER;
+            result += opcode;
+
+            if (!requestId.empty())
             {
                 result += DELIMITER;
                 result += "RID:";
-                result += _requestId;
+                result += requestId;
             }
 
             for (auto const& d : _data)
@@ -1426,6 +1459,10 @@ namespace DCAddon
     // "<f1>|<f2>..."), and CMSG_DC_NATIVE_REQUEST is decoded back through the
     // MessageRouter. Returns 0 when the module has no native bridge.
     uint32 GetModuleNativeCapability(std::string const& module);
+    // Cheap eligibility probe (capability + negotiated transport policy, no
+    // body needed). Send paths call this BEFORE serializing the native body so
+    // recipients on the addon transport never pay for a speculative encode.
+    bool CanUseModuleNativeMessage(Player* player, std::string const& module);
     bool TrySendModuleNativeMessage(Player* player, std::string const& module,
         uint8 opcode, std::string const& body);
     bool HandleNativeGenericRequest(WorldSession* session,
@@ -1721,24 +1758,30 @@ namespace DCAddon
         // Reassemble chunks (call per incoming chunk, returns complete message when done)
         bool AddChunk(std::string const& chunk)
         {
-            // Parse chunk header: INDEX|TOTAL|DATA
-            std::stringstream ss(chunk);
-            std::string indexStr, totalStr;
-
-            if (!std::getline(ss, indexStr, '|') || !std::getline(ss, totalStr, '|'))
+            // Parse chunk header: INDEX|TOTAL|DATA. Header parsing runs once
+            // per inbound chunk of every large client upload, so it avoids the
+            // old stringstream + exception-based std::stoul. (This also fixes
+            // payload truncation at the first '\n', which the old getline-based
+            // tail read silently caused.)
+            size_t const firstSep = chunk.find('|');
+            if (firstSep == std::string::npos)
                 return false;
+
+            size_t const secondSep = chunk.find('|', firstSep + 1);
+            if (secondSep == std::string::npos)
+                return false;
+
+            auto parseUint = [](char const* begin, char const* end, uint32& out)
+            {
+                auto [ptr, ec] = std::from_chars(begin, end, out);
+                return ec == std::errc() && ptr == end && begin != end;
+            };
 
             uint32 index = 0;
             uint32 total = 0;
-            try
-            {
-                index = static_cast<uint32>(std::stoul(indexStr));
-                total = static_cast<uint32>(std::stoul(totalStr));
-            }
-            catch (...)
-            {
+            if (!parseUint(chunk.data(), chunk.data() + firstSep, index)
+                || !parseUint(chunk.data() + firstSep + 1, chunk.data() + secondSep, total))
                 return false;
-            }
 
             if (total == 0 || index >= total)
                 return false;
@@ -1753,11 +1796,7 @@ namespace DCAddon
             if (index >= _totalChunks || total != _totalChunks)
                 return false;
 
-            // Get remaining data after second |
-            std::string data;
-            std::getline(ss, data);
-
-            _chunks[index] = data;
+            _chunks[index] = chunk.substr(secondSep + 1);
             if (!_received[index])
             {
                 _received[index] = true;
@@ -1769,7 +1808,12 @@ namespace DCAddon
 
         std::string GetCompleteMessage() const
         {
+            std::size_t size = 0;
+            for (auto const& chunk : _chunks)
+                size += chunk.size();
+
             std::string result;
+            result.reserve(size);
             for (auto const& chunk : _chunks)
                 result += chunk;
             return result;
@@ -2379,8 +2423,13 @@ namespace DCAddon
             // Generic native bridge: route over the dedicated native opcode when
             // this module has a negotiated native capability. Body carries the
             // JSON marker so the client reconstructs an identical addon message.
-            if (TrySendModuleNativeMessage(player, _module, _opcode,
-                std::string(JSON_MARKER) + DELIMITER + EncodeJson()))
+            // The eligibility probe runs first so recipients on the addon
+            // transport never pay for building the native body; EncodeJson()
+            // memoizes, so broadcast loops sending the same message to many
+            // players serialize the JSON once, not per recipient.
+            if (CanUseModuleNativeMessage(player, _module)
+                && TrySendModuleNativeMessage(player, _module, _opcode,
+                       std::string(JSON_MARKER) + DELIMITER + EncodeJson()))
             {
                 return;
             }
@@ -2480,17 +2529,26 @@ namespace DCAddon
             _json.AppendEncodedTo(out);
         }
 
-        std::string EncodeJson() const
+        // Memoizing: the first call caches the encoded form, so repeated sends
+        // of the same message (broadcast loops) and the Build()/native double
+        // use within one Send() serialize once. Any Set() invalidates via
+        // ClearPreEncodedJson(), which keeps the memo coherent.
+        std::string const& EncodeJson() const
         {
-            return _hasPreEncodedJson ? _preEncodedJson : _json.Encode();
+            if (!_hasPreEncodedJson)
+            {
+                _preEncodedJson = _json.Encode();
+                _hasPreEncodedJson = true;
+            }
+            return _preEncodedJson;
         }
 
         std::string _module;
         uint8 _opcode;
         JsonValue _json;
         std::string _requestId;
-        std::string _preEncodedJson;
-        bool _hasPreEncodedJson = false;
+        mutable std::string _preEncodedJson;
+        mutable bool _hasPreEncodedJson = false;
     };
 
     // Check if a parsed message contains JSON

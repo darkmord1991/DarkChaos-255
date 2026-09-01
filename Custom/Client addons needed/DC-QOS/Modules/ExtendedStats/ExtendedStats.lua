@@ -1215,7 +1215,14 @@ local function TryBuildUI()
         UpdateStats()
     end)
 
-    frame:SetScript("OnEvent", function()
+    frame:SetScript("OnEvent", function(self, event, unit)
+        -- UNIT_* events fire for every unit in range (UNIT_AURA especially is
+        -- high-volume in groups); the panel only shows player stats, so skip
+        -- everyone else. Non-UNIT events pass a non-unit arg1 (or none), so
+        -- only filter events that actually carry a unit token.
+        if unit ~= "player" and event and string.sub(event, 1, 5) == "UNIT_" then
+            return
+        end
         if frame:IsShown() then
             UpdateStats()
         end

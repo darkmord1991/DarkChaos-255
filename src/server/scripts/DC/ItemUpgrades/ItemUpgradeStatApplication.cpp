@@ -12,6 +12,7 @@
 #include "Item.h"
 #include "ItemUpgradeManager.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace DarkChaos
@@ -109,6 +110,19 @@ namespace DarkChaos
 
                 return static_cast<uint32>(std::lround(value * multiplier));
             }
+
+            // Puts a resource back where it stood relative to its maximum. Nothing to do
+            // when the maximum did not move -- the value was never clamped. When it did,
+            // the same fraction of the new maximum comes back.
+            uint32 RescaleResourceValue(uint32 value, uint32 oldMax, uint32 newMax)
+            {
+                if (!value || !oldMax || oldMax == newMax)
+                    return value;
+
+                double const scaled = double(value) * double(newMax) / double(oldMax);
+                return std::max<uint32>(1, static_cast<uint32>(
+                    std::llround(std::min(scaled, double(newMax)))));
+            }
         }
 
         // =====================================================================
@@ -126,8 +140,43 @@ namespace DarkChaos
             // again on the next call). It must be paired with the matching removal --
             // this is exactly how the core does it in
             // Player::InitStatsForLevel(reapplyMods = true).
+            //
+            // The removal half drops max health and max mana to the naked base for the
+            // duration of the swap, and Unit::SetMaxHealth() / Unit::SetPower() clamp the
+            // CURRENT value down to the new maximum. Re-applying raises the maximum back
+            // but never lifts the clamped current value, so an unguarded pair leaves the
+            // player sitting at their un-geared health -- about half a bar for a geared
+            // character, on every login (the login prefetch always lands cache-cold).
+            // The core hits the same clamp and papers over it with SetFullHealth() at the
+            // end of InitStatsForLevel; a free full heal is not acceptable on a path that
+            // also runs on every upgrade purchase, so preserve the ratio instead.
+            uint32 const oldHealth = player->GetHealth();
+            uint32 const oldMaxHealth = player->GetMaxHealth();
+
+            uint32 oldPower[MAX_POWERS];
+            uint32 oldMaxPower[MAX_POWERS];
+            for (uint8 i = 0; i < MAX_POWERS; ++i)
+            {
+                oldPower[i] = player->GetPower(Powers(i));
+                oldMaxPower[i] = player->GetMaxPower(Powers(i));
+            }
+
             player->_RemoveAllStatBonuses();
             player->_ApplyAllStatBonuses();   // ends with UpdateAllStats()
+
+            // oldHealth == 0 means a corpse -- restoring a ratio there would resurrect it.
+            if (oldHealth)
+                player->SetHealth(RescaleResourceValue(oldHealth, oldMaxHealth, player->GetMaxHealth()));
+
+            for (uint8 i = 0; i < MAX_POWERS; ++i)
+            {
+                Powers const power = Powers(i);
+                uint32 const newMax = player->GetMaxPower(power);
+                if (newMax == oldMaxPower[i])
+                    continue;
+
+                player->SetPower(power, RescaleResourceValue(oldPower[i], oldMaxPower[i], newMax));
+            }
 
             // Combat ratings and the outgoing unit fields still need a nudge.
             player->UpdateAllRatings();

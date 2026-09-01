@@ -599,6 +599,12 @@ function addon:GetMapUtils()
         end
     end
 
+    -- Inside instances GetPlayerMapPosition("player") legitimately returns 0,0
+    -- and SetMapToCurrentZone cannot fix it, so without a throttle the retry
+    -- below reset the client's map state every frame in every dungeon.
+    local mapRetryLastTime = 0
+    local mapRetryFailedZone = nil
+
     function mapUtils.GetPlayerMapPositionSafe()
         local mapId
 
@@ -615,8 +621,34 @@ function addon:GetMapUtils()
         if type(GetPlayerMapPosition) == "function" then
             local x, y = GetPlayerMapPosition("player")
             if (not x or not y or x <= 0 or y <= 0) then
-                mapUtils.SafeSetMapToCurrentZone()
-                x, y = GetPlayerMapPosition("player")
+                local now = (type(GetTime) == "function" and GetTime()) or 0
+                local zone =
+                    (type(GetRealZoneText) == "function" and GetRealZoneText()) or ""
+                if mapRetryFailedZone and zone ~= mapRetryFailedZone then
+                    mapRetryFailedZone = nil
+                end
+                local inInstance =
+                    (type(IsInInstance) == "function" and IsInInstance()) or false
+
+                -- Outdoors this retry is a SELF-HEAL, not waste: GetPlayerMapPosition returns 0,0
+                -- whenever the world map view is not on the player's zone (opening the map, another
+                -- addon calling SetMapByID, ...), and SetMapToCurrentZone is what fixes it. Throttling
+                -- it made this function return nil for up to a second at a time, and every consumer
+                -- hides its pins while the position is nil -- which showed up as minimap/quest icons
+                -- blinking roughly once a second. So outdoors: always retry immediately.
+                --
+                -- Inside an instance the read can never succeed (3.3.5 has no instance map position),
+                -- so the retry there IS pure waste -- that is the per-frame pcall the throttle was
+                -- added for. Latch the first failure per zone and skip every subsequent attempt.
+                local skipRetry = inInstance and mapRetryFailedZone ~= nil
+                if not skipRetry and (not inInstance or (now - mapRetryLastTime) >= 1.0) then
+                    mapRetryLastTime = now
+                    mapUtils.SafeSetMapToCurrentZone()
+                    x, y = GetPlayerMapPosition("player")
+                    if inInstance and (not x or not y or x <= 0 or y <= 0) then
+                        mapRetryFailedZone = zone
+                    end
+                end
             end
 
             if x and y and x > 0 and y > 0 then

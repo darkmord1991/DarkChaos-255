@@ -86,8 +86,12 @@ namespace Seasons
             ? (currentWeekStart - SECONDS_PER_WEEK)
             : 0u;
 
-        CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE week_start < {}", purgeBefore);
-        CharacterDatabase.DirectExecute("DELETE FROM dc_vault_reward_pool WHERE week_start < {}", keepFrom);
+        // Async Execute, not DirectExecute: these are server-wide purges with no
+        // player filter, so the row count is unbounded and grows with uptime.
+        // DirectExecute ran them inline on the world thread during the weekly
+        // reset tick; nothing reads the result, so fire-and-forget is correct.
+        CharacterDatabase.Execute("DELETE FROM dc_weekly_vault WHERE week_start < {}", purgeBefore);
+        CharacterDatabase.Execute("DELETE FROM dc_vault_reward_pool WHERE week_start < {}", keepFrom);
 
         LOG_INFO("module.dc", "[WeeklyReset] GreatVault cleanup done (purgeBefore={}, keepFrom={})", purgeBefore, keepFrom);
     }

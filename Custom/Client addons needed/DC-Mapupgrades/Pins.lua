@@ -389,6 +389,10 @@ end
 -- into a real distance, then the minimap's visible diameter to turn yards into
 -- pixels. DC-QoS already has that helper (rotation and zoom included), so use it
 -- when the suite is loaded and fall back to doing it here otherwise.
+
+-- Visible minimap diameter in yards, outdoor table, by zoom step.
+local MINIMAP_DIAMETER = { [0] = 466.6, [1] = 400, [2] = 333.3, [3] = 266.6, [4] = 200, [5] = 133.3 }
+
 local function ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy, radiusPx)
     local dcqos = rawget(_G, "DCQOS")
     if dcqos and type(dcqos.GetMapUtils) == "function" then
@@ -420,10 +424,8 @@ local function ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy,
     local dyYards = (targetNy - playerNy) * height
     local distance = math.sqrt(dxYards * dxYards + dyYards * dyYards)
 
-    -- Visible minimap diameter in yards, outdoor table, by zoom step.
-    local DIAMETER = { [0] = 466.6, [1] = 400, [2] = 333.3, [3] = 266.6, [4] = 200, [5] = 133.3 }
     local zoom = (Minimap and Minimap.GetZoom and tonumber(Minimap:GetZoom())) or 1
-    local halfDiameter = (DIAMETER[zoom] or 400) * 0.5
+    local halfDiameter = (MINIMAP_DIAMETER[zoom] or 400) * 0.5
     if halfDiameter <= 0 or distance > halfDiameter then
         return nil
     end
@@ -801,7 +803,16 @@ local function PlayerNormalizedPosition(state)
         end
         if x and y and x > 0 and y > 0 then
             if GetCurrentMapAreaID then mapId = GetCurrentMapAreaID() end
-            if state then state.lastPlayerPos = { x = x, y = y, mapId = mapId } end
+            if state then
+                -- Mutate in place: this runs every frame, so allocating a
+                -- fresh table here churns the GC for no reason.
+                local last = state.lastPlayerPos
+                if not last then
+                    last = {}
+                    state.lastPlayerPos = last
+                end
+                last.x, last.y, last.mapId = x, y, mapId
+            end
             return x, y, mapId
         elseif state and state.lastPlayerPos then
             return state.lastPlayerPos.x, state.lastPlayerPos.y, state.lastPlayerPos.mapId
@@ -926,21 +937,22 @@ function Pins:Init(state)
         end
     end
 
-    -- Check Astrolabe status
+    -- Check Astrolabe status (debug-gated: this is a login diagnostic, not
+    -- something every user needs in their chat frame)
     local Astrolabe = _G.HotspotDisplay_Astrolabe
     if Astrolabe then
-        print("|cff00ff00[DC-Mapupgrades] Astrolabe loaded|r")
+        DebugPrint("Astrolabe loaded")
         if Astrolabe.MapBounds then
             local count = 0
             for mapId in pairs(Astrolabe.MapBounds) do
                 count = count + 1
             end
-            print(string.format("|cff00ff00[DC-Mapupgrades] Map bounds defined for %d continents|r", count))
+            DebugPrint(string.format("Map bounds defined for %d continents", count))
         else
-            print("|cffff0000[DC-Mapupgrades] ERROR: Astrolabe.MapBounds is nil!|r")
+            DebugPrint("ERROR: Astrolabe.MapBounds is nil!")
         end
     else
-        print("|cffff0000[DC-Mapupgrades] ERROR: Astrolabe not loaded!|r")
+        DebugPrint("ERROR: Astrolabe not loaded!")
     end
 
     -- Retry logic for map open: sometimes MapID is not ready immediately (especially with Mapster/Carbonite)
@@ -986,13 +998,18 @@ function Pins:Init(state)
     ticker:SetScript("OnUpdate", function(_, elapsed)
         -- Minimap: rebuild the pin SET on a throttle, but reposition every frame.
         --
-        -- Rebuilding at 0.3s meant the pins only moved about three times a
-        -- second while the player moved continuously, so they visibly stepped --
-        -- and with a rotating minimap they lurched, because the heading was
-        -- only recomputed at the same rate. Placement is a handful of pins of
-        -- cheap trigonometry, so it can run per frame; the expensive part is
-        -- walking the hotspot/entity lists, and that stays throttled.
-        self:UpdateMinimapPins()
+        -- The full rebuild walks the hotspot/entity lists and (re)assigns
+        -- textures and colors -- too expensive for every frame, so it runs at
+        -- most every 0.2s. The per-frame pass is only projection + SetPoint on
+        -- the pins the last rebuild left visible, which keeps them gliding
+        -- smoothly (and tracking minimap rotation) between rebuilds.
+        self.minimapUpdate = self.minimapUpdate + elapsed
+        if self.minimapUpdate >= 0.2 then
+            self.minimapUpdate = 0
+            self:UpdateMinimapPins()
+        else
+            self:RepositionMinimapPins()
+        end
 
         -- World pin debounced updates
         if self.pendingWorldUpdate then
@@ -1707,12 +1724,23 @@ function Pins:UpdateMinimapPins()
                         offsetX, offsetY = ProjectToMinimap(
                             playerMap, px, py, targetNx, targetNy, minimapRadius)
                     end
-                    local pin = offsetX and self:AcquireMinimapPin(id, hotspot)
+                    local pin = self.minimapPins[id]
+                        or (offsetX and self:AcquireMinimapPin(id, hotspot))
                     if pin then
-                        pin.texture:SetTexture(ResolveTexture(self.state, hotspot))
-                        pin:ClearAllPoints()
-                        pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
-                        pin:Show()
+                        local tex = ResolveTexture(self.state, hotspot)
+                        if pin.lastTexture ~= tex then
+                            pin.texture:SetTexture(tex)
+                            pin.lastTexture = tex
+                        end
+                        pin.targetNx, pin.targetNy = targetNx, targetNy
+                        pin.dcTracked = true
+                        if offsetX then
+                            pin:ClearAllPoints()
+                            pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                            pin:Show()
+                        else
+                            pin:Hide()
+                        end
                         seen[id] = true
                     end
                 end
@@ -1742,17 +1770,36 @@ function Pins:UpdateMinimapPins()
                     -- "it is right there" about something a zone away.
                     local offsetX, offsetY = ProjectToMinimap(
                         playerMap, px, py, ent.nx, ent.ny, minimapRadius)
-                    local pin = offsetX and self:AcquireEntityMinimapPin(ent.id, ent)
+                    -- Reuse a pin this entity already owns even when it is out of range right now,
+                    -- so the per-frame pass below can bring it back the instant it re-enters the
+                    -- ring. Only a first entry into range creates one, so no pin is minted for an
+                    -- entity that has never been visible.
+                    local pin = self.entityMinimapPins[ent.id]
+                        or (offsetX and self:AcquireEntityMinimapPin(ent.id, ent))
                     if pin then
-                        pin.texture:SetTexture(EntityTexture(kind))
-                        if EntityIsActive(self.state, ent.id) then
-                            pin.texture:SetVertexColor(1, 1, 1, 1)
-                        else
-                            pin.texture:SetVertexColor(0.7, 0.7, 0.7, 0.45)
+                        local tex = EntityTexture(kind)
+                        if pin.lastTexture ~= tex then
+                            pin.texture:SetTexture(tex)
+                            pin.lastTexture = tex
                         end
-                        pin:ClearAllPoints()
-                        pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
-                        pin:Show()
+                        local active = EntityIsActive(self.state, ent.id)
+                        if pin.lastActive ~= active then
+                            if active then
+                                pin.texture:SetVertexColor(1, 1, 1, 1)
+                            else
+                                pin.texture:SetVertexColor(0.7, 0.7, 0.7, 0.45)
+                            end
+                            pin.lastActive = active
+                        end
+                        pin.targetNx, pin.targetNy = ent.nx, ent.ny
+                        pin.dcTracked = true
+                        if offsetX then
+                            pin:ClearAllPoints()
+                            pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                            pin:Show()
+                        else
+                            pin:Hide()
+                        end
                         entSeen[ent.id] = true
                     end
                 end
@@ -1761,11 +1808,74 @@ function Pins:UpdateMinimapPins()
     end
 
     for id, pin in pairs(self.minimapPins) do
-        if not seen[id] then pin:Hide() end
+        if not seen[id] then pin:Hide(); pin.dcTracked = false end
     end
 
     for id, pin in pairs(self.entityMinimapPins) do
-        if not entSeen[id] then pin:Hide() end
+        if not entSeen[id] then pin:Hide(); pin.dcTracked = false end
+    end
+end
+
+-- Cheap per-frame pass: re-project and re-anchor only the pins the last full
+-- rebuild left visible. No list walks and no texture/color churn -- those stay
+-- in UpdateMinimapPins on its 0.2s throttle.
+--
+-- This pass owns VISIBILITY for pins the rebuild is tracking (pin.dcTracked), in
+-- both directions. ProjectToMinimap returns nil for anything past the ring edge
+-- (and for a clamped projection), so a pin hovering near that edge flips often;
+-- deciding that only on the 0.2s rebuild aliased those flips into a visible ~5Hz
+-- blink, which is what made the rare icons look like they were popping in and
+-- out. Re-projecting every frame restores the original per-frame accuracy while
+-- the expensive part -- the list walks and texture/colour assignment -- stays on
+-- the throttle. The rebuild still owns MEMBERSHIP: it clears dcTracked when an
+-- entity leaves the list, and that is what hides a pin for good.
+function Pins:RepositionMinimapPins()
+    local db = self.state and self.state.db
+    if not db or not db.showMinimapPins or not Minimap then
+        return
+    end
+
+    local px, py, playerMap = PlayerNormalizedPosition(self.state)
+    if not px or not py then
+        return
+    end
+
+    local minimapRadius = (math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5) - 10
+    if minimapRadius <= 0 then
+        return
+    end
+
+    for _, pin in pairs(self.minimapPins) do
+        if pin.dcTracked and pin.targetNx and pin.targetNy then
+            local offsetX, offsetY
+            if Astrolabe and Astrolabe.WorldToMinimapOffset then
+                offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, pin.targetNx, pin.targetNy)
+            else
+                offsetX, offsetY = ProjectToMinimap(
+                    playerMap, px, py, pin.targetNx, pin.targetNy, minimapRadius)
+            end
+            if offsetX then
+                pin:ClearAllPoints()
+                pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                if not pin:IsShown() then pin:Show() end
+            elseif pin:IsShown() then
+                pin:Hide()
+            end
+        end
+    end
+
+    for _, pin in pairs(self.entityMinimapPins) do
+        if pin.dcTracked and pin.targetNx and pin.targetNy then
+            local offsetX, offsetY = ProjectToMinimap(
+                playerMap, px, py, pin.targetNx, pin.targetNy, minimapRadius)
+            if offsetX then
+                pin:ClearAllPoints()
+                pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                if not pin:IsShown() then pin:Show() end
+            elseif pin:IsShown() then
+                pin:Hide()
+            end
+        end
     end
 end
 

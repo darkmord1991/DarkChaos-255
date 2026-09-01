@@ -58,9 +58,12 @@ namespace DCSpectator
 
     // Send a snapshot payload over the negotiated transport: native
     // SMSG_SPECTATOR_LIVE_SNAPSHOT when the client capability allows it,
-    // addon-channel JSON fallback otherwise.
+    // addon-channel JSON fallback otherwise. Callers that already hold the
+    // encoded JSON (the periodic push hashes it for change detection) pass it
+    // as `preEncoded` so the native path does not encode a second time.
     void SendSnapshotPayload(Player* spectator,
-        DCAddon::JsonValue const& payload);
+        DCAddon::JsonValue const& payload,
+        std::string const* preEncoded = nullptr);
 
     class Registry
     {

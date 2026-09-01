@@ -49,6 +49,22 @@ namespace Upgrade
             UPGRADE_ERR_IN_COMBAT = 6
         };
 
+        // The client has always understood error code 6 ("Cannot upgrade in combat"), but
+        // the server never sent it -- this handler is reachable straight from the addon UI
+        // with no NPC and no combat check, so a spare token doubled as a mid-fight stat
+        // reset (ForcePlayerStatUpdate tears the whole stat block down and rebuilds it).
+        // GM mode bypasses the gate so upgrades stay testable in combat.
+        inline bool IsUpgradeBlockedByCombat(Player* player)
+        {
+            if (!player || player->IsGameMaster())
+                return false;
+
+            if (!sConfigMgr->GetOption<bool>("ItemUpgrade.BlockInCombat", true))
+                return false;
+
+            return player->IsInCombat();
+        }
+
         inline bool TryGetJsonUInt(ParsedMessage const& msg, char const* key, uint32& out)
         {
             if (!IsJsonMessage(msg))
@@ -640,6 +656,16 @@ namespace Upgrade
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
+
+        // Checked before anything is read or spent -- no currency is destroyed on a
+        // refusal.
+        if (IsUpgradeBlockedByCombat(player))
+        {
+            SendUpgradeResult(player, msg.GetRequestId(), false, 0, 0, 0, UPGRADE_ERR_IN_COMBAT,
+                "Cannot upgrade in combat");
+            return;
+        }
+
         uint32 extBag = 0;
         uint32 extSlot = 0;
         uint32 targetLevel = 0;
@@ -999,6 +1025,19 @@ namespace Upgrade
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
+
+        // Same gate as HandleDoUpgrade -- heirloom upgrades run the identical stat
+        // rebuild.
+        if (IsUpgradeBlockedByCombat(player))
+        {
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", false)
+                .Set("errorMsg", "Cannot upgrade in combat")
+                .Send(player);
+            return;
+        }
+
          uint32 extBag = 0;
          uint32 extSlot = 0;
          uint32 targetLevel = 0;

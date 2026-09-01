@@ -157,8 +157,16 @@ local function Now()
     return (type(GetTime) == "function" and GetTime()) or 0
 end
 
+-- How long a successful position read stays "fresh". Reposition runs every
+-- frame; the expensive GetPlayerMapPositionSafe path only needs to run ~10x/s.
+local POSITION_FRESH_SECONDS = 0.1
+
 -- Player position with a short grace window (see POSITION_GRACE_SECONDS).
 local function GetPlayerPositionCached(mapUtils)
+    if state.lastPlayerX and (Now() - state.lastPlayerTime) <= POSITION_FRESH_SECONDS then
+        return state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId
+    end
+
     local x, y, mapId = mapUtils.GetPlayerMapPositionSafe()
     if x and y and mapId then
         state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId = x, y, mapId
@@ -467,7 +475,7 @@ function MapPOIMinimap.OnEnable()
             -- discovery hook to push from.
             if event ~= "PLAYER_ENTERING_WORLD"
                 and poiData and type(poiData.RefreshKnownTaxi) == "function" then
-                poiData:RefreshKnownTaxi()
+                poiData:RefreshKnownTaxi(event == "TAXIMAP_CLOSED")
             end
 
             MapPOIMinimap:Refresh()

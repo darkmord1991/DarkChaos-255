@@ -35,6 +35,7 @@ namespace DCCollection
     std::string GetItemsCollectionTypeValueExpr(CollectionType type);
     std::string BuildItemsCollectionTypeWhereClause(std::string const& columnName, CollectionType type);
     void UpdateMountSpeedBonus(Player* player);
+    void InvalidateMountCountCache(uint32 accountId);
     CharTitlesEntry const* ResolveTitleEntryByAnyKey(uint32 titleKey);
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
     uint32 FindCompanionItemIdForSpell(uint32 spellId);
@@ -445,7 +446,13 @@ namespace DCCollection
                     ApplyCollectibleToCharacter(target, type, entryId);
 
                 if (type == CollectionType::MOUNT)
+                {
+                    // Drop the cached mount count so the tier check reflects
+                    // this grant (the refresh itself is async).
+                    if (!alreadyOwned)
+                        InvalidateMountCountCache(accountId);
                     UpdateMountSpeedBonus(target);
+                }
 
                 if (!alreadyOwned)
                 {
@@ -556,7 +563,10 @@ namespace DCCollection
                 }
 
                 if (type == CollectionType::MOUNT)
+                {
+                    InvalidateMountCountCache(accountId);
                     UpdateMountSpeedBonus(player);
+                }
             }
         }
 

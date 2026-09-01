@@ -387,7 +387,16 @@ end
 -- Re-asks the server for the discovered set. Cheap (a few hundred ids at most),
 -- so it is re-run on the events that can follow a discovery rather than being
 -- pushed, which would need a taxi hook the core does not expose.
-function MapPOIData:RefreshKnownTaxi()
+--
+-- Throttled: zone changes and gossip closes only re-ask while no response has
+-- arrived yet this session, at most once a minute. Closing the taxi map may
+-- have just taught a new node, so `taxiMapClosed` bypasses the satisfied
+-- check but still respects a short throttle.
+local KNOWN_TAXI_MIN_INTERVAL = 60
+local KNOWN_TAXI_CLOSED_INTERVAL = 5
+local knownTaxiLastRequest = -math.huge
+
+function MapPOIData:RefreshKnownTaxi(taxiMapClosed)
     self:EnsureHandler()
 
     local DC = GetDC()
@@ -395,6 +404,21 @@ function MapPOIData:RefreshKnownTaxi()
         return
     end
 
+    local now = (type(GetTime) == "function" and GetTime()) or 0
+    if taxiMapClosed then
+        if (now - knownTaxiLastRequest) < KNOWN_TAXI_CLOSED_INTERVAL then
+            return
+        end
+    else
+        if state.knownTaxi ~= nil then
+            return -- a response already arrived this session
+        end
+        if (now - knownTaxiLastRequest) < KNOWN_TAXI_MIN_INTERVAL then
+            return
+        end
+    end
+
+    knownTaxiLastRequest = now
     state.knownTaxiRequested = true
     DC:Request("MPOI", 0x02, {})
 end

@@ -570,7 +570,10 @@ namespace DCQoS
     {
         SpellTooltipTransport transport = SpellTooltipTransport::AddonJson;
         std::string reason = "default-addon";
-        DCAddon::SessionCapabilityState capabilityState;
+        // Mirrors TransportPolicyDecision: only the capability bits and the
+        // version flag are ever read (see the audit log below), so this holds
+        // the slim summary rather than a copy of the whole session state.
+        DCAddon::TransportCapabilitySummary capabilityState;
         bool hasCapabilityState = false;
     };
 

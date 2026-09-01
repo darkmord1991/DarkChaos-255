@@ -59,15 +59,8 @@ namespace
         uint32 BossKills = 0;
     };
 
-    struct HLBGHudMetrics
-    {
-        uint32 alliancePlayers = 0;
-        uint32 hordePlayers = 0;
-        uint32 alliancePlayerKills = 0;
-        uint32 hordePlayerKills = 0;
-        uint32 allianceNpcKills = 0;
-        uint32 hordeNpcKills = 0;
-    };
+    // HLBGHudMetrics lives in BattlegroundHLBG.h so member signatures can
+    // pass it around (single CollectHudMetrics pass per HUD tick).
 
     uint32 NowSec()
     {
@@ -933,8 +926,11 @@ void BattlegroundHLBG::SendStatusSnapshotToPlayer(Player* player) const
 
 void BattlegroundHLBG::SendStatusSnapshotToAll() const
 {
-    HLBGHudMetrics metrics = CollectHudMetrics(this);
+    SendStatusSnapshotToAll(CollectHudMetrics(this));
+}
 
+void BattlegroundHLBG::SendStatusSnapshotToAll(HLBGHudMetrics const& metrics) const
+{
     for (auto const& playerEntry : GetPlayers())
     {
         Player* player = playerEntry.second;
@@ -961,12 +957,10 @@ void BattlegroundHLBG::SendStatusSnapshotToAll() const
     }
 }
 
-uint64 BattlegroundHLBG::ComputeHudSnapshotKey() const
+uint64 BattlegroundHLBG::ComputeHudSnapshotKey(HLBGHudMetrics const& metrics) const
 {
     // Everything the periodic HUD broadcast carries except the per-second
     // countdown, which the client derives locally from the end epoch.
-    HLBGHudMetrics metrics = CollectHudMetrics(this);
-
     uint64 key = 14695981039346656037ULL;
     auto mix = [&key](uint64 value)
     {
@@ -1603,7 +1597,9 @@ void BattlegroundHLBG::PostUpdateImpl(uint32 diff)
         // The HUD payload only changes on resource/kill/affix/AFK events and
         // the client ticks the countdown locally, so broadcast only when the
         // snapshot differs (plus a slow heartbeat to correct client drift).
-        uint64 snapshotKey = ComputeHudSnapshotKey();
+        // One CollectHudMetrics pass feeds both the key and the broadcast.
+        HLBGHudMetrics metrics = CollectHudMetrics(this);
+        uint64 snapshotKey = ComputeHudSnapshotKey(metrics);
         if (_hudDirty || snapshotKey != _lastHudSnapshotKey
             || _hudMsSinceBroadcast >= HLBGHudHeartbeatIntervalMs)
         {
@@ -1611,7 +1607,7 @@ void BattlegroundHLBG::PostUpdateImpl(uint32 diff)
             _hudMsSinceBroadcast = 0u;
             _hudDirty = false;
             UpdateWorldStatesForAll();
-            SendStatusSnapshotToAll();
+            SendStatusSnapshotToAll(metrics);
         }
     }
     else

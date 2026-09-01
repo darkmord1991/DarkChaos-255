@@ -919,8 +919,21 @@ local function RecordTimelineEvent(timestamp, event, sourceGUID, sourceName, des
         school = school,
     })
 
-    while #currentTimeline > limit do
-        table.remove(currentTimeline, 1)
+    -- Amortized trim: let the array grow past the limit by some slack, then do a
+    -- single compaction pass instead of a per-event table.remove(1) memmove.
+    local count = #currentTimeline
+    local slack = math.floor(limit * 0.25)
+    if slack < 256 then
+        slack = 256
+    end
+    if count > limit + slack then
+        local excess = count - limit
+        for i = 1, limit do
+            currentTimeline[i] = currentTimeline[i + excess]
+        end
+        for i = limit + 1, count do
+            currentTimeline[i] = nil
+        end
     end
 end
 
@@ -1121,8 +1134,13 @@ local function SelectSegment(index)
     CombatLog.UpdateFrame()
 end
 
+-- Scratch array reused across UpdateFrame calls (10x/s). Safe because the
+-- returned array and its row tables are consumed synchronously by
+-- UpdateFrame and never retained (bar.data reads from dataSource by guid).
+local sortedScratch = {}
+
 local function GetSortedData(mode)
-    local sorted = {}
+    local sorted = sortedScratch
     local valueKey = "damage"
     
     -- Determine data source
@@ -1146,9 +1164,13 @@ local function GetSortedData(mode)
     elseif mode == "consumables" then valueKey = "consumablesTotal"
     end
 
-    
-    if not dataSource then return sorted end
 
+    if not dataSource then
+        for i = 1, #sorted do sorted[i] = nil end
+        return sorted
+    end
+
+    local n = 0
     for guid, data in pairs(dataSource) do
         local value = nil
 
@@ -1161,17 +1183,24 @@ local function GetSortedData(mode)
         end
 
         if value and value > 0 then
-            table.insert(sorted, {
-                guid = guid,
-                name = data.name,
-                class = data.class,
-                value = value,
-            })
+            n = n + 1
+            local row = sorted[n]
+            if not row then
+                row = {}
+                sorted[n] = row
+            end
+            row.guid = guid
+            row.name = data.name
+            row.class = data.class
+            row.value = value
         end
     end
-    
+    for i = n + 1, #sorted do
+        sorted[i] = nil
+    end
+
     table.sort(sorted, function(a, b) return a.value > b.value end)
-    
+
     return sorted
 end
 
@@ -1548,31 +1577,31 @@ local function CreateCombatFrame()
     return combatFrame
 end
 
+local MODE_NAMES = {
+    damage = "Damage",
+    healing = "Healing",
+    damageTaken = "Damage Taken",
+    dispels = "Dispels",
+    interrupts = "Interrupts",
+    deaths = "Deaths",
+    cc = "CC Done",
+    friendlyFire = "Friendly Fire"
+}
+
 function CombatLog.UpdateFrame()
     if not combatFrame then return end
-    
+
     local settings = addon.settings.combatLog
     local combatTime = GetCombatTime()
-    
+
     -- Update timer
     if combatFrame.timerText then
         combatFrame.timerText:SetText(FormatTime(combatTime))
     end
-    
+
     -- Get sorted data and update title
     local mode = settings.meterMode or "damage"
-    local modeNames = {
-        damage = "Damage",
-        healing = "Healing",
-        damageTaken = "Damage Taken",
-        dispels = "Dispels",
-        interrupts = "Interrupts",
-        deaths = "Deaths",
-        cc = "CC Done",
-        friendlyFire = "Friendly Fire"
-    }
-    
-    local titleText = "|cffFFCC00DC|r " .. (modeNames[mode] or "Combat")
+    local titleText = "|cffFFCC00DC|r " .. (MODE_NAMES[mode] or "Combat")
     
     if activeSegment and segments[activeSegment] then
         local seg = segments[activeSegment]
@@ -1639,36 +1668,59 @@ function CombatLog.UpdateFrame()
             local data = sorted[i]
             local percent = maxValue > 0 and (data.value / maxValue * 100) or 0
             local perSec = combatTime > 0 and (data.value / combatTime) or 0
-            
-            -- Size and position
-            bar:SetSize(combatFrame:GetWidth() - 10, barHeight)
-            bar:SetPoint("TOPLEFT", 5, -topOffset - ((i - 1) * (barHeight + 2)))
-            
-            -- Color
+
+            -- Size and position (only when changed - this runs 10x/s)
+            local barWidth = combatFrame:GetWidth() - 10
+            if bar.lastWidth ~= barWidth or bar.lastHeight ~= barHeight then
+                bar:SetSize(barWidth, barHeight)
+                bar.lastWidth = barWidth
+                bar.lastHeight = barHeight
+            end
+            local barY = -topOffset - ((i - 1) * (barHeight + 2))
+            if bar.lastY ~= barY then
+                bar:SetPoint("TOPLEFT", 5, barY)
+                bar.lastY = barY
+            end
+
+            -- Color (only when changed)
             local r, g, b = GetClassColor(data.class)
-            bar:SetStatusBarColor(r, g, b, 0.8)
-            
+            if bar.lastR ~= r or bar.lastG ~= g or bar.lastB ~= b then
+                bar:SetStatusBarColor(r, g, b, 0.8)
+                bar.lastR, bar.lastG, bar.lastB = r, g, b
+            end
+
             -- Values
             bar:SetValue(percent)
-            bar.rank:SetText(i .. ".")
-            bar.nameText:SetText(data.name)
-            
-            if mode == "damage" or mode == "healing" then
-                bar.valueText:SetText(string.format("%s (%s)", FormatNumber(data.value), FormatNumber(perSec)))
-            elseif mode == "damageTaken" then
-                bar.valueText:SetText(string.format("%s (%s/s)", FormatNumber(data.value), FormatNumber(perSec)))
-            elseif mode == "activity" then
-                bar.valueText:SetText(FormatTime(data.value))
-            elseif mode == "threat" then
-                bar.valueText:SetText(string.format("%.1f%%", data.value))
-            elseif mode == "consumables" then
-                bar.valueText:SetText(string.format("%d", data.value))
-            elseif mode == "killingBlows" or mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
-                bar.valueText:SetText(string.format("%d", data.value))
-            else
-                bar.valueText:SetText(FormatNumber(data.value))
+            if bar.lastRank ~= i then
+                bar.rank:SetText(i .. ".")
+                bar.lastRank = i
             end
-            
+            if bar.lastName ~= data.name then
+                bar.nameText:SetText(data.name)
+                bar.lastName = data.name
+            end
+
+            local valueStr
+            if mode == "damage" or mode == "healing" then
+                valueStr = string.format("%s (%s)", FormatNumber(data.value), FormatNumber(perSec))
+            elseif mode == "damageTaken" then
+                valueStr = string.format("%s (%s/s)", FormatNumber(data.value), FormatNumber(perSec))
+            elseif mode == "activity" then
+                valueStr = FormatTime(data.value)
+            elseif mode == "threat" then
+                valueStr = string.format("%.1f%%", data.value)
+            elseif mode == "consumables" then
+                valueStr = string.format("%d", data.value)
+            elseif mode == "killingBlows" or mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
+                valueStr = string.format("%d", data.value)
+            else
+                valueStr = FormatNumber(data.value)
+            end
+            if bar.lastValueStr ~= valueStr then
+                bar.valueText:SetText(valueStr)
+                bar.lastValueStr = valueStr
+            end
+
             -- Store data for tooltip
             bar.data = dataSource and dataSource[data.guid] or playerData[data.guid]
             bar:Show()

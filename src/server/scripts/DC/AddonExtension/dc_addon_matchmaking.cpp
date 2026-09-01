@@ -592,8 +592,15 @@ namespace Matchmaking
 
         _matchTimerMs += diff;
         _statusTimerMs += diff;
+        _proposalTimerMs += diff;
 
-        CheckProposalTimeouts();
+        // Proposal timeouts have one-second granularity; polling them at world
+        // tick rate just took _mutex and walked _proposals 20x/sec for nothing.
+        if (_proposalTimerMs >= 500)
+        {
+            _proposalTimerMs = 0;
+            CheckProposalTimeouts();
+        }
 
         if (_matchTimerMs >= _matchIntervalMs)
         {
@@ -1107,11 +1114,16 @@ namespace Matchmaking
 
     void MatchmakingQueue::BroadcastStatus(uint8 category)
     {
-        std::vector<ObjectGuid> recipients;
+        // Capture guid AND joinedAt in the single locked pass. The old shape
+        // re-took _mutex and linear-scanned _queue (FindEntry) once per
+        // recipient - O(N^2) lock/scan per broadcast for a value that was
+        // already in hand during the first pass.
+        std::vector<std::pair<ObjectGuid, time_t>> recipients;
         uint32 tanks = 0, healers = 0, dps = 0, total = 0;
 
         {
             std::lock_guard<std::mutex> lock(_mutex);
+            recipients.reserve(_queue.size());
             for (QueueEntry const& e : _queue)
             {
                 if (e.category != category)
@@ -1123,28 +1135,21 @@ namespace Matchmaking
                     if (e.roles & QROLE_HEALER) ++healers;
                     if (e.roles & QROLE_DPS)    ++dps;
                 }
-                recipients.push_back(e.guid);
+                recipients.emplace_back(e.guid, e.joinedAt);
             }
         }
 
         time_t now = GameTime::GetGameTime().count();
-        for (ObjectGuid guid : recipients)
+        for (auto const& [guid, joinedAt] : recipients)
         {
             Player* p = ObjectAccessor::FindConnectedPlayer(guid);
             if (!p)
                 continue;
 
-            int32 wait = 0;
-            {
-                std::lock_guard<std::mutex> lock(_mutex);
-                if (QueueEntry const* e = FindEntry(guid.GetCounter()))
-                    wait = static_cast<int32>(now - e->joinedAt);
-            }
-
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_QUEUE_STATUS)
                 .Set("queued", true)
                 .Set("category", static_cast<int32>(category))
-                .Set("waitSeconds", wait)
+                .Set("waitSeconds", static_cast<int32>(now - joinedAt))
                 .Set("tanks", static_cast<int32>(tanks))
                 .Set("healers", static_cast<int32>(healers))
                 .Set("dps", static_cast<int32>(dps))

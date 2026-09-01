@@ -173,6 +173,9 @@ local auraCache = {} -- GUID -> {auras table, timestamp} for aura throttling
 local AURA_CACHE_DURATION = 0.2 -- Cache auras for 200ms to reduce scanning
 local DEBUFF_REFRESH_INTERVAL = 0.25
 local RANGE_REFRESH_INTERVAL = 0.20
+-- Rarely-changing plate visuals (elite icon, classification border, level
+-- text, faction/NPC icons) refresh on this slower cadence instead of 20 Hz.
+local SLOW_REFRESH_INTERVAL = 0.5
 local CUSTOM_HEALTH_INSET_X = 0
 local CUSTOM_HEALTH_INSET_Y = 0
 local DEFAULT_HEALTH_COLOR = { r = 0.50, g = 0.50, b = 1.00 }
@@ -1070,6 +1073,7 @@ local function MarkFrameDirty(frame)
     frame.dcUnitMatchDirty = true
     frame.dcDebuffDirty = true
     frame.dcRangeDirty = true
+    frame.dcSlowDirty = true
 end
 
 local function MarkAllFramesDirty()
@@ -3273,7 +3277,10 @@ local function HookNameplate(frame)
 
         NormalizeNameplateLayout(self)
         SyncCustomHealthBar(self)
-        
+
+        -- Freshly (re)shown plates get a full slow-visual pass on the next tick.
+        self.dcSlowDirty = true
+
         if self.dcHealthBar then
             -- forceUpdate=true bypasses the max<=0 early-return so health
             -- text retries are triggered immediately on every plate show.
@@ -3290,25 +3297,27 @@ local function ScanWorldFrame()
     local settings = addon.settings.nameplatesPlus
     if not settings or not settings.enabled then return end
 
+    -- Cheap count check first: building { WorldFrame:GetChildren() } allocates
+    -- a table per scan, so only do it when the child count actually changed.
+    local numChildren = WorldFrame:GetNumChildren()
+    if numChildren == lastWorldFrameChildren then return end
+    lastWorldFrameChildren = numChildren
+
     local children = { WorldFrame:GetChildren() }
 
-    if #children ~= lastWorldFrameChildren then
-        lastWorldFrameChildren = #children
+    for _, child in ipairs(children) do
+        local regions = { child:GetRegions() }
+        local childFrames = { child:GetChildren() }
 
-        for _, child in ipairs(children) do
-            local regions = { child:GetRegions() }
-            local childFrames = { child:GetChildren() }
-
-            if #childFrames >= 2 and #regions >= 7 then
-                local healthBar = childFrames[1]
-                if healthBar and healthBar.GetStatusBarTexture then
-                    HookNameplate(child)
-                end
+        if #childFrames >= 2 and #regions >= 7 then
+            local healthBar = childFrames[1]
+            if healthBar and healthBar.GetStatusBarTexture then
+                HookNameplate(child)
             end
         end
-
-        RefreshAllTrackedUnitMatches()
     end
+
+    RefreshAllTrackedUnitMatches()
 end
 
 local function OnUpdate(self, elapsed)
@@ -3337,6 +3346,7 @@ local function OnUpdate(self, elapsed)
                     frame.dcResolvedUnit = unit
                     frame.dcDebuffDirty = true
                     frame.dcNextDebuffRefresh = 0
+                    frame.dcSlowDirty = true
                 end
 
                 if unit and (frame.dcRangeDirty or currentTime >= (frame.dcNextRangeRefresh or 0)) then
@@ -3381,16 +3391,28 @@ local function OnUpdate(self, elapsed)
                         frame.dcDebuffDirty = nil
                         frame.dcNextDebuffRefresh = currentTime + DEBUFF_REFRESH_INTERVAL
                     end
-                    UpdateEliteIcon(frame, unit, settings)
-                    UpdateClassificationBorder(frame, settings)
-                    UpdateLevelText(frame, unit, settings)
-                    UpdateFactionIcon(frame, unit, settings)
-                    UpdateNPCIcons(frame, unit, settings)
+                    -- Rarely-changing visuals run on the slow cadence; the
+                    -- 20 Hz budget stays with health/cast/threat/highlight.
+                    -- dcSlowDirty (unit change, plate show/reset) forces an
+                    -- immediate full pass.
+                    if frame.dcSlowDirty or currentTime >= (frame.dcNextSlowRefresh or 0) then
+                        UpdateEliteIcon(frame, unit, settings)
+                        UpdateClassificationBorder(frame, settings)
+                        UpdateLevelText(frame, unit, settings)
+                        UpdateFactionIcon(frame, unit, settings)
+                        UpdateNPCIcons(frame, unit, settings)
+                        frame.dcSlowDirty = nil
+                        frame.dcNextSlowRefresh = currentTime + SLOW_REFRESH_INTERVAL
+                    end
                 else
                     HideUnitDependentPlateVisuals(frame)
-                    UpdateEliteIcon(frame, nil, settings)
-                    UpdateClassificationBorder(frame, settings)
-                    UpdateLevelText(frame, nil, settings)
+                    if frame.dcSlowDirty or currentTime >= (frame.dcNextSlowRefresh or 0) then
+                        UpdateEliteIcon(frame, nil, settings)
+                        UpdateClassificationBorder(frame, settings)
+                        UpdateLevelText(frame, nil, settings)
+                        frame.dcSlowDirty = nil
+                        frame.dcNextSlowRefresh = currentTime + SLOW_REFRESH_INTERVAL
+                    end
                 end
             end
         end
@@ -3635,6 +3657,8 @@ function NameplatesPlus.OnDisable()
         frame.dcRangeDirty = nil
         frame.dcEstimatedRange = nil
         frame.dcNextRangeRefresh = nil
+        frame.dcSlowDirty = nil
+        frame.dcNextSlowRefresh = nil
         frame.dcCastBarActive = nil
         if frame.dcCastBar and frame.dcCastBar.dcOriginalAlpha ~= nil then
             frame.dcCastBar:SetAlpha(frame.dcCastBar.dcOriginalAlpha)

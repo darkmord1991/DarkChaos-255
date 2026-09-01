@@ -194,6 +194,9 @@ local KnownBadSpells = {
 local lastAlertTime = 0
 local alertFrame = nil
 local flashTexture = nil
+-- Player GUID cached once (refreshed on PLAYER_ENTERING_WORLD); calling
+-- UnitGUID("player") allocated a string per combat log event.
+local playerGUID = nil
 
 -- ============================================================
 -- Visual Flash Effect
@@ -328,8 +331,8 @@ local function OnCombatLogEvent(...)
     -- 3.3.5a varargs parsing
     local timestamp, eventtype, srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags = ...
     
-    -- Only process damage to player
-    local playerGUID = UnitGUID("player")
+    -- Only process damage to player (GUID cached at enable/entering world)
+    if not playerGUID then playerGUID = UnitGUID("player") end
     if dstGUID ~= playerGUID then return end
     
     -- Get spell info based on event type
@@ -419,12 +422,17 @@ end
 function GTFO.OnEnable()
     addon:Debug("GTFO module enabling")
     
+    playerGUID = UnitGUID("player")
+
     -- Create event frame for combat log (3.3.5a style with varargs)
     local eventFrame = CreateFrame("Frame", "DCQoSGTFOEvents")
     eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "COMBAT_LOG_EVENT_UNFILTERED" then
             OnCombatLogEvent(...)
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            playerGUID = UnitGUID("player")
         end
     end)
     

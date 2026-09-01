@@ -1455,30 +1455,33 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
         return
     end
 
+    -- Filter on the subevent FIRST: during an active run this handler sees
+    -- every combat log event, and most are neither damage nor UNIT_DIED.
+    local subevent = select(2, ...)
+    local isDamage = subevent == "SWING_DAMAGE" or subevent == "RANGE_DAMAGE"
+        or subevent == "SPELL_DAMAGE" or subevent == "SPELL_PERIODIC_DAMAGE"
+        or subevent == "ENVIRONMENTAL_DAMAGE"
+    if not isDamage and subevent ~= "UNIT_DIED" then
+        return
+    end
+
     -- COMBAT_LOG_EVENT_UNFILTERED signature differs slightly across clients,
     -- but for 3.3.5 we can rely on positional args.
-    local timestamp, subevent,
+    local timestamp, _,
         sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
         destGUID, destName, destFlags, destRaidFlags = ...
+
+    -- Group-membership check without constructing a closure per event.
+    if not (destGUID and groupGuidToName[destGUID]) then
+        return
+    end
 
     -- Track recent damage to attribute likely killing blow on UNIT_DIED.
     -- (UNIT_DIED itself does not include killer/spell.)
     runTracker._lastHit = runTracker._lastHit or {}
     local lastHit = runTracker._lastHit
 
-    local function isGroupMember(guid)
-        return guid and groupGuidToName[guid]
-    end
-
-    local function rememberHit(destGuid, hit)
-        if not destGuid then
-            return
-        end
-        hit.t = time()
-        lastHit[destGuid] = hit
-    end
-
-    if (subevent == "SWING_DAMAGE" or subevent == "RANGE_DAMAGE" or subevent == "SPELL_DAMAGE" or subevent == "SPELL_PERIODIC_DAMAGE" or subevent == "ENVIRONMENTAL_DAMAGE") and isGroupMember(destGUID) then
+    if isDamage then
         local spellName
         local amount
         local overkill
@@ -1499,7 +1502,7 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
             spellId, spellName, school, amount, overkill = select(11, ...)
         end
 
-        rememberHit(destGUID, {
+        lastHit[destGUID] = {
             event = subevent,
             sourceName = sourceName,
             sourceGUID = sourceGUID,
@@ -1507,18 +1510,12 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
             amount = tonumber(amount),
             overkill = tonumber(overkill),
             school = school,
-        })
+            t = time(),
+        }
         return
     end
 
-    if subevent ~= "UNIT_DIED" then
-        return
-    end
-
-    if not isGroupMember(destGUID) then
-        return
-    end
-
+    -- subevent == "UNIT_DIED" for a group member from here on.
     local name = destName or groupGuidToName[destGUID] or "?"
     runTracker.deathsByGuid[destGUID] = (runTracker.deathsByGuid[destGUID] or 0) + 1
     runTracker.deathsByName[name] = (runTracker.deathsByName[name] or 0) + 1
