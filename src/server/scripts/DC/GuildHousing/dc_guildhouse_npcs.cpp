@@ -60,6 +60,13 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        // Onboarding quest 820067 "A Roof of Your Own" - credited above the guild
+        // check on purpose. The quest only asks the player to find out what a hall
+        // costs; gating the credit on guild membership would leave a guildless
+        // player holding an objective they cannot clear.
+        if (player && creature)
+            player->TalkedToCreature(creature->GetEntry(), creature->GetGUID());
+
         ClearGossipMenuFor(player);
 
         if (!player->GetGuild())

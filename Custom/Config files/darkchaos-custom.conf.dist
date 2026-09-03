@@ -3547,6 +3547,32 @@ DCFirstStart.HyjalCall.QuestAlliance = 81300
 DCFirstStart.HyjalCall.QuestHorde = 81301
 
 #
+#    DCFirstStart.SystemsPrimer.*
+#        Description: Introduction line for the custom endgame systems. At the
+#                     configured level the player automatically receives "A Wider
+#                     World" (820062), the breadcrumb to the Jade Forest player
+#                     base, where Chronicler Vaelin (800064) offers the rest:
+#                     Mythic+ keystones and a first run (820063/820064), guild
+#                     housing (820067) and the Hinterlands BG (820068).
+#                     The two upgrade quests are NOT here - item upgrades
+#                     (820065) and heirloom upgrades (820066) are level 1 and
+#                     hang off Hervikus in Azshara Crater, because a fresh
+#                     character already has the tokens, the BoA gear and the
+#                     heirloom shirt needed to complete both.
+#                     Granted on level-up AND on login, so characters already
+#                     past the level still receive it (guarded on quest status,
+#                     so it is never granted twice).
+#        Enable:  1 = grant, 0 = off
+#        Level:   level at which the breadcrumb is handed out. 80 by default
+#                 because that is where npc_keystone_vendor starts issuing
+#                 keystones; raising it past 80 delays the whole line.
+#        QuestId: quest_template ID of the breadcrumb
+#
+DCFirstStart.SystemsPrimer.Enable = 1
+DCFirstStart.SystemsPrimer.Level = 80
+DCFirstStart.SystemsPrimer.QuestId = 820062
+
+#
 #    DCFirstStart.StarterGuild.*
 #        Description: Auto-join fresh characters into a "newcomer" guild on first
 #                     login. Guilds are single-faction, so Alliance and Horde use

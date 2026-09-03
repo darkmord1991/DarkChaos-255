@@ -37,6 +37,11 @@ local state = {
     tokens = 0,
     essence = 0,
     armorType = "",
+    -- Which currency THIS vendor charges. The level-80 Mythic+ quartermaster
+    -- takes Upgrade Tokens; the level-130 Frontier one takes Emberwood Sap.
+    -- Sent by the server; nil means "assume the historic token".
+    currencyItemId = nil,
+    currencyName = nil,
     tiers = {},
     selectedTier = nil, -- itemLevel
     selectedSlot = nil, -- numeric token slot
@@ -102,160 +107,23 @@ local function getTalentSummary()
     }
 end
 
-local function getRoleHintFromClassAndTab(classFile, tabIndex)
-    if not classFile or not tabIndex then
-        return nil
-    end
-    -- WotLK talent tree order is fixed per class.
-    local map = {
-        ROGUE = { "melee_agi", "melee_agi", "melee_agi" },
-        HUNTER = { "ranged_agi", "ranged_agi", "ranged_agi" },
-        MAGE = { "caster_int", "caster_int", "caster_int" },
-        WARLOCK = { "caster_int", "caster_int", "caster_int" },
-        PRIEST = { "healer_int", "healer_int", "caster_int" },
-        DRUID = { "caster_int", "melee_agi", "healer_int" },
-        SHAMAN = { "caster_int", "melee_agi", "healer_int" },
-        PALADIN = { "healer_int", "tank_str", "melee_str" },
-        WARRIOR = { "melee_str", "melee_str", "tank_str" },
-        DEATHKNIGHT = { "tank_str", "melee_str", "melee_str" },
-    }
-    local t = map[classFile]
-    return t and t[tabIndex] or nil
-end
-
--- Tooltip scanner for class restrictions + basic stat presence.
-local scanTooltip
-local scanPrefix
-local function ensureScanTooltip()
-    if scanTooltip then
-        return
-    end
-    scanTooltip = CreateFrame("GameTooltip", "DCMP_TokenVendorScanTooltip", UIParent, "GameTooltipTemplate")
-    scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-    if type(ITEM_CLASSES_ALLOWED) == "string" then
-        scanPrefix = ITEM_CLASSES_ALLOWED:match("^(.-)%%s")
-    end
-    if not scanPrefix or scanPrefix == "" then
-        scanPrefix = "Classes: "
-    end
-end
-
-local function getItemTooltipLines(itemLink)
-    ensureScanTooltip()
-    scanTooltip:ClearLines()
-    scanTooltip:SetHyperlink(itemLink)
-    local lines = {}
-    for i = 1, 30 do
-        local left = _G["DCMP_TokenVendorScanTooltipTextLeft" .. i]
-        if left then
-            local t = left:GetText()
-            if t and t ~= "" then
-                lines[#lines + 1] = t
-            end
-        end
-    end
-    return lines
-end
-
-local function itemPassesClassRestriction(itemId, classNames)
-    if not itemId then
-        return false
-    end
-    local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-
-    if type(IsUsableItem) == "function" then
-        local usable = IsUsableItem(link)
-        if usable == false then
-            -- Often catches class restriction / missing proficiencies.
-            return false
-        end
-    end
-
-    local lines = getItemTooltipLines(link)
-    for _, line in ipairs(lines) do
-        if type(line) == "string" and line:sub(1, #scanPrefix) == scanPrefix then
-            local list = trim(line:sub(#scanPrefix + 1))
-            if not list or list == "" then
-                return true
-            end
-            for entry in string.gmatch(list, "[^,]+") do
-                entry = trim(entry)
-                if entry and classNames and classNames[entry] then
-                    return true
-                end
-            end
-            return false
-        end
-    end
-
-    -- No explicit class line => allow.
-    return true
-end
-
-local function itemStatHint(itemId)
-    local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-    local lines = getItemTooltipLines(link)
-    local hint = {
-        hasInt = false,
-        hasSpi = false,
-        hasStr = false,
-        hasAgi = false,
-        hasSpell = false,
-        hasHeal = false,
-        hasAP = false,
-        hasDef = false,
-    }
-
-    for _, line in ipairs(lines) do
-        if type(line) == "string" then
-            if line:find(ITEM_MOD_INTELLECT_SHORT or "Intellect") then hint.hasInt = true end
-            if line:find(ITEM_MOD_SPIRIT_SHORT or "Spirit") then hint.hasSpi = true end
-            if line:find(ITEM_MOD_STRENGTH_SHORT or "Strength") then hint.hasStr = true end
-            if line:find(ITEM_MOD_AGILITY_SHORT or "Agility") then hint.hasAgi = true end
-            if line:lower():find("spell") and line:lower():find("power") then hint.hasSpell = true end
-            if line:lower():find("healing") then hint.hasHeal = true end
-            if line:lower():find("attack power") then hint.hasAP = true end
-            if line:lower():find("defense") then hint.hasDef = true end
-        end
-    end
-    return hint
-end
-
-local function itemPassesRoleFit(itemId, roleHint)
-    if not roleHint then
-        return true
-    end
-    local hint = itemStatHint(itemId)
-
-    if roleHint == "melee_agi" or roleHint == "ranged_agi" then
-        -- Reject obvious caster/healer items for agi specs.
-        if hint.hasInt or hint.hasSpell or hint.hasHeal or hint.hasSpi then
-            return false
-        end
-        return true
-    end
-    if roleHint == "melee_str" then
-        if hint.hasInt or hint.hasSpell or hint.hasHeal or hint.hasSpi then
-            return false
-        end
-        return true
-    end
-    if roleHint == "caster_int" or roleHint == "healer_int" then
-        -- Reject obvious physical items for caster/healer.
-        if hint.hasAgi or hint.hasStr or hint.hasAP then
-            -- Allow caster staves etc that still show STR/AGI? very rare; keep strict.
-            return false
-        end
-        return true
-    end
-    if roleHint == "tank_str" then
-        if hint.hasInt or hint.hasSpell or hint.hasHeal then
-            return false
-        end
-        return true
-    end
-    return true
-end
+-- NOTE: the client-side class/role re-filter that used to live here was REMOVED.
+--
+-- 🔴 It made the vendor look broken: items appeared for a second and then
+-- vanished. The cause was `IsUsableItem(link)`, which answers "can this be
+-- USED" (consumables, on-use effects) -- NOT "can this class equip it". Plain
+-- gear with no use effect returns nil while the item is still uncached (so the
+-- item passed and rendered) and false once the client caches it (so the very
+-- next refresh dropped it). Every stat check beside it had the same dependency
+-- on cache state, via tooltip scraping.
+--
+-- It was also redundant. The SERVER already filters the list three ways before
+-- sending it: AllowableClass, Player::CanUseItem (class/race/level/skill/spell)
+-- and a spec-aware IsRoleFit that reads real talent data rather than guessing
+-- from a tooltip. Re-deriving that here could only ever disagree with it.
+--
+-- Trust the server's list. If items need excluding, do it server-side in
+-- GetItemsForSlotAndClass where the authoritative data lives.
 
 local SLOT_LABELS = {
     [1] = "Head",
@@ -368,10 +236,20 @@ local function CreateDisplayFrame(parent, iconPath, tooltipTitle, tooltipText)
     f.text:SetPoint("LEFT", f.icon, "RIGHT", 5, 0)
     f.text:SetText("0")
     
+    -- Icon and title are re-pointable: the same widget shows Upgrade Tokens on
+    -- one vendor and Emberwood Sap on the other.
+    f.tooltipTitle = tooltipTitle
+    f.tooltipText = tooltipText
+    function f:SetCurrency(iconTexture, title, text)
+        if iconTexture then self.icon:SetTexture(iconTexture) end
+        if title then self.tooltipTitle = title end
+        if text then self.tooltipText = text end
+    end
+
     f:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(tooltipTitle, 1, 1, 1)
-        GameTooltip:AddLine(tooltipText, nil, nil, nil, true)
+        GameTooltip:SetText(self.tooltipTitle, 1, 1, 1)
+        GameTooltip:AddLine(self.tooltipText, nil, nil, nil, true)
         GameTooltip:Show()
     end)
     f:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -641,6 +519,15 @@ function UI:Refresh()
     frame.tokenDisplay.text:SetText(fmtNumber(state.tokens))
     frame.essenceDisplay.text:SetText(fmtNumber(state.essence))
 
+    -- Re-point the balance widget at whatever this vendor charges. GetItemIcon
+    -- needs the item cached; while it is not, keep the existing texture rather
+    -- than blanking the icon.
+    if state.currencyItemId and state.currencyItemId > 0 then
+        local tex = (type(GetItemIcon) == "function") and GetItemIcon(state.currencyItemId) or nil
+        local label = state.currencyName or "Currency"
+        frame.tokenDisplay:SetCurrency(tex, label, "Currency this vendor charges for gear.")
+    end
+
     for i = 1, 5 do
         local tier = state.tiers[i]
         local b = frame.tierButtons[i]
@@ -668,20 +555,18 @@ function UI:Refresh()
 
     local cost = state.choices and state.choices.cost or nil
     if cost and state.selectedTier and state.selectedSlot then
-        frame.choiceLabel:SetText(string.format("Available Items (Cost: %d Tokens)", cost))
+        frame.choiceLabel:SetText(string.format("Available Items (Cost: %d %s)",
+            cost, state.currencyName or "Tokens"))
     else
         frame.choiceLabel:SetText("Available Items")
     end
 
-    local roleHint = getRoleHintFromClassAndTab(talents and talents.classFile, talents and talents.bestTab)
     local filtered = {}
     local raw = state.choices and state.choices.items or nil
     if type(raw) == "table" then
         for _, it in ipairs(raw) do
             if it and it.itemId then
-                if itemPassesClassRestriction(it.itemId, talents and talents.classNames) and itemPassesRoleFit(it.itemId, roleHint) then
-                    filtered[#filtered + 1] = it
-                end
+                filtered[#filtered + 1] = it
             end
         end
     end
@@ -744,6 +629,8 @@ local function RegisterProtocolHandlers()
     state.essence = payload.essence or 0
     state.armorType = payload.armorType or ""
     state.tiers = payload.tiers or {}
+    state.currencyItemId = tonumber(payload.currencyItemId) or state.currencyItemId
+    state.currencyName = payload.currencyName or state.currencyName
 
     -- Default selections
     if not state.selectedTier and state.tiers[1] and state.tiers[1].itemLevel then
@@ -757,6 +644,11 @@ local function RegisterProtocolHandlers()
     DC:RegisterHandler(MPLUS, 0x82, function(payload)
     if type(payload) ~= "table" then return end
     state.choices = payload
+    -- The choices packet restates the currency so the cost line stays right
+    -- even if the player opened this vendor from a stale frame.
+    state.currencyItemId = tonumber(payload.currencyItemId) or state.currencyItemId
+    state.currencyName = payload.currencyName or state.currencyName
+    state.tokens = tonumber(payload.tokens) or state.tokens
     UI:Refresh()
     end)
 
@@ -774,6 +666,8 @@ local function RegisterProtocolHandlers()
     if type(payload) ~= "table" then return end
     state.tokens = payload.tokens or state.tokens
     state.essence = payload.essence or state.essence
+    state.currencyItemId = tonumber(payload.currencyItemId) or state.currencyItemId
+    state.currencyName = payload.currencyName or state.currencyName
     UI:Refresh()
     end)
 end

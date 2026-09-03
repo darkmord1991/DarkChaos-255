@@ -27,6 +27,20 @@ namespace DCConstants
     constexpr uint32 NPC_UNIVERSAL_QUEST_MASTER = 700100;      // Dungeon quest master
 
     // =========================================================================
+    // Onboarding quest credit entries (2026_09_03_00_dc_system_intro_quests.sql)
+    // =========================================================================
+    // Never-spawned creature templates that exist only so KilledMonsterCredit has
+    // an entry to match. They back the system-primer quests whose objectives are
+    // actions rather than kills; the NPCs that would otherwise carry those
+    // objectives all return true from OnGossipHello, which prevents the gossip
+    // window from ever reaching the quest machinery, so credit is issued from
+    // code at the point the action actually succeeds.
+    constexpr uint32 NPC_CREDIT_KEYSTONE_ACQUIRED = 800060;    // quest 820063
+    constexpr uint32 NPC_CREDIT_MYTHIC_RUN_DONE = 800061;      // quest 820064
+    constexpr uint32 NPC_CREDIT_ITEM_UPGRADED = 800062;        // quest 820065
+    constexpr uint32 NPC_CREDIT_HEIRLOOM_UPGRADED = 800063;    // quest 820066
+
+    // =========================================================================
     // Zone IDs
     // =========================================================================
     constexpr uint32 ZONE_GM_ISLAND = 876;                     // GM Island (for guildhouse)

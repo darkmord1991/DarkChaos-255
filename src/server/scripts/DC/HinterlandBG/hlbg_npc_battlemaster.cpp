@@ -87,6 +87,11 @@ public:
         if (!player || !creature)
             return false;
 
+        // Onboarding quest 820068 "The Hinterlands Burn" - credited above the
+        // availability check so a temporarily disabled battleground does not leave
+        // the player stuck on an objective that is only "go and be briefed".
+        player->TalkedToCreature(creature->GetEntry(), creature->GetGUID());
+
         if (!IsBattlegroundQueueAvailable())
         {
             ChatHandler(player->GetSession()).SendNotification("HLBG system is not available right now.");

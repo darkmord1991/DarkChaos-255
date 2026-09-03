@@ -11,6 +11,7 @@
 #include "ScriptedGossip.h"
 #include "dc_mythicplus_run_manager.h"
 #include "dc_mythicplus_constants.h"
+#include "DC/dc_constants.h"
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "ObjectGuid.h"
@@ -195,6 +196,12 @@ public:
                     ChatHandler(player->GetSession()).SendSysMessage(ss.str().c_str());
                     player->SendNewItem(keystoneItem, 1, true, false);
                     LOG_INFO("mythic.keystone", "Player {} received M+{} keystone successfully", player->GetName(), keystoneLevel);
+
+                    // Onboarding quest 820063 "A Key to the Deeps". Credited on the
+                    // handover rather than through RequiredItemId, because a required
+                    // item is destroyed at turn-in and the keystone is the whole point
+                    // of the quest.
+                    player->KilledMonsterCredit(DCConstants::NPC_CREDIT_KEYSTONE_ACQUIRED);
                 }
                 else
                 {

@@ -5,6 +5,7 @@
 
 #include "dc_mythicplus_run_manager.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
+#include "DC/dc_constants.h"
 
 #include "Chat.h"
 #include "Config.h"
@@ -876,6 +877,12 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
             {
                 SendRunSummary(state, player);
                 ProcessAchievements(state, player, true);
+
+                // Onboarding quest 820064 "Into the Breach" - one credit per
+                // participant, only on the success path (this block is unreachable
+                // for a failed or timed-out-and-abandoned run). Harmless for anyone
+                // not holding the quest.
+                player->KilledMonsterCredit(DCConstants::NPC_CREDIT_MYTHIC_RUN_DONE);
 
                 // Group Finder Reward
                 if (DCAddon::sGroupFinderMgr.IsEnabled())

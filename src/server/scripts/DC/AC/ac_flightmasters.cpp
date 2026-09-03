@@ -67,6 +67,15 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        // Onboarding quest 820061 "Wings Over the Crater" - credit before the taxi
+        // frame takes over. OpenFlightMap answers the client with SendTaxiMenu and
+        // this hook returns true, so nothing downstream ever reaches the quest
+        // machinery; the objective only completes if the credit is issued here.
+        // Credits the entry actually spoken to, so the quest's 800010 (Startcamp)
+        // objective is satisfied by that camp's master and not by any of the others.
+        if (player && creature)
+            player->TalkedToCreature(creature->GetEntry(), creature->GetGUID());
+
         return OpenFlightMap(player, creature);
     }
 };

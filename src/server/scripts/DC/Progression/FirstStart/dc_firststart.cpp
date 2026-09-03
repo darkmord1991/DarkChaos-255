@@ -124,6 +124,11 @@ namespace DCFirstStart
         constexpr char const* HYJAL_CALL_LEVEL = "DCFirstStart.HyjalCall.Level";
         constexpr char const* HYJAL_CALL_QUEST_ALLIANCE = "DCFirstStart.HyjalCall.QuestAlliance";
         constexpr char const* HYJAL_CALL_QUEST_HORDE = "DCFirstStart.HyjalCall.QuestHorde";
+
+        // Systems primer: the level-80 breadcrumb to the Jade Forest player base.
+        constexpr char const* SYSTEMS_PRIMER_ENABLE = "DCFirstStart.SystemsPrimer.Enable";
+        constexpr char const* SYSTEMS_PRIMER_LEVEL = "DCFirstStart.SystemsPrimer.Level";
+        constexpr char const* SYSTEMS_PRIMER_QUEST = "DCFirstStart.SystemsPrimer.QuestId";
         constexpr char const* STARTER_GUILD_ENABLE = "DCFirstStart.StarterGuild.Enable";
         constexpr char const* STARTER_GUILD_NAME_ALLIANCE = "DCFirstStart.StarterGuild.NameAlliance";
         constexpr char const* STARTER_GUILD_NAME_HORDE = "DCFirstStart.StarterGuild.NameHorde";
@@ -780,6 +785,55 @@ namespace DCFirstStart
             LOG_INFO("module.dc", "[DCFirstStart] Granted Hyjal call quest {} to {}", questId, player->GetName());
     }
 
+    // Onboarding: at level 80 the player is handed "A Wider World" (820062), the
+    // breadcrumb to the Jade Forest player base and the head of the systems primer -
+    // Mythic+ keystones, item and heirloom upgrades, guild housing and the HLBG.
+    // Level 80 is the gate because that is where npc_keystone_vendor starts issuing
+    // keystones at all; everything else in the line is reachable from the same hub.
+    //
+    // Called from BOTH the level-up hook and every login, exactly like GrantHyjalCall:
+    // the level-up path is the normal one, and the login path retro-grants characters
+    // that were already past 80 before this shipped and retries anyone whose quest log
+    // was full at level-up. The quest-status guard is what makes that safe to repeat.
+    void GrantSystemsPrimer(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::SYSTEMS_PRIMER_ENABLE, true))
+            return;
+
+        if (player->GetLevel() < sConfigMgr->GetOption<uint32>(Config::SYSTEMS_PRIMER_LEVEL, 80))
+            return;
+
+        uint32 questId = sConfigMgr->GetOption<uint32>(Config::SYSTEMS_PRIMER_QUEST, 820062);
+        if (!questId)
+            return;
+
+        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+        if (!quest)
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Systems primer quest {} not found in quest_template", questId);
+            return;
+        }
+
+        // Already in the log, handed in, or otherwise not takeable (log full):
+        // leave it alone and try again on the next login.
+        if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+            return;
+
+        if (!player->CanTakeQuest(quest, false) || !player->CanAddQuest(quest, false))
+        {
+            if (debug)
+                LOG_INFO("module.dc", "[DCFirstStart] {} cannot take systems primer quest {} (requirements or full log)",
+                         player->GetName(), questId);
+            return;
+        }
+
+        player->AddQuestAndCheckCompletion(quest, nullptr);
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCFirstStart] Granted systems primer quest {} to {}", questId, player->GetName());
+    }
+
     // Onboarding: transfer starter-guild leadership to a dedicated "system"
     // character so no real player ever owns/controls it. The system character
     // is created once by staff on an account nobody logs into (random/unknown
@@ -994,6 +1048,11 @@ public:
         // the level when the feature shipped.
         DCFirstStart::GrantHyjalCall(player, debug);
 
+        // Systems primer breadcrumb. Same rationale as the Hyjal call above: safe
+        // on every login, and this is what covers characters that were already past
+        // level 80 when the feature shipped.
+        DCFirstStart::GrantSystemsPrimer(player, debug);
+
         // Announce module if enabled
         bool announce = sConfigMgr->GetOption<bool>(
             DCFirstStart::Config::ANNOUNCE, false);
@@ -1070,6 +1129,11 @@ public:
             DCFirstStart::Config::HYJAL_CALL_LEVEL, 78);
         if (oldLevel < hyjalCallLevel && player->GetLevel() >= hyjalCallLevel)
             DCFirstStart::GrantHyjalCall(player, debug);
+
+        uint32 systemsPrimerLevel = sConfigMgr->GetOption<uint32>(
+            DCFirstStart::Config::SYSTEMS_PRIMER_LEVEL, 80);
+        if (oldLevel < systemsPrimerLevel && player->GetLevel() >= systemsPrimerLevel)
+            DCFirstStart::GrantSystemsPrimer(player, debug);
     }
 };
 

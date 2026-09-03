@@ -12,6 +12,7 @@
 #include "dc_addon_transmutation.h"
 #include "ScriptMgr.h"
 #include "DC/CrossSystem/SeasonResolver.h"
+#include "DC/dc_constants.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -891,6 +892,12 @@ namespace Upgrade
             maxLevel, nextTokenCost, nextEssenceCost, item->GetBagSlot(),
             item->GetSlot());
         SendCurrencyUpdate(player);
+
+        // Onboarding quest 820065 "Sharpening the Edge". Issued only once the
+        // upgrade has actually been persisted and the currency spent, so a refused
+        // upgrade never credits. Heirlooms take the separate HandleHeirloomUpgrade
+        // path and credit 820066 there instead.
+        player->KilledMonsterCredit(DCConstants::NPC_CREDIT_ITEM_UPGRADED);
     }
 
     // Handler: Package selection (migrated from itemupgrade_communication.lua)
@@ -1234,6 +1241,11 @@ namespace Upgrade
                 .Send(player);
 
             SendCurrencyUpdate(player);
+
+            // Onboarding quest 820066 "Legacies Remade" - credited on the persisted
+            // heirloom upgrade only. This runs inside the async callback, so the
+            // player pointer is the one re-resolved by the enclosing lambda.
+            player->KilledMonsterCredit(DCConstants::NPC_CREDIT_HEIRLOOM_UPGRADED);
         }));
     }
 

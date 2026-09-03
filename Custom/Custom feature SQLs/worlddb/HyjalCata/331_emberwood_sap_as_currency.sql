@@ -1,0 +1,120 @@
+-- ---------------------------------------------------------------------------
+-- 331  Emberwood Sap becomes a real currency
+-- ---------------------------------------------------------------------------
+-- 320_ deliberately left sap as a plain bag item and said why: the flag alone
+-- is not enough, the DBC row has to exist first. That row now does, so this
+-- finishes the job.
+--
+-- HOW IT WORKS (verified in source by 254_, not assumed):
+--   * `ItemTemplate::IsCurrencyToken()` is `BagFamily & 0x2000`
+--     (BAG_FAMILY_MASK_CURRENCY_TOKENS). That flag is what makes
+--     `Player::CanStoreItem` route the item into CURRENCYTOKEN_SLOT_START..END
+--     instead of a bag.
+--   * Storing it there calls `Player::AddKnownCurrency`, which sets the
+--     PLAYER_FIELD_KNOWN_CURRENCIES bit from the item's `CurrencyTypes.dbc`
+--     row, so the client draws it in the Currency tab under its category.
+--
+-- 🔴 ORDER MATTERS. Setting BagFamily WITHOUT a CurrencyTypes row moves the item
+-- out of the bags and gives the client nowhere to show it -- the sap becomes
+-- invisible and unspendable. The DBC half is done and deployed:
+--
+--     Custom/CSV DBC/CurrencyTypes.csv  row "397","400000","43","34"
+--     compiled -> Custom/DBCs/CurrencyTypes.dbc  (md5 b2f79f351b7b1d3e2e6da6d3726fa16a)
+--     deployed -> patch-4.MPQ (byte-identical verify) + all 3 candidate dirs
+--
+--   ID 397        next free (max was 396)
+--   ItemID 400000 Emberwood Sap
+--   CategoryID 43 "DarkChaos WoW" -- same category as the Upgrade Token and
+--                 Artifact Essence, so all three sit together in the tab
+--   BitIndex 34   next free (token 32, essence 33). Must be UNIQUE: it is the
+--                 bit in PLAYER_FIELD_KNOWN_CURRENCIES, and a collision makes
+--                 two currencies share one "known" flag.
+--
+-- 🔴 `CurrencyTypesEntry.ItemId` is the store's REAL index (DBCStructure.h:837,
+-- "used as real index") -- the row's own ID column is cosmetic. So never add a
+-- second row with ItemID 400000; it collides on the store's index.
+--
+-- 🔴 THE SERVER NEEDS THE NEW CurrencyTypes.dbc TOO. It is deployed to the
+-- client and the candidate dirs, but the worldserver reads its own copy on the
+-- Linux box. Copy `Custom/DBCs/CurrencyTypes.dbc` there and restart, or
+-- AddKnownCurrency will look up a row the server does not have.
+--
+-- ---------------------------------------------------------------------------
+-- THE STACK CAP, which would have quietly defeated this
+-- ---------------------------------------------------------------------------
+-- 🔴 A currency lives in ONE slot, so its `stackable` IS its ceiling. Sap is
+-- stackable 2500 today, and 326_ pays out 2,955 sap across a single continent
+-- run -- so the very first full clear would have hit the cap and started
+-- destroying overflow. The two working DC currencies are stackable 99,999,999
+-- and 9,999,999 for exactly this reason.
+--
+-- `maxcount` 50,000 is left ALONE: that is a deliberate holding ceiling, it is
+-- far above the ~10k a geared character spends, and unlike `stackable` it is
+-- not something the currency slot silently truncates.
+--
+-- ---------------------------------------------------------------------------
+-- SPENDING IS SAFE -- checked in source, not assumed
+-- ---------------------------------------------------------------------------
+-- Moving sap out of the bags would be a disaster if the code that charges for
+-- things only looked at bags: players would SEE their sap and be told they had
+-- none, or worse, be charged nothing. Both call paths were read:
+--
+--   Player::GetItemCount      PlayerStorage.cpp:331  -> loop at :339
+--   Player::DestroyItemCount  PlayerStorage.cpp:3193 -> loop at :3227
+--
+-- Both iterate `KEYRING_SLOT_START .. CURRENCYTOKEN_SLOT_END`, so they see the
+-- currency-token slots as well as the bags. The token vendor
+-- (GetItemCount + DestroyItemCount) and the upgrade manager both stay correct,
+-- and a player holding sap half in bags and half in the currency tab -- which
+-- is exactly what happens right after this file is applied -- is charged
+-- correctly from both.
+--
+-- Apply against acore_world. Idempotent. Needs a worldserver restart (item
+-- template reload) AND the server-side CurrencyTypes.dbc above.
+-- ---------------------------------------------------------------------------
+
+USE `acore_world`;
+
+-- ---------------------------------------------------------------------------
+-- 1. Raise the stack ceiling BEFORE flagging it
+-- ---------------------------------------------------------------------------
+-- Done first so there is never a moment where the item is a currency with a
+-- 2,500 cap.
+UPDATE `item_template`
+SET `stackable` = 99999999
+WHERE `entry` = 400000 AND `stackable` < 99999999;
+
+-- ---------------------------------------------------------------------------
+-- 2. Flag it as a currency token
+-- ---------------------------------------------------------------------------
+-- OR rather than assignment, so any other BagFamily bits survive.
+UPDATE `item_template`
+SET `BagFamily` = `BagFamily` | 0x2000
+WHERE `entry` = 400000;
+
+-- ---------------------------------------------------------------------------
+-- Trailer -- verification
+-- ---------------------------------------------------------------------------
+-- All three DC currencies now flagged (expect 3 rows, BagFamily & 8192 set):
+-- SELECT entry, name, BagFamily, stackable, maxcount FROM item_template
+-- WHERE entry IN (300311, 300312, 400000);
+--
+-- Sap specifically (expect BagFamily 8192, stackable 99999999):
+-- SELECT entry, name, BagFamily, stackable FROM item_template WHERE entry = 400000;
+--
+-- 🔴 The DBC side cannot be checked from the DB -- the `item_dbc` table is not a
+-- mirror, and there is no CurrencyTypes table in the world DB either. Verify in
+-- game instead:
+--   * open the Currency tab -> "DarkChaos WoW" should list Emberwood Sap
+--     alongside the Upgrade Token and Artifact Essence;
+--   * `.additem 400000 5` -> the 5 sap should land in the CURRENCY TAB, not a
+--     bag slot. If it lands in a bag, the server has not got the new
+--     CurrencyTypes.dbc; if it vanishes entirely, it has the flag but NOT the
+--     DBC row -- restore `BagFamily = 0` and fix the DBC first.
+--
+-- 🔴 EXISTING STACKS STAY IN BAGS. The core routes on ACQUISITION and does not
+-- sweep what players already hold (254_ hit the same thing with the token).
+-- They still count for spending -- GetItemCount includes both -- so this is
+-- cosmetic; players can move them across, or let the next sap they earn open
+-- the currency entry.
+-- ---------------------------------------------------------------------------

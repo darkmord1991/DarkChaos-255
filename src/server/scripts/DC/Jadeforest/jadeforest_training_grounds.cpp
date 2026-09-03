@@ -24,6 +24,7 @@
 #include "ObjectMgr.h"
 #include "Chat.h"
 #include "Containers.h"
+#include "DBCStores.h"
 #include "DatabaseEnv.h"
 #include "StringFormat.h"
 
@@ -91,6 +92,9 @@ namespace
         MixedRandom = 5,
     };
 
+    // Sentinel for TrainingConfig::bossVisualPool - roll across every expansion pool.
+    constexpr uint8 BOSS_VISUAL_POOL_ANY = 0xFF;
+
     enum class ArmorMode : uint8
     {
         Normal = 0,
@@ -116,6 +120,8 @@ namespace
         };
         LevelMode levelMode = LevelMode::Match;
         bool randomBossVisual = true;
+        // Index into the boss display pools, or BOSS_VISUAL_POOL_ANY to roll across all of them.
+        uint8 bossVisualPool = BOSS_VISUAL_POOL_ANY;
         enum class SpawnLocation : uint8
         {
             Anchor = 0,
@@ -220,7 +226,35 @@ namespace
         Vanilla = 0,
         TBC = 1,
         WotLK = 2,
+        Cataclysm = 3,
+        Pandaria = 4,          // Mists of Pandaria / Warlords of Draenor downports
+        Shadowlands = 5,       // Legion / Battle for Azeroth / Shadowlands downports
+        DarkChaos = 6,         // DC-original bosses and retroported models
+        Dragonflight = 7,
     };
+
+    constexpr uint8 BOSS_DISPLAY_POOL_COUNT = 8;
+
+    char const* BossDisplayPoolName(BossDisplayPoolId pool)
+    {
+        switch (pool)
+        {
+            case BossDisplayPoolId::Vanilla:     return "Classic";
+            case BossDisplayPoolId::TBC:         return "Burning Crusade";
+            case BossDisplayPoolId::WotLK:       return "Wrath of the Lich King";
+            case BossDisplayPoolId::Cataclysm:   return "Cataclysm";
+            case BossDisplayPoolId::Pandaria:    return "Pandaria / Draenor";
+            case BossDisplayPoolId::Shadowlands: return "Legion / BfA / Shadowlands";
+            case BossDisplayPoolId::DarkChaos:   return "Dark Chaos originals";
+            case BossDisplayPoolId::Dragonflight: return "Dragonflight";
+            default:                             return "Unknown";
+        }
+    }
+
+    // A boss model pasted onto a dummy keeps its own CreatureDisplayInfo scale, and the modern
+    // ones are enormous (Deathwing is 10x, Magmaw 7.5x) - unscaled they swallow the whole
+    // training area. Counter-scale the object so no visual renders larger than this.
+    constexpr float MAX_BOSS_VISUAL_SCALE = 4.0f;
 
     struct WeightedDisplay
     {
@@ -228,8 +262,8 @@ namespace
         float weight = 1.0f;
     };
 
-    static std::array<std::vector<WeightedDisplay>, 3> s_bossDisplayPools;
-    static std::array<bool, 3> s_bossDisplayPoolsLoaded = { false, false, false };
+    static std::array<std::vector<WeightedDisplay>, BOSS_DISPLAY_POOL_COUNT> s_bossDisplayPools;
+    static std::array<bool, BOSS_DISPLAY_POOL_COUNT> s_bossDisplayPoolsLoaded = {};
 
     uint8 PoolIndex(BossDisplayPoolId pool)
     {
@@ -305,15 +339,53 @@ namespace
         if (!creature || !displayId)
             return;
 
-        creature->SetDisplayId(displayId);
+        // The model carries its own scale from CreatureDisplayInfo.dbc; shrink the object back
+        // down when that would render something absurdly large on a training pad. Feed it through
+        // SetDisplayId so bounding radius and combat reach are recomputed against the same scale.
+        float scale = 1.0f;
+        if (CreatureDisplayInfoEntry const* info = sCreatureDisplayInfoStore.LookupEntry(displayId))
+            if (info->scale > MAX_BOSS_VISUAL_SCALE)
+                scale = MAX_BOSS_VISUAL_SCALE / info->scale;
+
+        creature->SetDisplayId(displayId, scale);
         creature->SetNativeDisplayId(displayId);
     }
 
-    uint32 TryPickBossVisualDisplayId()
+    // Roll across every populated pool at once, so a rare expansion isn't over-represented just
+    // because it has fewer models than Classic.
+    uint32 PickFromAnyBossDisplayPool()
     {
-        // Pick an expansion pool at random.
-        BossDisplayPoolId pool = BossDisplayPoolId(urand(0, 2));
-        return PickFromBossDisplayPool(pool);
+        float total = 0.0f;
+        for (uint8 idx = 0; idx < BOSS_DISPLAY_POOL_COUNT; ++idx)
+        {
+            LoadBossDisplayPoolIfNeeded(BossDisplayPoolId(idx));
+            total += float(s_bossDisplayPools[idx].size());
+        }
+
+        if (total <= 0.0f)
+            return 0;
+
+        float roll = frand(0.0f, total);
+        for (uint8 idx = 0; idx < BOSS_DISPLAY_POOL_COUNT; ++idx)
+        {
+            if (s_bossDisplayPools[idx].empty())
+                continue;
+
+            roll -= float(s_bossDisplayPools[idx].size());
+            if (roll <= 0.0f)
+                return PickFromBossDisplayPool(BossDisplayPoolId(idx));
+        }
+
+        return 0;
+    }
+
+    uint32 TryPickBossVisualDisplayId(uint8 poolFilter)
+    {
+        if (poolFilter < BOSS_DISPLAY_POOL_COUNT)
+            if (uint32 displayId = PickFromBossDisplayPool(BossDisplayPoolId(poolFilter)))
+                return displayId;
+
+        return PickFromAnyBossDisplayPool();
     }
 
     float GetArmorMultiplier(ArmorMode mode)
@@ -531,7 +603,7 @@ namespace
         bool visualApplied = false;
         if (allowVisual && cfg.randomBossVisual)
         {
-            if (uint32 displayId = TryPickBossVisualDisplayId())
+            if (uint32 displayId = TryPickBossVisualDisplayId(cfg.bossVisualPool))
             {
                 ApplyDisplayId(me, displayId);
                 visualApplied = true;
@@ -604,6 +676,10 @@ namespace
         ACTION_LEVEL_255 = 606,
 
         ACTION_VISUAL_TOGGLE = 700,
+        ACTION_OPEN_VISUAL_POOL_MENU = 710,
+        // 720 + pool index; 720 itself means "any expansion".
+        ACTION_VISUAL_POOL_ANY = 720,
+        ACTION_VISUAL_POOL_FIRST = 721,
 
         ACTION_SPAWNLOC_ANCHOR = 800,
         ACTION_SPAWNLOC_MASTER = 801,
@@ -665,6 +741,25 @@ namespace
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
     }
 
+    void BuildVisualPoolMenu(Player* player, Creature* creature)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Boss models: Any expansion", GOSSIP_SENDER_MAIN, ACTION_VISUAL_POOL_ANY);
+
+        for (uint8 idx = 0; idx < BOSS_DISPLAY_POOL_COUNT; ++idx)
+        {
+            LoadBossDisplayPoolIfNeeded(BossDisplayPoolId(idx));
+            if (s_bossDisplayPools[idx].empty())
+                continue;
+
+            std::string text = Acore::StringFormat("Boss models: {} ({})",
+                BossDisplayPoolName(BossDisplayPoolId(idx)), s_bossDisplayPools[idx].size());
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, text.c_str(), GOSSIP_SENDER_MAIN, uint32(ACTION_VISUAL_POOL_FIRST) + idx);
+        }
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+    }
+
     void BuildMainMenu(Player* player, Creature* creature)
     {
         TrainingConfig const& cfg = GetOrCreateConfig(player);
@@ -716,6 +811,14 @@ namespace
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, cfg.randomBossVisual ? "Visual: Random boss (toggle)" : "Visual: Dummy model (toggle)", GOSSIP_SENDER_MAIN, ACTION_VISUAL_TOGGLE);
 
+        if (cfg.randomBossVisual)
+        {
+            std::string poolText = cfg.bossVisualPool < BOSS_DISPLAY_POOL_COUNT
+                ? Acore::StringFormat("Boss models: {}", BossDisplayPoolName(BossDisplayPoolId(cfg.bossVisualPool)))
+                : std::string("Boss models: Any expansion");
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, poolText.c_str(), GOSSIP_SENDER_MAIN, ACTION_OPEN_VISUAL_POOL_MENU);
+        }
+
         // Spawn location
         char const* spawnLocText = "Spawn location: Center (Temple Grounds)";
         switch (cfg.spawnLocation)
@@ -752,6 +855,15 @@ namespace
         float z;
         float o;
     };
+
+    // There are only three physical pads but seven expansion pools, so each pad owns a themed
+    // group and rerolls inside it. Pad 0 = classic era, pad 1 = Cataclysm/Pandaria, pad 2 = modern.
+    static constexpr std::array<std::array<BossDisplayPoolId, 3>, 3> BossPadPoolGroups =
+    { {
+        { BossDisplayPoolId::Vanilla,     BossDisplayPoolId::TBC,         BossDisplayPoolId::WotLK },
+        { BossDisplayPoolId::Cataclysm,   BossDisplayPoolId::Pandaria,    BossDisplayPoolId::Cataclysm },
+        { BossDisplayPoolId::Shadowlands, BossDisplayPoolId::Dragonflight, BossDisplayPoolId::DarkChaos },
+    } };
 
     static constexpr PadCoord BossPadCoords[3] =
     {
@@ -891,13 +1003,11 @@ namespace
             {
                 s_bossPadGuids[pad] = dummy->GetGUID();
 
-                BossDisplayPoolId pool = BossDisplayPoolId(pad); // 0=vanilla, 1=TBC, 2=WotLK
-
                 // Try to keep the three pads visually distinct.
                 uint32 displayId = 0;
                 for (uint8 attempt = 0; attempt < 20; ++attempt)
                 {
-                    displayId = PickFromBossDisplayPool(pool);
+                    displayId = PickFromBossDisplayPool(BossPadPoolGroups[pad][urand(0, 2)]);
                     if (!displayId || usedDisplayIds.count(displayId))
                         continue;
                     break;
@@ -1235,6 +1345,28 @@ public:
 
         static constexpr uint32 DISPLAY_REROLL_INTERVAL_MS = 60u * 60u * 1000u; // 1 hour
 
+        // Which expansion pool this pad should draw from: the themed group of the pad it stands
+        // on, or any pool at all when the dummy isn't sitting on a known pad.
+        BossDisplayPoolId ResolvePadPool() const
+        {
+            float bestDist = 999999.0f;
+            int8 bestPad = -1;
+            for (int8 i = 0; i < 3; ++i)
+            {
+                float dist = me->GetDistance(BossPadCoords[i].x, BossPadCoords[i].y, BossPadCoords[i].z);
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestPad = i;
+                }
+            }
+
+            if (bestPad >= 0 && bestDist <= 25.0f)
+                return BossPadPoolGroups[uint8(bestPad)][urand(0, 2)];
+
+            return BossDisplayPoolId(urand(0, uint32(BOSS_DISPLAY_POOL_COUNT) - 1));
+        }
+
         uint32 resetTimer = 5000;
         uint32 rerollTimer = DISPLAY_REROLL_INTERVAL_MS;
         uint32 forcedDisplayId = 0;
@@ -1259,23 +1391,9 @@ public:
             if (!forcedDisplayId)
             {
                 // If this is a pad dummy, choose the pool based on the closest pad location.
-                BossDisplayPoolId pool = BossDisplayPoolId(urand(0, 2));
-                float bestDist = 999999.0f;
-                int8 bestPad = -1;
-                for (int8 i = 0; i < 3; ++i)
-                {
-                    float dist = me->GetDistance(BossPadCoords[i].x, BossPadCoords[i].y, BossPadCoords[i].z);
-                    if (dist < bestDist)
-                    {
-                        bestDist = dist;
-                        bestPad = i;
-                    }
-                }
-
-                if (bestPad >= 0 && bestDist <= 25.0f)
-                    pool = BossDisplayPoolId(uint8(bestPad)); // 0=Vanilla, 1=TBC, 2=WotLK
-
-                forcedDisplayId = PickFromBossDisplayPool(pool);
+                forcedDisplayId = PickFromBossDisplayPool(ResolvePadPool());
+                if (!forcedDisplayId)
+                    forcedDisplayId = PickFromAnyBossDisplayPool();
             }
 
             if (forcedDisplayId)
@@ -1312,29 +1430,14 @@ public:
             {
                 if (rerollTimer <= diff)
                 {
-                    BossDisplayPoolId pool = BossDisplayPoolId(urand(0, 2));
-                    float bestDist = 999999.0f;
-                    int8 bestPad = -1;
-                    for (int8 i = 0; i < 3; ++i)
-                    {
-                        float dist = me->GetDistance(BossPadCoords[i].x, BossPadCoords[i].y, BossPadCoords[i].z);
-                        if (dist < bestDist)
-                        {
-                            bestDist = dist;
-                            bestPad = i;
-                        }
-                    }
-
-                    if (bestPad >= 0 && bestDist <= 25.0f)
-                        pool = BossDisplayPoolId(uint8(bestPad)); // 0=Vanilla, 1=TBC, 2=WotLK
-
-                    // Try to pick a different display than the current one.
+                    // Try to pick a different display than the current one. Reroll the pool too,
+                    // so a pad cycles through its whole themed group rather than one expansion.
                     uint32 newDisplayId = 0;
                     for (uint8 attempt = 0; attempt < 20; ++attempt)
                     {
-                        newDisplayId = PickFromBossDisplayPool(pool);
+                        newDisplayId = PickFromBossDisplayPool(ResolvePadPool());
                         if (!newDisplayId)
-                            break;
+                            continue;
                         if (newDisplayId != me->GetDisplayId())
                             break;
                     }
@@ -1422,6 +1525,9 @@ public:
                 return true;
             case ACTION_OPEN_SPAWNLOC_MENU:
                 BuildSpawnLocationMenu(player, creature);
+                return true;
+            case ACTION_OPEN_VISUAL_POOL_MENU:
+                BuildVisualPoolMenu(player, creature);
                 return true;
             case ACTION_BACK:
                 BuildMainMenu(player, creature);
@@ -1548,7 +1654,13 @@ public:
                 cfg.randomBossVisual = !cfg.randomBossVisual;
                 break;
 
+            case ACTION_VISUAL_POOL_ANY:
+                cfg.bossVisualPool = BOSS_VISUAL_POOL_ANY;
+                break;
+
             default:
+                if (action >= uint32(ACTION_VISUAL_POOL_FIRST) && action < uint32(ACTION_VISUAL_POOL_FIRST) + BOSS_DISPLAY_POOL_COUNT)
+                    cfg.bossVisualPool = uint8(action - ACTION_VISUAL_POOL_FIRST);
                 break;
         }
 

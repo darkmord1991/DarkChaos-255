@@ -441,39 +441,76 @@ namespace
             // Main hand weapons - allow various types based on class
             std::vector<uint8> allowedTypes;
 
+            // 🔴 These are the 3.3.5 WEAPON PROFICIENCIES, class by class. They
+            // were previously grouped for brevity and that produced weapons the
+            // class cannot equip at all:
+            //   * Paladin inherited POLEARM from the Warrior/DK group -- Paladins
+            //     have no polearm skill in WotLK.
+            //   * Priest inherited SWORD from the Mage/Warlock group -- Priests
+            //     have no sword skill, and their 1H MACE was missing entirely.
+            //   * Shaman was missing DAGGER, Druid was missing FIST, and Hunter
+            //     was missing the two-handed axe/sword it actually uses.
+            // Grouping classes that merely look similar is what caused all of it,
+            // so every class now gets its own list even where two repeat.
             switch (playerClass)
             {
                 case CLASS_WARRIOR:
-                case CLASS_PALADIN:
-                case CLASS_DEATH_KNIGHT:
-                    allowedTypes = { ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2,
-                        ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
                         ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                        ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2,
+                        ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF,
+                        ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
+                    break;
+                case CLASS_PALADIN:
+                    // No polearm, staff, dagger or fist.
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                        ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2 };
+                    break;
+                case CLASS_DEATH_KNIGHT:
+                    // Polearm yes; no staff, dagger or fist.
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
+                        ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2,
                         ITEM_SUBCLASS_WEAPON_POLEARM };
                     break;
                 case CLASS_HUNTER:
-                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_SWORD,
-                        ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF };
+                    // No mace of any kind.
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
+                        ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_SWORD2,
+                        ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_STAFF,
+                        ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_FIST };
                     break;
                 case CLASS_ROGUE:
+                    // One-handed only -- no two-handed weapon of any kind.
                     allowedTypes = { ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_SWORD,
-                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_FIST };
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_AXE,
+                        ITEM_SUBCLASS_WEAPON_FIST };
                     break;
                 case CLASS_DRUID:
+                    // No axe, sword or bow of any kind.
                     allowedTypes = { ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
                         ITEM_SUBCLASS_WEAPON_DAGGER, ITEM_SUBCLASS_WEAPON_STAFF,
-                        ITEM_SUBCLASS_WEAPON_POLEARM };
+                        ITEM_SUBCLASS_WEAPON_POLEARM, ITEM_SUBCLASS_WEAPON_FIST };
                     break;
                 case CLASS_SHAMAN:
+                    // Axes and fist weapons ARE correct for Shaman in 3.3.5;
+                    // dagger was the one genuinely missing. No sword, no polearm.
                     allowedTypes = { ITEM_SUBCLASS_WEAPON_AXE, ITEM_SUBCLASS_WEAPON_AXE2,
                         ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_MACE2,
-                        ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST };
+                        ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_FIST,
+                        ITEM_SUBCLASS_WEAPON_DAGGER };
+                    break;
+                case CLASS_PRIEST:
+                    // Dagger, one-handed mace, staff, wand. NO sword.
+                    allowedTypes = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
+                        ITEM_SUBCLASS_WEAPON_MACE, ITEM_SUBCLASS_WEAPON_WAND };
                     break;
                 case CLASS_MAGE:
-                case CLASS_PRIEST:
                 case CLASS_WARLOCK:
+                    // Dagger, one-handed sword, staff, wand. NO mace.
                     allowedTypes = { ITEM_SUBCLASS_WEAPON_STAFF, ITEM_SUBCLASS_WEAPON_DAGGER,
-                        ITEM_SUBCLASS_WEAPON_SWORD };
+                        ITEM_SUBCLASS_WEAPON_SWORD, ITEM_SUBCLASS_WEAPON_WAND };
                     break;
                 default:
                     break;
@@ -589,20 +626,6 @@ namespace
         return choices;
     }
 
-    // Vendor entry behind the player's live UI session. The addon handlers get
-    // no Creature*, but the session records which vendor was opened, and that
-    // decides both the tier ladder and the currency. Returns 0 when there is no
-    // valid session, which GetVendorCurrencyItemId/GetItemCost treat as the
-    // Mythic+ vendor -- a stale session can never silently switch currencies.
-    static uint32 GetSessionVendorEntry(Player* player)
-    {
-        Creature* vendor = nullptr;
-        if (player && IsVendorSessionValid(player, &vendor) && vendor)
-            return vendor->GetEntry();
-
-        return 0;
-    }
-
     static void SendVendorState(Player* player)
     {
         if (!player)
@@ -612,11 +635,21 @@ namespace
             return;
 
         uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
-        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(GetSessionVendorEntry(player)), true);
+        // Resolve the vendor from the creature itself. A helper used to do this and
+        // answered 0 on a lookup miss; GetVendorCurrencyItemId(0) silently means
+        // "Upgrade Token", so a miss flipped the sap vendor's icon and label on a
+        // refresh. All three handlers now read the validated creature instead.
+        Creature* stateVendor = nullptr;
+        uint32 const stateVendorEntry =
+            (IsVendorSessionValid(player, &stateVendor) && stateVendor) ? stateVendor->GetEntry() : 0;
+        uint32 const stateCurrencyId = GetVendorCurrencyItemId(stateVendorEntry);
+        uint32 tokenCount = player->GetItemCount(stateCurrencyId, true);
 
         DCAddon::JsonMessage msg(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_STATE);
         msg.Set("essence", currentEssence);
         msg.Set("tokens", tokenCount);
+        msg.Set("currencyItemId", stateCurrencyId);
+        msg.Set("currencyName", GetVendorCurrencyName(stateVendorEntry));
         msg.Send(player);
     }
 
@@ -648,19 +681,43 @@ namespace
             }
         }
 
-        if (itemLevel < 200 || itemLevel > 252 || slot == 0)
+        if (slot == 0 || itemLevel == 0)
         {
             SendVendorResult(player, false, "Invalid selection.");
             return;
         }
 
-        if (!IsVendorSessionValid(player))
+        // 🔴 Take the vendor from the creature we just validated, NOT from a second
+        // session lookup. The old helper returned 0 when the lookup missed, and
+        // GetVendorCurrencyItemId(0) silently answers "Upgrade Token" -- so a miss here
+        // made the sap vendor report the level-80 token (the icon visibly flipped after
+        // the first slot click). One lookup, no fallback path, and the currency cannot
+        // disagree with the OPEN packet.
+        Creature* vendorCreature = nullptr;
+        if (!IsVendorSessionValid(player, &vendorCreature) || !vendorCreature)
         {
             SendVendorResult(player, false, "Please talk to the vendor again.");
             return;
         }
 
-        uint32 const vendorEntry = GetSessionVendorEntry(player);
+        uint32 const vendorEntry = vendorCreature->GetEntry();
+
+        // 🔴 Validate the rung against THIS vendor's ladder, never a hardcoded
+        // range. This check used to read `itemLevel < 200 || itemLevel > 252`,
+        // which silently rejected the level-130 vendor's 412/450 rungs: the addon
+        // UI opened, drew the tier buttons from the server's own payload, and
+        // then got "Invalid selection." for every one of them -- an empty item
+        // list with no visible cause. Deriving the valid set from GetVendorTiers
+        // means adding a rung can never again leave this behind.
+        {
+            std::vector<uint32> const validTiers = GetVendorTiers(vendorEntry);
+            if (std::find(validTiers.begin(), validTiers.end(), itemLevel) == validTiers.end())
+            {
+                SendVendorResult(player, false, Acore::StringFormat(
+                    "Item level {} is not sold here.", itemLevel));
+                return;
+            }
+        }
         uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(vendorEntry), true);
         uint32 cost = GetItemCost(vendorEntry, itemLevel);
 
@@ -686,6 +743,8 @@ namespace
         resp.Set("slot", slot);
         resp.Set("cost", cost);
         resp.Set("tokens", tokenCount);
+        resp.Set("currencyItemId", GetVendorCurrencyItemId(vendorEntry));
+        resp.Set("currencyName", GetVendorCurrencyName(vendorEntry));
 
         DCAddon::JsonValue arr;
         arr.SetArray();
@@ -734,11 +793,20 @@ namespace
             return;
         }
 
-        if (!IsVendorSessionValid(player))
+        // 🔴 Resolve the vendor HERE, from the creature we validate, and carry it
+        // down. This is the PURCHASE path: re-deriving the entry lower down from the
+        // session would answer 0 on a lookup miss, and GetVendorCurrencyItemId(0) /
+        // GetItemCost(0, ...) both fall back to the level-80 Upgrade Token -- charging
+        // 15 tokens for a 120-sap item: wrong currency AND wrong price, in the buyer's
+        // favour. Never re-derive the vendor after validating it.
+        Creature* buyVendor = nullptr;
+        if (!IsVendorSessionValid(player, &buyVendor) || !buyVendor)
         {
             SendVendorResult(player, false, "Please talk to the vendor again.");
             return;
         }
+
+        uint32 const vendorEntry = buyVendor->GetEntry();
 
         // Security: only allow purchases from the choice list we actually
         // offered this player, for the same slot and tier they asked about.
@@ -769,7 +837,6 @@ namespace
             return;
         }
 
-        uint32 const vendorEntry = GetSessionVendorEntry(player);
         uint32 const currencyId = GetVendorCurrencyItemId(vendorEntry);
         uint32 cost = GetItemCost(vendorEntry, itemTemplate->ItemLevel);
         uint32 tokenCount = player->GetItemCount(currencyId, true);
@@ -915,9 +982,15 @@ namespace
         std::string armorType = GetArmorTypeForClass(player->getClass());
 
         DCAddon::JsonMessage open(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_OPEN);
+        // `tokens` carries THIS VENDOR's currency balance, whichever it is -- the
+        // field name is historical. currencyItemId/currencyName say which, so the
+        // UI can draw the right icon and label instead of assuming the Mythic+
+        // token; without them a sap balance renders under a coin icon.
         open.Set("tokens", tokenCount);
         open.Set("essence", currentEssence);
         open.Set("armorType", armorType);
+        open.Set("currencyItemId", GetVendorCurrencyItemId(vendorEntry));
+        open.Set("currencyName", GetVendorCurrencyName(vendorEntry));
 
         // Tier definitions (for UI rendering)
         DCAddon::JsonValue tiers;

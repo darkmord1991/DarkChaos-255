@@ -155,6 +155,13 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        // Onboarding quest 820060 "Roads Beyond the Rim" - credit before the menu is
+        // built. This hook returns true, so the gossip window never reaches the quest
+        // machinery in PlayerMenu; without an explicit credit here the objective can
+        // never complete. Same trap quest 820059 hit with the Challenge Mode Manager.
+        if (player && creature)
+            player->TalkedToCreature(creature->GetEntry(), creature->GetGUID());
+
         ShowMenu(player, creature, 0);
         return true;
     }
