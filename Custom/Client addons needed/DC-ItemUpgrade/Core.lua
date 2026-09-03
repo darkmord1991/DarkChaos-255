@@ -91,6 +91,8 @@ DC.showItemIDsInTooltips = true;
 -- Item IDs for currency icons
 DC.TOKEN_ITEM_ID = nil;
 DC.ESSENCE_ITEM_ID = nil;
+-- Emberwood Sap: the Hyjal Frontier zone currency that pays for tier 4/5.
+DC.SAP_ITEM_ID = nil;
 
 -- UI Mode: "STANDARD" or "HEIRLOOM"
 DC.uiMode = "STANDARD";
@@ -166,6 +168,7 @@ end
 -- Player currency
 DC.playerTokens = 0;
 DC.playerEssence = 0;
+DC.playerSap = 0;
 
 -- Current item being upgraded
 DC.currentItem = nil;
@@ -340,6 +343,10 @@ function DC.NormalizeTierDefinition(row)
 			row.statMultiplierMax or row.StatMultiplierMax),
 		upgradeCostPerLevel = tonumber(
 			row.upgradeCostPerLevel or row.UpgradeCostPerLevel) or 0,
+		-- Which currency this tier is charged in (1 token, 2 essence, 3 sap).
+		-- Defaults to 1 so a tier row from an older server still renders.
+		currencyType = tonumber(row.currencyType or row.CurrencyType) or 1,
+		currencyItemId = tonumber(row.currencyItemId or row.CurrencyItemId) or 0,
 		isArtifact = tonumber(row.isArtifact or row.IsArtifact) or 0,
 		enabled = tonumber(row.enabled or row.Enabled) or 0,
 		colorARGB = colorARGB,
@@ -689,6 +696,33 @@ function DC.GetTierDefinition(tier)
 
 	local tierId = tonumber(tier) or 1;
 	return DC.TIER_DEFINITIONS[tierId] or DC.TIER_DEFINITIONS[1];
+end
+
+-- Item id whose icon represents the COST of `tier`. Tiers 4 and 5 are charged
+-- in Emberwood Sap rather than the generic Upgrade Token, so the cost widget
+-- must not hardcode DC.TOKEN_ITEM_ID -- that would draw a token icon beside a
+-- sap price. Falls back to the token for servers that send no currencyItemId.
+function DC.GetTierCurrencyItemId(tier)
+	local definition = DC.GetTierDefinition(tier);
+	local itemId = definition and tonumber(definition.currencyItemId) or 0;
+	if itemId > 0 then
+		return itemId;
+	end
+
+	return DC.TOKEN_ITEM_ID;
+end
+
+-- Balance the player holds of whatever `tier` is charged in.
+function DC.GetTierCurrencyBalance(tier)
+	local definition = DC.GetTierDefinition(tier);
+	local currencyType = definition and tonumber(definition.currencyType) or 1;
+	if currencyType == 2 then
+		return DC.playerEssence or 0;
+	elseif currencyType == 3 then
+		return DC.playerSap or 0;
+	end
+
+	return DC.playerTokens or 0;
 end
 
 function DC.GetTierDisplayName(tier)
@@ -1203,6 +1237,7 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("Celebration: " .. statusColor(DC_ItemUpgrade_Settings.showCelebration));
 		DEFAULT_CHAT_FRAME:AddMessage("Tokens: |cffffcc00" .. (DC.playerTokens or 0) .. "|r");
 		DEFAULT_CHAT_FRAME:AddMessage("Essence: |cffffcc00" .. (DC.playerEssence or 0) .. "|r");
+		DEFAULT_CHAT_FRAME:AddMessage("Emberwood Sap: |cffffcc00" .. (DC.playerSap or 0) .. "|r");
 		if DC.selectedStatPackage and DC.STAT_PACKAGES and DC.STAT_PACKAGES[DC.selectedStatPackage] then
 			local pkg = DC.STAT_PACKAGES[DC.selectedStatPackage];
 			DEFAULT_CHAT_FRAME:AddMessage("Package: " .. pkg.name);
@@ -1474,8 +1509,10 @@ function DC.RegisterDCProtocolHandlers()
 		
 		local tokens = data.tokens
 		local essence = data.essence
+		local sap = data.sap
 		local tokenId = data.tokenId or data.tokenID
 		local essenceId = data.essenceId or data.essenceID
+		local sapId = data.sapId or data.sapID
 		
 		if tokens and essence then
 			DC.playerTokens = tonumber(tokens) or 0;
@@ -1486,9 +1523,17 @@ function DC.RegisterDCProtocolHandlers()
 			if essenceId then
 				DC.ESSENCE_ITEM_ID = tonumber(essenceId) or DC.ESSENCE_ITEM_ID;
 			end
+			-- Sap is optional: a server that predates tier 4/5 sap pricing sends
+			-- neither field, and the balance simply stays 0.
+			if sap then
+				DC.playerSap = tonumber(sap) or 0;
+			end
+			if sapId then
+				DC.SAP_ITEM_ID = tonumber(sapId) or DC.SAP_ITEM_ID;
+			end
 			
-			DC.Debug(string.format("Received SMSG_CURRENCY_UPDATE: %d tokens, %d essence",
-				DC.playerTokens, DC.playerEssence));
+			DC.Debug(string.format("Received SMSG_CURRENCY_UPDATE: %d tokens, %d essence, %d sap",
+				DC.playerTokens, DC.playerEssence, DC.playerSap or 0));
 			
 			-- Bridge: expose server currency into DCAddonProtocol's shared balance
 			local central = rawget(_G, "DCAddonProtocol")
@@ -1908,7 +1953,8 @@ function DC.CreateCommPanel()
 		Print("Active Mode: " .. DC.protocolMode)
 		Print("JSON Mode: " .. (DC.useDCProtocolJSON and "Enabled" or "Disabled"))
 		Print("Verbose: " .. (DC.verboseProtocol and "Enabled" or "Disabled"))
-		Print("Tokens: " .. (DC.playerTokens or 0) .. " | Essence: " .. (DC.playerEssence or 0))
+		Print("Tokens: " .. (DC.playerTokens or 0) .. " | Essence: " .. (DC.playerEssence or 0)
+			.. " | Sap: " .. (DC.playerSap or 0))
 	end)
 	
 	-- Row 1: Toggle buttons

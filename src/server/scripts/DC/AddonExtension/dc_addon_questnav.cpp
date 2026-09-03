@@ -13,6 +13,12 @@
  *      - ItemDrop1-4 -> creature_loot_template (creatures dropping source items)
  *      - RequiredItemId1-6 -> creature_loot_template (creatures dropping the
  *        required quest items - the classic "collect X bandanas" convention)
+ *    The set follows the quest's CURRENT status: once the quest is complete
+ *    the rings move to its creature quest enders (creature_questinvolvedrelation),
+ *    and the server pushes that swap the moment the status flips (the addon
+ *    keys its cache by quest AND status, so no re-request is needed). Reward
+ *    or abandon pushes an invalidation so a re-accepted repeatable quest is
+ *    resolved fresh.
  *
  * 2. Live coordinate resolve (CMSG_RESOLVE_QUEST): on-demand fallback for
  *    quests missing from the generated QuestMapData.lua (new content added
@@ -123,6 +129,90 @@ namespace QuestNav
         return entries;
     }
 
+    // ------------------------------------------------------------------------
+    // quest -> creature quest-ender reverse index over the involved-relation
+    // multimap (keyed entry -> quest). Built once on first use (world thread),
+    // immutable afterwards - static world data. Gameobject enders are skipped:
+    // rings render on units only.
+    // ------------------------------------------------------------------------
+    static std::unordered_map<uint32, std::vector<uint32>> const& GetTurnInIndex()
+    {
+        static std::unordered_map<uint32, std::vector<uint32>> const index = []()
+        {
+            std::unordered_map<uint32, std::vector<uint32>> map;
+            if (QuestRelations const* relations = sObjectMgr->GetCreatureQuestInvolvedRelationMap())
+            {
+                for (auto const& [entry, questId] : *relations)
+                {
+                    std::vector<uint32>& enders = map[questId];
+                    if (std::find(enders.begin(), enders.end(), entry) == enders.end())
+                        enders.push_back(entry);
+                }
+            }
+
+            LOG_INFO("dc.addon", "QuestNav (QNAV): indexed creature quest enders for {} quests", map.size());
+            return map;
+        }();
+        return index;
+    }
+
+    static std::vector<uint32> ResolveTurnInEntries(uint32 questId)
+    {
+        std::vector<uint32> entries;
+
+        auto const& index = GetTurnInIndex();
+        auto it = index.find(questId);
+        if (it != index.end())
+            for (uint32 entry : it->second)
+                PushUnique(entries, entry);
+
+        return entries;
+    }
+
+    // Ring set for the quest's CURRENT state: kill/loot sources while the
+    // objectives are open, the creature quest enders once it is complete,
+    // nothing otherwise (not in the log, rewarded, failed).
+    static std::vector<uint32> EntriesForStatus(Quest const* quest, QuestStatus status)
+    {
+        if (!quest)
+            return {};
+        if (status == QUEST_STATUS_COMPLETE)
+            return ResolveTurnInEntries(quest->GetQuestId());
+        if (status == QUEST_STATUS_INCOMPLETE)
+            return ResolveKillEntries(quest);
+        return {};
+    }
+
+    // SMSG_KILL_ENTRIES {q, c, e:[...]}: c=1 marks the turn-in set so the
+    // addon caches kill and turn-in rings under separate (quest, status) keys.
+    static void SendKillEntries(Player* player, uint32 questId, QuestStatus status)
+    {
+        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+        bool const turnIn = quest && status == QUEST_STATUS_COMPLETE;
+
+        JsonMessage reply(Module::QUEST_NAV, Opcode::QuestNav::SMSG_KILL_ENTRIES);
+        reply.Set("q", questId);
+        reply.Set("c", turnIn ? uint32(1) : uint32(0));
+
+        JsonValue list;
+        list.SetArray();
+        for (uint32 entry : EntriesForStatus(quest, status))
+            list.Push(JsonValue(entry));
+        reply.Set("e", list);
+
+        reply.Send(player);
+    }
+
+    // SMSG_KILL_ENTRIES {q, x:1}: the quest left the log (rewarded or
+    // abandoned). The addon drops both cached sets for it.
+    static void SendInvalidate(Player* player, uint32 questId)
+    {
+        JsonMessage reply(Module::QUEST_NAV, Opcode::QuestNav::SMSG_KILL_ENTRIES);
+        reply.Set("q", questId);
+        reply.Set("x", uint32(1));
+        reply.Send(player);
+    }
+
     static void HandleKillEntries(Player* player, ParsedMessage const& msg)
     {
         if (!player || !IsEnabled() || !IsJsonMessage(msg))
@@ -133,19 +223,7 @@ namespace QuestNav
             return;
 
         uint32 questId = req["q"].AsUInt32();
-        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-
-        JsonMessage reply(Module::QUEST_NAV, Opcode::QuestNav::SMSG_KILL_ENTRIES);
-        reply.Set("q", questId);
-
-        JsonValue list;
-        list.SetArray();
-        if (quest)
-            for (uint32 entry : ResolveKillEntries(quest))
-                list.Push(JsonValue(entry));
-        reply.Set("e", list);
-
-        reply.Send(player);
+        SendKillEntries(player, questId, player->GetQuestStatus(questId));
     }
 
     // ------------------------------------------------------------------------
@@ -351,7 +429,39 @@ namespace QuestNav
 } // namespace QuestNav
 } // namespace DCAddon
 
+// Status pushes: the addon keys its ring cache by (quest, status), so a
+// status change must reach it without waiting for a rate-capped re-request.
+class DCQuestNavPlayerScript : public PlayerScript
+{
+public:
+    DCQuestNavPlayerScript() : PlayerScript("DCQuestNavPlayerScript",
+        { PLAYERHOOK_ON_BEFORE_QUEST_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_QUEST_ABANDON }) { }
+
+    // Fires inside Player::CompleteQuest BEFORE the status flips to COMPLETE,
+    // so the turn-in set is resolved explicitly rather than via GetQuestStatus.
+    bool OnPlayerBeforeQuestComplete(Player* player, uint32 questId) override
+    {
+        if (player && DCAddon::QuestNav::IsEnabled())
+            DCAddon::QuestNav::SendKillEntries(player, questId, QUEST_STATUS_COMPLETE);
+        return true;
+    }
+
+    // Reward taken: the quest leaves the log.
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
+    {
+        if (player && quest && DCAddon::QuestNav::IsEnabled())
+            DCAddon::QuestNav::SendInvalidate(player, quest->GetQuestId());
+    }
+
+    void OnPlayerQuestAbandon(Player* player, uint32 questId) override
+    {
+        if (player && DCAddon::QuestNav::IsEnabled())
+            DCAddon::QuestNav::SendInvalidate(player, questId);
+    }
+};
+
 void AddSC_dc_addon_questnav()
 {
     DCAddon::QuestNav::RegisterQuestNavHandlers();
+    new DCQuestNavPlayerScript();
 }

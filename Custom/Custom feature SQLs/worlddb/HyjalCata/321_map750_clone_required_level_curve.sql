@@ -1,0 +1,157 @@
+-- ---------------------------------------------------------------------------
+-- 321  Map 750 -- RequiredLevel follows ItemLevel instead of the band floor
+-- ---------------------------------------------------------------------------
+-- 309_ assigned every clone `tgt_reqlvl = band_lo`, the FLOOR of the zone band
+-- it drops in. Verified live: all 2,536 equippable clones have
+-- RequiredLevel = tgt_reqlvl = band_lo, so each band is one flat value:
+--
+--   band          items   ItemLevel spread   RequiredLevel
+--   80-90           492      275 - 303        80  (flat)
+--   88-98         1,196      305 - 341        88  (flat)
+--   96-106          110      345 - 379        96  (flat)
+--   104-115         637      362 - 395       104  (flat)
+--   113-128         101      375 - 383       113  (flat)
+--
+-- 🔴 The defect is that a 28-to-36 point ItemLevel spread inside a band maps to
+-- ZERO level spread. The best drop in Winterspring (ilvl 395) and the worst
+-- (ilvl 362) both require exactly 104, though the ladder prices those two item
+-- levels ten levels apart.
+--
+-- ---------------------------------------------------------------------------
+-- THE CURVE -- fitted to the ladder's BLUES specifically
+-- ---------------------------------------------------------------------------
+-- 🔴 The 400xxx ladder contains TWO different ItemLevel -> RequiredLevel curves,
+-- and blending them produces a curve that matches neither:
+--
+--     Quality 3 (blue)   300->82   332->92   372->102  385->108
+--     Quality 4 (epic)   324->90   348->100  372->110  392->120  404->125  412->130
+--
+-- Note ilvl 372 appears in both, gated at 102 as a blue and 110 as an epic --
+-- quality shifts the gate by ~8 levels. A first attempt here least-squared all
+-- of them together and landed ~3 levels off at every point. Greens must be
+-- gated against BLUES (the next quality up, and the item they are compared
+-- against), so the fit uses Quality 3 only:
+--
+--     RequiredLevel = ROUND(0.294 * ItemLevel - 6.1)
+--
+-- which reproduces the authored blue ladder to within ONE level everywhere --
+-- exact at 300 and 332, +1 at 372, -1 at 385.
+--
+-- Then clamped into the item's own band:
+--
+--     RequiredLevel = LEAST(band_hi, GREATEST(band_lo, curve))
+--
+--   * GREATEST guarantees nothing becomes equippable EARLIER than today -- this
+--     can only raise a gate, never open one (verified: 0 items drop below
+--     their current RequiredLevel);
+--   * LEAST guarantees every drop is equippable before the player outlevels the
+--     zone that drops it -- nothing is farmable but unusable in place.
+--
+-- ---------------------------------------------------------------------------
+-- WHAT THIS ACTUALLY CHANGES -- measured before applying
+-- ---------------------------------------------------------------------------
+--   band     items   new range   changed   avg shift
+--   80-90      492    80 - 83        15      +0.04
+--   88-98    1,196    88 - 94        75      +0.15
+--   96-106     110    96 - 105       53      +2.60
+--   104-115    637   104 - 110      604      +1.55
+--   113-128    101   113 (flat)       0       0.00
+--                                   ---
+--                                   747 items
+--
+-- ---------------------------------------------------------------------------
+-- THREE THINGS THIS DOES NOT FIX -- stated so they are not rediscovered
+-- ---------------------------------------------------------------------------
+-- 1. 🔴 IT DOES NOT MAKE ANTILOS DROP "LEVEL 91 LOOT". Antilos is level 91-92
+--    but stands in Azshara, banded 80-90, so it pulls band-80 gear at ilvl
+--    275-303 -- and by the ladder's own curve that IS level 80-83 gear. Its
+--    ilvl-289 drops stay at RequiredLevel 80, correctly: the RequiredLevel is
+--    not what is wrong with them. The real mismatch is that a named rare
+--    sitting at or ABOVE its band ceiling draws from the band FLOOR's pool.
+--    Fixing that means promoting rank >= 2 creatures to the next band's clone
+--    references -- a loot-table change (which items drop), deliberately not
+--    bundled into a file about what the items are.
+--
+-- 2. 🔴 BAND 113-128 DOES NOT MOVE, because 309_ gave Hyjal clones ilvl 375-383
+--    -- LOWER than Winterspring's 362-395 in the band BELOW it. That inversion
+--    is in 309_'s per-band ilvl targets. Repairing it means raising Hyjal's
+--    target ilvl, which changes the stat budget, which means re-running 319_.
+--
+-- 3. 🔴 GREENS ALREADY OUT-GATE SOME LADDER BLUES, and this file neither causes
+--    nor cures it. 2,130 (green, blue) pairs exist where the green requires a
+--    higher level than a blue of equal or greater ItemLevel -- **the same 2,130
+--    before and after this change**, measured. The cause is the band FLOORS:
+--    band 96 and band 104 gate at 96/104 while the ladder gates ilvl 362-372 at
+--    100-102. Closing it would mean moving the band levels or the ilvl targets,
+--    not the curve. An early draft of this file claimed "expect 0" here; that
+--    was wrong and the check below is the honest one.
+--
+-- ---------------------------------------------------------------------------
+-- 🔴 `dc_map750_band` HAS SIX ROWS BUT ONLY FIVE DISTINCT FLOORS -- Darkshore
+-- (4929) and Azshara (4930) are BOTH 80-90. Joining it on `t_lo = band_lo`
+-- matches TWICE for every band-80 item. The two rows agree on t_hi so the
+-- computed value is still correct, but any COUNT taken through that join is
+-- silently doubled -- this produced one wrong measurement while writing this
+-- file (984 items reported for a band that holds 492). Hence SELECT DISTINCT.
+-- ---------------------------------------------------------------------------
+--
+-- Scope: the same 2,536 equippable clones 319_ writes stats for (class 2/4,
+-- InventoryType > 0). Non-equippable clones and all original items untouched.
+--
+-- Apply against acore_world, alongside 319_ (no hard dependency -- they write
+-- different columns -- but the pair is one change). Idempotent: the value
+-- derives from ItemLevel, which this file does not write.
+-- ROLLBACK is exact and needs no backup table -- `dc_map750_item_clone` still
+-- pins the original in `tgt_reqlvl`; see the trailer.
+-- ---------------------------------------------------------------------------
+
+USE `acore_world`;
+
+UPDATE `item_template` i
+JOIN `dc_map750_item_clone` m ON m.`clone_entry` = i.`entry`
+JOIN (SELECT DISTINCT `t_lo`, `t_hi` FROM `dc_map750_band`) b ON b.`t_lo` = m.`band_lo`
+SET i.`RequiredLevel` = LEAST(b.`t_hi`,
+                         GREATEST(b.`t_lo`,
+                           ROUND(0.294 * i.`ItemLevel` - 6.1)))
+WHERE i.`class` IN (2, 4)
+  AND i.`InventoryType` > 0;
+
+-- ---------------------------------------------------------------------------
+-- Trailer -- verification
+-- ---------------------------------------------------------------------------
+-- Nothing gated outside its own band (expect 0):
+-- SELECT COUNT(*) FROM dc_map750_item_clone m
+-- JOIN item_template i ON i.entry = m.clone_entry
+-- JOIN (SELECT DISTINCT t_lo, t_hi FROM dc_map750_band) b ON b.t_lo = m.band_lo
+-- WHERE i.class IN (2, 4) AND i.InventoryType > 0
+--   AND (i.RequiredLevel < b.t_lo OR i.RequiredLevel > b.t_hi);
+--
+-- Nothing was made easier to equip than before (expect 0):
+-- SELECT COUNT(*) FROM dc_map750_item_clone m
+-- JOIN item_template i ON i.entry = m.clone_entry
+-- WHERE i.class IN (2, 4) AND i.InventoryType > 0
+--   AND i.RequiredLevel < m.tgt_reqlvl;
+--
+-- Resulting spread per band (expect the measured table in the header):
+-- SELECT m.band_lo, COUNT(*) items, MIN(i.RequiredLevel) lo, MAX(i.RequiredLevel) hi
+-- FROM dc_map750_item_clone m JOIN item_template i ON i.entry = m.clone_entry
+-- WHERE i.class IN (2, 4) AND i.InventoryType > 0
+-- GROUP BY m.band_lo ORDER BY m.band_lo;
+--
+-- Pre-existing green-over-blue gating is UNCHANGED (expect exactly 2130 -- this
+-- is a no-regression check, NOT a "should be zero" check; see note 3 above):
+-- SELECT COUNT(*) FROM dc_map750_item_clone m
+-- JOIN item_template g ON g.entry = m.clone_entry AND g.Quality = 2
+--   AND g.class IN (2, 4) AND g.InventoryType > 0
+-- JOIN item_template l ON l.entry BETWEEN 400041 AND 400782 AND l.Quality = 3
+--   AND l.class IN (2, 4) AND l.InventoryType > 0 AND l.ItemLevel >= g.ItemLevel
+-- WHERE g.RequiredLevel > l.RequiredLevel;
+--
+-- ROLLBACK (restores the band-floor assignment exactly):
+-- UPDATE item_template i JOIN dc_map750_item_clone m ON m.clone_entry = i.entry
+-- SET i.RequiredLevel = m.tgt_reqlvl
+-- WHERE i.class IN (2, 4) AND i.InventoryType > 0;
+--
+-- 🔴 CLIENT CACHE: RequiredLevel is part of the cached item template. Bump the
+-- cache id or players keep seeing the old gate on items they have inspected.
+-- ---------------------------------------------------------------------------

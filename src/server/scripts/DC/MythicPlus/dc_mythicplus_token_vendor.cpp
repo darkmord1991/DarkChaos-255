@@ -16,6 +16,7 @@
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/AddonExtension/dc_addon_transmutation.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include "ObjectAccessor.h"
@@ -252,6 +253,10 @@ std::string GetItemLink(uint32 itemId, ItemTemplate const* proto)
     return ss.str();
 }
 
+// Creature entry of the level-130 endgame quartermaster. The level-80 Mythic+
+// quartermaster is 100051; both run this same script.
+constexpr uint32 VENDOR_ENTRY_ENDGAME = 100052;
+
 // Get token cost based on item level
 uint32 GetTokenCost(uint32 itemLevel)
 {
@@ -266,9 +271,94 @@ uint32 GetTokenCost(uint32 itemLevel)
     return 11;
 }
 
+// Which item-level rungs a given vendor offers.
+//
+// The gear pool is queried live from `item_template` by class / armour subclass /
+// InventoryType / ItemLevel +-2, so a new rung needs NO item data and no vendor
+// table -- only an entry here and a cost above. That is why the level-130 tier
+// works off the 400230-400707 set without a single row being written.
+//
+// 🔴 The rung value IS the gossip action id (see OnGossipSelect), so every rung
+// must be > the reserved action ids (1000 info, 2000 exchange) or it collides.
+std::vector<uint32> GetVendorTiers(uint32 vendorEntry)
+{
+    // 🔴 ilvl 510 is NOT a rung. Entries 300253-300310 are 58 Icecrown weapons
+    // (Cryptmaker, Heartpierce, Nibelung, Zod's Repeating Longbow ...) re-stamped
+    // to 510 as placeholders -- weapons only, no armour at any slot. Selling them
+    // would put a 510 weapon next to 412 armour and skip the tier entirely.
+    if (vendorEntry == VENDOR_ENTRY_ENDGAME)
+        return { 412, 450 };
+
+    return { 200, 213, 226, 239, 252 };
+}
+
+// Which ITEM a vendor charges in. The level-80 Mythic+ quartermaster takes DC
+// Upgrade Tokens; the level-130 endgame quartermaster takes Emberwood Sap --
+// the Frontier currency, which 326_ gave a quest tap and 320_ made the T4/T5
+// upgrade cost.
+uint32 GetVendorCurrencyItemId(uint32 vendorEntry)
+{
+    if (vendorEntry == VENDOR_ENTRY_ENDGAME)
+        return DarkChaos::ItemUpgrade::GetFrontierSapItemId();
+
+    return DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+}
+
+char const* GetVendorCurrencyName(uint32 vendorEntry)
+{
+    return vendorEntry == VENDOR_ENTRY_ENDGAME ? "Emberwood Sap" : "Tokens";
+}
+
+// The RequiredLevel the gear at a given item-level rung actually carries.
+// Read from item_template rather than hardcoded so it cannot drift from the
+// pool: the vendor's rungs are ItemLevels, but what gates a player is the
+// RequiredLevel those items happen to have (412 -> 130, 252 -> 80, ...).
+uint32 GetTierRequiredLevel(uint32 itemLevel)
+{
+    QueryResult result = WorldDatabase.Query(
+        "SELECT MIN(RequiredLevel) FROM item_template "
+        "WHERE ItemLevel BETWEEN {} AND {} AND class IN (2, 4) "
+        "AND InventoryType > 0 AND Quality >= 3",
+        itemLevel - 2, itemLevel + 2);
+
+    if (result)
+        if (uint32 req = (*result)[0].Get<uint32>())
+            return req;
+
+    return 0;
+}
+
+// Price of one piece at `itemLevel` from `vendorEntry`.
+//
+// 🔴 THE TWO LADDERS ARE IN DIFFERENT CURRENCIES AND ARE NOT COMPARABLE:
+// 11-15 tokens against 120-450 sap. Tokens are the high-throughput currency
+// (~26,700 per continent run from quests); sap is the scarce one (2,955 per run
+// from quests, ~0.19 per kill from drops). Never "convert" one ladder into the
+// other by ratio -- price each against its own income.
+//
+// Sap prices sit deliberately UNDER a full T5 upgrade path (600 sap per item):
+// acquiring a piece is the cheap half, improving it is the expensive half. A
+// full 16-slot ilvl-412 set is 1,920 sap, about two thirds of one quest run.
+uint32 GetItemCost(uint32 vendorEntry, uint32 itemLevel)
+{
+    if (vendorEntry == VENDOR_ENTRY_ENDGAME)
+    {
+        if (itemLevel >= 450)
+            return 250;
+
+        return 120;
+    }
+
+    return GetTokenCost(itemLevel);
+}
+
 namespace
 {
     constexpr uint32 GOSSIP_ACTION_OPEN_VENDOR_UI = 9000;
+    // Opens the Transmutation / Exchange addon window (token <-> essence).
+    // Same service the standalone Transmutation Master (190004) provides --
+    // offered here so the quartermaster is a one-stop endgame NPC.
+    constexpr uint32 GOSSIP_ACTION_OPEN_TRANSMUTATION = 9100;
     constexpr uint32 VENDOR_UI_DISTANCE = 12; // yards
     constexpr time_t VENDOR_UI_SESSION_SECONDS = 60;
 
@@ -499,6 +589,20 @@ namespace
         return choices;
     }
 
+    // Vendor entry behind the player's live UI session. The addon handlers get
+    // no Creature*, but the session records which vendor was opened, and that
+    // decides both the tier ladder and the currency. Returns 0 when there is no
+    // valid session, which GetVendorCurrencyItemId/GetItemCost treat as the
+    // Mythic+ vendor -- a stale session can never silently switch currencies.
+    static uint32 GetSessionVendorEntry(Player* player)
+    {
+        Creature* vendor = nullptr;
+        if (player && IsVendorSessionValid(player, &vendor) && vendor)
+            return vendor->GetEntry();
+
+        return 0;
+    }
+
     static void SendVendorState(Player* player)
     {
         if (!player)
@@ -508,7 +612,7 @@ namespace
             return;
 
         uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(GetSessionVendorEntry(player)), true);
 
         DCAddon::JsonMessage msg(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_STATE);
         msg.Set("essence", currentEssence);
@@ -556,8 +660,9 @@ namespace
             return;
         }
 
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
-        uint32 cost = GetTokenCost(itemLevel);
+        uint32 const vendorEntry = GetSessionVendorEntry(player);
+        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(vendorEntry), true);
+        uint32 cost = GetItemCost(vendorEntry, itemLevel);
 
         std::vector<ItemChoice> choices = GetItemsForSlotAndClass(player, uint8(slot), itemLevel);
 
@@ -664,15 +769,18 @@ namespace
             return;
         }
 
-        uint32 cost = GetTokenCost(itemTemplate->ItemLevel);
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+        uint32 const vendorEntry = GetSessionVendorEntry(player);
+        uint32 const currencyId = GetVendorCurrencyItemId(vendorEntry);
+        uint32 cost = GetItemCost(vendorEntry, itemTemplate->ItemLevel);
+        uint32 tokenCount = player->GetItemCount(currencyId, true);
         if (tokenCount < cost)
         {
-            SendVendorResult(player, false, Acore::StringFormat("You need {} tokens but only have {}.", cost, tokenCount));
+            SendVendorResult(player, false, Acore::StringFormat("You need {} {} but only have {}.",
+                cost, GetVendorCurrencyName(vendorEntry), tokenCount));
             return;
         }
 
-        player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), cost, true);
+        player->DestroyItemCount(currencyId, cost, true);
 
         ItemPosCountVec dest;
         uint8 canStore = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
@@ -796,14 +904,14 @@ namespace
         SendVendorResult(player, false, "Invalid exchange direction.");
     }
 
-    static void SendVendorOpen(Player* player)
+    static void SendVendorOpen(Player* player, uint32 vendorEntry)
     {
         auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!upgradeMgr)
             return;
 
         uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(vendorEntry), true);
         std::string armorType = GetArmorTypeForClass(player->getClass());
 
         DCAddon::JsonMessage open(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_OPEN);
@@ -819,14 +927,11 @@ namespace
             DCAddon::JsonValue t;
             t.SetObject();
             t.Set("itemLevel", DCAddon::JsonValue(ilvl));
-            t.Set("cost", DCAddon::JsonValue(GetTokenCost(ilvl)));
+            t.Set("cost", DCAddon::JsonValue(GetItemCost(vendorEntry, ilvl)));
             tiers.Push(t);
         };
-        addTier(200);
-        addTier(213);
-        addTier(226);
-        addTier(239);
-        addTier(252);
+        for (uint32 ilvl : GetVendorTiers(vendorEntry))
+            addTier(ilvl);
         open.Set("tiers", tiers);
 
         open.Send(player);
@@ -858,7 +963,7 @@ public:
             session.creatureGuid = creature->GetGUID();
             session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
             s_vendorUiSessions[player->GetGUID().GetCounter()] = session;
-            SendVendorOpen(player);
+            SendVendorOpen(player, creature->GetEntry());
             CloseGossipMenuFor(player);
             return true;
         }
@@ -866,26 +971,45 @@ public:
         ClearGossipMenuFor(player);
 
         // Count player's tokens
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
+        uint32 const vendorEntry = creature->GetEntry();
+        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(vendorEntry));
         std::string armorType = GetArmorTypeForClass(player->getClass());
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Mythic+ Token Vendor ===|r", GOSSIP_SENDER_MAIN, 0);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffYour Tokens:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
+        bool const isEndgame = creature->GetEntry() == VENDOR_ENTRY_ENDGAME;
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            isEndgame ? "|cffff8000=== Frontier Endgame Quartermaster ===|r"
+                      : "|cffff8000=== Mythic+ Token Vendor ===|r",
+            GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            std::string("|cffffffffYour ") + GetVendorCurrencyName(vendorEntry) + ":|r " + std::to_string(tokenCount),
+            GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffArmor Type:|r " + armorType, GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
         // Addon UI entry (recommended)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff32c4ff[UI]|r Open Token Vendor UI", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_VENDOR_UI);
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cff32c4ff[UI]|r Transmutation / Currency Exchange", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_TRANSMUTATION);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
-        // Item level tiers
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Level 200 Gear|r (11 tokens)", GOSSIP_SENDER_MAIN, 200);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Level 213 Gear|r (12 tokens)", GOSSIP_SENDER_MAIN, 213);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Level 226 Gear|r (13 tokens)", GOSSIP_SENDER_MAIN, 226);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffff8000Item Level 239 Gear|r (14 tokens)", GOSSIP_SENDER_MAIN, 239);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffff8000Item Level 252 Gear|r (15 tokens)", GOSSIP_SENDER_MAIN, 252);
+        // Item level tiers -- driven by the vendor, so the same script serves
+        // both the level-80 Mythic+ quartermaster and the level-130 endgame one.
+        std::vector<uint32> const tierList = GetVendorTiers(vendorEntry);
+        for (size_t i = 0; i < tierList.size(); ++i)
+        {
+            uint32 const ilvl = tierList[i];
+            // Top two rungs of any ladder get the orange "best" colour.
+            char const* colour = (i + 2 >= tierList.size()) ? "|cffff8000" : "|cff00ff00";
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR,
+                std::string(colour) + "Item Level " + std::to_string(ilvl) + " Gear|r ("
+                    + std::to_string(GetItemCost(vendorEntry, ilvl)) + " " + GetVendorCurrencyName(vendorEntry) + ")",
+                GOSSIP_SENDER_MAIN, ilvl);
+        }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
+        // 🔴 Offered on BOTH vendors. Token <-> Essence trades the PLAYER's own
+        // currencies and has nothing to do with which currency this vendor
+        // charges -- an earlier revision hid it on the sap vendor, which only
+        // forced a walk back to a level-80 NPC to do a global trade.
         AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "|cffffd700Currency Exchange (Tokens <-> Essence)|r", GOSSIP_SENDER_MAIN, 2000);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Info] How do tokens work?|r", GOSSIP_SENDER_MAIN, 1000);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 0);
@@ -903,6 +1027,16 @@ public:
 
         ClearGossipMenuFor(player);
 
+        // Transmutation / Exchange -- the same addon window the standalone
+        // Transmutation Master opens. Needs no vendor session of its own: it
+        // trades the player's own currencies, not this vendor's stock.
+        if (action == GOSSIP_ACTION_OPEN_TRANSMUTATION)
+        {
+            DCAddon::Upgrade::SendOpenTransmutationUI(player);
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
         // Open Addon UI
         if (action == GOSSIP_ACTION_OPEN_VENDOR_UI)
         {
@@ -912,7 +1046,7 @@ public:
             session.creatureGuid = creature->GetGUID();
             session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
             s_vendorUiSessions[player->GetGUID().GetCounter()] = session;
-            SendVendorOpen(player);
+            SendVendorOpen(player, creature->GetEntry());
             CloseGossipMenuFor(player);
             return true;
         }
@@ -1054,7 +1188,11 @@ public:
         }
 
         // Select item level tier
-        if (action >= 200 && action <= 300)
+        // 🔴 Upper bound is 600, not 300: the endgame vendor's rungs are 412/450/
+        // 510, and the original 300 cap silently dropped them through to the
+        // purchase branch. 600 stays clear of the reserved actions above
+        // (1000 info, 2000 exchange, 9000 open-UI, 9999 back).
+        if (action >= 200 && action <= 600)
         {
             uint32 selectedIlvl = action;
             ShowGearSlotMenu(player, creature, selectedIlvl);
@@ -1062,7 +1200,9 @@ public:
         }
 
         // Show item choices for slot (action format: ilvl * 1000 + slot)
-        if (action >= 200000 && action < 300000)
+        // Upper bound widened for the same reason -- ilvl 510 slot actions run to
+        // 510014. Still far below the 5000000 purchase band.
+        if (action >= 200000 && action < 600000)
         {
             uint32 itemLevel = action / 1000;
             uint8 slot = action % 1000;
@@ -1088,12 +1228,14 @@ private:
     {
         ClearGossipMenuFor(player);
 
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
-        uint32 cost = GetTokenCost(itemLevel);
+        uint32 const vendorEntry = creature->GetEntry();
+        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(vendorEntry));
+        uint32 cost = GetItemCost(vendorEntry, itemLevel);
         std::string armorType = GetArmorTypeForClass(player->getClass());
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000Item Level " + std::to_string(itemLevel) + " Gear|r", GOSSIP_SENDER_MAIN, 0);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " tokens | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " "
+            + GetVendorCurrencyName(vendorEntry) + " | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
         // Gear slots
@@ -1122,15 +1264,35 @@ private:
     {
         ClearGossipMenuFor(player);
 
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
-        uint32 cost = GetTokenCost(itemLevel);
+        uint32 const vendorEntry = creature->GetEntry();
+        uint32 tokenCount = player->GetItemCount(GetVendorCurrencyItemId(vendorEntry));
+        uint32 cost = GetItemCost(vendorEntry, itemLevel);
 
         // Query item_template for suitable items
         std::vector<ItemChoice> choices = ::GetItemsForSlotAndClass(player, slot, itemLevel);
 
         if (choices.empty())
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000No items found!|r", GOSSIP_SENDER_MAIN, 0);
+            // 🔴 The commonest cause by far is the player's LEVEL, not a missing
+            // pool: GetItemsForSlotAndClass drops everything CanUseItem() rejects
+            // and that rejects on RequiredLevel (PlayerStorage.cpp:2395). A
+            // level-80 character at the ilvl-412 rung sees an empty list and a
+            // bare "No items found!" reads as a broken vendor. Say which it is.
+            uint32 const tierReqLevel = GetTierRequiredLevel(itemLevel);
+            if (player->GetLevel() < tierReqLevel)
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "|cffff0000You must be level " + std::to_string(tierReqLevel)
+                        + " to use item level " + std::to_string(itemLevel) + " gear.|r",
+                    GOSSIP_SENDER_MAIN, 0);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "|cffaaaaaaYou are level " + std::to_string(player->GetLevel()) + ".|r",
+                    GOSSIP_SENDER_MAIN, 0);
+            }
+            else
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000No items found for your class and slot.|r", GOSSIP_SENDER_MAIN, 0);
+            }
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No suitable items found for your class,", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "slot, and item level combination.", GOSSIP_SENDER_MAIN, 0);
@@ -1141,7 +1303,8 @@ private:
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000Choose Your Item|r", GOSSIP_SENDER_MAIN, 0);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " tokens | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " "
+            + GetVendorCurrencyName(vendorEntry) + " | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
         // Show up to 3 item choices with preview
@@ -1177,19 +1340,22 @@ private:
             return;
         }
 
-        uint32 cost = GetTokenCost(itemTemplate->ItemLevel);
-        uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
+        uint32 const vendorEntry = creature->GetEntry();
+        uint32 const currencyId = GetVendorCurrencyItemId(vendorEntry);
+        uint32 cost = GetItemCost(vendorEntry, itemTemplate->ItemLevel);
+        uint32 tokenCount = player->GetItemCount(currencyId);
 
-        // Check if player has enough tokens
+        // Check affordability in THIS vendor's currency
         if (tokenCount < cost)
         {
-            ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff0000Error:|r You need {} tokens but only have {}.", cost, tokenCount));
+            ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat(
+                "|cffff0000Error:|r You need {} {} but only have {}.",
+                cost, GetVendorCurrencyName(vendorEntry), tokenCount));
             CloseGossipMenuFor(player);
             return;
         }
 
-        // Remove tokens
-        player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), cost, true);
+        player->DestroyItemCount(currencyId, cost, true);
 
         // Give item
         ItemPosCountVec dest;

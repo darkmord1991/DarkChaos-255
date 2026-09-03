@@ -2,16 +2,55 @@
 -- DarkChaos Hotspot XP Buff - Spell 800001
 -- =====================================================================
 -- CRITICAL: This spell MUST match the client Spell.dbc entry exactly!
--- 
+--
+-- The values below are the ones actually written by the INSERT. (They used to
+-- disagree with it - the list claimed Attributes 0x10, ImplicitTargetA_1 21
+-- and DurationIndex 21, none of which were what got inserted.)
+--
 -- Key attributes for VISIBLE buff in aura bar:
---   Attributes = 0x10 (SPELL_ATTR0_IS_ABILITY) - Allows display in buff bar
---   NO 0x80 (SPELL_ATTR0_DO_NOT_DISPLAY) - Would hide from UI
+--   Attributes = 0x10010 - 0x10 SPELL_ATTR0_IS_ABILITY (allows display in the
+--     buff bar) plus 0x10000, the client-side flag the client's Spell.dbc row
+--     carries. Must NOT gain 0x80 (SPELL_ATTR0_DO_NOT_DISPLAY).
 --   AttributesEx = 0 - NO 0x10000000 (SPELL_ATTR1_NO_AURA_ICON) which hides from aura bar
 --   Effect_1 = 6 (SPELL_EFFECT_APPLY_AURA)
 --   EffectAura_1 = 4 (SPELL_AURA_DUMMY) - MUST be 4, not 3!
---   ImplicitTargetA_1 = 21 (TARGET_UNIT_CASTER - self)
---   DurationIndex = 21 (permanent)
+--     The aura carries no server-side effect: the XP multiplier is applied in
+--     HotspotMgr::OnPlayerGiveXP, which gates on HasAura(800001).
+--   ImplicitTargetA_1 = 1 (TARGET_UNIT_CASTER - self). NOT 21, that is
+--     TARGET_UNIT_TARGET_ALLY and would need a friendly target to land.
+--   DurationIndex = 42 (SpellDuration 42 = 3600000ms = 1h), matching the
+--     client row and the Hotspots.Duration = 60 default. Index 21 would be
+--     -1/permanent. Either way HotspotMgr clamps the applied aura to the
+--     hotspot's remaining lifetime and removes it when the player leaves the
+--     radius, so this is a backstop rather than the real leash.
 --   EquippedItemClass = -1 (no item requirement)
+--
+-- Owns the spell_script_names row for 800001. worlddb/Prestige/
+-- prestige_buff_fix.sql deliberately starts its spell_script_names DELETE range
+-- at 800010 so it cannot clobber this one. (Its spell_dbc DELETE did span 800001,
+-- but every spell_dbc statement in that file is now disabled - see its STATUS
+-- banner.)
+--
+-- STATUS (verified against the live server 2026-08-28): this file has NOT been
+-- applied. `acore_world`.`spell_dbc` holds no row for 800001 - the worldserver
+-- reads the spell from `data/dbc/Spell.dbc` (234-field fork layout). The
+-- spell_script_names row at the bottom IS live.
+--
+-- The INSERT below is safe to apply if you ever want the DB to own this row: it
+-- lists all 234 columns, so DBCDatabaseLoader::Load() - which writes the COMPLETE
+-- record from the SQL row rather than merging column by column - produces a
+-- faithful spell. A partial-column INSERT here would silently zero every unlisted
+-- field; that is exactly why the spell_dbc half of prestige_buff_fix.sql is
+-- disabled.
+--
+-- One field below deliberately disagrees with the live DBC row: SpellClassSet is 0
+-- here, but the live Spell.dbc row carries SpellClassSet 3 (SPELLFAMILY_MAGE) with
+-- SpellClassMask 0x400 - inherited from the mage donor row it was cloned from.
+-- LoadSpellSpecific() reads that as SPELL_SPECIFIC_MAGE_ARCANE_BRILLANCE, an
+-- exclusive specific, which made this buff and the prestige auras strip each other
+-- (and made real Arcane Intellect strip both). The 0 below is the correct value;
+-- until the DBC is rebuilt, SpellMgr::LoadSpellInfoCorrections() clears the family
+-- at load. Keep SpellClassSet at 0 if this file is ever applied.
 -- =====================================================================
 
 DELETE FROM `spell_dbc` WHERE `ID`=800001;

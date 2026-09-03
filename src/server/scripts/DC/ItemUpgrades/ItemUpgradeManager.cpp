@@ -128,6 +128,42 @@ namespace DarkChaos
             return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", seasonalEssence);
         }
 
+        uint32 GetFrontierSapItemId()
+        {
+            // Emberwood Sap is a ZONE currency, not a seasonal one -- it is earned
+            // and spent on the Hyjal Frontier continents and deliberately does not
+            // follow UseSeasonalCurrency the way the token and essence do.
+            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.SapId", 400000);
+        }
+
+        uint32 GetCurrencyItemId(CurrencyType currency)
+        {
+            switch (currency)
+            {
+                case CURRENCY_ARTIFACT_ESSENCE:
+                    return GetArtifactEssenceItemId();
+                case CURRENCY_FRONTIER_SAP:
+                    return GetFrontierSapItemId();
+                case CURRENCY_UPGRADE_TOKEN:
+                default:
+                    return GetUpgradeTokenItemId();
+            }
+        }
+
+        CurrencyType GetTierCurrency(uint8 tier)
+        {
+            switch (tier)
+            {
+                case TIER_HEIRLOOM:
+                    return CURRENCY_ARTIFACT_ESSENCE;
+                case TIER_HYJAL_PROGRESSION:
+                case TIER_HYJAL_ENDGAME:
+                    return CURRENCY_FRONTIER_SAP;
+                default:
+                    return CURRENCY_UPGRADE_TOKEN;
+            }
+        }
+
         // Unified currency access - returns DB-backed balances (single source of truth)
         // Fallbacks to item counts only if the UpgradeManager is unavailable.
         uint32 GetPlayerTokens(Player* player)
@@ -152,6 +188,18 @@ namespace DarkChaos
                 return mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, season);
             }
             return player->GetItemCount(GetArtifactEssenceItemId());
+        }
+
+        uint32 GetPlayerFrontierSap(Player* player)
+        {
+            if (!player)
+                return 0;
+            if (UpgradeManager* mgr = GetUpgradeManager())
+            {
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                return mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_FRONTIER_SAP, season);
+            }
+            return player->GetItemCount(GetFrontierSapItemId());
         }
 
         // =====================================================================
@@ -491,53 +539,40 @@ namespace DarkChaos
                     uint32 token_cost = GetUpgradeCost(tier, next_level);
                     uint32 essence_cost = GetEssenceCost(tier, next_level);
 
-                    // Check currency
-                    if (tier == TIER_HEIRLOOM)
+                    // Which currency this tier is paid in, and how much of it.
+                    // T4/T5 are PRICED in the `token_cost` column but PAID in
+                    // Emberwood Sap: the column carries the amount, GetTierCurrency
+                    // decides the item. Adding a `sap_cost` column would have split
+                    // one number across two places for no gain.
+                    CurrencyType const currency = GetTierCurrency(tier);
+                    uint32 const cost = (currency == CURRENCY_ARTIFACT_ESSENCE) ? essence_cost : token_cost;
+
+                    uint32 const balance = GetCurrency(player_guid, currency, state->season);
+                    if (balance < cost)
                     {
-                        // Heirlooms use essence
-                        uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
-                        if (essence < essence_cost)
-                        {
-                            LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} insufficient essence (need {}, have {})",
-                                     player_guid, essence_cost, essence);
-                            return false;
-                        }
-                    }
-                    else
-                    {
-                        // Regular items use upgrade tokens
-                        uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state->season);
-                        if (tokens < token_cost)
-                        {
-                            LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})",
-                                     player_guid, token_cost, tokens);
-                            return false;
-                        }
+                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} insufficient currency {} for tier {} (need {}, have {})",
+                                 player_guid, static_cast<uint32>(currency), tier, cost, balance);
+                        return false;
                     }
 
                     // Perform upgrade
-                    if (tier == TIER_HEIRLOOM)
-                    {
-                        if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
-                            return false;
+                    if (!RemoveCurrency(player_guid, currency, cost, state->season))
+                        return false;
 
+                    {
                         Player* player = FindPlayerWithContext(player_guid);
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
-                            player_guid, state->season, player, CURRENCY_ARTIFACT_ESSENCE, 0, false);
-
-                        state->essence_invested += essence_cost;
+                            player_guid, state->season, player, currency, 0, false);
                     }
+
+                    // `tokens_invested` is the generic non-essence ledger. An item
+                    // has exactly one tier, so the refund path recovers WHICH item
+                    // to hand back from tier_id -- see RespecItem. Do not read it
+                    // as "DC Item Upgrade Tokens" without consulting the tier.
+                    if (currency == CURRENCY_ARTIFACT_ESSENCE)
+                        state->essence_invested += cost;
                     else
-                    {
-                        if (!RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state->season))
-                            return false;
-
-                        Player* player = FindPlayerWithContext(player_guid);
-                        DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
-                            player_guid, state->season, player, CURRENCY_UPGRADE_TOKEN, 0, false);
-
-                        state->tokens_invested += token_cost;
-                    }
+                        state->tokens_invested += cost;
 
                     // Update item state
                     state->upgrade_level = next_level;
@@ -645,7 +680,7 @@ namespace DarkChaos
                 if (!player)
                     return false;
 
-                uint32 itemId = (currency == CURRENCY_UPGRADE_TOKEN) ? GetUpgradeTokenItemId() : GetArtifactEssenceItemId();
+                uint32 itemId = GetCurrencyItemId(currency);
 
                 // Check inventory space
                 ItemPosCountVec dest;
@@ -671,7 +706,7 @@ namespace DarkChaos
                 if (!player)
                     return false;
 
-                uint32 itemId = (currency == CURRENCY_UPGRADE_TOKEN) ? GetUpgradeTokenItemId() : GetArtifactEssenceItemId();
+                uint32 itemId = GetCurrencyItemId(currency);
 
                 // Check if player has enough
                 if (player->GetItemCount(itemId) < amount)
@@ -700,7 +735,7 @@ namespace DarkChaos
                 if (!player)
                     return 0;
 
-                uint32 itemId = (currency == CURRENCY_UPGRADE_TOKEN) ? GetUpgradeTokenItemId() : GetArtifactEssenceItemId();
+                uint32 itemId = GetCurrencyItemId(currency);
                 return player->GetItemCount(itemId);
             }
 
@@ -826,7 +861,7 @@ namespace DarkChaos
                         if ((state.tier_id == 0 || state.tier_id == TIER_INVALID) && state.item_entry)
                         {
                             uint8 mappedTier = GetItemTier(state.item_entry);
-                            state.tier_id = (mappedTier == TIER_INVALID) ? TIER_LEVELING : mappedTier;
+                            state.tier_id = (mappedTier == TIER_INVALID) ? static_cast<uint8>(TIER_LEVELING) : mappedTier;
                         }
 
                         if (state.item_entry)

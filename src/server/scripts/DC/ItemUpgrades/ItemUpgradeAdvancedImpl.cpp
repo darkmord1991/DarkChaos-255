@@ -60,7 +60,7 @@ public:
     {
         // Get current upgrade level
         QueryResult result = CharacterDatabase.Query(
-            "SELECT upgrade_level, essence_invested, tokens_invested, season "
+            "SELECT upgrade_level, essence_invested, tokens_invested, season, tier_id "
             "FROM {} WHERE player_guid = {} AND item_guid = {}",
             ITEM_UPGRADES_TABLE, player_guid, item_guid);
 
@@ -72,6 +72,7 @@ public:
         uint32 essence_invested = fields[1].Get<uint32>();
         uint32 tokens_invested = fields[2].Get<uint32>();
         uint32 season = fields[3].Get<uint32>();
+        uint8 tier_id = fields[4].Get<uint8>();
         if (season == 0)
             season = GetCurrentSeasonId();
 
@@ -81,17 +82,24 @@ public:
             uint32 essence_refund = (essence_invested * config.refund_percent) / 100;
             uint32 tokens_refund = (tokens_invested * config.refund_percent) / 100;
 
+            // 🔴 `tokens_invested` is the generic non-essence ledger, NOT necessarily
+            // DC Item Upgrade Tokens -- a T4/T5 item paid its cost in Emberwood Sap
+            // and recorded it there. Refunding CURRENCY_UPGRADE_TOKEN unconditionally
+            // would let a player pay in sap and cash out in tokens. Resolve the
+            // currency from the item's own tier instead.
+            CurrencyType const refund_currency = GetTierCurrency(tier_id);
+
             // Add currency back to player using item-based system
             auto mgr = GetUpgradeManager();
             if (mgr)
             {
                 if (essence_refund > 0)
                     mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_refund, season);
-                if (tokens_refund > 0)
-                    mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, tokens_refund, season);
+                if (tokens_refund > 0 && refund_currency != CURRENCY_ARTIFACT_ESSENCE)
+                    mgr->AddCurrency(player_guid, refund_currency, tokens_refund, season);
 
-                LOG_INFO("scripts.dc", "ItemUpgrade: Respec refund for player {} - {} tokens, {} essence",
-                    player_guid, tokens_refund, essence_refund);
+                LOG_INFO("scripts.dc", "ItemUpgrade: Respec refund for player {} (tier {}) - {} of currency {}, {} essence",
+                    player_guid, tier_id, tokens_refund, static_cast<uint32>(refund_currency), essence_refund);
             }
         }
 

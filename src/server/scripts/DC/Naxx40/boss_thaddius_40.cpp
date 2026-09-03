@@ -104,7 +104,11 @@ enum Misc
     ACTION_RESTORE                      = 3,
     GO_TESLA_COIL_LEFT                  = 181478,
     GO_TESLA_COIL_RIGHT                 = 181477,
-    NPC_TESLA_COIL                      = 16218
+    // Naxx40-owned clone of stock 16218: stock `npc_tesla` resolves its AI through
+    // the core's GetNaxxramasAI, which only accepts "instance_naxxramas", so on map
+    // 2921 the coils would fall back to a plain ScriptedAI that evades. See
+    // HyjalCata/317_unassigned_scripts_round50.sql.
+    NPC_TESLA_COIL                      = 351098
 };
 
 class boss_thaddius_40 : public CreatureScript

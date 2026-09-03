@@ -38,10 +38,13 @@ namespace DarkChaos
             TIER_INVALID            = 0
         };
 
+        // Which item a tier is paid in. The mapping lives in GetTierCurrency() --
+        // never branch on the tier id at a spend site, or the paths drift.
         enum CurrencyType : uint8
         {
-            CURRENCY_UPGRADE_TOKEN = 1,    // Used for T1-T4
-            CURRENCY_ARTIFACT_ESSENCE = 2  // Used for T5 only
+            CURRENCY_UPGRADE_TOKEN    = 1,  // T1/T2      -- DC Item Upgrade Token (300311)
+            CURRENCY_ARTIFACT_ESSENCE = 2,  // T3         -- DC Artifact Essence  (300312)
+            CURRENCY_FRONTIER_SAP     = 3   // T4/T5      -- Emberwood Sap        (400000)
         };
 
         // Constants
@@ -67,11 +70,21 @@ namespace DarkChaos
 
         uint32 GetUpgradeTokenItemId();
         uint32 GetArtifactEssenceItemId();
+        uint32 GetFrontierSapItemId();
+
+        // The item id backing a currency. Every spend/refund/balance site goes
+        // through this rather than re-deriving the mapping with a ternary.
+        uint32 GetCurrencyItemId(CurrencyType currency);
+
+        // The currency a tier is paid in. Single source of truth for the
+        // tier -> currency mapping.
+        CurrencyType GetTierCurrency(uint8 tier);
 
         // Unified currency access - respects UseSeasonalCurrency config
         // Returns physical item count from player inventory (the canonical source)
         uint32 GetPlayerTokens(Player* player);
         uint32 GetPlayerEssence(Player* player);
+        uint32 GetPlayerFrontierSap(Player* player);
 
         // =====================================================================
         // Upgrade Cost Structure

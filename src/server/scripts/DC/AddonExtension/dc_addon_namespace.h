@@ -551,7 +551,7 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_KILL_ENTRIES  = 0x01; // {q} request kill/loot-source creature entries for a quest
             constexpr uint8 CMSG_RESOLVE_QUEST = 0x02; // {q} request live coordinates (POIs + spawns) for a quest
-            constexpr uint8 SMSG_KILL_ENTRIES  = 0x10; // {q, e:[entry,...]} up to 8 creature entries (JSON)
+            constexpr uint8 SMSG_KILL_ENTRIES  = 0x10; // {q, c, e:[...]} c=1 turn-in set; {q, x:1} quest left log
             constexpr uint8 SMSG_QUEST_COORDS  = 0x11; // {q, o:[{m,x,y,z,i}], s:[...], r:[...]} world coords (JSON)
         }
 

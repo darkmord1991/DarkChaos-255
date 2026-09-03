@@ -166,27 +166,8 @@ class spell_heigan_eruption_40 : public SpellScript
     }
 };
 
-// 28819 - Submerge Visual
-class spell_submerge_visual_aura : public AuraScript
-{
-    PrepareAuraScript(spell_submerge_visual_aura);
-
-    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-    {
-        GetTarget()->SetStandState(UNIT_STAND_STATE_SUBMERGED);
-    }
-
-    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-    {
-        GetTarget()->SetStandState(UNIT_STAND_STATE_STAND);
-    }
-
-    void Register() override
-    {
-        OnEffectApply += AuraEffectApplyFn(spell_submerge_visual_aura::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectRemove += AuraEffectRemoveFn(spell_submerge_visual_aura::OnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
+// 26234 / 28819 - Submerge Visual: handled by the upstream spell_gen_submerge_visual
+// (Spells/spell_generic.cpp). The identical DC copy that lived here was removed.
 
 // 28457 - Dark Blast
 class spell_kelthuzad_dark_blast_40 : public SpellScript
@@ -555,7 +536,6 @@ void AddSC_custom_spells_40()
     RegisterSpellScript(spell_grobbulus_poison_cloud_poison_damage_40);
     RegisterSpellScript(spell_heigan_plague_cloud_aura_40);
     RegisterSpellScript(spell_heigan_eruption_40);
-    RegisterSpellScript(spell_submerge_visual_aura);
     RegisterSpellScript(spell_kelthuzad_dark_blast_40);
     RegisterSpellScript(spell_kelthuzad_frostbolt_40);
     RegisterSpellScript(spell_sapphiron_icebolt_40);

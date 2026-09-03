@@ -3,8 +3,8 @@
 -- (29371, 'spell_heigan_eruption_40');
 -- (29350, 'spell_heigan_plague_cloud_aura_40');
 -- (28241, 'spell_grobbulus_poison_cloud_poison_damage_40');
--- (26234, 'spell_submerge_visual_aura'),
--- (28819, 'spell_submerge_visual_aura');
+-- (26234, 'spell_gen_submerge_visual'),
+-- (28819, 'spell_gen_submerge_visual');
 -- (55543, 'spell_razuvious_disrupting_shout_40');
 -- (29107, 'spell_razuvious_disrupting_shout_40');
 -- (28135, 'spell_feugen_static_field');
@@ -172,8 +172,8 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES (26046, 'spel
 -- relinquery of souls and eye stalk TC: https://github.com/search?q=repo%3ATrinityCore%2FTrinityCore%20spell_reliquary_of_souls_submerge&type=code
 DELETE FROM `spell_script_names` WHERE `spell_id` IN (26234, 28819);
 INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
-(26234, 'spell_submerge_visual_aura'),
-(28819, 'spell_submerge_visual_aura');
+(26234, 'spell_gen_submerge_visual'),
+(28819, 'spell_gen_submerge_visual');
 
 -- Update heigan teleport player (unused in core)
 -- [DC skip stock-533] would modify STOCK WotLK Naxxramas (map 533) - disabled.

@@ -530,8 +530,12 @@ public:
         // Grant currency (support for canonical seasonal currency)
         uint32 ESSENCE_ID = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
         uint32 TOKEN_ID = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
-        const uint32 TEST_ESSENCE_AMOUNT = 5000;  // From config: ItemUpgrade.Test.EssenceGrant
-        const uint32 TEST_TOKEN_AMOUNT = 2500;    // From config: ItemUpgrade.Test.TokensGrant
+        uint32 SAP_ID = DarkChaos::ItemUpgrade::GetFrontierSapItemId();
+        uint32 const TEST_ESSENCE_AMOUNT = 5000;  // From config: ItemUpgrade.Test.EssenceGrant
+        uint32 const TEST_TOKEN_AMOUNT = 2500;    // From config: ItemUpgrade.Test.TokensGrant
+        // 600 sap is one full T5 path at 320_'s prices -- enough to take a single
+        // endgame piece to cap, which is what a test set is for.
+        uint32 const TEST_SAP_AMOUNT = 600;
 
         // Grant essence
         ItemPosCountVec essenceDest;
@@ -557,12 +561,26 @@ public:
             }
         }
 
+        // Grant sap -- T4/T5 are paid in Emberwood Sap, so without this the test
+        // set cannot exercise the two Hyjal Frontier tiers at all.
+        ItemPosCountVec sapDest;
+        InventoryResult sapMsg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, sapDest, SAP_ID, TEST_SAP_AMOUNT);
+        if (sapMsg == EQUIP_ERR_OK)
+        {
+            Item* sap = player->StoreNewItem(sapDest, SAP_ID, true);
+            if (sap)
+            {
+                player->SendNewItem(sap, TEST_SAP_AMOUNT, true, false);
+            }
+        }
+
         handler->PSendSysMessage("|cffffd700===== Test Set Granted =====|r");
         handler->PSendSysMessage("|cff00ff00Class:|r %s", player->GetName().c_str());
         handler->PSendSysMessage("|cff00ff00Gear Set:|r %s", gearSet.description.c_str());
         handler->PSendSysMessage("|cff00ff00Items Added:|r %u", items_added);
         handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r %u", TEST_ESSENCE_AMOUNT);
         handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r %u", TEST_TOKEN_AMOUNT);
+        handler->PSendSysMessage("|cff00ff00Emberwood Sap:|r %u", TEST_SAP_AMOUNT);
         handler->PSendSysMessage("|cff00ffffYou can now test the upgrade system!|r");
 
         return true;

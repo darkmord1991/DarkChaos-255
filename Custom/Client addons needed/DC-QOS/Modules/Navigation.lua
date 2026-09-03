@@ -5615,7 +5615,11 @@ end
 --     C_SuperTrack.IsSuperTrackingCorpse reports truthfully.
 --   * Quest highlight rings: the supertracked quest's kill/loot-source
 --     creature entries (QNAV SMSG_KILL_ENTRIES) drive the DLL's native
---     selection-circle sweep via SetQuestHighlightEntries.
+--     selection circles via SetQuestHighlightEntries. Once the quest is
+--     complete the set is its creature quest ender instead (reply field
+--     c=1); the cache is keyed by quest AND status and the server pushes
+--     the turn-in set on completion, plus {x=1} when the quest leaves the
+--     log.
 --   * Live QuestMapData fallback: quests missing from the generated
 --     QuestMapData.lua are resolved on demand (QNAV SMSG_QUEST_COORDS) and
 --     injected into addon.QuestMapData.quests in the same shape, so every
@@ -5805,6 +5809,21 @@ function qnav.ApplyHighlightEntries(entries)
         entries[5], entries[6], entries[7], entries[8])
 end
 
+-- Ring sets are keyed by quest AND completion state: open objectives ring
+-- the kill/loot sources, a completed quest rings its creature quest ender.
+-- Status is read from the quest log so the lookup flips the moment the log
+-- does; the server pushes the turn-in set at completion, so the flip is
+-- normally served from cache without a request.
+function qnav.HighlightKey(questId)
+    local complete = false
+    local logIndex = type(FindQuestLogIndexByQuestId) == "function"
+        and FindQuestLogIndexByQuestId(questId) or nil
+    if logIndex and type(IsQuestLogIndexCompleted) == "function" then
+        complete = IsQuestLogIndexCompleted(logIndex) and true or false
+    end
+    return questId .. ":" .. (complete and "1" or "0")
+end
+
 function qnav.OnKillEntries(data)
     if type(data) ~= "table" then
         return
@@ -5818,6 +5837,24 @@ function qnav.OnKillEntries(data)
         return
     end
 
+    state.qnavKillEntryCache = state.qnavKillEntryCache or {}
+
+    -- {q, x=1}: the quest left the log (rewarded/abandoned). Drop both cached
+    -- sets so a re-accepted repeatable quest resolves fresh, and clear the
+    -- rings if it was the highlighted one.
+    if tonumber(data.x) == 1 then
+        state.qnavKillEntryCache[questId .. ":0"] = nil
+        state.qnavKillEntryCache[questId .. ":1"] = nil
+        if state.qnavHighlightQuestId == questId then
+            state.qnavHighlightKey = nil
+            local _, clear = qnav.ResolveHighlightNatives()
+            if clear then
+                pcall(clear)
+            end
+        end
+        return
+    end
+
     local entries = {}
     if type(data.e) == "table" then
         for i = 1, #data.e do
@@ -5828,12 +5865,13 @@ function qnav.OnKillEntries(data)
         end
     end
 
-    state.qnavKillEntryCache = state.qnavKillEntryCache or {}
-    state.qnavKillEntryCache[questId] = entries
+    local key = questId .. ":" .. (tonumber(data.c) == 1 and "1" or "0")
+    state.qnavKillEntryCache[key] = entries
 
-    -- Apply only when this quest is still the highlighted one (a slow reply
-    -- must not ring a quest the player has already switched away from).
-    if state.qnavHighlightQuestId == questId then
+    -- Apply only when this exact (quest, status) set is the highlighted one
+    -- (a slow reply must not ring a quest the player has switched away from;
+    -- a pushed turn-in set waits for the quest log to flip on the next tick).
+    if state.qnavHighlightKey == key then
         qnav.ApplyHighlightEntries(entries)
     end
 end
@@ -5968,19 +6006,23 @@ function qnav.UpdateHighlight(questId)
     -- path below must stay reachable while a quest remains selected, so a
     -- rate-suppressed or lost request can still be retried later -- an early
     -- return on "unchanged" would leave that quest permanently unringed.
-    local changed = state.qnavHighlightQuestId ~= questId
+    -- The latch is the (quest, status) key: completing the quest changes the
+    -- key, which swaps the rings from kill targets to the quest ender.
+    local key = questId and qnav.HighlightKey(questId) or nil
+    local changed = state.qnavHighlightKey ~= key
     state.qnavHighlightQuestId = questId
+    state.qnavHighlightKey = key
 
     local _, clear = qnav.ResolveHighlightNatives()
 
-    if not questId then
+    if not key then
         if changed and clear then
             pcall(clear)
         end
         return
     end
 
-    local cached = state.qnavKillEntryCache and state.qnavKillEntryCache[questId]
+    local cached = state.qnavKillEntryCache and state.qnavKillEntryCache[key]
     if cached then
         if changed then
             qnav.ApplyHighlightEntries(cached)
@@ -5988,13 +6030,14 @@ function qnav.UpdateHighlight(questId)
         return
     end
 
-    -- No cache yet: drop the previous quest's rings, then ask (rate-capped).
+    -- No cache yet: drop the previous set's rings, then ask (rate-capped,
+    -- per key so a status flip is not throttled by the earlier request).
     if changed and clear then
         pcall(clear)
     end
 
     state.qnavKillRequestedAt = state.qnavKillRequestedAt or {}
-    if not qnav.AllowRequest(questId, state.qnavKillRequestedAt) then
+    if not qnav.AllowRequest(key, state.qnavKillRequestedAt) then
         return
     end
 

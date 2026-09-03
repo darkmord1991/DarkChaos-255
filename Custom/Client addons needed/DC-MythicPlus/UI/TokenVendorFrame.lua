@@ -74,7 +74,14 @@ local function getTalentSummary()
     local tabs = {}
 
     for tab = 1, numTabs do
-        local _, name, _, _, pointsSpent = GetTalentTabInfo(tab)
+        -- 3.3.5 returns: name, iconTexture, pointsSpent, background,
+        -- previewPointsSpent, isUnlocked.
+        -- This read `_, name, _, _, pointsSpent`, which took iconTexture as the
+        -- NAME (hence "Shaman - Interface\Icons\Spell_Nature_Lightning" in the
+        -- header) and previewPointsSpent as the points -- previewPointsSpent is
+        -- 0 outside the preview, so "best tab" was always tab 1 and the role
+        -- hint that drives the client-side item filter was wrong too.
+        local name, _, pointsSpent = GetTalentTabInfo(tab)
         pointsSpent = pointsSpent or 0
         tabs[tab] = { name = name, points = pointsSpent }
         if pointsSpent > bestPoints then

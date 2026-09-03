@@ -1505,6 +1505,17 @@ ItemUpgrade.Currency.TokenId = 300311
 #
 ItemUpgrade.Currency.EssenceId = 300312
 
+#
+#    ItemUpgrade.Currency.SapId
+#        Description: Item ID for the Hyjal Frontier zone currency that pays for
+#                     tier 4 and tier 5 upgrades (Emberwood Sap).
+#                     Unlike TokenId/EssenceId this is NOT affected by
+#                     UseSeasonalCurrency -- it is a zone currency, not a
+#                     seasonal one.
+#        Default:     400000
+#
+ItemUpgrade.Currency.SapId = 400000
+
 # -----------------------------------------------------------------------------
 # Quest Token Payout
 # -----------------------------------------------------------------------------

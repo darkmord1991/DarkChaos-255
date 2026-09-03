@@ -198,6 +198,9 @@ INSERT INTO `areatrigger_scripts` (`entry`, `ScriptName`) VALUES
 -- a killable, evading coil during Thaddius. Fix properly in the clone pass by giving the
 -- 40-man its own Tesla Coil entry and repointing NPC_TESLA_COIL in boss_thaddius_40.cpp.
 -- UPDATE `creature_template` SET `ScriptName` = 'npc_tesla_40' WHERE `entry` = 16218;
+-- RESOLVED 2026-09-02 in HyjalCata/317_unassigned_scripts_round50.sql: the 40-man
+-- now owns creature 351098 (clone of 16218, ScriptName npc_tesla_40) and
+-- boss_thaddius_40.cpp's NPC_TESLA_COIL names it. Stock 16218 is untouched.
 
 -- ---------------------------------------------------------------------
 -- 13. Verification

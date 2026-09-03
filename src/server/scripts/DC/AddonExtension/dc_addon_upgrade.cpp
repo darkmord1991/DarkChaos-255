@@ -233,21 +233,28 @@ namespace Upgrade
         // Use DB-backed currency (single source of truth)
         uint32 tokens = 0;
         uint32 essence = 0;
+        uint32 sap = 0;
         if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
         {
             uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
             uint32 playerGuid = player->GetGUID().GetCounter();
             tokens = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
             essence = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
+            sap = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_FRONTIER_SAP, season);
         }
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+        uint32 sapId = DarkChaos::ItemUpgrade::GetFrontierSapItemId();
 
+        // `sap`/`sapId` are additive -- an addon build that predates T4/T5 sap
+        // pricing ignores them and still renders tokens and essence correctly.
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_CURRENCY_UPDATE)
             .Set("tokens", static_cast<uint32>(tokens))
             .Set("essence", static_cast<uint32>(essence))
+            .Set("sap", static_cast<uint32>(sap))
             .Set("tokenId", static_cast<uint32>(tokenId))
             .Set("essenceId", static_cast<uint32>(essenceId))
+            .Set("sapId", static_cast<uint32>(sapId))
             .Send(player);
     }
 
@@ -298,6 +305,14 @@ namespace Upgrade
                 row.Set("maxUpgradeLevel", JsonValue(static_cast<uint32>(def->max_upgrade_level)));
                 row.Set("statMultiplierMax", JsonValue(static_cast<double>(def->stat_multiplier_max)));
                 row.Set("upgradeCostPerLevel", JsonValue(upgradeCostPerLevel));
+                // Which currency this tier is actually charged in, so the UI can
+                // label the cost and check the right balance instead of assuming
+                // "essence for artifacts, tokens for everything else".
+                DarkChaos::ItemUpgrade::CurrencyType const tierCurrency =
+                    DarkChaos::ItemUpgrade::GetTierCurrency(tierId);
+                row.Set("currencyType", JsonValue(static_cast<uint32>(tierCurrency)));
+                row.Set("currencyItemId",
+                    JsonValue(DarkChaos::ItemUpgrade::GetCurrencyItemId(tierCurrency)));
                 row.Set("isArtifact", JsonValue(def->is_artifact));
                 row.Set("enabled", JsonValue(1u));
                 tiers.Push(std::move(row));
@@ -306,6 +321,10 @@ namespace Upgrade
                 mixRevision(static_cast<uint32>(def->max_upgrade_level));
                 mixRevision(static_cast<uint32>(def->min_ilvl));
                 mixRevision(static_cast<uint32>(def->max_ilvl));
+                // Mixed in so a currency change invalidates the client's cached
+                // tier config -- otherwise the UI keeps charging the old currency
+                // in its display until something else happens to bump the revision.
+                mixRevision(static_cast<uint32>(tierCurrency));
                 mixRevision(static_cast<uint32>(
                     (def->stat_multiplier_max * 10000.0f) + 0.5f));
             }

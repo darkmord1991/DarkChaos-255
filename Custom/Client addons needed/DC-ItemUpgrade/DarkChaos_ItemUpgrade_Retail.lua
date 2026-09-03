@@ -483,7 +483,7 @@ local function DarkChaos_ItemUpgrade_SetRetailCostDisplay(frame, tokenAmount, es
 		DarkChaos_ItemUpgrade_SetCurrencyWidget(
 			costFrame.TokenCurrency,
 			tokenAmount or 0,
-			DC.TOKEN_ITEM_ID,
+			DC.GetTierCurrencyItemId(DC.currentItem and DC.currentItem.tier),
 			(tokenColor and tokenColor.r) or 1,
 			(tokenColor and tokenColor.g) or 1,
 			(tokenColor and tokenColor.b) or 1);
