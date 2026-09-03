@@ -59,13 +59,13 @@ DCWelcome.ExtendedFAQ = {
         id = 4,
         category = "general",
         question = "How do I navigate the world?",
-        answer = "Use the server teleporter network and the DC-Mapupgrades addon for hotspots, world-content markers, and navigation help. You can also use /hotspot for the current bonus zones.",
+        answer = "Use the server teleporter network and the DC-Mapupgrades addon for hotspots, world-content markers, and navigation help. You can also use .hotspot status for the current bonus zones.",
     },
     {
         id = 5,
         category = "general",
         question = "Where do I find all DarkChaos addons?",
-        answer = "Open the Addons tab in DC-Welcome or type /dcaddons. From there you can launch DC-MythicPlus, DC-QOS, DC-Collection, DC-InfoBar, DC-Mapupgrades, and the rest of the client suite.",
+        answer = "Open the Addons tab in DC-Welcome or type /dcaddons. From there you can launch DC-MythicPlus, DC-QOS, DC-Collection, DC-InfoBar, DC-Mapupgrades, DC-Journal, DC-Housing, and the rest of the client suite.",
     },
     
     -- Mythic+
@@ -73,7 +73,7 @@ DCWelcome.ExtendedFAQ = {
         id = 10,
         category = "mythicplus",
         question = "How do I get my first keystone?",
-        answer = "Complete any heroic dungeon at level 80. A level 2 keystone will appear in your bags. Higher keys drop from completing M+ runs within the timer.",
+        answer = "Talk to the Mythic+ Keystone Vendor at level 80 and take a keystone from its gossip menu. The vendor reissues at the level you have earned, so it also replaces a key you lost to full bags. Keys upgrade when you beat the timer and deplete when you do not.",
     },
     {
         id = 11,
@@ -131,7 +131,7 @@ DCWelcome.ExtendedFAQ = {
         id = 30,
         category = "systems",
         question = "How do Hotspots work?",
-        answer = "Hotspots rotate on a timer and provide bonus XP plus world-map support through DC-Mapupgrades. Use /hotspot for the active zones and /dchotspot or /dcmap for the client map tools.",
+        answer = "Hotspots rotate on a timer and provide bonus XP plus world-map support through DC-Mapupgrades. Use .hotspot status for the active zones and /dcmap (or the legacy /dchotspot) for the client map tools.",
     },
     {
         id = 31,
@@ -169,7 +169,25 @@ DCWelcome.ExtendedFAQ = {
         question = "How do I browse mounts, pets, toys, and appearances?",
         answer = "Open DC-Collection with /dcc or from the Addons tab. It brings together collections, titles, heirlooms, toys, and wardrobe-style appearance browsing in one interface.",
     },
-    
+    {
+        id = 37,
+        category = "systems",
+        question = "Are there quests that explain the custom systems?",
+        answer = "Yes. Hervikus the Chaotic in Azshara Crater starts the introduction line at level 1 (teleporters, flight paths, your first item upgrade, and your first heirloom upgrade). At level 80 Chronicler Vaelin in the Jade Forest player base continues it with keystones, a Mythic+ run, guild housing, and the Hinterland Battleground.",
+    },
+    {
+        id = 38,
+        category = "systems",
+        question = "How does guild housing work?",
+        answer = "Speak to the Guild House Manager to reach your guild's instanced house. Use /dch for the decoration catalog and /dch edit to place, move, or remove decorations. Each house has a decoration budget that grows with house level, and guild permissions decide who may edit it.",
+    },
+    {
+        id = 39,
+        category = "systems",
+        question = "Is there an Adventure Guide / Encounter Journal?",
+        answer = "Yes. DC-Journal backports the Encounter Journal to 3.3.5 with DarkChaos instances, boss abilities, and loot tables. Open it with /adventure or /ej, or from the Addons tab. /dcbosses opens the companion boss tracker.",
+    },
+
     -- Community
     {
         id = 40,

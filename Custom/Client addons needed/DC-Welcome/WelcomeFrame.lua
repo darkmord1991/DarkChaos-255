@@ -24,6 +24,7 @@ local ICON_MAPUPGRADES = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome
 local ICON_ITEMUPGRADE = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\ItemUpgrade_64.tga"
 local ICON_AOESETTINGS = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\AOESettings_64.tga"
 local ICON_HINTERLANDBG = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\HinterlandBG_64.tga"
+local ICON_COLLECTION = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\Collection_64.tga"
 
 local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
@@ -307,7 +308,7 @@ local function PopulateGettingStarted(scrollChild)
         { cmd = "/dcaddons", desc = "Open the addon hub" },
         { cmd = "/dcprogress", desc = "Open your progress & season overview" },
         { cmd = "/dcendgame", desc = "Open the endgame director (keys, world, PvP)" },
-        { cmd = "/hotspot", desc = "View current hotspot zones" },
+        { cmd = ".hotspot status", desc = "View current hotspot zones" },
         { cmd = "/discord", desc = "Get Discord invite link" },
     }
     
@@ -532,8 +533,9 @@ local function PopulateFeatures(scrollChild)
             color = {1, 0.5, 0},  -- Orange
             shortDesc = "Scale dungeon difficulty with keystones, affixes, and weekly vault progress!",
             fullDesc = L["FEATURE_MYTHIC"].desc,
-            howTo = "Complete a level 80 Heroic dungeon to receive your first keystone. Use the Font of Power inside the dungeon to activate Mythic+ mode, then manage runs with the DC-MythicPlus suite.",
+            howTo = "At level 80, take your first keystone from the Mythic+ Keystone Vendor. Set the dungeon to Mythic difficulty, enter, then click the Font of Power at the entrance to consume the key and start the run. Manage everything else with the DC-MythicPlus suite.",
             bullets = {
+                "Keystones come from the Keystone Vendor, which reissues at your earned level",
                 "Keystones scale well beyond base Heroic difficulty",
                 "Beat the timer to upgrade your keystone",
                 "Weekly affixes change how each run plays",
@@ -575,7 +577,7 @@ local function PopulateFeatures(scrollChild)
             color = {0, 0.8, 1},  -- Cyan
             shortDesc = "Rotating bonus zones with map support and world-content markers!",
             fullDesc = L["FEATURE_HOTSPOTS"].desc,
-            howTo = "Hotspots rotate every few hours. Use /hotspot for the active zone list, then open DC-Mapupgrades to see markers and related world content on the map.",
+            howTo = "Hotspots rotate every few hours. Use .hotspot status for the active zone list, then open DC-Mapupgrades to see markers and related world content on the map.",
             bullets = {
                 "Bonus XP in hotspot zones",
                 "World-map pins for hotspots and world content",
@@ -585,7 +587,7 @@ local function PopulateFeatures(scrollChild)
             },
             unlock = L["FEATURE_HOTSPOTS"].unlock,
             commands = {
-                { cmd = "/hotspot", desc = "Show current hotspot zones" },
+                { cmd = ".hotspot status", desc = "Show current hotspot zones" },
                 { cmd = "/dcmap", desc = "Open the map upgrades panel" },
             },
         },
@@ -723,6 +725,47 @@ local function PopulateFeatures(scrollChild)
                 "Reset and reward timing follow the live server schedule",
             },
             unlock = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].unlock or "Unlocks at level 80",
+        },
+        {
+            id = "collections",
+            name = L["FEATURE_COLLECTIONS"].name,
+            icon = ICON_COLLECTION,
+            color = {0.1, 0.8, 0.2},  -- Fel Green
+            shortDesc = "Mounts, pets, toys, heirlooms, titles, and appearances in one browser!",
+            fullDesc = L["FEATURE_COLLECTIONS"].desc,
+            howTo = "Open DC-Collection with /dcc or from the Addons tab. Anything you learn is recorded server-side, so the collection follows you across characters.",
+            bullets = {
+                "Mounts, battle pets, toys, heirlooms, and titles in one place",
+                "Wardrobe-style appearance browsing with live model previews",
+                "Wishlist entries and zone hints for what you are still missing",
+                "Account-wide, synced from the server rather than scanned locally",
+                "Pairs with the AOE Loot filters while farming collectibles",
+            },
+            unlock = L["FEATURE_COLLECTIONS"].unlock,
+            commands = {
+                { cmd = "/dcc", desc = "Open the collection browser" },
+            },
+        },
+        {
+            id = "housing",
+            name = L["FEATURE_HOUSING"].name,
+            icon = L["FEATURE_HOUSING"].icon,
+            color = {0.85, 0.65, 0.3},  -- Warm bronze
+            shortDesc = "Instanced guild houses you can decorate room by room!",
+            fullDesc = L["FEATURE_HOUSING"].desc,
+            howTo = "Speak to the Guild House Manager to reach your guild's house, then use /dch for the decoration catalog and /dch edit to place, move, and remove decorations.",
+            bullets = {
+                "Each guild gets its own instanced house",
+                "Decoration catalog with categories and search",
+                "Edit mode for placing, moving, and removing objects",
+                "Per-house decoration budget scales with house level",
+                "Permissions decide who may spawn, move, or delete decor",
+            },
+            unlock = L["FEATURE_HOUSING"].unlock,
+            commands = {
+                { cmd = "/dch", desc = "Open the decoration catalog" },
+                { cmd = "/dch edit", desc = "Toggle housing edit mode" },
+            },
         },
     }
     

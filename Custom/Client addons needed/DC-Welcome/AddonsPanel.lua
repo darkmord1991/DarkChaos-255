@@ -383,6 +383,78 @@ DCWelcome.RegisteredAddons = {
             return HLBG ~= nil or SlashCmdList["HLBGSHOW"] ~= nil
         end,
     },
+    {
+        id = "dc-journal",
+        name = "Adventure Guide",
+        description = "Encounter Journal with DarkChaos instances, boss abilities, and loot tables.",
+        -- No dedicated TGA icon shipped for this addon yet; stock icon by design.
+        icon = "Interface\\Icons\\INV_Misc_Book_09",
+        color = {0.4, 0.7, 1.0},  -- Light blue
+        category = "Dungeons",
+        minLevel = 1,
+        openCommand = "/adventure",
+        settingsCommand = nil,
+        openFunc = function()
+            -- ToggleEncounterJournalFrame is a global defined by DC-Journal
+            if type(ToggleEncounterJournalFrame) == "function" then
+                ToggleEncounterJournalFrame()
+            elseif SlashCmdList["ENCOUNTERJOURNAL"] then
+                SlashCmdList["ENCOUNTERJOURNAL"]("")
+            else
+                DCWelcome.Print("Adventure Guide addon not loaded")
+            end
+        end,
+        settingsFunc = nil,  -- No settings panel
+        isLoaded = function()
+            return type(ToggleEncounterJournalFrame) == "function"
+                or SlashCmdList["ENCOUNTERJOURNAL"] ~= nil
+        end,
+        -- Boss tracker companion window
+        hasSecondButton = true,
+        secondButtonName = "Boss Tracker",
+        secondButtonIcon = "Interface\\Icons\\Achievement_Boss_Kelthuzad_01",
+        secondButtonFunc = function()
+            if SlashCmdList["DCBOSSES"] then
+                SlashCmdList["DCBOSSES"]("")
+            else
+                DCWelcome.Print("Boss tracker not available")
+            end
+        end,
+    },
+    {
+        id = "dc-housing",
+        name = "Guild Housing",
+        description = "Decoration catalog, edit mode, and budget for your guild house.",
+        -- No dedicated TGA icon shipped for this addon yet; stock icon by design.
+        icon = "Interface\\Icons\\INV_Misc_Tournaments_banner_Human",
+        color = {0.85, 0.65, 0.3},  -- Warm bronze
+        category = "World",
+        minLevel = 1,
+        openCommand = "/dch",
+        settingsCommand = "/dch edit",
+        openFunc = function()
+            if DCHousing and DCHousing.Catalog and DCHousing.Catalog.Toggle then
+                DCHousing.Catalog:Toggle()
+            elseif SlashCmdList["DCHOUSING"] then
+                SlashCmdList["DCHOUSING"]("")
+            else
+                DCWelcome.Print("Housing addon not loaded")
+            end
+        end,
+        settingsFunc = function()
+            -- Edit mode is the "configure" entry point for housing
+            if DCHousing and DCHousing.EditMode and DCHousing.EditMode.Toggle then
+                DCHousing.EditMode:Toggle()
+            elseif SlashCmdList["DCHOUSING"] then
+                SlashCmdList["DCHOUSING"]("edit")
+            else
+                DCWelcome.Print("Housing addon not loaded")
+            end
+        end,
+        isLoaded = function()
+            return DCHousing ~= nil or SlashCmdList["DCHOUSING"] ~= nil
+        end,
+    },
 }
 
 -- =============================================================================
@@ -669,25 +741,23 @@ function DCWelcome:PopulateAddonsPanel(scrollChild)
     intro:SetText("|cff888888Green opens an addon, the gear opens settings, and some cards expose a second feature button|r")
     yOffset = yOffset - 25
     
-    -- Category grouping
-    local categories = {
-        { name = "Dungeons", addons = {} },
-        { name = "Progression", addons = {} },
-        { name = "Gear", addons = {} },
-        { name = "UI", addons = {} },
-        { name = "World", addons = {} },
-        { name = "PvP", addons = {} },
-        { name = "Competition", addons = {} },
-        { name = "Settings", addons = {} },
-    }
-    
-    -- Group addons by category
+    -- Category grouping. Sections come from DCWelcome.CategoryOrder so this panel
+    -- and the documented category list cannot drift apart: previously the order
+    -- was hardcoded here without "Utility"/"Other", so an addon registered through
+    -- DCWelcome:RegisterAddon() with either of those silently disappeared.
+    local categories = {}
+    local byName = {}
+    for _, name in ipairs(DCWelcome.CategoryOrder) do
+        local cat = { name = name, addons = {} }
+        table.insert(categories, cat)
+        byName[name] = cat
+    end
+
+    -- Group addons by category; anything unrecognised falls into "Other"
     for _, addon in ipairs(DCWelcome.RegisteredAddons) do
-        for _, cat in ipairs(categories) do
-            if addon.category == cat.name then
-                table.insert(cat.addons, addon)
-                break
-            end
+        local cat = byName[addon.category] or byName["Other"]
+        if cat then
+            table.insert(cat.addons, addon)
         end
     end
     

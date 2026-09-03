@@ -64,6 +64,9 @@ L["WHATS_NEW_FEATURES"] = {
     "|cff00ccffHotspots + Map Upgrades|r - Rotating bonus zones with world-map pins for hotspots and world content.",
     "|cff00ff00AOE Loot + DC-QOS|r - Faster looting plus tooltip, automation, bag, nameplate, and interface improvements.",
     "|cff00ff99Collections + Info Bar|r - Browse mounts, pets, toys, titles, appearances, and keep key server info visible.",
+    "|cffd9a64dGuild Housing|r - Instanced guild houses with a decoration catalog, edit mode, and per-house budget.",
+    "|cff66ccffAdventure Guide|r - Encounter Journal with DarkChaos instances, boss abilities, and loot tables.",
+    "|cffffd700Introduction Quests|r - A guided line through teleporters, upgrades, keystones, housing, and HLBG.",
     "|cffff0000Hinterland Battleground|r - Open-world PvP with queue HUD, live stats, and seasonal tracking.",
     "|cffff66ffSeason Systems|r - Season points, token and essence tracking, reward popups, and leaderboards.",
     "|cffff6600Challenge Modes|r - Hardcore, Iron Man, Self-Crafted, and other special-rule runs via the Challenge Mode Manager.",
@@ -82,15 +85,23 @@ L["GETTING_STARTED_STEPS"] = {
         text = "Use this addon as your landing page. The Addons tab opens the DarkChaos client tools, the Progress tab shows your stats and current season, and Endgame surfaces live keys, world windows, and PvP.",
     },
     {
-        title = "|cffffd700Step 2: Follow the Level Milestones|r",
+        title = "|cffffd700Step 2: Run the Introduction Quests|r",
+        text = "Hervikus the Chaotic in Azshara Crater starts the opening line: the teleporter network, the flight master, your first item upgrade, and your first heirloom upgrade. Follow it before you leave the crater - it hands over the tokens and gear the rest of the systems assume you have.",
+    },
+    {
+        title = "|cffffd700Step 3: Follow the Level Milestones|r",
         text = "The live bracket currently ends at 80, where Mythic+ opens. Later brackets are planned for 100, 130, 160, 200, and 255, with Prestige reserved for the eventual 255 bracket.",
     },
     {
-        title = "|cffffd700Step 3: Enable the Client Tools|r",
+        title = "|cffffd700Step 4: Take the Champion's Primer at 80|r",
+        text = "At level 80, Chronicler Vaelin in the Jade Forest player base picks the line back up: your first keystone, a Mythic+ run, your guild house, and the Hinterland Battleground. It is the fastest tour of the endgame systems.",
+    },
+    {
+        title = "|cffffd700Step 5: Enable the Client Tools|r",
         text = "Open DC-Mapupgrades, DC-QOS, DC-Collection, DC-InfoBar, and the Mythic+ suite from the Addons tab so you have the full DarkChaos UI stack available while leveling.",
     },
     {
-        title = "|cffffd700Step 4: Keep the Resources Handy|r",
+        title = "|cffffd700Step 6: Keep the Resources Handy|r",
         text = "Use the Community tab for Discord, GitHub, current docs, and issue tracking so you always have the latest setup and feature information.",
     },
 }
@@ -118,7 +129,7 @@ L["FEATURE_PRESTIGE"] = {
 L["FEATURE_HOTSPOTS"] = {
     name = "|cff00ccffDynamic Hotspots|r",
     icon = "Interface\\Icons\\INV_Misc_Map01",
-    desc = "Rotating bonus zones with world-map support, active markers, and extra world content visibility. Check /hotspot for the current rotation.",
+    desc = "Rotating bonus zones with world-map support, active markers, and extra world content visibility. Check .hotspot status for the current rotation.",
     unlock = "Unlocks at level 10",
 }
 
@@ -162,6 +173,20 @@ L["FEATURE_DUNGEON_QUESTS"] = {
     icon = "Interface\\Icons\\INV_Scroll_03",
     desc = "Supported dungeon runs can include personal objectives, bonus rewards, and extra progression hooks while you push higher tiers.",
     unlock = "Available in supported dungeon content",
+}
+
+L["FEATURE_COLLECTIONS"] = {
+    name = "|cff1acc33Collections|r",
+    icon = "Interface\\Icons\\INV_Box_01",
+    desc = "One browser for mounts, battle pets, toys, heirlooms, titles, and wardrobe-style appearances, with wishlist and zone-hint support.",
+    unlock = "Available immediately",
+}
+
+L["FEATURE_HOUSING"] = {
+    name = "|cffd9a64dGuild Housing|r",
+    icon = "Interface\\Icons\\INV_Misc_Tournaments_banner_Human",
+    desc = "Instanced guild houses with a decoration catalog, a placement edit mode, and a per-house decoration budget.",
+    unlock = "Talk to the Guild House Manager",
 }
 
 L["FEATURE_VAULT"] = {

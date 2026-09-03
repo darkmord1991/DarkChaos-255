@@ -2,7 +2,7 @@
 ## Title: |cffFFCC00DC|r Welcome
 ## Notes: Welcome screen, FAQ, addons hub, progression tracking, season tools, and integrated utility modules for DarkChaos-255
 ## Author: DarkChaos-255
-## Version: 2.0.0
+## Version: 2.1.0
 ## SavedVariables: DCWelcomeDB
 ## Dependencies: DC-AddonProtocol
 

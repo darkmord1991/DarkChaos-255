@@ -29,7 +29,7 @@ DCWelcome.ADDON_PATH = "Interface\\AddOns\\" .. addonNameGlobal .. "\\"
 print("DC-Welcome: Path detected as: " .. DCWelcome.ADDON_PATH)
 
 -- Version
-DCWelcome.VERSION = "2.0.0"
+DCWelcome.VERSION = "2.1.0"
 
 -- =============================================================================
 -- Saved Variables & Defaults
@@ -56,17 +56,24 @@ local defaults = {
 
 DCWelcome.Plugins = {}       -- All registered plugins
 DCWelcome.PluginsByID = {}   -- Quick lookup by ID
-DCWelcome.Categories = {
+-- Display order for the Addons hub. Every value a registered addon may carry in
+-- its `category` field has to appear here; AddonsPanel builds its section list
+-- from this table and drops anything it cannot place into "Other".
+DCWelcome.CategoryOrder = {
     "Dungeons",
-    "PvP", 
     "Progression",
     "Gear",
+    "UI",
     "World",
+    "PvP",
     "Competition",
     "Settings",
     "Utility",
-    "Other"
+    "Other",
 }
+
+-- Backwards-compatible alias (same table) for anything still reading .Categories
+DCWelcome.Categories = DCWelcome.CategoryOrder
 
 -- =============================================================================
 -- Event Bus (Inter-addon communication)
