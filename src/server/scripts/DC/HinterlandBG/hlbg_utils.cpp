@@ -80,9 +80,3 @@ void HLBGPlayerStats::OnPlayerWin(Player* player)
 
     LOG_DEBUG("hlbg.stats", "Player {} won HLBG - battles_won incremented", player->GetName());
 }
-
-void HLBGPlayerStats::OnTeamWin(TeamId winningTeam, uint32 zoneId)
-{
-    LOG_DEBUG("hlbg.stats", "Team {} won in zone {} - updating player wins",
-        winningTeam == TEAM_ALLIANCE ? "Alliance" : "Horde", zoneId);
-}

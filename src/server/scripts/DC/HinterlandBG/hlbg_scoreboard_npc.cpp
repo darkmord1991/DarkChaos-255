@@ -209,7 +209,7 @@ public:
             intensity = 0.50f;
 
         return Acore::StringFormat("{} {}%",
-            GetWeatherDisplayName(hlbg->GetAffixWeatherType(affixCode)),
+            GetWeatherDisplayName(hlbg->GetAffixWeatherState(affixCode)),
             static_cast<uint32>(std::lround(intensity * 100.0f)));
     }
 

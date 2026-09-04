@@ -1,10 +1,88 @@
 ﻿-- HLBG_Utils.lua
 -- Small utility functions extracted from the main client file.
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
+-- Single entry point for delayed calls.
+--
+-- C_Timer comes from DC-AddonProtocol (a hard dependency), but this addon has
+-- already been bitten once by a *partially* populated C_Timer table -- see the
+-- write-up in HLBG_TimerCompat.lua -- and the inline `if C_Timer and
+-- C_Timer.After` guard was applied at some call sites and not others. Routing
+-- everything through here makes the behaviour uniform and keeps the fallback in
+-- one place instead of asking every caller to remember it.
+do
+    local fallbackFrame
+    local pending
+
+    function HLBG.After(delay, fn)
+        if type(fn) ~= 'function' then
+            return false
+        end
+
+        delay = tonumber(delay) or 0
+
+        local timer = _G.C_Timer
+        if timer and type(timer.After) == 'function' then
+            timer.After(delay, fn)
+            return true
+        end
+
+        pending = pending or {}
+        local now = (type(GetTime) == 'function' and GetTime()) or 0
+        table.insert(pending, { at = now + delay, fn = fn })
+
+        if not fallbackFrame then
+            fallbackFrame = CreateFrame('Frame')
+            fallbackFrame:SetScript('OnUpdate', function(self)
+                local t = (type(GetTime) == 'function' and GetTime()) or 0
+                local i = 1
+                while i <= #pending do
+                    local task = pending[i]
+                    if t >= task.at then
+                        table.remove(pending, i)
+                        task.fn()
+                    else
+                        i = i + 1
+                    end
+                end
+
+                if #pending == 0 then
+                    self:Hide()
+                end
+            end)
+        end
+
+        fallbackFrame:Show()
+        return true
+    end
+end
+
+-- Lazy-formatting debug output. HLBG.Debug space-joins its arguments, which is
+-- wrong for the printf-style call sites in the HUD and handlers, and building
+-- the string at the call site meant paying for messages that were never shown.
+-- Pass a format string plus arguments; both are only expanded when debug output
+-- is actually enabled.
+function HLBG.DebugF(fmt, ...)
+    if not (HLBG.IsDebugEnabled and HLBG.IsDebugEnabled()) then
+        return
+    end
+
+    local msg = fmt
+    if select('#', ...) > 0 then
+        local ok, formatted = pcall(string.format, fmt, ...)
+        if ok then
+            msg = formatted
+        end
+    end
+
+    HLBG.Debug(msg)
+end
+
 _G.HLBG = HLBG
 -- Affix code -> friendly name mapping
 HLBG.AFFIX_NAMES = HLBG.AFFIX_NAMES or {}
--- GetAffixName function moved to HLBG_Affixes.lua
+-- Affix name/description tables are populated by HLBG_Stubs.lua, which fills
+-- this table entry-by-entry. (There is no HLBG_Affixes.lua; the old comment
+-- here pointed at a file that was never added.)
 -- SecondsToClock
 if type(HLBG.SecondsToClock) ~= 'function' then
     function HLBG.SecondsToClock(seconds)

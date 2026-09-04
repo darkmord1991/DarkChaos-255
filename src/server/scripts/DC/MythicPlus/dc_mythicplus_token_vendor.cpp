@@ -257,18 +257,25 @@ std::string GetItemLink(uint32 itemId, ItemTemplate const* proto)
 // quartermaster is 100051; both run this same script.
 constexpr uint32 VENDOR_ENTRY_ENDGAME = 100052;
 
-// Get token cost based on item level
+// Token cost for an item, from the rung its item level falls in.
+//
+// 🔴 THRESHOLDS ARE rung-2, NOT the rung value. The vendor selects stock with
+// `ItemLevel BETWEEN rung-2 AND rung+2` but this is handed the ITEM's level, so testing
+// `>= rung` misprices the bottom of every band. That was not hypothetical: the 252 rung
+// is 464 ilvl-251 items out of 473, so 98% of the TOP rung was charged 14 tokens instead
+// of 15. The bands do not overlap (202 < 211, 215 < 224, 228 < 243, 247 < 250), so
+// rung-2 is unambiguous.
 uint32 GetTokenCost(uint32 itemLevel)
 {
-    if (itemLevel >= 252)
+    if (itemLevel >= 250)        // 252 rung, band 250-254
         return 15;
-    if (itemLevel >= 239)
+    if (itemLevel >= 243)        // 245 rung, band 243-247
         return 14;
-    if (itemLevel >= 226)
+    if (itemLevel >= 224)        // 226 rung, band 224-228
         return 13;
-    if (itemLevel >= 213)
+    if (itemLevel >= 211)        // 213 rung, band 211-215
         return 12;
-    return 11;
+    return 11;                   // 200 rung, band 198-202
 }
 
 // Which item-level rungs a given vendor offers.
@@ -289,7 +296,12 @@ std::vector<uint32> GetVendorTiers(uint32 vendorEntry)
     if (vendorEntry == VENDOR_ENTRY_ENDGAME)
         return { 412, 450 };
 
-    return { 200, 213, 226, 239, 252 };
+    // 🔴 245, NOT 239. The ladder was built as an even +13 step, but WotLK item
+    // levels cluster at 232 / 245 / 251 / 258 / 264 and the 237-241 band is a trough:
+    // 93 items against 722 at 243-247. That left 19 class/slot pairs with NOTHING and
+    // 46 more with a single item, so this rung offered one choice or none where every
+    // other rung offers three. Pick rungs where the items are, not on an even grid.
+    return { 200, 213, 226, 245, 252 };
 }
 
 // Which ITEM a vendor charges in. The level-80 Mythic+ quartermaster takes DC
@@ -1139,7 +1151,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "  ilvl 200: 11 tokens", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "  ilvl 213: 12 tokens", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "  ilvl 226: 13 tokens", GOSSIP_SENDER_MAIN, 0);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "  ilvl 239: 14 tokens", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "  ilvl 245: 14 tokens", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "  ilvl 252: 15 tokens", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, 9999);

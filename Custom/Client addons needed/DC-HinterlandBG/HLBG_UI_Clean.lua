@@ -1,4 +1,4 @@
-local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
+﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 HLBG.UI = HLBG.UI or {}
 
 -- Open the unified leaderboards UI (DC-Leaderboards)
@@ -231,8 +231,8 @@ if not HLBG.UI.Queue.Content then
             HLBG.QueueMessage("refreshing")
         end
         -- Set timeout: if no response after 3 seconds, show error
-        if C_Timer and C_Timer.After then
-            C_Timer.After(3, function()
+        if type(HLBG.After) == 'function' then
+            HLBG.After(3, function()
                 -- Only show timeout if status text still shows "Requesting..."
                 if HLBG.UI.Queue.StatusText and HLBG.UI.Queue.StatusText:GetText():match("Requesting") then
                     HLBG.UI.Queue.StatusText:SetText(
@@ -273,7 +273,7 @@ if not HLBG.UI.Queue.Content then
             HLBG.QueueMessage("shown_requesting")
         end
         if type(HLBG.RequestQueueStatus) == 'function' then
-            C_Timer.After(0.3, function()
+            HLBG.After(0.3, function()
                 pcall(HLBG.RequestQueueStatus)
             end)
         else

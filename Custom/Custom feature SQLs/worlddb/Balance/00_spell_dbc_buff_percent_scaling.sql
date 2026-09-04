@@ -86,10 +86,24 @@ INSERT INTO `spell_dbc` VALUES
 -- MULTIPLY (HandleModTotalPercentStat -> GetTotalAuraMultiplier), so without
 -- this a raid with both a druid and a paladin would get 1.10 * 1.10 = +21% to
 -- every attribute.  Group 1006 already holds the Kings family with stack_rule 1.
+--
+-- These are the FIRST RANK of each chain (1126 Mark of the Wild, 21849 Gift of
+-- the Wild), not the max ranks the spell_dbc block above converts.  LoadSpellGroups
+-- erases any row whose spell has GetRank() > 1 --
+--     "Spell {} listed in `spell_group` is not first rank of spell."
+-- -- so listing 48469/48470 here would load cleanly enough to look right in the
+-- SQL but leave the two buffs stacking at +21%.  The chain head covers every
+-- rank regardless: GetSpellSpellGroupMapBounds resolves the looked-up spell
+-- through GetFirstSpellInChain before consulting the group map.
+--
+-- The DELETE also clears 48469/48470, which an earlier revision of this file
+-- inserted.  They are erased at load with an error apiece rather than applied,
+-- so they never had any effect, but they persist in the table and repeat the
+-- error on every startup until deleted.
 
-DELETE FROM `spell_group` WHERE `id` = 1006 AND `spell_id` IN (48469,48470,72588);
+DELETE FROM `spell_group` WHERE `id` = 1006 AND `spell_id` IN (1126,21849,72588,48469,48470);
 
 INSERT INTO `spell_group` (`id`, `spell_id`) VALUES
-(1006, 48469),
-(1006, 48470),
+(1006, 1126),
+(1006, 21849),
 (1006, 72588);

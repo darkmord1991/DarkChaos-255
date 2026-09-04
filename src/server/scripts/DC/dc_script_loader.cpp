@@ -47,6 +47,7 @@ void AddSC_npc_hyjal_guard_alliance();        // HyjalFrontier/hyjal_frontier_gu
 void AddSC_npc_hyjal_guard_horde();           // HyjalFrontier/hyjal_frontier_guards.cpp
 void AddSC_npc_hyjal_emberwood_vendor();      // HyjalFrontier/hyjal_frontier_currency.cpp
 void AddSC_npc_hyjal_innkeeper();             // HyjalFrontier/hyjal_frontier_innkeeper.cpp
+void AddSC_hyjal_frontier_consumables();      // HyjalFrontier/hyjal_frontier_consumables.cpp
 
 // --- Giant Isles zone ---
 void AddSC_giant_isles_zone();                // GiantIsles/dc_giant_isles_zone.cpp
@@ -142,9 +143,7 @@ void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG/hlbg_npc_thrall_wa
 void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG/hlbg_npc_varian.cpp
 void AddSC_hl_scoreboard();                   // HinterlandBG/hlbg_scoreboard_npc.cpp
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG/hlbg_npc_battlemaster.cpp
-void AddSC_hlbg_battlemaster_hook();          // HinterlandBG/hlbg_battlemaster_hook.cpp
 void AddSC_hlbg_movement_handler();           // HinterlandBG/hlbg_movement_handler.cpp
-void AddSC_hlbg_native_broadcast();           // HinterlandBG/hlbg_native_broadcast.cpp
 
 // --- Prestige system ---
 void AddSC_dc_prestige_system();              // Progression/Prestige/dc_prestige_system.cpp
@@ -339,6 +338,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_npc_hyjal_guard_horde);
     DC_LOAD(AddSC_npc_hyjal_emberwood_vendor);
     DC_LOAD(AddSC_npc_hyjal_innkeeper);
+    DC_LOAD(AddSC_hyjal_frontier_consumables);
 
     LogSection("Giant Isles Zone");
     DC_LOAD(AddSC_giant_isles_zone);
@@ -436,9 +436,7 @@ void AddDCScripts()
     // two HLBGLiveNativeServerScript instances, double-handling every live
     // snapshot request.
     DC_LOAD(AddSC_npc_hinterlands_battlemaster);
-    DC_LOAD(AddSC_hlbg_battlemaster_hook);
     DC_LOAD(AddSC_hlbg_movement_handler);
-    DC_LOAD(AddSC_hlbg_native_broadcast);
     // Registers the HLBG context with the unified spectator core (the
     // registry singleton makes this safe before the core scripts load).
     DC_LOAD(AddSC_dc_hlbg_spectator);

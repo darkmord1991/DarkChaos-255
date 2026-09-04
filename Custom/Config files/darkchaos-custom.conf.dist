@@ -2823,25 +2823,75 @@ HinterlandBG.Affix.PlayerSpell.ClearSkies = 910011
 HinterlandBG.Affix.PlayerSpell.GentleBreeze = 910012
 
 # NPC-Affecting Affix Spells
-HinterlandBG.Affix.NpcSpell.Storm = 910020
-HinterlandBG.Affix.NpcSpell.HeavyRain = 910021
-HinterlandBG.Affix.NpcSpell.Fog = 910022
+HinterlandBG.Affix.PlayerSpell.Storm = 910020
+HinterlandBG.Affix.PlayerSpell.HeavyRain = 910021
+HinterlandBG.Affix.PlayerSpell.Fog = 910022
 
 # Affix Weather Types (0=Fine, 1=Rain, 2=Snow, 3=Storm)
-HinterlandBG.Affix.WeatherType.Sunlight = 0
-HinterlandBG.Affix.WeatherType.ClearSkies = 0
-HinterlandBG.Affix.WeatherType.GentleBreeze = 1
-HinterlandBG.Affix.WeatherType.Storm = 3
-HinterlandBG.Affix.WeatherType.HeavyRain = 1
-HinterlandBG.Affix.WeatherType.Fog = 2
+#    HinterlandBG.Affix.WeatherState.<Affix>
+#        Description: Weather shown while the affix is active. These are
+#                     WeatherState values (Weather.h), NOT WeatherType:
+#                       0   Clear          1   Fog
+#                       3   Light Rain     4   Rain        5   Heavy Rain
+#                       6/7/8   Snow (light/medium/heavy)
+#                       86  Thunderstorm   90  Black Rain
+#                     Fog is only reachable this way - the natural weather
+#                     system can never generate it.
+#                     Snow/sandstorm are intentionally unused: the Hinterlands
+#                     is temperate forest.
+HinterlandBG.Affix.WeatherState.Sunlight = 0
+HinterlandBG.Affix.WeatherState.ClearSkies = 0
+HinterlandBG.Affix.WeatherState.GentleBreeze = 3
+HinterlandBG.Affix.WeatherState.Storm = 86
+HinterlandBG.Affix.WeatherState.HeavyRain = 5
+HinterlandBG.Affix.WeatherState.Fog = 1
 
 # Affix Weather Intensity (0.0 - 1.0)
-HinterlandBG.Affix.WeatherIntensity.Sunlight = 0.35
-HinterlandBG.Affix.WeatherIntensity.ClearSkies = 0.2
-HinterlandBG.Affix.WeatherIntensity.GentleBreeze = 0.3
-HinterlandBG.Affix.WeatherIntensity.Storm = 0.6
-HinterlandBG.Affix.WeatherIntensity.HeavyRain = 0.8
-HinterlandBG.Affix.WeatherIntensity.Fog = 0.4
+# -----------------------------------------------------------------------------
+# Rule affixes (7-9) and Nightfall (10)
+# -----------------------------------------------------------------------------
+# Rule affixes carry no spell and no weather - they retune the resource economy,
+# so they change how the match is won rather than how hard players hit.
+#
+#    7 Warlords   faction bosses drain double resources
+#    8 Skirmish   NPC kills drain nothing; players only
+#    9 Bloodlust  player kills drain double resources
+#   10 Nightfall  overrides the zone light and reuses the Fog aura
+#
+# Warlords and Skirmish contradict each other and never roll together while
+# Affix.ConcurrentCount > 1; if both are forced anyway, Skirmish wins.
+
+#    HinterlandBG.Affix.Warlords.BossMultiplier
+#        Description: Multiplier applied to ResourcesLoss.NpcBoss under Warlords.
+#        Default:     2
+HinterlandBG.Affix.Warlords.BossMultiplier = 2
+
+#    HinterlandBG.Affix.Bloodlust.KillMultiplier
+#        Description: Multiplier applied to ResourcesLoss.PlayerKill under Bloodlust.
+#        Default:     2
+HinterlandBG.Affix.Bloodlust.KillMultiplier = 2
+
+#    HinterlandBG.Affix.Nightfall.LightId
+#        Description: Light.dbc row forced on the zone while Nightfall is active.
+#                     0 restores the map default. 2508 is the stock Icecrown
+#                     "soulstorm" light - dark and heavy. Tune this in-game;
+#                     Light.dbc rows carry no names, so it is picked by eye.
+#        Default:     2508
+HinterlandBG.Affix.Nightfall.LightId = 2508
+
+#    HinterlandBG.Affix.Nightfall.FadeSeconds
+#        Description: Cross-fade time into and out of the Nightfall light.
+#        Default:     5
+HinterlandBG.Affix.Nightfall.FadeSeconds = 5
+
+#    Density sent with the state. Clear must stay at 0.0 or the client still
+#    draws precipitation over a clear sky.
+HinterlandBG.Affix.WeatherIntensity.Sunlight = 0.0
+HinterlandBG.Affix.WeatherIntensity.ClearSkies = 0.0
+HinterlandBG.Affix.WeatherIntensity.GentleBreeze = 0.35
+HinterlandBG.Affix.WeatherIntensity.Storm = 0.90
+HinterlandBG.Affix.WeatherIntensity.HeavyRain = 0.85
+HinterlandBG.Affix.WeatherIntensity.Fog = 0.70
 
 
 ###############################################################################

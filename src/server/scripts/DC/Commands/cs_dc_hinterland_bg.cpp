@@ -589,7 +589,7 @@ public:
         {
             uint32 pspell = bg->GetAffixPlayerSpell(code);
             uint32 nspell = bg->GetAffixNpcSpell(code);
-            uint32 wtype  = bg->GetAffixWeatherType(code);
+            uint32 wtype  = bg->GetAffixWeatherState(code);
             float  wint   = bg->GetAffixWeatherIntensity(code);
             // Friendly weather label (0 Fine, 1 Rain, 2 Snow, 3 Storm); default intensity 0.50 when unset
             char const* wname = "Fine";

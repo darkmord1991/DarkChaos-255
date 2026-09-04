@@ -10,6 +10,7 @@
 #include "Time/GameTime.h"
 #include "Weather.h"
 #include "WorldPacket.h"
+#include "WorldSession.h"
 #include "WorldStateDefines.h"
 
 #include "DC/AddonExtension/dc_addon_hlbg.h"
@@ -53,6 +54,14 @@ namespace
         uint32 GetAttr1() const final { return ResourcesCaptured; }
         uint32 GetAttr2() const final { return NpcKills; }
         uint32 GetAttr3() const final { return BossKills; }
+
+        // BattlegroundScore keeps these protected; a derived member function
+        // can read them, BattlegroundHLBG cannot. Expose what the participant
+        // rows need.
+        [[nodiscard]] uint32 GetKillingBlowCount() const { return KillingBlows; }
+        [[nodiscard]] uint32 GetDeathCount() const { return Deaths; }
+        [[nodiscard]] uint32 GetHealingDoneTotal() const { return HealingDone; }
+        [[nodiscard]] uint32 GetDamageDoneTotal() const { return DamageDone; }
 
         uint32 ResourcesCaptured = 0;
         uint32 NpcKills = 0;
@@ -286,11 +295,11 @@ BattlegroundHLBG::BattlegroundHLBG()
 
 void BattlegroundHLBG::InitAffixDefaults()
 {
-    for (uint8 affixCode = HLBG_AFFIX_NONE; affixCode <= HLBG_AFFIX_FOG; ++affixCode)
+    for (uint8 affixCode = HLBG_AFFIX_NONE; affixCode <= HLBG_AFFIX_LAST; ++affixCode)
     {
         _affixPlayerSpell[affixCode] = GetDefaultAffixPlayerSpell(affixCode);
         _affixNpcSpell[affixCode] = GetDefaultAffixNpcSpell(affixCode);
-        _affixWeatherType[affixCode] = GetDefaultAffixWeatherType(affixCode);
+        _affixWeatherState[affixCode] = GetDefaultAffixWeatherState(affixCode);
         _affixWeatherIntensity[affixCode] = GetDefaultAffixWeatherIntensity(affixCode);
     }
 }
@@ -324,6 +333,14 @@ void BattlegroundHLBG::LoadConfig()
     _affixConcurrentCount = std::clamp(
         sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.ConcurrentCount", _affixConcurrentCount),
         1u, HLBGAffixSlotCount);
+    _affixWarlordsBossMultiplier = std::max(1u, sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.Warlords.BossMultiplier", _affixWarlordsBossMultiplier));
+    _affixBloodlustKillMultiplier = std::max(1u, sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.Bloodlust.KillMultiplier", _affixBloodlustKillMultiplier));
+    _affixNightfallLightId = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.Nightfall.LightId", _affixNightfallLightId);
+    _affixNightfallFadeSec = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.Nightfall.FadeSeconds", _affixNightfallFadeSec);
     _affixWeatherIntensityVariance = std::clamp(
         sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensityVariance", _affixWeatherIntensityVariance),
         0.0f, 1.0f);
@@ -334,25 +351,43 @@ void BattlegroundHLBG::LoadConfig()
         "HinterlandBG.Affix.PlayerSpell.ClearSkies", _affixPlayerSpell[HLBG_AFFIX_CLEAR_SKIES]);
     _affixPlayerSpell[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>(
         "HinterlandBG.Affix.PlayerSpell.GentleBreeze", _affixPlayerSpell[HLBG_AFFIX_GENTLE_BREEZE]);
+    _affixPlayerSpell[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.PlayerSpell.Storm", _affixPlayerSpell[HLBG_AFFIX_STORM]);
+    _affixPlayerSpell[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.PlayerSpell.HeavyRain", _affixPlayerSpell[HLBG_AFFIX_HEAVY_RAIN]);
+    _affixPlayerSpell[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.PlayerSpell.Fog", _affixPlayerSpell[HLBG_AFFIX_FOG]);
+
+    // Optional per-affix aura for the guard camps. Defaults to 0 (unused) for
+    // every affix; the map traversal in ApplyAffixEffects is skipped entirely
+    // while none is set, so leaving these at 0 costs nothing.
+    _affixNpcSpell[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.Sunlight", _affixNpcSpell[HLBG_AFFIX_SUNLIGHT]);
+    _affixNpcSpell[HLBG_AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.ClearSkies", _affixNpcSpell[HLBG_AFFIX_CLEAR_SKIES]);
+    _affixNpcSpell[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.GentleBreeze", _affixNpcSpell[HLBG_AFFIX_GENTLE_BREEZE]);
     _affixNpcSpell[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<uint32>(
         "HinterlandBG.Affix.NpcSpell.Storm", _affixNpcSpell[HLBG_AFFIX_STORM]);
     _affixNpcSpell[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>(
         "HinterlandBG.Affix.NpcSpell.HeavyRain", _affixNpcSpell[HLBG_AFFIX_HEAVY_RAIN]);
     _affixNpcSpell[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<uint32>(
         "HinterlandBG.Affix.NpcSpell.Fog", _affixNpcSpell[HLBG_AFFIX_FOG]);
+    _affixNpcSpell[HLBG_AFFIX_NIGHTFALL] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.Nightfall", _affixNpcSpell[HLBG_AFFIX_NIGHTFALL]);
 
-    _affixWeatherType[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>(
-        "HinterlandBG.Affix.WeatherType.Sunlight", _affixWeatherType[HLBG_AFFIX_SUNLIGHT]);
-    _affixWeatherType[HLBG_AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>(
-        "HinterlandBG.Affix.WeatherType.ClearSkies", _affixWeatherType[HLBG_AFFIX_CLEAR_SKIES]);
-    _affixWeatherType[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>(
-        "HinterlandBG.Affix.WeatherType.GentleBreeze", _affixWeatherType[HLBG_AFFIX_GENTLE_BREEZE]);
-    _affixWeatherType[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<uint32>(
-        "HinterlandBG.Affix.WeatherType.Storm", _affixWeatherType[HLBG_AFFIX_STORM]);
-    _affixWeatherType[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>(
-        "HinterlandBG.Affix.WeatherType.HeavyRain", _affixWeatherType[HLBG_AFFIX_HEAVY_RAIN]);
-    _affixWeatherType[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<uint32>(
-        "HinterlandBG.Affix.WeatherType.Fog", _affixWeatherType[HLBG_AFFIX_FOG]);
+    _affixWeatherState[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherState.Sunlight", _affixWeatherState[HLBG_AFFIX_SUNLIGHT]);
+    _affixWeatherState[HLBG_AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherState.ClearSkies", _affixWeatherState[HLBG_AFFIX_CLEAR_SKIES]);
+    _affixWeatherState[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherState.GentleBreeze", _affixWeatherState[HLBG_AFFIX_GENTLE_BREEZE]);
+    _affixWeatherState[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherState.Storm", _affixWeatherState[HLBG_AFFIX_STORM]);
+    _affixWeatherState[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherState.HeavyRain", _affixWeatherState[HLBG_AFFIX_HEAVY_RAIN]);
+    _affixWeatherState[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherState.Fog", _affixWeatherState[HLBG_AFFIX_FOG]);
 
     _affixWeatherIntensity[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<float>(
         "HinterlandBG.Affix.WeatherIntensity.Sunlight", _affixWeatherIntensity[HLBG_AFFIX_SUNLIGHT]);
@@ -413,6 +448,13 @@ void BattlegroundHLBG::Init()
 void BattlegroundHLBG::ResetMatchState()
 {
     ClearAffixEffects();
+    // ClearAffixEffects only removes auras. The zone weather and light are
+    // separate overrides, and AdminResetMatch skips SelectAffixForNewBattle
+    // unless the match is already running - without these an admin reset during
+    // warmup left the previous affix's weather and darkness in place. Both are
+    // no-ops before the instance map exists.
+    ClearAffixWeather();
+    ClearAffixLight();
     m_TeamScores[TEAM_ALLIANCE] = _initialResourcesAlliance;
     m_TeamScores[TEAM_HORDE] = _initialResourcesHorde;
     _matchStartEpoch = 0;
@@ -637,7 +679,7 @@ void BattlegroundHLBG::AdminResetMatch(bool recordManualReset)
         HLBGService::Instance().RecordManualReset(GetMapId(),
             GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE),
             GetActiveAffixCode(0u), GetActiveAffixCode(1u), GetActiveAffixCode(2u),
-            GetAffixWeatherType(GetActiveAffixCode()),
+            GetAffixWeatherState(GetActiveAffixCode()),
             GetAffixWeatherIntensity(GetActiveAffixCode()),
             GetCurrentMatchDurationSeconds());
     }
@@ -756,9 +798,9 @@ uint32 BattlegroundHLBG::GetAffixNpcSpell(uint8 code) const
     return code < _affixNpcSpell.size() ? _affixNpcSpell[code] : 0u;
 }
 
-uint32 BattlegroundHLBG::GetAffixWeatherType(uint8 code) const
+uint32 BattlegroundHLBG::GetAffixWeatherState(uint8 code) const
 {
-    return code < _affixWeatherType.size() ? _affixWeatherType[code] : 0u;
+    return code < _affixWeatherState.size() ? _affixWeatherState[code] : 0u;
 }
 
 float BattlegroundHLBG::GetAffixWeatherIntensity(uint8 code) const
@@ -1060,6 +1102,13 @@ void BattlegroundHLBG::RewardNpcKill(Player* killer, Creature* unit, uint32 scor
     else if (victimTeam == TEAM_ALLIANCE)
         ++_hordeNpcKills;
 
+    // Skirmish is "players only": zeroing the resource drain alone still left
+    // guards worth farming for honor and tokens, which is the behaviour the
+    // affix exists to remove. Kill counters keep ticking - the kill happened -
+    // but it pays nothing.
+    if (IsAffixActive(HLBG_AFFIX_SKIRMISH))
+        return;
+
     if (IsEligibleForRewards(killer) && !IsPlayerAfkFlagged(killer))
     {
         RewardRandomKillHonor(killer);
@@ -1143,8 +1192,9 @@ void BattlegroundHLBG::HandleKillPlayer(Player* victim, Player* killer)
     if (victimTeam != TEAM_ALLIANCE && victimTeam != TEAM_HORDE)
         victimTeam = victim->GetTeamId();
 
-    ModifyTeamResources(victimTeam, -static_cast<int32>(_resourcesLossPlayerKill));
-    RewardPlayerKill(killer, victim, _resourcesLossPlayerKill);
+    uint32 killLoss = GetEffectivePlayerKillLoss();
+    ModifyTeamResources(victimTeam, -static_cast<int32>(killLoss));
+    RewardPlayerKill(killer, victim, killLoss);
     SyncResourceState();
 }
 
@@ -1159,6 +1209,7 @@ void BattlegroundHLBG::HandleKillUnit(Creature* unit, Player* killer)
     if (!ClassifyNpc(unit->GetEntry(), victimTeam, scorePoints, isBossKill))
         return;
 
+    scorePoints = GetEffectiveNpcLoss(scorePoints, isBossKill);
     ModifyTeamResources(victimTeam, -static_cast<int32>(scorePoints));
     RewardNpcKill(killer, unit, scorePoints, victimTeam, isBossKill);
     SyncResourceState();
@@ -1337,18 +1388,47 @@ void BattlegroundHLBG::RewardMatchOutcome(TeamId winnerTeamId)
         DCAddon::HLBG::SendStatus(player, DCAddon::HLBG::STATUS_ENDED, GetMapId(), 0);
     }
 
-    if (winnerTeamId == TEAM_ALLIANCE || winnerTeamId == TEAM_HORDE)
-        HLBGPlayerStats::OnTeamWin(winnerTeamId, HLBG_ZONE_ID);
-
     if (!_matchResultRecorded)
     {
         _matchResultRecorded = true;
+
+        // One row per participant, written in the same transaction as the match
+        // row. Without this dc_hlbg_match_participants stays empty and every
+        // seasonal leaderboard in the addon returns nothing.
+        std::vector<HLBGMatchParticipant> participants;
+        participants.reserve(GetPlayers().size());
+        for (auto const& playerEntry : GetPlayers())
+        {
+            Player* player = playerEntry.second;
+            if (!player)
+                continue;
+
+            HLBGMatchParticipant participant;
+            participant.guid = player->GetGUID().GetCounter();
+            participant.playerName = player->GetName();
+            participant.accountId = player->GetSession() ? player->GetSession()->GetAccountId() : 0u;
+            participant.team = static_cast<uint8>(player->GetBgTeamId());
+            participant.resourcesCaptured = GetPlayerContributionScore(player->GetGUID());
+
+            auto const& scoreItr = PlayerScores.find(participant.guid);
+            if (scoreItr != PlayerScores.end() && scoreItr->second)
+            {
+                auto const* score = static_cast<BattlegroundHLBGScore const*>(scoreItr->second);
+                participant.kills = score->GetKillingBlowCount();
+                participant.deaths = score->GetDeathCount();
+                participant.healingDone = score->GetHealingDoneTotal();
+                participant.damageDone = score->GetDamageDoneTotal();
+            }
+
+            participants.push_back(std::move(participant));
+        }
+
         HLBGService::Instance().RecordWinner(winnerTeamId, GetMapId(),
             GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE),
             _endedByDepletion ? "depletion" : "tiebreaker",
             GetActiveAffixCode(0u), GetActiveAffixCode(1u), GetActiveAffixCode(2u),
-            GetAffixWeatherType(GetActiveAffixCode()), GetAffixWeatherIntensity(GetActiveAffixCode()),
-            GetCurrentMatchDurationSeconds());
+            GetAffixWeatherState(GetActiveAffixCode()), GetAffixWeatherIntensity(GetActiveAffixCode()),
+            GetCurrentMatchDurationSeconds(), participants);
     }
 }
 
@@ -1356,6 +1436,8 @@ void BattlegroundHLBG::EndBattleground(TeamId winnerTeamId)
 {
     RewardMatchOutcome(winnerTeamId);
     ClearAffixEffects();
+    ClearAffixWeather();
+    ClearAffixLight();
     _activeAffixes.fill(HLBG_AFFIX_NONE);
     _activeAffixWeatherIntensity = 0.0f;
     _affixNextChangeEpoch = 0u;
@@ -1423,13 +1505,15 @@ void BattlegroundHLBG::ApplyAffixEffects()
     if (_affixWeatherEnabled)
         ApplyAffixWeather();
 
+    ApplyAffixLight();
+
     if (_affixAnnounce && GetActiveAffixCode() != HLBG_AFFIX_NONE)
     {
         std::ostringstream message;
         message << "HLBG affixes active: " << BuildAffixNameList(this);
         if (_affixWeatherEnabled)
         {
-            message << " (" << GetWeatherName(GetAffixWeatherType(GetActiveAffixCode()))
+            message << " (" << GetWeatherName(GetAffixWeatherState(GetActiveAffixCode()))
                 << ' ' << static_cast<uint32>(
                     std::lround(GetAffixWeatherIntensity(GetActiveAffixCode()) * 100.0f))
                 << "%)";
@@ -1447,16 +1531,87 @@ void BattlegroundHLBG::ApplyAffixEffects()
 void BattlegroundHLBG::ApplyAffixWeather() const
 {
     Map* map = sMapMgr->FindMap(GetMapId(), GetInstanceID());
-    auto* battlegroundMap = dynamic_cast<BattlegroundMap*>(map);
-    if (!battlegroundMap)
+    if (!map)
         return;
 
-    if (Weather* weather = battlegroundMap->GetOrGenerateZoneDefaultWeather(HLBG_ZONE_ID))
-    {
-        weather->SetWeather(
-            static_cast<WeatherType>(GetAffixWeatherType(GetActiveAffixCode())),
-            GetAffixWeatherIntensity(GetActiveAffixCode()));
-    }
+    // Map::SetZoneWeather, not GetOrGenerateZoneDefaultWeather. The old call
+    // *created* a natural weather generator for the zone on this instance, and
+    // Map::UpdateWeather then re-rolled it every CONFIG_INTERVAL_CHANGEWEATHER
+    // (10 min by default), wiping the affix weather for the rest of the match.
+    // SetZoneWeather instead stores a ZoneDynamicInfo override, which
+    // Map::UpdateWeather never touches (it only ticks zones that have a
+    // DefaultWeather object) and which SendZoneDynamicInfo replays to anyone
+    // zoning in mid-match.
+    //
+    // It also takes a WeatherState directly, which is the only way to reach
+    // WEATHER_STATE_FOG - Weather::GetWeatherState can never produce it.
+    map->SetZoneWeather(HLBG_ZONE_ID,
+        static_cast<WeatherState>(GetAffixWeatherState(GetActiveAffixCode())),
+        GetAffixWeatherIntensity(GetActiveAffixCode()));
+}
+
+void BattlegroundHLBG::ClearAffixWeather() const
+{
+    if (Map* map = sMapMgr->FindMap(GetMapId(), GetInstanceID()))
+        map->SetZoneWeather(HLBG_ZONE_ID, WEATHER_STATE_FINE, 0.0f);
+}
+
+// Nightfall drives the zone light override. Light id 0 is the documented
+// "restore the map default" value (see LIGHT_GET_DEFAULT_FOR_MAP in the stock
+// Malygos script).
+void BattlegroundHLBG::ApplyAffixLight() const
+{
+    Map* map = sMapMgr->FindMap(GetMapId(), GetInstanceID());
+    if (!map)
+        return;
+
+    // Set *or clear*, never set-or-skip. ClearAffixEffects only removes auras,
+    // so an early return here left a previous Nightfall override in place: once
+    // the affix rotated away the zone stayed dark for the rest of the match.
+    // Light id 0 restores the map default.
+    uint32 lightId = IsAffixActive(HLBG_AFFIX_NIGHTFALL) ? _affixNightfallLightId : 0u;
+    map->SetZoneOverrideLight(HLBG_ZONE_ID, lightId, Seconds(_affixNightfallFadeSec));
+}
+
+void BattlegroundHLBG::ClearAffixLight() const
+{
+    if (Map* map = sMapMgr->FindMap(GetMapId(), GetInstanceID()))
+        map->SetZoneOverrideLight(HLBG_ZONE_ID, 0u, Seconds(_affixNightfallFadeSec));
+}
+
+bool BattlegroundHLBG::IsAffixActive(uint8 code) const
+{
+    if (!code)
+        return false;
+
+    for (uint8 activeAffix : _activeAffixes)
+        if (activeAffix == code)
+            return true;
+
+    return false;
+}
+
+uint32 BattlegroundHLBG::GetEffectivePlayerKillLoss() const
+{
+    uint32 loss = _resourcesLossPlayerKill;
+    if (IsAffixActive(HLBG_AFFIX_BLOODLUST))
+        loss *= _affixBloodlustKillMultiplier;
+
+    return loss;
+}
+
+uint32 BattlegroundHLBG::GetEffectiveNpcLoss(uint32 baseLoss, bool isBoss) const
+{
+    // Skirmish is evaluated last on purpose: if it ever rolls alongside
+    // Warlords (AreAffixesCompatible forbids it, but config can force both),
+    // "NPCs are worth nothing" is the safer of the two contradictory rules.
+    if (isBoss && IsAffixActive(HLBG_AFFIX_WARLORDS))
+        baseLoss *= _affixWarlordsBossMultiplier;
+
+    if (IsAffixActive(HLBG_AFFIX_SKIRMISH))
+        return 0u;
+
+    return baseLoss;
 }
 
 void BattlegroundHLBG::SelectAffixForNewBattle()
@@ -1475,7 +1630,7 @@ void BattlegroundHLBG::SelectAffixForNewBattle()
     }
 
     std::vector<uint8> availableAffixes;
-    for (uint8 affixCode = HLBG_AFFIX_SUNLIGHT; affixCode <= HLBG_AFFIX_FOG; ++affixCode)
+    for (uint8 affixCode = HLBG_AFFIX_SUNLIGHT; affixCode <= HLBG_AFFIX_LAST; ++affixCode)
         availableAffixes.push_back(affixCode);
 
     auto takeRandomAffix = [&availableAffixes]() -> uint8
@@ -1510,19 +1665,48 @@ void BattlegroundHLBG::SelectAffixForNewBattle()
     else
     {
         uint8 currentAffix = previousPrimaryAffix;
-        if (currentAffix < HLBG_AFFIX_SUNLIGHT || currentAffix > HLBG_AFFIX_FOG)
-            currentAffix = HLBG_AFFIX_FOG;
+        if (currentAffix < HLBG_AFFIX_SUNLIGHT || currentAffix > HLBG_AFFIX_LAST)
+            currentAffix = HLBG_AFFIX_LAST;
 
         uint8 nextPrimaryAffix = currentAffix + 1;
-        if (nextPrimaryAffix > HLBG_AFFIX_FOG)
+        if (nextPrimaryAffix > HLBG_AFFIX_LAST)
             nextPrimaryAffix = HLBG_AFFIX_SUNLIGHT;
 
         availableAffixes.erase(std::remove(availableAffixes.begin(), availableAffixes.end(), nextPrimaryAffix), availableAffixes.end());
         _activeAffixes[selectedCount++] = nextPrimaryAffix;
     }
 
+    // Extra slots skip anything that would cancel or duplicate an affix already
+    // chosen - e.g. Gentle Breeze (+speed) next to Heavy Rain (-speed).
     while (selectedCount < desiredCount && !availableAffixes.empty())
-        _activeAffixes[selectedCount++] = takeRandomAffix();
+    {
+        bool picked = false;
+        for (std::size_t attempt = 0; attempt < availableAffixes.size(); ++attempt)
+        {
+            uint8 candidate = availableAffixes[attempt];
+            bool compatible = true;
+            for (std::size_t slot = 0; slot < selectedCount; ++slot)
+            {
+                if (!AreAffixesCompatible(_activeAffixes[slot], candidate))
+                {
+                    compatible = false;
+                    break;
+                }
+            }
+
+            if (!compatible)
+                continue;
+
+            availableAffixes.erase(availableAffixes.begin() + attempt);
+            _activeAffixes[selectedCount++] = candidate;
+            picked = true;
+            break;
+        }
+
+        // Nothing left that fits alongside the current selection.
+        if (!picked)
+            break;
+    }
 
     _activeAffixWeatherIntensity = 0.0f;
     if (GetActiveAffixCode() != HLBG_AFFIX_NONE)

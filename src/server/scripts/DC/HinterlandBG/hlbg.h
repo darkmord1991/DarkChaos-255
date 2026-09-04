@@ -18,7 +18,6 @@ public:
     static void OnPlayerKill(Player* killer, Player* victim);
     static void OnResourceCapture(Player* player, uint32 resourceAmount);
     static void OnPlayerWin(Player* player);
-    static void OnTeamWin(TeamId winningTeam, uint32 zoneId);
 };
 
 #endif // DC_HINTERLANDBG_H

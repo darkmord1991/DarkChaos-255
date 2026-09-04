@@ -568,6 +568,7 @@ enum CharacterDatabaseStatements : uint32
     CHAR_SEL_HLBG_HISTORY,
     CHAR_SEL_HLBG_HISTORY_PAGE,
     CHAR_INS_HLBG_WINNER_HISTORY,
+    CHAR_INS_HLBG_MATCH_PARTICIPANT,
 
     // Mythic+ system
     CHAR_SEL_MPLUS_KEYSTONE,

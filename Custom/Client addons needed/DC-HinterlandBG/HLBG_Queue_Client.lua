@@ -431,6 +431,17 @@ local function StripQueueChatMarkup(msg)
 end
 
 local function HandleQueueSystemChat(msg)
+    if type(msg) ~= "string" then
+        return
+    end
+
+    -- Reject non-queue lines before allocating. StripQueueChatMarkup and
+    -- string.lower each build a new string, and this runs for every system
+    -- message the client receives.
+    if not msg:find("[Qq][Uu][Ee][Uu][Ee]") then
+        return
+    end
+
     local plain = StripQueueChatMarkup(msg)
     if plain == "" then
         return
@@ -526,12 +537,13 @@ local function HandleQueueSystemChat(msg)
     end
 end
 
+-- SYSTEM only. Queue notifications are server-generated and arrive as
+-- CHAT_MSG_SYSTEM; SAY/YELL/WHISPER carry *player* speech, so listening to them
+-- let anyone standing nearby drive this client's queue state by typing
+-- "joined queue - position: 5". It also meant parsing every chat line in range.
 HLBG._queueChatFrame = HLBG._queueChatFrame or CreateFrame("Frame")
 HLBG._queueChatFrame:UnregisterAllEvents()
 HLBG._queueChatFrame:RegisterEvent("CHAT_MSG_SYSTEM")
-HLBG._queueChatFrame:RegisterEvent("CHAT_MSG_WHISPER")
-HLBG._queueChatFrame:RegisterEvent("CHAT_MSG_SAY")
-HLBG._queueChatFrame:RegisterEvent("CHAT_MSG_YELL")
 HLBG._queueChatFrame:SetScript("OnEvent", function(_, _, msg)
     pcall(HandleQueueSystemChat, msg)
 end)

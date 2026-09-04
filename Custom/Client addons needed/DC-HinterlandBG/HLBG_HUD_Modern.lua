@@ -1,4 +1,4 @@
--- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
+﻿-- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 local HUD_TIMER_REFRESH_INTERVAL = 0.20
 local HUD_TIMER_EXTENSION_GRACE_SECONDS = 3
@@ -75,11 +75,12 @@ function HLBG.Warmup(payload)
     end
 end
 -- Simple debug print helper (only prints when devMode is enabled in saved vars)
-local function DebugPrint(msg)
-    local enabled = (DCHLBGDB and DCHLBGDB.devMode) or HLBG.devMode
-    if not enabled then return end
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        pcall(DEFAULT_CHAT_FRAME.AddMessage, DEFAULT_CHAT_FRAME, msg)
+-- Forwards to the shared implementation in HLBG_Utils.lua. This file used to
+-- carry its own copy with a narrower enable-check (devMode only, missing
+-- debugLogging and _debugOverride).
+local function DebugPrint(fmt, ...)
+    if HLBG and type(HLBG.DebugF) == 'function' then
+        HLBG.DebugF(fmt, ...)
     end
 end
 -- HUD Setup
@@ -346,7 +347,7 @@ end
 -- Update HUD data with throttling to prevent blinking
 function HLBG.UpdateModernHUD(data)
     -- Debug: Log function entry (only when devMode enabled)
-    DebugPrint(string.format("|cFFFF00FF[UpdateModernHUD]|r FUNCTION CALLED! HUD=%s data=%s", tostring(HUD ~= nil), tostring(data ~= nil)))
+    DebugPrint("|cFFFF00FF[UpdateModernHUD]|r FUNCTION CALLED! HUD=%s data=%s", tostring(HUD ~= nil), tostring(data ~= nil))
     if not HUD then
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[UpdateModernHUD ERROR]|r HUD frame is nil!")
@@ -379,22 +380,22 @@ function HLBG.UpdateModernHUD(data)
     -- Update resources
     local allianceRes = tonumber(data.allianceResources or data.A or 0) or 0
     local hordeRes = tonumber(data.hordeResources or data.H or 0) or 0
-    DebugPrint(string.format("|cFFFFAA00[UpdateModernHUD]|r Input: A=%s H=%s allianceRes=%d hordeRes=%d",
-            tostring(data.A), tostring(data.allianceResources), allianceRes, hordeRes))
+    DebugPrint("|cFFFFAA00[UpdateModernHUD]|r Input: A=%s H=%s allianceRes=%d hordeRes=%d",
+            tostring(data.A), tostring(data.allianceResources), allianceRes, hordeRes)
     -- Clamp resources to sane bounds to avoid occasional spikes from malformed input
     local function clamp(v, lo, hi) if v < lo then return lo elseif v > hi then return hi else return v end end
     allianceRes = clamp(math.floor(allianceRes), 0, 500)
     hordeRes = clamp(math.floor(hordeRes), 0, 500)
     -- Check HUD text elements exist; report only if devMode enabled
     if not HUD.allianceText or not HUD.hordeText then
-        DebugPrint(string.format("|cFFFF0000[UpdateModernHUD ERROR]|r HUD elements missing! allianceText=%s hordeText=%s",
-            tostring(HUD.allianceText ~= nil), tostring(HUD.hordeText ~= nil)))
+        DebugPrint("|cFFFF0000[UpdateModernHUD ERROR]|r HUD elements missing! allianceText=%s hordeText=%s",
+            tostring(HUD.allianceText ~= nil), tostring(HUD.hordeText ~= nil))
         return
     end
     HUD.allianceText:SetText("Alliance: " .. allianceRes)
     HUD.hordeText:SetText("Horde: " .. hordeRes)
-    DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Set text: Alliance=%s Horde=%s",
-            HUD.allianceText:GetText(), HUD.hordeText:GetText()))
+    DebugPrint("|cFF00FF00[UpdateModernHUD]|r Set text: Alliance=%s Horde=%s",
+            HUD.allianceText:GetText(), HUD.hordeText:GetText())
         -- Update player counts (optional). If not provided, show '-' instead of 0.
         local alliancePlayers = tonumber(data.alliancePlayers or data.APC or "")
         local hordePlayers = tonumber(data.hordePlayers or data.HPC or "")
@@ -410,8 +411,8 @@ function HLBG.UpdateModernHUD(data)
         HUD.hordeKills:SetText(string.format("Kills P/N: %s/%s",
             hordePlayerKills ~= nil and tostring(hordePlayerKills) or "-",
             hordeNpcKills ~= nil and tostring(hordeNpcKills) or "-"))
-        DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%s Horde=%s (APC=%s HPC=%s)",
-            tostring(alliancePlayers), tostring(hordePlayers), tostring(data.APC), tostring(data.HPC)))
+        DebugPrint("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%s Horde=%s (APC=%s HPC=%s)",
+            tostring(alliancePlayers), tostring(hordePlayers), tostring(data.APC), tostring(data.HPC))
 
         local totalPlayers = (alliancePlayers or 0) + (hordePlayers or 0)
     local phase = data.phase or "UNKNOWN"
@@ -461,7 +462,7 @@ function HLBG.UpdateModernHUD(data)
         if math.abs(drift) > 2 then -- More than 2 second drift
             HLBG._timerSync.clientOffset = drift
             timeLeft = expected
-            DebugPrint(string.format("|cFFFFAA00[Timer Sync]|r Corrected %+.1fs drift", drift))
+            DebugPrint("|cFFFFAA00[Timer Sync]|r Corrected %+.1fs drift", drift)
         end
         HLBG._timerSync.lastSyncTime = currentTime
     end
@@ -470,8 +471,8 @@ function HLBG.UpdateModernHUD(data)
     local MAX_TIME = 2 * 3600 -- 2 hours maximum
     if timeLeft > MAX_TIME then timeLeft = MAX_TIME end
     if (not HLBG._lastTimerDebug or (currentTime - HLBG._lastTimerDebug) >= 10) then
-        DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Timer: END=%d current=%d remaining=%d offset=%+.1f",
-            endTime, currentTime, timeLeft, HLBG._timerSync.clientOffset))
+        DebugPrint("|cFF00FF00[UpdateModernHUD]|r Timer: END=%d current=%d remaining=%d offset=%+.1f",
+            endTime, currentTime, timeLeft, HLBG._timerSync.clientOffset)
         HLBG._lastTimerDebug = currentTime
     end
     RefreshHUDTimerText(currentTime)
@@ -509,6 +510,40 @@ function HLBG.UpdateModernHUD(data)
     if not affixName and auth and auth.affixName then affixName = auth.affixName end
     if not affixName then affixName = "None" end
     HUD.affixText:SetText("Affix: " .. affixName)
+
+    -- Affixes now carry real effects, so surface what the active one does.
+    -- Resolve the description by name, since affixName may already have been
+    -- turned into a string above.
+    local affixDesc = ""
+    if type(HLBG.GetAffixDescription) == "function" and type(HLBG.AFFIX_NAMES) == "table" then
+        for id, name in pairs(HLBG.AFFIX_NAMES) do
+            if name == affixName then
+                local ok, res = pcall(function() return HLBG.GetAffixDescription(id) end)
+                if ok and res then affixDesc = res end
+                break
+            end
+        end
+    end
+
+    if HUD.affixText.SetScript then
+        if affixDesc ~= "" then
+            HUD.affixText:EnableMouse(true)
+            HUD.affixText:SetScript("OnEnter", function(self)
+                if not GameTooltip then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(affixName, 1, 0.82, 0)
+                GameTooltip:AddLine(affixDesc, 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            HUD.affixText:SetScript("OnLeave", function()
+                if GameTooltip then GameTooltip:Hide() end
+            end)
+        else
+            HUD.affixText:EnableMouse(false)
+            HUD.affixText:SetScript("OnEnter", nil)
+            HUD.affixText:SetScript("OnLeave", nil)
+        end
+    end
     -- Update telemetry if enabled
     if DCHLBGDB.enableTelemetry then
         HUD.telemetryFrame:Show()
@@ -602,7 +637,7 @@ function HLBG.InitializeModernHUD()
     HUD:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     HUD:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
-            C_Timer.After(1, HLBG.UpdateHUDVisibility)
+            HLBG.After(1, HLBG.UpdateHUDVisibility)
         end
     end)
     -- Telemetry refresh: prefer ticker over OnUpdate (avoid per-frame overhead)
@@ -674,10 +709,12 @@ function HLBG.ReadWorldstateData()
             end
         end
     end
-    -- Fallback to global RES table if worldstates are empty
-    if not data.allianceResources and _G.RES then
-        data.allianceResources = tonumber(_G.RES.A) or 0
-        data.hordeResources = tonumber(_G.RES.H) or 0
+    -- Fallback to the shared resource table if worldstates are empty.
+    -- HLBG.RES, not _G.RES: HLBG_Handlers owns it and no longer leaks it
+    -- into the global namespace.
+    if not data.allianceResources and HLBG.RES then
+        data.allianceResources = tonumber(HLBG.RES.A) or 0
+        data.hordeResources = tonumber(HLBG.RES.H) or 0
     end
     -- Store last known good data to prevent showing 0s
     HLBG._lastKnownData = HLBG._lastKnownData or {}
@@ -705,7 +742,7 @@ HLBG.UpdateHUD = function()
     local timeSinceLastUpdate = now - HLBG._lastHUDUpdate
     if timeSinceLastUpdate < 1.0 then
         if dev then
-            DebugPrint(string.format("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate))
+            DebugPrint("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate)
         end
         return -- Skip update to prevent blinking
     end
@@ -715,10 +752,10 @@ HLBG.UpdateHUD = function()
     local hudData = HLBG.ReadWorldstateData()
     -- Secondary: Use HLBG._lastStatus as fallback and sync source
     local status = HLBG._lastStatus or {}
-    local res = _G.RES or {}
+    local res = HLBG.RES or {}
     if dev then
-        DebugPrint(string.format("|cFFAA00FF[UpdateHUD DATA]|r hudData.A=%s status.A=%s res.A=%s",
-                tostring(hudData.allianceResources), tostring(status.A), tostring(res.A)))
+        DebugPrint("|cFFAA00FF[UpdateHUD DATA]|r hudData.A=%s status.A=%s res.A=%s",
+                tostring(hudData.allianceResources), tostring(status.A), tostring(res.A))
     end
     -- Combine data with worldstates taking priority (server-authoritative)
     local finalData = {
@@ -739,8 +776,8 @@ HLBG.UpdateHUD = function()
     }
     -- EXTENSIVE DEBUG: Log final combined data
     if dev then
-        DebugPrint(string.format("|cFF00FFAA[UpdateHUD FINAL]|r A=%d H=%d Time=%d",
-            finalData.allianceResources, finalData.hordeResources, finalData.timeLeft))
+        DebugPrint("|cFF00FFAA[UpdateHUD FINAL]|r A=%d H=%d Time=%d",
+            finalData.allianceResources, finalData.hordeResources, finalData.timeLeft)
     end
     -- Update HLBG._lastStatus to keep status command in sync
     HLBG._lastStatus = HLBG._lastStatus or {}
@@ -764,7 +801,7 @@ HLBG.UpdateHUD = function()
                 HUD:Show()
                 HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
                 if dev then
-                    DebugPrint(string.format("|cFFFFAA00[UpdateHUD]|r HUD shown (in Hinterlands) alpha=%.2f", HUD:GetAlpha()))
+                    DebugPrint("|cFFFFAA00[UpdateHUD]|r HUD shown (in Hinterlands) alpha=%.2f", HUD:GetAlpha())
                 end
             else
                 HUD:Hide()
@@ -802,7 +839,7 @@ wsFrame:SetScript("OnEvent", function(self, event)
         if HLBG.UpdateHUD then
             if HLBG._wsHudUpdatePending then return end
             HLBG._wsHudUpdatePending = true
-            C_Timer.After(0.15, function()
+            HLBG.After(0.15, function()
                 HLBG._wsHudUpdatePending = false
                 if HLBG and HLBG.UpdateHUD then
                     HLBG.UpdateHUD()
@@ -820,7 +857,7 @@ else
     initFrame:RegisterEvent("ADDON_LOADED")
     initFrame:SetScript("OnEvent", function(self, event, addonName)
         if event == "ADDON_LOADED" then
-            C_Timer.After(2, function()
+            HLBG.After(2, function()
                 if HLBG.UI then
                     HLBG.InitializeModernHUD()
                     self:UnregisterEvent("ADDON_LOADED")

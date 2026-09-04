@@ -70,6 +70,6 @@ if not HLBG.PrintVersion then
 end
 if not HLBG._versionPrinted then
     HLBG._versionPrinted = true
-    C_Timer.After(2, function() if HLBG.PrintVersion then HLBG.PrintVersion() end end)
+    HLBG.After(2, function() if HLBG.PrintVersion then HLBG.PrintVersion() end end)
 end
 

@@ -735,6 +735,15 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
 
+    // Appended inside the same transaction as CHAR_INS_HLBG_WINNER_HISTORY, so
+    // the MAX(id) subquery resolves to the match row inserted immediately
+    // before it. LAST_INSERT_ID() is not usable here - the pool can hand the
+    // follow-up statement a different connection.
+    PrepareStatement(CHAR_INS_HLBG_MATCH_PARTICIPANT,
+        "INSERT INTO dc_hlbg_match_participants (match_id, guid, player_name, account_id, account_name, team, season_id, kills, deaths, healing_done, damage_done, resources_captured, rating_change) "
+        "VALUES ((SELECT MAX(id) FROM dc_hlbg_winner_history), ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 0)",
+        CONNECTION_ASYNC);
+
     // HLBG Player Stats
     PrepareStatement(CHAR_INS_HLBG_PLAYER_ENTER, "INSERT INTO dc_hlbg_player_stats (player_guid, player_name, faction, battles_participated, last_participation) VALUES (?, ?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE battles_participated = battles_participated + 1, last_participation = NOW(), player_name = VALUES(player_name), faction = VALUES(faction)", CONNECTION_ASYNC);
     PrepareStatement(CHAR_UPD_HLBG_PLAYER_KILLS, "UPDATE dc_hlbg_player_stats SET total_kills = total_kills + 1 WHERE player_guid = ?", CONNECTION_ASYNC);

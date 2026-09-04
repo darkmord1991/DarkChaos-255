@@ -69,8 +69,10 @@ public:
     uint32 GetAffixNextChangeEpoch() const { return _affixNextChangeEpoch; }
     uint32 GetAffixPlayerSpell(uint8 code) const;
     uint32 GetAffixNpcSpell(uint8 code) const;
-    uint32 GetAffixWeatherType(uint8 code) const;
+    uint32 GetAffixWeatherState(uint8 code) const;
     float GetAffixWeatherIntensity(uint8 code) const;
+    // True when the code occupies any of the active affix slots.
+    bool IsAffixActive(uint8 code) const;
 
 private:
     void PostUpdateImpl(uint32 diff) override;
@@ -102,6 +104,12 @@ private:
     void ClearAffixEffects();
     void ApplyAffixEffects();
     void ApplyAffixWeather() const;
+    void ClearAffixWeather() const;
+    void ApplyAffixLight() const;
+    void ClearAffixLight() const;
+    // Rule affixes retune the resource economy instead of casting a spell.
+    uint32 GetEffectivePlayerKillLoss() const;
+    uint32 GetEffectiveNpcLoss(uint32 baseLoss, bool isBoss) const;
     void ApplyAffixAurasToPlayer(Player* player) const;
     void RemoveAffixAurasFromPlayer(Player* player) const;
     void SelectAffixForNewBattle();
@@ -157,6 +165,10 @@ private:
     uint32 _affixPeriodSec = 0u;
     uint32 _affixConcurrentCount = 1u;
     std::array<uint8, 3> _activeAffixes{};
+    uint32 _affixNightfallLightId = 2508u;
+    uint32 _affixNightfallFadeSec = 5u;
+    uint32 _affixWarlordsBossMultiplier = 2u;
+    uint32 _affixBloodlustKillMultiplier = 2u;
     float _affixWeatherIntensityVariance = 0.20f;
     float _activeAffixWeatherIntensity = 0.0f;
 
@@ -178,7 +190,7 @@ private:
     std::unordered_set<uint32> _npcNormalEntriesHorde;
     std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixPlayerSpell{};
     std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixNpcSpell{};
-    std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixWeatherType{};
+    std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixWeatherState{};
     std::array<float, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixWeatherIntensity{};
 };
 

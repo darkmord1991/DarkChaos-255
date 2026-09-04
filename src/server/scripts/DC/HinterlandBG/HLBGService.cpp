@@ -128,11 +128,11 @@ void HLBGService::RecordWinner(TeamId winnerTeamId, uint32 mapId,
     uint32 allianceScore, uint32 hordeScore, char const* reason,
     uint8 affixCodePrimary, uint8 affixCodeSecondary,
     uint8 affixCodeTertiary, uint32 weatherType, float weatherIntensity,
-    uint32 durationSeconds)
+    uint32 durationSeconds, std::vector<HLBGMatchParticipant> const& participants)
 {
     RecordResult(winnerTeamId, mapId, allianceScore, hordeScore, reason,
         affixCodePrimary, affixCodeSecondary, affixCodeTertiary,
-        weatherType, weatherIntensity, durationSeconds);
+        weatherType, weatherIntensity, durationSeconds, participants);
 }
 
 void HLBGService::RecordManualReset(uint32 mapId, uint32 allianceScore,
@@ -140,16 +140,18 @@ void HLBGService::RecordManualReset(uint32 mapId, uint32 allianceScore,
     uint8 affixCodeTertiary, uint32 weatherType,
     float weatherIntensity, uint32 durationSeconds)
 {
+    // A manual reset has no winner and no meaningful per-player result, so it
+    // records the match row only.
     RecordResult(TEAM_NEUTRAL, mapId, allianceScore, hordeScore, "manual",
         affixCodePrimary, affixCodeSecondary, affixCodeTertiary,
-        weatherType, weatherIntensity, durationSeconds);
+        weatherType, weatherIntensity, durationSeconds, {});
 }
 
 void HLBGService::RecordResult(TeamId winnerTeamId, uint32 mapId,
     uint32 allianceScore, uint32 hordeScore, char const* reason,
     uint8 affixCodePrimary, uint8 affixCodeSecondary,
     uint8 affixCodeTertiary, uint32 weatherType, float weatherIntensity,
-    uint32 durationSeconds)
+    uint32 durationSeconds, std::vector<HLBGMatchParticipant> const& participants)
 {
     uint8 persistedWinner = winnerTeamId == TEAM_ALLIANCE
         ? uint8(TEAM_ALLIANCE)
@@ -165,11 +167,19 @@ void HLBGService::RecordResult(TeamId winnerTeamId, uint32 mapId,
         }
     }
 
+    uint32 season = GetSeason();
+
+    // The match row and its participants go in one transaction: the
+    // participant statement resolves its match_id with MAX(id) over
+    // dc_hlbg_winner_history, which only sees the row above while both run on
+    // the same connection.
+    CharacterDatabaseTransaction transaction = CharacterDatabase.BeginTransaction();
+
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(
         CHAR_INS_HLBG_WINNER_HISTORY);
     stmt->SetData(0, HinterlandBGConstants::HLBG_AREA_ID);
     stmt->SetData(1, mapId);
-    stmt->SetData(2, GetSeason());
+    stmt->SetData(2, season);
     stmt->SetData(3, persistedWinner);
     stmt->SetData(4, allianceScore);
     stmt->SetData(5, hordeScore);
@@ -180,5 +190,27 @@ void HLBGService::RecordResult(TeamId winnerTeamId, uint32 mapId,
     stmt->SetData(10, weatherType);
     stmt->SetData(11, weatherIntensity);
     stmt->SetData(12, durationSeconds);
-    CharacterDatabase.Execute(stmt);
+    transaction->Append(stmt);
+
+    for (HLBGMatchParticipant const& participant : participants)
+    {
+        if (!participant.guid)
+            continue;
+
+        CharacterDatabasePreparedStatement* participantStmt = CharacterDatabase.GetPreparedStatement(
+            CHAR_INS_HLBG_MATCH_PARTICIPANT);
+        participantStmt->SetData(0, participant.guid);
+        participantStmt->SetData(1, participant.playerName);
+        participantStmt->SetData(2, participant.accountId);
+        participantStmt->SetData(3, participant.team);
+        participantStmt->SetData(4, season);
+        participantStmt->SetData(5, participant.kills);
+        participantStmt->SetData(6, participant.deaths);
+        participantStmt->SetData(7, participant.healingDone);
+        participantStmt->SetData(8, participant.damageDone);
+        participantStmt->SetData(9, participant.resourcesCaptured);
+        transaction->Append(participantStmt);
+    }
+
+    CharacterDatabase.CommitTransaction(transaction);
 }

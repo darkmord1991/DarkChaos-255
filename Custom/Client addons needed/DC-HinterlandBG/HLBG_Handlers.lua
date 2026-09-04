@@ -1,13 +1,51 @@
--- HLBG_Handlers.lua
+﻿-- HLBG_Handlers.lua
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
-local function DebugPrint(...)
-    if HLBG and type(HLBG.Debug) == 'function' then
-        HLBG.Debug(...)
+-- Routes to the shared formatter. Forwarding straight to HLBG.Debug was wrong
+-- for the printf-style call sites in this file: HLBG.Debug space-joins its
+-- arguments, so a format string and its values printed with the %s placeholders
+-- still in place.
+local function DebugPrint(fmt, ...)
+    if HLBG and type(HLBG.DebugF) == 'function' then
+        HLBG.DebugF(fmt, ...)
     end
 end
--- Shared live resources state. Initialize to avoid nil indexing when STATUS messages arrive.
-RES = RES or {}
-HLBG.RES = HLBG.RES or RES
+
+-- Call an optional HLBG entry point.
+--
+-- The real hazard in a multi-file addon is load order: a function may not exist
+-- yet, and that is worth guarding. A runtime error *inside* one is a bug and
+-- must reach the error handler instead of being swallowed - blanket pcall here
+-- is how several defects in this file survived unnoticed. pcall is kept only
+-- where a failure is expected and handled (decoding untrusted payloads) or
+-- where the callee is foreign code.
+local function CallIfPresent(fn, ...)
+    if type(fn) ~= 'function' then
+        return false
+    end
+
+    fn(...)
+    return true
+end
+
+-- Dev-mode test, previously spelled three different ways across this file.
+local function IsDevMode()
+    return ((HLBG and HLBG._devMode) or (DCHLBGDB and DCHLBGDB.devMode)) and true or false
+end
+
+-- Capture-gated debug log. Replaces the repeated
+-- `pcall(function() if <capture or dev> then HLBG.DebugLog(k, v) end end)`.
+local function CaptureLog(kind, data)
+    if not (HLBG._captureIncoming or IsDevMode()) then
+        return
+    end
+
+    CallIfPresent(HLBG.DebugLog, kind, data)
+end
+-- Shared live resources state. Initialize to avoid nil indexing when STATUS
+-- messages arrive. Kept on HLBG rather than as a bare global - `RES = RES or {}`
+-- published a three-letter name into _G for every addon in the session.
+HLBG.RES = HLBG.RES or {}
+local RES = HLBG.RES
 local NATIVE_HLBG_LIVE_CAPABILITY = 0x00020000
 local NATIVE_HLBG_LIVE_POLL_INTERVAL = 0.20
 local NATIVE_HLBG_LIVE_REQUEST_INTERVAL = 3.00
@@ -195,7 +233,7 @@ local function ApplyNativeHLBGQueueSnapshot(decoded)
         HLBG._lastNativeRequestToken = typedSnapshot.requestToken
     end
 
-    pcall(HLBG.HandleQueueStatusRaw,
+    CallIfPresent(HLBG.HandleQueueStatusRaw,
         queueStatus,
         position,
         estimatedTime,
@@ -301,7 +339,7 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
     end
 
     if type(HLBG.TrackStatusSignal) == 'function' then
-        pcall(HLBG.TrackStatusSignal, HLBG._lastStatus.status,
+        CallIfPresent(HLBG.TrackStatusSignal, HLBG._lastStatus.status,
             HLBG._lastStatus.mapId)
     end
 
@@ -311,10 +349,10 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
     local rows = NormalizeNativeHLBGLiveRows(decoded.players or decoded.rows
         or decoded.liveRows)
     if type(HLBG.Live) == 'function' then
-        pcall(HLBG.Live, rows)
+        CallIfPresent(HLBG.Live, rows)
     end
     if type(HLBG.UpdateHUD) == 'function' then
-        pcall(HLBG.UpdateHUD)
+        CallIfPresent(HLBG.UpdateHUD)
     end
 
     return true
@@ -403,16 +441,27 @@ local function EnsureNativeHLBGLivePollFrame()
     nativeHLBGLivePollFrame = CreateFrame('Frame')
     nativeHLBGLivePollFrame.elapsed = 0
     nativeHLBGLivePollFrame.requestElapsed = 0
+    -- Everything below runs on the poll tick, not per frame. This handler is
+    -- installed at load and never stops, so the view check used to run ~60x a
+    -- second for the whole session even for players who never open HLBG.
     nativeHLBGLivePollFrame:SetScript('OnUpdate', function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        self.requestElapsed = (self.requestElapsed or 0) + elapsed
+        if self.elapsed < NATIVE_HLBG_LIVE_POLL_INTERVAL then
+            return
+        end
 
-        if self.elapsed >= NATIVE_HLBG_LIVE_POLL_INTERVAL then
-            self.elapsed = 0
+        self.requestElapsed = (self.requestElapsed or 0) + self.elapsed
+        self.elapsed = 0
+
+        local viewActive = IsNativeHLBGLiveViewActive()
+
+        -- Revision poll, not a queue drain: the native side keeps only the
+        -- latest snapshot, so skipping it while the view is closed cannot fall
+        -- behind. Opening the view re-reads the newest revision on this tick.
+        if viewActive then
             ConsumeNativeHLBGLiveSnapshot()
         end
 
-        local viewActive = IsNativeHLBGLiveViewActive()
         if viewActive and not nativeHLBGLiveWasViewActive then
             SendNativeHLBGLiveSnapshotRequest('view_active', true)
             self.requestElapsed = 0
@@ -465,8 +514,7 @@ local function _safeSerialize(val, depth, seen)
 end
 -- Push an entry into the SavedVariables-backed debug log (newest first)
 function HLBG.DebugLog(kind, payload)
-    local ok, ts = pcall(function() return time() end)
-    ts = (ok and ts) or 0
+    local ts = (type(time) == 'function' and time()) or 0
     local entry = { ts = ts, kind = tostring(kind or 'LOG'), data = nil }
     if type(payload) == 'table' then
         entry.data = _safeSerialize(payload)
@@ -571,12 +619,12 @@ zoneWatcher:RegisterEvent("ZONE_CHANGED")
 zoneWatcher:RegisterEvent("ZONE_CHANGED_INDOORS")
 zoneWatcher:SetScript("OnEvent", function()
     if InHinterlands() then
-        if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
-        if DCHLBGDB and DCHLBGDB.useAddonHud and type(HLBG.HideBlizzHUDDeep) == 'function' then pcall(HLBG.HideBlizzHUDDeep) end
+        CallIfPresent(HLBG.UpdateHUD)
+        if DCHLBGDB and DCHLBGDB.useAddonHud and type(HLBG.HideBlizzHUDDeep) == 'function' then CallIfPresent(HLBG.HideBlizzHUDDeep) end
     else
-        if HLBG.UI and HLBG.UI.HUD then pcall(function() HLBG.UI.HUD:Hide() end) end
-        if HLBG.UI and HLBG.UI.Affix then pcall(function() HLBG.UI.Affix:Hide() end) end
-        if type(HLBG.UnhideBlizzHUDDeep) == 'function' then pcall(HLBG.UnhideBlizzHUDDeep) end
+        if HLBG.UI and HLBG.UI.HUD then HLBG.UI.HUD:Hide() end
+        if HLBG.UI and HLBG.UI.Affix then HLBG.UI.Affix:Hide() end
+        CallIfPresent(HLBG.UnhideBlizzHUDDeep)
     end
 end)
 
@@ -624,7 +672,7 @@ local function OpenHLBGFromPVP()
 
     local targetTab = DCHLBGDB and DCHLBGDB.lastInnerTab or 1
     if type(HLBG.OpenMainWindow) == 'function' then
-        pcall(HLBG.OpenMainWindow, targetTab)
+        CallIfPresent(HLBG.OpenMainWindow, targetTab)
     else
         if HLBG.UI and HLBG.UI.Frame then
             HLBG.UI.Frame:Show()
@@ -679,12 +727,12 @@ local function TryJoinHLBGViaBlizzardQueue(joinAsGroup)
 
     local ok = pcall(JoinBattlefield, 0, joinAsGroup and true or false)
     if ok and type(HLBG.RequestQueueStatus) == "function" then
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.25, function()
-                pcall(HLBG.RequestQueueStatus)
+        if type(HLBG.After) == 'function' then
+            HLBG.After(0.25, function()
+                CallIfPresent(HLBG.RequestQueueStatus)
             end)
         else
-            pcall(HLBG.RequestQueueStatus)
+            CallIfPresent(HLBG.RequestQueueStatus)
         end
     end
 
@@ -904,21 +952,21 @@ local function EnsurePvPBattlegroundEntry()
         queueButton:SetScript("OnClick", function()
             if HLBG.IsInQueue then
                 if type(HLBG.LeaveQueue) == "function" then
-                    pcall(HLBG.LeaveQueue)
+                    CallIfPresent(HLBG.LeaveQueue)
                 end
             elseif type(HLBG.JoinQueue) == "function" then
-                pcall(HLBG.JoinQueue)
+                CallIfPresent(HLBG.JoinQueue)
             else
                 OpenHLBGFromPVP()
             end
 
             if type(HLBG.RequestQueueStatus) == "function" then
-                if C_Timer and C_Timer.After then
-                    C_Timer.After(0.2, function()
-                        pcall(HLBG.RequestQueueStatus)
+                if type(HLBG.After) == 'function' then
+                    HLBG.After(0.2, function()
+                        CallIfPresent(HLBG.RequestQueueStatus)
                     end)
                 else
-                    pcall(HLBG.RequestQueueStatus)
+                    CallIfPresent(HLBG.RequestQueueStatus)
                 end
             end
 
@@ -937,12 +985,12 @@ local function EnsurePvPBattlegroundEntry()
                 local lastRequest = tonumber(HLBG._lastPvPEntryStatusRequestAt) or 0
                 if (now - lastRequest) >= 5 then
                     HLBG._lastPvPEntryStatusRequestAt = now
-                    if C_Timer and C_Timer.After then
-                        C_Timer.After(0.2, function()
-                            pcall(HLBG.RequestQueueStatus)
+                    if type(HLBG.After) == 'function' then
+                        HLBG.After(0.2, function()
+                            CallIfPresent(HLBG.RequestQueueStatus)
                         end)
                     else
-                        pcall(HLBG.RequestQueueStatus)
+                        CallIfPresent(HLBG.RequestQueueStatus)
                     end
                 end
             end
@@ -1039,15 +1087,11 @@ chatFrame:RegisterEvent('CHAT_MSG_SYSTEM')
 chatFrame:RegisterEvent('CHAT_MSG_WHISPER')
 chatFrame:SetScript('OnEvent', function(_, ev, msg)
     if type(msg) ~= 'string' then return end
-    pcall(function()
-        if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then
-            HLBG.DebugLog('CHAT_IN', { event = ev, msg = msg })
-        end
-    end)
+    CaptureLog('CHAT_IN', { event = ev, msg = msg })
     -- STATUS (chat fallback)
     local b = msg:match('%[HLBG_STATUS%]%s*(.*)')
     if b then
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_STATUS', b) end end)
+    CaptureLog('CHAT_STATUS', b)
         RES = RES or {}
         local A = tonumber(b:match('%f[%w]A=(%d+)') or 0) or 0
         local H = tonumber(b:match('%f[%w]H=(%d+)') or 0) or 0
@@ -1056,7 +1100,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         local AFF = b:match('%f[%w]AFF=([^|]+)') or b:match('%f[%w]AFFIX=([^|]+)')
         RES.A = A; RES.H = H; RES.END = ENDTS; RES.LOCK = LOCK
         if AFF then HLBG._affixText = AFF end
-        if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
+        CallIfPresent(HLBG.UpdateHUD)
         -- Also mirror to Live tab as two rows if available
         pcall(function()
             if type(HLBG.UpdateLiveFromStatus) == 'function' then HLBG.UpdateLiveFromStatus() else
@@ -1070,21 +1114,21 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     end
     -- Warmup
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
-    if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_WARMUP', warm) end end)
+    if warm then if type(HLBG.Warmup) == 'function' then CallIfPresent(HLBG.Warmup, warm) end return end
+    CaptureLog('CHAT_WARMUP', warm)
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
         local ok, decoded = pcall(function()
             return (HLBG.json_decode and HLBG.json_decode(rj)) or (type(json_decode) == 'function' and json_decode(rj)) or nil
         end)
-        if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
+        if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then CallIfPresent(HLBG.Results, decoded) end
         return
     end
     -- History TSV
     local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_HISTORY_TSV_RAW', htsv) end end)
+    CaptureLog('CHAT_HISTORY_TSV_RAW', htsv)
         local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
         if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
         -- Strip TOTAL prefix
@@ -1092,36 +1136,36 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     -- If multi-row separator exists, convert to newlines for HistoryStr
     -- Dev-only: report pipe/newline state before conversion
         pcall(function()
-            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
+            local dev = IsDevMode()
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local foundNl = htsv:find('\n') and true or false
             local pipeCount = 0
             for _ in htsv:gmatch('%|') do pipeCount = pipeCount + 1 end
-            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Chat handler before conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
+            DebugPrint('|cFF33FF99HLBG Debug|r Chat handler before conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl))
         end
     end)
     htsv = htsv:gsub('%|%|','\n')
     if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|','\n') end
     -- Dev-only: report pipe/newline state after conversion
     pcall(function()
-        local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
+        local dev = IsDevMode()
         if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             local foundNl = htsv:find('\n') and true or false
             local pipeCount = 0
             for _ in htsv:gmatch('%|') do pipeCount = pipeCount + 1 end
-            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Chat handler after conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl)))
+            DebugPrint('|cFF33FF99HLBG Debug|r Chat handler after conv: pipeCount=%d foundNewline=%s', pipeCount, tostring(foundNl))
         end
     end)
         local hasTabs = htsv:find('\t') and true or false
         local hasNL   = htsv:find('\n') and true or false
         pcall(function()
-            local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
+            local dev = IsDevMode()
             if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                DebugPrint(string.format('|cFF33FF99HLBG Debug|r Chat handler deciding: hasTabs=%s hasNL=%s len=%d', tostring(hasTabs), tostring(hasNL), #htsv))
+                DebugPrint('|cFF33FF99HLBG Debug|r Chat handler deciding: hasTabs=%s hasNL=%s len=%d', tostring(hasTabs), tostring(hasNL), #htsv)
             end
         end)
         pcall(function()
-            DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr)))
+            DebugPrint('|cFF33FF99HLBG Debug|r HistoryStr function available: %s', type(HLBG.HistoryStr))
         end)
         if hasTabs and type(HLBG.HistoryStr) == 'function' then
             pcall(function()
@@ -1136,7 +1180,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 end
             end
             pcall(function()
-                DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200)))
+                DebugPrint('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', #lines, htsv:sub(1,200))
             end)
             local ok, err = pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
             if ok then
@@ -1158,10 +1202,10 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
                 end
             end
             if #rows > 0 and type(HLBG.History) == 'function' then
-                pcall(HLBG.History, rows, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or #rows, total, 'id', 'DESC')
+                CallIfPresent(HLBG.History, rows, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or #rows, total, 'id', 'DESC')
             elseif type(HLBG.HistoryStr) == 'function' then
                 -- Fall back to whatever the UI parser can do
-                pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
+                CallIfPresent(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 25, total, 'id', 'DESC')
             end
         end
         return
@@ -1215,7 +1259,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             end
             local totalBattles = tonumber(decoded.total) or (allianceWins + hordeWins + draws)
             pcall(function()
-                DebugPrint(string.format('|cFF33FF99HLBG Debug:|r JSON decoded: A=%d H=%d D=%d Total=%d', allianceWins, hordeWins, draws, totalBattles))
+                DebugPrint('|cFF33FF99HLBG Debug:|r JSON decoded: A=%d H=%d D=%d Total=%d', allianceWins, hordeWins, draws, totalBattles)
             end)
             -- Store total if present
             if decoded.total and HLBG.UI and HLBG.UI.History then
@@ -1232,13 +1276,13 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
             }
             -- Call stats display function with normalized data
             if type(HLBG.Stats) == 'function' then
-                pcall(HLBG.Stats, normalizedStats)
+                CallIfPresent(HLBG.Stats, normalizedStats)
                 pcall(function()
                     DebugPrint('|cFF33FF99HLBG Debug:|r Called HLBG.Stats with normalized data')
                 end)
             end
             if type(HLBG.OnServerStats) == 'function' then
-                pcall(HLBG.OnServerStats, normalizedStats)
+                CallIfPresent(HLBG.OnServerStats, normalizedStats)
                 pcall(function()
                     DebugPrint('|cFF33FF99HLBG Debug:|r Called HLBG.OnServerStats with normalized data')
                 end)
@@ -1560,7 +1604,7 @@ SlashCmdList['HLBGFULLFIX'] = function()
                     HLBG.UI.History:Show()
                     -- Call original update function if it exists
                     if type(HLBG.UpdateHistoryDisplay) == 'function' then
-                        pcall(HLBG.UpdateHistoryDisplay)
+                        CallIfPresent(HLBG.UpdateHistoryDisplay)
                     end
                     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History tab activated')
                 end
@@ -1929,7 +1973,7 @@ if DC then
         end
 
         if type(HLBG.UpdateQueueUI) == "function" then
-            pcall(HLBG.UpdateQueueUI)
+            CallIfPresent(HLBG.UpdateQueueUI)
         end
     end
 
@@ -1990,10 +2034,10 @@ if DC then
             SyncQueueFromHLBGStatus(statusValue)
 
             if type(HLBG.UpdateHUDVisibility) == 'function' then
-                pcall(HLBG.UpdateHUDVisibility)
+                CallIfPresent(HLBG.UpdateHUDVisibility)
             end
             if type(HLBG.UpdateHUD) == 'function' then
-                pcall(HLBG.UpdateHUD)
+                CallIfPresent(HLBG.UpdateHUD)
             end
 
             pcall(function()
@@ -2040,10 +2084,10 @@ if DC then
                 end
                 
                 if type(HLBG.UpdateHUDVisibility) == 'function' then
-                    pcall(HLBG.UpdateHUDVisibility)
+                    CallIfPresent(HLBG.UpdateHUDVisibility)
                 end
                 if type(HLBG.UpdateHUD) == 'function' then
-                    pcall(HLBG.UpdateHUD)
+                    CallIfPresent(HLBG.UpdateHUD)
                 end
                 
                 pcall(function()
@@ -2067,10 +2111,10 @@ if DC then
             HLBG._lastStatusTime = GetTime()
             SyncQueueFromHLBGStatus(status)
             if type(HLBG.UpdateHUDVisibility) == 'function' then
-                pcall(HLBG.UpdateHUDVisibility)
+                CallIfPresent(HLBG.UpdateHUDVisibility)
             end
             if type(HLBG.UpdateHUD) == 'function' then
-                pcall(HLBG.UpdateHUD)
+                CallIfPresent(HLBG.UpdateHUD)
             end
         end
     end)
@@ -2113,7 +2157,7 @@ if DC then
                 HLBG._lastStatusTime = GetTime()
                 
                 if type(HLBG.UpdateHUD) == 'function' then
-                    pcall(HLBG.UpdateHUD)
+                    CallIfPresent(HLBG.UpdateHUD)
                 end
             end
         else
@@ -2160,7 +2204,7 @@ if DC then
 
             HLBG._lastStatusTime = GetTime()
             if type(HLBG.UpdateHUD) == 'function' then
-                pcall(HLBG.UpdateHUD)
+                CallIfPresent(HLBG.UpdateHUD)
             end
         end
     end)
@@ -2238,7 +2282,7 @@ if DC then
                 HLBG._lastStatusTime = GetTime()
                 
                 if type(HLBG.UpdateHUD) == 'function' then
-                    pcall(HLBG.UpdateHUD)
+                    CallIfPresent(HLBG.UpdateHUD)
                 end
             end
         else
@@ -2246,7 +2290,7 @@ if DC then
             RES = RES or {}
             RES.END = tonumber(maxMs) or 0
             if type(HLBG.UpdateHUD) == 'function' then
-                pcall(HLBG.UpdateHUD)
+                CallIfPresent(HLBG.UpdateHUD)
             end
         end
     end)
@@ -2271,7 +2315,7 @@ if DC then
                 HLBG._lastStatus.hordeDeaths = json.hDeaths or 0
                 
                 if type(HLBG.UpdateHUD) == 'function' then
-                    pcall(HLBG.UpdateHUD)
+                    CallIfPresent(HLBG.UpdateHUD)
                 end
             end
         else
@@ -2280,7 +2324,7 @@ if DC then
             RES.A = tonumber(aScore) or RES.A or 0
             RES.H = tonumber(hScore) or RES.H or 0
             if type(HLBG.UpdateHUD) == 'function' then
-                pcall(HLBG.UpdateHUD)
+                CallIfPresent(HLBG.UpdateHUD)
             end
         end
     end)
@@ -2304,7 +2348,7 @@ if DC then
                 }
                 
                 if type(HLBG.Stats) == 'function' then
-                    pcall(HLBG.Stats, stats)
+                    CallIfPresent(HLBG.Stats, stats)
                 end
                 
                 HLBGPrint(string.format("Season %d: %d matches, %d wins, %d losses, %d draws",
@@ -2330,7 +2374,7 @@ if DC then
         local sortDir = hist.sortDir or "DESC"
 
         if type(HLBG.HistoryStr) == 'function' then
-            pcall(HLBG.HistoryStr, tsv, page, per, total, sortKey, sortDir)
+            CallIfPresent(HLBG.HistoryStr, tsv, page, per, total, sortKey, sortDir)
         end
     end)
     
@@ -2347,7 +2391,7 @@ if DC then
                 HLBG._currentSeasonName = json.seasonName
                 
                 if type(HLBG.UpdateHUD) == 'function' then
-                    pcall(HLBG.UpdateHUD)
+                    CallIfPresent(HLBG.UpdateHUD)
                 end
                 
                 if json.affixName then
@@ -2380,7 +2424,7 @@ if DC then
             HLBG._currentSeason = tonumber(seasonId) or seasonId
 
             if type(HLBG.UpdateHUD) == 'function' then
-                pcall(HLBG.UpdateHUD)
+                CallIfPresent(HLBG.UpdateHUD)
             end
 
             if HLBG._affixText ~= '' then
@@ -2411,7 +2455,7 @@ if DC then
                 
                 -- Trigger results display if available
                 if type(HLBG.Results) == 'function' then
-                    pcall(HLBG.Results, json)
+                    CallIfPresent(HLBG.Results, json)
                 end
             end
         else
