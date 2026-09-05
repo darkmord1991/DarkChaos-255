@@ -282,12 +282,12 @@ inline uint32 GetQuestMasterForMap(uint32 mapId)
 
 /**
  * Get quest difficulty tier (v4.0)
- * Queries: dc_quest_difficulty_mapping.difficulty
+ * Queries: dc_quest_difficulty_mapping.base_difficulty
  */
 inline QuestDifficulty GetQuestDifficulty(uint32 questId)
 {
     QueryResult result = WorldDatabase.Query(
-        "SELECT difficulty FROM dc_quest_difficulty_mapping WHERE quest_id = {}",
+        "SELECT base_difficulty FROM dc_quest_difficulty_mapping WHERE quest_id = {}",
         questId
     );
 
@@ -338,8 +338,8 @@ inline uint32 GetDifficultyCompletionCount(Player* player, uint32 dungeonId, Que
         return 0;
 
     QueryResult result = CharacterDatabase.Query(
-        "SELECT completion_count FROM dc_character_difficulty_completions "
-        "WHERE char_guid = {} AND dungeon_id = {} AND difficulty = {}",
+        "SELECT total_completions FROM dc_character_difficulty_completions "
+        "WHERE guid = {} AND dungeon_id = {} AND difficulty = {}",
         player->GetGUID().GetCounter(),
         dungeonId,
         static_cast<uint8>(difficulty)
@@ -566,6 +566,18 @@ inline void SendDifficultyMessage(Player* player, QuestDifficulty difficulty, st
     std::string coloredMessage = std::string(GetDifficultyColor(difficulty)) + message + "|r";
     ChatHandler(player->GetSession()).SendSysMessage(coloredMessage.c_str());
 }
+
+// =====================================================================
+// QUEST MASTER FOLLOWER CACHE
+// =====================================================================
+
+/**
+ * Drops the cached map_id -> display_id table used when spawning the quest
+ * master follower. The follower is what a player actually sees inside the
+ * dungeon, so a dc_dungeon_npc_mapping.display_id edit stays invisible until
+ * this is called. Defined in DungeonQuestMasterFollower.cpp.
+ */
+void ClearQuestMasterDisplayIdCache();
 
 } // namespace DungeonQuestHelpers
 

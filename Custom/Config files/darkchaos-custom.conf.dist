@@ -196,10 +196,13 @@ DarkChaos.Seasonal.EssenceItemID = 300312
 
 #
 #    DarkChaos.Seasonal.WeeklyTokenCap
-#        Description: Maximum Seasonal Tokens earnable per week (0 = unlimited)
-#        Default:     1000
+#        Description: Maximum Seasonal Tokens earnable per week (0 = unlimited).
+#                     This is the real bound on upgrade progression for anyone
+#                     who plays regularly: a full tier-2 set costs ~28,800
+#                     tokens, so 5000/week is about six weeks to max.
+#        Default:     5000
 #
-DarkChaos.Seasonal.WeeklyTokenCap = 1000
+DarkChaos.Seasonal.WeeklyTokenCap = 5000
 
 #
 #    DarkChaos.Seasonal.WeeklyEssenceCap
@@ -282,8 +285,8 @@ SeasonalRewards.EventBossBonus = 1.25
 #        a hard-coded 1000. The reward accrual path
 #        (SeasonalRewardSystem.cpp) reads ONLY SeasonalRewards.MaxTokensPerWeek,
 #        where 0 genuinely means unlimited.
-#        So with the shipped values (DarkChaos.Seasonal.WeeklyTokenCap = 1000,
-#        SeasonalRewards.MaxTokensPerWeek = 0) the addon shows a 1000 cap while
+#        So with the shipped values (DarkChaos.Seasonal.WeeklyTokenCap = 5000,
+#        SeasonalRewards.MaxTokensPerWeek = 0) the addon shows a 5000 cap while
 #        accrual is uncapped. Set both to the same non-zero number if you want
 #        the cap actually enforced.
 #        Default:     0
@@ -1590,6 +1593,87 @@ ItemUpgrade.Test.EssenceGrant = 5000
 #        Default:     2500
 #
 ItemUpgrade.Test.TokensGrant = 2500
+
+# -----------------------------------------------------------------------------
+# Upgrade Token / Essence Reward Rates
+# -----------------------------------------------------------------------------
+#
+#  What one activity pays into the item upgrade economy. These were hardcoded
+#  constants until now, so rebalancing meant a rebuild; they are read per award,
+#  so ".reload config" retunes the economy on a running realm.
+#
+#  Sizing: a full ~16-slot set costs 3,360 tokens at tier 1 (10+20+..+60 per
+#  slot) and 28,800 at tier 2 (15+30+..+225 per slot). Divide by
+#  DarkChaos.Seasonal.WeeklyTokenCap for the weeks a capped character needs.
+#  For anyone who plays regularly the CAP, not these rates, is what bounds
+#  income -- raise the cap to speed up progression, raise these to change how
+#  much each activity contributes to reaching it.
+#
+
+#    ItemUpgrade.Reward.QuestBase
+#        Description: Base tokens per non-trivial quest turn-in, before the
+#                     difficulty tier and the level scaling from
+#                     ItemUpgrade.QuestReward.LevelDivisor are applied. That
+#                     scaling is already ~7.4x at level 255, which is why this
+#                     stays small.
+#        Default:     15
+ItemUpgrade.Reward.QuestBase = 15
+
+#    ItemUpgrade.Reward.QuestDifficultyScale
+#        Description: Added per difficulty tier above the first (0.5 = +50%).
+#        Default:     0.5
+ItemUpgrade.Reward.QuestDifficultyScale = 0.5
+
+#    ItemUpgrade.Reward.DungeonTrash
+#        Description: Tokens per non-boss kill. This also covers ordinary world
+#                     creatures, so it is the main income for anyone grinding.
+#        Default:     10
+ItemUpgrade.Reward.DungeonTrash = 10
+
+#    ItemUpgrade.Reward.DungeonBoss / DungeonBossEssence
+#        Description: Tokens and essence per dungeon boss.
+#        Default:     60 / 10
+ItemUpgrade.Reward.DungeonBoss = 60
+ItemUpgrade.Reward.DungeonBossEssence = 10
+
+#    ItemUpgrade.Reward.RaidTrash
+#        Description: Tokens per non-boss kill inside a raid.
+#        Default:     20
+ItemUpgrade.Reward.RaidTrash = 20
+
+#    ItemUpgrade.Reward.RaidBoss / RaidBossEssence
+#        Description: Tokens and essence per raid boss.
+#        Default:     125 / 25
+ItemUpgrade.Reward.RaidBoss = 125
+ItemUpgrade.Reward.RaidBossEssence = 25
+
+#    ItemUpgrade.Reward.WorldBoss / WorldBossEssence
+#        Description: Tokens and essence per world boss.
+#        Default:     250 / 50
+ItemUpgrade.Reward.WorldBoss = 250
+ItemUpgrade.Reward.WorldBossEssence = 50
+
+#    ItemUpgrade.Reward.PvpKill
+#        Description: Base tokens per honourable kill, before the victim-level
+#                     bonus (+5% per level above 60).
+#        Default:     25
+ItemUpgrade.Reward.PvpKill = 25
+
+#    ItemUpgrade.Reward.MinCreatureLevel
+#        Description: Creatures below this level never pay tokens.
+#
+#                     This was hardcoded at 50, which left a dead zone over most
+#                     of the realm: a level-30 character grinds level-30 mobs, so
+#                     the kill hook paid it nothing and quests were its only
+#                     income. A relative "grey level" rule is the usual fix but
+#                     is wrong here -- creature templates top out at level 160
+#                     while players reach 255 (grey level 246), so it would zero
+#                     out max-level income instead.
+#
+#                     Raise it back towards 50 if you want levelling characters
+#                     earning from quests only.
+#        Default:     10
+ItemUpgrade.Reward.MinCreatureLevel = 10
 
 
 ###############################################################################
@@ -4115,6 +4199,193 @@ DC.GroupFinder.Queue.MaxPerPlayer = 3
 #        Default:     0
 #
 DC.GroupFinder.Queue.DebugMinPlayers = 0
+
+# -----------------------------------------------------------------------------
+# Queue Bot Backfill (requires mod-playerbots)
+# -----------------------------------------------------------------------------
+# Bots never queue on their own. They are only pulled in to complete a group
+# that real players could not fill, so a group always contains at least one
+# real player and bot-only groups cannot form. Backfilled bots skip the
+# ready-check (there is no client to answer it) and never earn the daily
+# Group Finder reward.
+
+#
+#    DC.GroupFinder.Queue.Bots.Enabled
+#        Description: Allow playerbots to fill empty roles in Dungeon Finder
+#                     groups. Has no effect when mod-playerbots is not built.
+#        Default:     1 - enabled
+#                     0 - disabled (queue waits for real players only)
+#
+DC.GroupFinder.Queue.Bots.Enabled = 1
+
+#
+#    DC.GroupFinder.Queue.Bots.BackfillAfterSec
+#        Description: How long real players must have been waiting before bots
+#                     are recruited to fill the group. Keeps player-only groups
+#                     forming first when the queue is healthy.
+#        Default:     60
+#
+DC.GroupFinder.Queue.Bots.BackfillAfterSec = 60
+
+#
+#    DC.GroupFinder.Queue.Bots.MaxPerGroup
+#        Description: Hard ceiling on backfilled bots in one group. At the 5-man
+#                     default of 4 a single queued player can still get a pop.
+#                     Lower it to require more real players per group.
+#        Default:     4
+#
+DC.GroupFinder.Queue.Bots.MaxPerGroup = 4
+
+#
+#    DC.GroupFinder.Queue.Bots.LevelSlack
+#        Description: Level band around the queued players from which bots are
+#                     drawn. A bot must also meet the dungeon's own entry level.
+#        Default:     5
+#                     0 - no upper bound (any bot above the entry level)
+#
+DC.GroupFinder.Queue.Bots.LevelSlack = 5
+
+#
+#    DC.GroupFinder.Queue.Bots.AllowRaids
+#        Description: Also backfill Raid Finder queues. Off by default: filling
+#                     a 25-man means summoning 20+ bots, which is a very
+#                     different proposition from rounding out a 5-man.
+#        Default:     0 - dungeons only
+#                     1 - raids too (respects MaxPerGroup)
+#
+DC.GroupFinder.Queue.Bots.AllowRaids = 0
+
+# -----------------------------------------------------------------------------
+# Queue Lifecycle (stock Dungeon Finder parity)
+# -----------------------------------------------------------------------------
+# Groups formed by the queue follow the same rules as the stock Dungeon Finder:
+# entry requirements are checked with the instance door's own logic before a
+# group forms, members are teleported back to where they queued when they
+# leave, Need Before Greed loot is set, and the random-dungeon cooldown /
+# deserter / Luck of the Draw auras apply. DungeonFinder.CastDeserter (the
+# stock key) also gates the deserter debuff here.
+
+#
+#    DC.GroupFinder.Queue.RandomCooldown
+#        Description: Apply the Dungeon Finder cooldown (spell 71328) to real
+#                     players when a random-dungeon match forms (lifted when the
+#                     final boss dies), and a 150s cooldown to anyone who declines
+#                     a ready-check. Blocks re-queueing for a random meanwhile.
+#        Default:     1
+#
+DC.GroupFinder.Queue.RandomCooldown = 1
+
+#
+#    DC.GroupFinder.Queue.LuckOfTheDraw
+#        Description: Grant Luck of the Draw (spell 72221, one stack per random
+#                     stranger in the group) while inside the matched dungeon.
+#        Default:     1
+#
+DC.GroupFinder.Queue.LuckOfTheDraw = 1
+
+#
+#    DC.GroupFinder.Queue.RewardOnCompletion
+#        Description: Pay the Group Finder daily reward when the dungeon's final
+#                     boss dies (random-dungeon queues only), as stock does.
+#                     0 restores the old behaviour of paying when the group
+#                     forms -- which can be farmed by accepting and leaving.
+#        Default:     1
+#
+DC.GroupFinder.Queue.RewardOnCompletion = 1
+
+#
+#    DC.GroupFinder.Queue.DeserterMinGroupSize
+#        Description: Deserter is only applied to a leaver while at least this
+#                     many members remain (stock uses the kick-vote quorum, 3):
+#                     once the group is already broken, leaving costs nothing.
+#        Default:     3
+#
+DC.GroupFinder.Queue.DeserterMinGroupSize = 3
+
+#
+#    DC.GroupFinder.Queue.MaxLevelLock
+#        Description: Lock dungeons the player has out-levelled, the way stock
+#                     LFG does with LFG_LOCKSTATUS_TOO_HIGH_LEVEL. The bracket
+#                     top comes from LFGDungeons.dbc (dungeon_access_template
+#                     leaves max_level at 0), so a dungeon with no LFG row --
+#                     every custom DC instance -- has no upper bound.
+#                     0 lets a max-level character still hand-pick a low
+#                     dungeon; the RANDOM roll always respects the bracket
+#                     either way, so "Any Dungeon" never hands an 80 a level 21.
+#        Default:     1
+#
+DC.GroupFinder.Queue.MaxLevelLock = 1
+
+#
+#    DC.GroupFinder.Queue.LevelBracketCap
+#        Description: The player's level is clamped to this before the bracket
+#                     is checked. The WotLK bracket data stops at 80 (Halls of
+#                     Reflection Normal is Min 80 / Max 80), so without a clamp
+#                     every character above 80 on a 255 realm would out-level
+#                     literally every dungeon and the finder would offer none.
+#                     Raise it only if you add LFGDungeons rows above 80.
+#                     0 disables the clamp.
+#        Default:     80
+#
+DC.GroupFinder.Queue.LevelBracketCap = 80
+
+#
+#    DC.GroupFinder.Queue.LevelBracketWidth
+#        Description: Bracket width assumed for a dungeon that has an entry
+#                     level but NO LFGDungeons.dbc MaxLevel -- Blackrock Spire
+#                     is one (entry 45, no LFG row). Without this such a dungeon
+#                     has no upper bound and the random roll can drop a level 80
+#                     into level 45 content. Heroic/Mythic entry levels are
+#                     already 70-80, so +15 leaves max-level content reachable.
+#                     0 disables the derivation (unbounded again).
+#        Default:     15
+#
+DC.GroupFinder.Queue.LevelBracketWidth = 15
+
+#
+#    DC.GroupFinder.Queue.VoteKick.Enabled
+#        Description: On a group the queue formed, the leader cannot kick
+#                     outright -- "Remove from Party" opens a vote, exactly as
+#                     it does in a stock Dungeon Finder group. A vote-kicked
+#                     player is NOT given the Deserter debuff.
+#                     Backfilled bots are removed without a vote.
+#        Default:     1
+#
+DC.GroupFinder.Queue.VoteKick.Enabled = 1
+
+#
+#    DC.GroupFinder.Queue.VoteKick.DurationSec
+#        Description: Seconds to vote before the kick fails (stock LFG_TIME_BOOT).
+#        Default:     120
+#
+DC.GroupFinder.Queue.VoteKick.DurationSec = 120
+
+#
+#    DC.GroupFinder.Queue.VoteKick.VotesNeeded
+#        Description: Agreeing votes required to kick; the same number of
+#                     refusals cancels it (stock LFG_GROUP_KICK_VOTES_NEEDED).
+#        Default:     3
+#
+DC.GroupFinder.Queue.VoteKick.VotesNeeded = 3
+
+#
+#    DC.GroupFinder.Queue.VoteKick.MaxKicks
+#        Description: Successful vote kicks allowed per formed group.
+#                     Defaults to the stock finder's own LFG.MaxKickCount so
+#                     both queues behave the same. 0 = unlimited.
+#        Default:     LFG.MaxKickCount (stock default 2)
+#
+#DC.GroupFinder.Queue.VoteKick.MaxKicks = 2
+
+#
+#    Logger.dc.groupfinder
+#        Description: The queue logs under "dc.groupfinder" (catalog build,
+#                     proposals, formed/completed groups). Without a logger
+#                     entry it falls back to Logger.root and its INFO lines are
+#                     dropped -- add this next to the other DC loggers in the
+#                     live worldserver.conf to see the queue at work.
+#
+#Logger.dc.groupfinder=4,DCConsole Server DC
 
 # -----------------------------------------------------------------------------
 # Rewards

@@ -225,9 +225,10 @@ function MangLinkifier_SetItemRef(link, text, button)
     SendChatMessage(".go  "..strsub(link, 8), say, nil, nil)
     return;
   ----------====~~ Support for Clickable Links Made by Mangos and Added Options ~~====----------
-  elseif ( strsub(link, 1, 5) == "quest" ) then
-    SendChatMessage(".quest add "..strsub(link, 7), say, nil, nil)
-    return;
+  -- NOTE: plain "quest:" links are standard Blizzard hyperlinks (quest:<id>:<level>)
+  -- posted by players, bots and by the server's own lookup output. They must fall through
+  -- to the default handler so the quest tooltip opens; sending ".quest add <id>:<level>"
+  -- made the server reject the argument. GM add/remove is the separate [Add]/[Remove] link.
   elseif ( strsub(link, 1, 14) == "lookupquestadd" ) then
     SendChatMessage(".quest add "..strsub(link, 16), say, nil, nil)
     return;
@@ -269,9 +270,8 @@ function MangLinkifier_SetItemRef(link, text, button)
   elseif ( strsub(link, 1, 8) == "creature" ) then
     SendChatMessage(".go creature "..strsub(link, 10), say, nil, nil)
     return;
-  elseif ( strsub(link, 1, 5) == "spell" ) then
-    SendChatMessage(".learn "..strsub(link, 7), say, nil, nil)
-    return;
+  -- NOTE: plain "spell:" links are standard Blizzard hyperlinks too; falling through shows
+  -- the spell tooltip. Learning is the separate [Learn] link.
   elseif ( strsub(link, 1, 16) == "lookupspelllearn" ) then
     SendChatMessage(".learn "..strsub(link, 18), say, nil, nil)
     return;

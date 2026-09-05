@@ -162,6 +162,22 @@ local function GetPlayerMapPosNormalized(lockWorldMap)
     local worldMapShown = WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
     local mapId
 
+    -- DC-QoS derives the player's position from the client's movement info
+    -- rather than from the world map view, so it cannot return 0,0 because the
+    -- map is showing another zone, and it names the area the player is really
+    -- standing in. It also removes the SetMapToCurrentZone call below, which
+    -- resets the client's map state as a side effect.
+    local dcqos = rawget(_G, "DCQOS")
+    if dcqos and type(dcqos.GetMapUtils) == "function" then
+        local mapUtils = dcqos:GetMapUtils()
+        if mapUtils and type(mapUtils.GetPlayerPosition) == "function" then
+            local normX, normY, uiMapId = mapUtils.GetPlayerPosition()
+            if normX and normY and uiMapId then
+                return normX, normY, uiMapId
+            end
+        end
+    end
+
     if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
         mapId = C_Map.GetBestMapForUnit("player")
         if mapId then

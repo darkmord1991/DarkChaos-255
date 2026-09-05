@@ -78,6 +78,9 @@ public:
     uint32 GetMaxActiveSessionCount() const { return _maxActiveSessionCount; }
     /// Get number of players
     inline uint32 GetPlayerCount() const { return _playerCount + GetExtraPlayerCount(); }
+    /// Characters actually in the world (real players and bots), without any padding an
+    /// extra-count provider adds. Safe to call from such a provider; GetPlayerCount() is not.
+    inline uint32 GetInWorldPlayerCount() const { return _playerCount; }
     inline uint32 GetMaxPlayerCount() const { return _maxPlayerCount; }
     void RegisterExtraPlayerCountProvider(ExtraPlayerCountProvider provider);
     uint32 GetExtraPlayerCount() const;

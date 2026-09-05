@@ -46,22 +46,64 @@ namespace DarkChaos
 
     [[maybe_unused]] static const uint32 DAILY_QUEST_CAP = 100;
 
-        // Quest reward tier: base tokens awarded for quest completion
-        static const uint32 QUEST_REWARD_BASE = 10;
-        static const float QUEST_SCALING_FACTOR = 0.5f;  // +50% per difficulty tier
+        // ---------------------------------------------------------------------
+        // Reward rates
+        //
+        // These were hardcoded constants, so every rebalance meant a rebuild.
+        // They are config-backed now and read per award, which makes them live:
+        // `.reload config` retunes the economy without restarting the world.
+        //
+        // Sizing note, for whoever changes these next. A full ~16-slot set costs
+        // 3,360 tokens at tier 1 (10+20+..+60 per slot) and 28,800 at tier 2
+        // (15+30+..+225 per slot). Divide by DarkChaos.Seasonal.WeeklyTokenCap to
+        // get the weeks-to-max a capped character needs; that is the number worth
+        // targeting, because the cap -- not these rates -- is what bounds income
+        // for anyone who plays regularly.
+        // ---------------------------------------------------------------------
 
-        // Creature kill rewards: base tokens for creature kills
-        static const uint32 DUNGEON_TRASH_REWARD = 5;
-        static const uint32 DUNGEON_BOSS_REWARD = 25;
-        static const uint32 DUNGEON_BOSS_ESSENCE = 5;
-        static const uint32 RAID_TRASH_REWARD = 10;
-        static const uint32 RAID_BOSS_REWARD = 50;
-        static const uint32 RAID_BOSS_ESSENCE = 10;
-    [[maybe_unused]] static const uint32 WORLD_BOSS_REWARD = 100;
-    [[maybe_unused]] static const uint32 WORLD_BOSS_ESSENCE = 20;
+        static uint32 RewardOption(char const* name, uint32 fallback)
+        {
+            return sConfigMgr->GetOption<uint32>(name, fallback);
+        }
+
+        // Quest reward tier: base tokens awarded for quest completion. Kept
+        // modest because CalculateQuestReward multiplies it by the level scaling
+        // (1 + level/LevelDivisor), which is already ~7.4x at level 255.
+        static uint32 QuestRewardBase() { return RewardOption("ItemUpgrade.Reward.QuestBase", 15); }
+
+        static float QuestScalingFactor()
+        {
+            return sConfigMgr->GetOption<float>("ItemUpgrade.Reward.QuestDifficultyScale", 0.5f);
+        }
+
+        // Creature kill rewards.
+        static uint32 DungeonTrashReward() { return RewardOption("ItemUpgrade.Reward.DungeonTrash", 10); }
+        static uint32 DungeonBossReward() { return RewardOption("ItemUpgrade.Reward.DungeonBoss", 60); }
+        static uint32 DungeonBossEssence() { return RewardOption("ItemUpgrade.Reward.DungeonBossEssence", 10); }
+        static uint32 RaidTrashReward() { return RewardOption("ItemUpgrade.Reward.RaidTrash", 20); }
+        static uint32 RaidBossReward() { return RewardOption("ItemUpgrade.Reward.RaidBoss", 125); }
+        static uint32 RaidBossEssence() { return RewardOption("ItemUpgrade.Reward.RaidBossEssence", 25); }
+        static uint32 WorldBossReward() { return RewardOption("ItemUpgrade.Reward.WorldBoss", 250); }
+        static uint32 WorldBossEssence() { return RewardOption("ItemUpgrade.Reward.WorldBossEssence", 50); }
 
         // PvP rewards
-        static const uint32 PVP_KILL_REWARD = 15;
+        static uint32 PvpKillReward() { return RewardOption("ItemUpgrade.Reward.PvpKill", 25); }
+
+        // Creatures below this level never pay out.
+        //
+        // This was a hardcoded 50, which meant a dead zone covering most of the
+        // realm: a level-30 character grinds level-30 mobs, so the kill hook paid
+        // it nothing and quests were its only income. A relative "is this grey for
+        // the player" rule is the usual fix, but it does not work here -- creature
+        // templates top out at level 160 while players reach 255, whose grey level
+        // is 246, so it would zero out max-level income instead. Hence a low
+        // absolute floor: it keeps starter-zone trivia worthless without excluding
+        // everyone who is still levelling.
+        static uint32 MinRewardedCreatureLevel()
+        {
+            return RewardOption("ItemUpgrade.Reward.MinCreatureLevel", 10);
+        }
+
     [[maybe_unused]] static const float PVP_LEVEL_SCALING = 1.0f;
 
         // Battleground rewards
@@ -216,7 +258,7 @@ namespace DarkChaos
             if (difficulty == 0)
                 return 0;  // Trivial quests don't reward tokens
 
-            float reward = QUEST_REWARD_BASE * (1.0f + (difficulty - 1) * QUEST_SCALING_FACTOR);
+            float reward = QuestRewardBase() * (1.0f + (difficulty - 1) * QuestScalingFactor());
 
             // Level scaling: upgrade costs climb steeply with tier (210 tokens
             // to max a level-80 leveling piece vs 5,500 for a Hyjal-band one),
@@ -464,7 +506,7 @@ namespace DarkChaos
 
                 // Calculate reward based on victim level (clamp to avoid unsigned underflow)
                 int32 levelDelta = std::max<int32>(0, int32(victim->GetLevel()) - 60);
-                uint32 reward = static_cast<uint32>(PVP_KILL_REWARD * (1.0f + levelDelta * 0.05f));
+                uint32 reward = static_cast<uint32>(PvpKillReward() * (1.0f + levelDelta * 0.05f));
 
                 if (reward == 0)
                     return;
@@ -622,9 +664,10 @@ namespace DarkChaos
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
 
-                // Don't award tokens for trivial kills (very low level creatures)
-                if (creature->GetLevel() < 50)
-                    return;  // Skip low-level creatures
+                // Don't award tokens for trivial kills. See MinRewardedCreatureLevel
+                // for why this is an absolute floor rather than a grey-level test.
+                if (creature->GetLevel() < MinRewardedCreatureLevel())
+                    return;
 
                 // Determine reward based on creature type
                 uint32 token_reward = 0;
@@ -637,8 +680,8 @@ namespace DarkChaos
 
                 if (is_world_boss)
                 {
-                    token_reward = WORLD_BOSS_REWARD;
-                    essence_reward = WORLD_BOSS_ESSENCE;
+                    token_reward = WorldBossReward();
+                    essence_reward = WorldBossEssence();
                     reward_reason << "World Boss: " << creature->GetName();
                 }
                 else if (is_raid)
@@ -646,13 +689,13 @@ namespace DarkChaos
                     // Raid mob
                     if (is_boss)
                     {
-                        token_reward = RAID_BOSS_REWARD;
-                        essence_reward = RAID_BOSS_ESSENCE;
+                        token_reward = RaidBossReward();
+                        essence_reward = RaidBossEssence();
                         reward_reason << "Raid Boss: " << creature->GetName();
                     }
                     else
                     {
-                        token_reward = RAID_TRASH_REWARD;
+                        token_reward = RaidTrashReward();
                         reward_reason << "Raid Trash: " << creature->GetName();
                     }
                 }
@@ -661,13 +704,13 @@ namespace DarkChaos
                     // Dungeon or world creature
                     if (is_boss)
                     {
-                        token_reward = DUNGEON_BOSS_REWARD;
-                        essence_reward = DUNGEON_BOSS_ESSENCE;
+                        token_reward = DungeonBossReward();
+                        essence_reward = DungeonBossEssence();
                         reward_reason << "Dungeon Boss: " << creature->GetName();
                     }
                     else
                     {
-                        token_reward = DUNGEON_TRASH_REWARD;
+                        token_reward = DungeonTrashReward();
                         reward_reason << "Creature Kill: " << creature->GetName();
                     }
                 }

@@ -23,6 +23,12 @@
 #include "World.h"
 #include "AchievementMgr.h"
 #include "Log.h"
+
+#include <map>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
 #include "ObjectAccessor.h"
@@ -669,6 +675,135 @@ private:
     }
 };
 
+// =====================================================================
+// SCHEMA VALIDATION
+// =====================================================================
+// The DungeonQuests code builds its SQL from format strings, so a renamed
+// column is invisible until a player happens to trigger that one query -- and
+// MySQLConnection::_HandleMySQLErrno ABORTS the realm on an unknown column
+// rather than returning an error. Two such drifts were live at once
+// (dc_quest_difficulty_mapping.difficulty -> base_difficulty, and
+// dc_character_difficulty_completions.char_guid/completion_count ->
+// guid/total_completions), the first of which crashed the server on every
+// quest accept from the Universal Quest Master.
+//
+// This checks every table/column the feature reads, once, at startup, and logs
+// what is wrong instead of letting the first interaction take the realm down.
+// When a query here gains a new column, add it to the list below.
+namespace
+{
+    struct SchemaRequirement
+    {
+        char const* table;
+        std::vector<char const*> columns;
+    };
+
+    std::vector<SchemaRequirement> const& WorldSchemaRequirements()
+    {
+        static std::vector<SchemaRequirement> const requirements =
+        {
+            { "dc_dungeon_quest_mapping",     { "quest_id", "dungeon_id", "enabled" } },
+            { "dc_dungeon_npc_mapping",       { "map_id", "quest_master_entry", "display_id", "enabled" } },
+            { "dc_quest_difficulty_mapping",  { "quest_id", "base_difficulty" } },
+            { "dc_difficulty_config",         { "difficulty_id", "token_multiplier", "gold_multiplier" } },
+            { "dc_daily_quest_token_rewards", { "quest_id", "token_count" } },
+            { "dc_weekly_quest_token_rewards",{ "quest_id", "token_count" } },
+            { "dc_quest_reward_tokens",       { "token_item_id" } },
+        };
+        return requirements;
+    }
+
+    std::vector<SchemaRequirement> const& CharacterSchemaRequirements()
+    {
+        static std::vector<SchemaRequirement> const requirements =
+        {
+            { "dc_character_dungeon_statistics",     { "guid", "stat_name", "stat_value" } },
+            { "dc_character_difficulty_completions", { "guid", "dungeon_id", "difficulty", "total_completions" } },
+            { "dc_character_dungeon_quests_completed", { "guid", "quest_id" } },
+        };
+        return requirements;
+    }
+
+    // Returns the number of problems found. `characterDb` picks which pool to
+    // ask; DATABASE() resolves to whatever schema that pool is connected to, so
+    // no schema name is hardcoded.
+    template<class DatabasePool>
+    uint32 ValidateSchema(DatabasePool& pool, char const* label,
+        std::vector<SchemaRequirement> const& requirements)
+    {
+        if (requirements.empty())
+            return 0;
+
+        std::ostringstream tableList;
+        for (std::size_t i = 0; i < requirements.size(); ++i)
+        {
+            if (i)
+                tableList << ",";
+            // Table names here are compile-time literals, never user input.
+            tableList << "'" << requirements[i].table << "'";  // sql-ok: compile-time table names
+        }
+
+        QueryResult result = pool.Query(
+            "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ({})",
+            tableList.str());  // sql-ok: compile-time table names
+
+        std::map<std::string, std::set<std::string>> present;
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                present[fields[0].Get<std::string>()].insert(fields[1].Get<std::string>());
+            } while (result->NextRow());
+        }
+
+        uint32 problems = 0;
+        for (SchemaRequirement const& req : requirements)
+        {
+            auto it = present.find(req.table);
+            if (it == present.end())
+            {
+                LOG_ERROR("scripts.dc",
+                    "DungeonQuest schema: {} table `{}` is MISSING -- every query against it will abort the realm",
+                    label, req.table);
+                ++problems;
+                continue;
+            }
+
+            for (char const* column : req.columns)
+            {
+                if (it->second.find(column) == it->second.end())
+                {
+                    LOG_ERROR("scripts.dc",
+                        "DungeonQuest schema: {} table `{}` has no column `{}` -- the query using it will abort the realm",
+                        label, req.table, column);
+                    ++problems;
+                }
+            }
+        }
+
+        return problems;
+    }
+
+    void ValidateDungeonQuestSchema()
+    {
+        uint32 problems = 0;
+        problems += ValidateSchema(WorldDatabase, "world", WorldSchemaRequirements());
+        problems += ValidateSchema(CharacterDatabase, "character", CharacterSchemaRequirements());
+
+        if (problems)
+            LOG_ERROR("scripts.dc",
+                ">> DungeonQuest schema check FAILED with {} problem(s). The feature will crash the "
+                "realm when the affected query runs -- fix the schema or the query before players use it.",
+                problems);
+        else
+            LOG_INFO("scripts.dc", ">> DungeonQuest schema check passed ({} world + {} character tables)",
+                static_cast<uint32>(WorldSchemaRequirements().size()),
+                static_cast<uint32>(CharacterSchemaRequirements().size()));
+    }
+}
+
 // WorldScript for system initialization
 class DungeonQuestWorldScript : public WorldScript
 {
@@ -678,6 +813,9 @@ public:
     void OnStartup() override
     {
         LOG_INFO("scripts.dc", ">> Loading Dungeon Quest System...");
+
+        // Before anything reads these tables.
+        ValidateDungeonQuestSchema();
 
         // Load cached data from database
         DungeonQuestDB::LoadCache();

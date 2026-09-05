@@ -547,13 +547,42 @@ DC.GroupFinder = {
     -- dungeonId: specific map id, or 0 for "any" (dungeons only)
     -- difficulty: dungeon/raid difficulty enum value
     -- raidSize: 10 or 25 for raids
+    -- dungeonId may be a single map id (raids, legacy callers) or an array of
+    -- map ids -- the blizzlike "Specific Dungeons" tick list. 0 / empty = the
+    -- random dungeon queue.
     JoinQueue = function(category, roles, dungeonId, difficulty, raidSize)
+        local ids = {}
+        if type(dungeonId) == "table" then
+            for _, id in ipairs(dungeonId) do
+                id = tonumber(id)
+                if id and id > 0 then table.insert(ids, id) end
+            end
+        elseif tonumber(dungeonId) and tonumber(dungeonId) > 0 then
+            table.insert(ids, tonumber(dungeonId))
+        end
+
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_JOIN, {
             category = category or 1,
             roles = roles or 4,
-            dungeonId = dungeonId or 0,
+            -- Kept for an older server build; dungeonIds is authoritative.
+            dungeonId = ids[1] or 0,
+            dungeonIds = ids,
             difficulty = difficulty or 0,
             raidSize = raidSize or 0,
+        })
+    end,
+
+    -- Vote kick on a matchmade group (blizzlike: 3 votes, 120s).
+    StartVoteKick = function(victimName, reason)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_BOOT_START, {
+            victim = victimName or "",
+            reason = reason or "",
+        })
+    end,
+
+    VoteKick = function(agree)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_BOOT_VOTE, {
+            agree = agree and true or false,
         })
     end,
 

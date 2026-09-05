@@ -17,6 +17,7 @@
 
 #include "GossipDef.h"
 #include "Formulas.h"
+#include "Log.h"
 #include "Object.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
@@ -288,7 +289,15 @@ void QuestMenu::AddMenuItem(uint32 QuestId, uint8 Icon)
     if (!sObjectMgr->GetQuestTemplate(QuestId))
         return;
 
-    ASSERT(_questMenuItems.size() <= GOSSIP_MAX_MENU_ITEMS);
+    // SMSG_QUESTGIVER_QUEST_LIST carries a uint8 entry count and the client only renders
+    // GOSSIP_MAX_MENU_ITEMS rows. Custom quest givers can legitimately hold more relations than
+    // that (script-driven, paginated gossip), so drop the overflow instead of taking the world down.
+    if (_questMenuItems.size() >= GOSSIP_MAX_MENU_ITEMS)
+    {
+        LOG_DEBUG("misc", "QuestMenu::AddMenuItem: quest {} dropped, menu already holds {} entries",
+                  QuestId, GOSSIP_MAX_MENU_ITEMS);
+        return;
+    }
 
     QuestMenuItem questMenuItem;
 

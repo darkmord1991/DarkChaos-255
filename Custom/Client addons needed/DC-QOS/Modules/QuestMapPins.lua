@@ -319,6 +319,39 @@ local function GetVisibleMarkers(currentMapId)
         or false
     local data = addon and addon.QuestMapData and addon.QuestMapData.quests or nil
 
+    -- Not every map area has a WorldMapArea rectangle. Dalaran's row (504) is
+    -- 0/0/0/0 and so is Deeprun Tram's -- the client places its own markers on
+    -- those maps through its world->map translation, so nothing in the DBC has
+    -- to say where they are. The rectangle path reads no bounds there and
+    -- therefore rejects every point, which emptied the whole POI and teleport
+    -- layer on such a map; the smallest-rect owner test also handed Dalaran's
+    -- points to Crystalsong Forest, the zone the city floats over.
+    --
+    -- The client translation is relative to the displayed map, so it only
+    -- applies to the map the player is actually standing on.
+    local useClientTranslation = type(mapUtils) == "table"
+        and type(mapUtils.HasMapAreaBounds) == "function"
+        and not mapUtils.HasMapAreaBounds(currentMapId)
+    local playerGameMapId
+    if useClientTranslation and type(mapUtils.GetPlayerPosition) == "function" then
+        playerGameMapId = select(6, mapUtils.GetPlayerPosition())
+    end
+
+    local function PlaceWorldPoint(pointMap, worldX, worldY, worldZ)
+        local normX, normY = mapUtils.WorldToMapPosition(currentMapId, pointMap, worldX, worldY, true)
+        if normX and normY then
+            return normX, normY
+        end
+
+        if useClientTranslation and playerGameMapId
+            and tonumber(pointMap) == playerGameMapId
+            and type(mapUtils.WorldToDisplayedMapPosition) == "function" then
+            return mapUtils.WorldToDisplayedMapPosition(pointMap, worldX, worldY, worldZ)
+        end
+
+        return nil
+    end
+
     if settings.showAvailable then
         local availableByMap = EnsureAvailableIndex()
         local starts = availableByMap[currentMapId] or nil
@@ -419,7 +452,7 @@ local function GetVisibleMarkers(currentMapId)
         if type(teleports) == "table" then
             for i = 1, #teleports do
                 local teleport = teleports[i]
-                local normX, normY = mapUtils.WorldToMapPosition(currentMapId, teleport.map, teleport.x, teleport.y, true)
+                local normX, normY = PlaceWorldPoint(teleport.map, teleport.x, teleport.y, teleport.z)
                 if normX and normY then
                     markers[#markers + 1] = {
                         category = "teleport",
@@ -459,7 +492,7 @@ local function GetVisibleMarkers(currentMapId)
             if typeInfo and type(pois) == "table" and poiData:IsTypeEnabled(poiType) then
                 for i = 1, #pois do
                     local poi = pois[i]
-                    local normX, normY = mapUtils.WorldToMapPosition(currentMapId, poi.map, poi.x, poi.y, true)
+                    local normX, normY = PlaceWorldPoint(poi.map, poi.x, poi.y, poi.z)
                     if normX and normY then
                         markers[#markers + 1] = {
                             category = "poi",

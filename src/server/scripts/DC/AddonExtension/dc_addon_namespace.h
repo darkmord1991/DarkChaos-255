@@ -443,6 +443,10 @@ namespace DCAddon
             constexpr uint8 CMSG_STOP_SPECTATE       = 0x26;  // Stop spectating
             constexpr uint8 CMSG_GET_SPECTATE_LIST   = 0x27;  // Get available runs to spectate
 
+            // Client -> Server: Vote kick (matchmade groups only)
+            constexpr uint8 CMSG_QUEUE_BOOT_START    = 0x28;  // Propose kicking a group member
+            constexpr uint8 CMSG_QUEUE_BOOT_VOTE     = 0x29;  // Vote on the active kick
+
             // Client -> Server: Scheduled Events
             constexpr uint8 CMSG_CREATE_EVENT        = 0x60;  // Create scheduled event
             constexpr uint8 CMSG_SIGNUP_EVENT        = 0x61;  // Sign up for event
@@ -480,6 +484,9 @@ namespace DCAddon
             constexpr uint8 SMSG_SPECTATE_LIST       = 0x47;  // Available runs to spectate
             constexpr uint8 SMSG_SPECTATE_STARTED    = 0x48;  // Spectating started
             constexpr uint8 SMSG_SPECTATE_ENDED      = 0x49;  // Spectating ended
+
+            // Server -> Client: Vote kick
+            constexpr uint8 SMSG_QUEUE_BOOT_UPDATE   = 0x4A;  // Vote kick state / result
 
             // Server -> Client: Scheduled Events
             constexpr uint8 SMSG_EVENT_CREATED       = 0x70;  // Event created confirmation

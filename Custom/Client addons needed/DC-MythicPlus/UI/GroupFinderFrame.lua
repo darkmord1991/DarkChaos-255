@@ -879,7 +879,70 @@ function GF:CompactClearRows()
     end
 end
 
+-- Blizzlike "Specific Dungeons": the tick list is a set of map ids, and the
+-- "Any Dungeon" row is the random queue, mutually exclusive with the rest
+-- (picking Random clears the ticks, ticking a dungeon clears Random).
+function GF:GetDungeonTicks()
+    self.dungeonTicks = self.dungeonTicks or {}
+    return self.dungeonTicks
+end
+
+function GF:ClearDungeonTicks()
+    self.dungeonTicks = {}
+end
+
+function GF:CountDungeonTicks()
+    local n = 0
+    for _ in pairs(self:GetDungeonTicks()) do n = n + 1 end
+    return n
+end
+
+function GF:IsDungeonTicked(mapId)
+    return mapId and self:GetDungeonTicks()[mapId] == true
+end
+
+-- Returns the tick list as an array for the queue request; empty = random.
+function GF:GetDungeonTickList()
+    local list = {}
+    for mapId in pairs(self:GetDungeonTicks()) do table.insert(list, mapId) end
+    table.sort(list)
+    return list
+end
+
+function GF:ToggleDungeonTick(entry)
+    local mapId = tonumber(entry and entry.queueMapId) or 0
+    local ticks = self:GetDungeonTicks()
+
+    if mapId == 0 then
+        -- The "Any Dungeon" row: selecting random drops every specific pick.
+        self:ClearDungeonTicks()
+    elseif ticks[mapId] then
+        ticks[mapId] = nil
+    else
+        ticks[mapId] = true
+    end
+end
+
 function GF:CompactSelectRow(row, entry)
+    -- Locked rows (level requirement not met) are display-only, like retail.
+    if entry and entry.locked then
+        self:SetStatusMessage((entry.lockReason or "Not available yet")
+            .. " - " .. (entry.dungeonName or entry.name or "this content") .. ".")
+        return
+    end
+
+    -- Dungeon queue targets are checkboxes, not a single selection.
+    local kind = self.compactSelectedKind or "mythic"
+    if entry and entry.isQueueTarget and entry.queueCategory ~= 2
+        and self.retailNavContext ~= "premade"
+        and (kind == "dungeons" or kind == "mythic") then
+        self:ToggleDungeonTick(entry)
+        self.compactSelectedEntry = entry
+        self:CompactRefreshTickMarks()
+        self:UpdateCompactButtons()
+        return
+    end
+
     if self.compactSelectedRow and self.compactSelectedRow.bg then
         SetRetailBlueMenuBackground(self.compactSelectedRow.bg, "normal")
     end
@@ -892,6 +955,28 @@ function GF:CompactSelectRow(row, entry)
     end
 
     self:UpdateCompactButtons()
+end
+
+-- Repaint every visible row's checkbox + selected bar from the tick set.
+function GF:CompactRefreshTickMarks()
+    if not self.compactRowPool then return end
+    local anyTicked = self:CountDungeonTicks() > 0
+
+    for _, row in ipairs(self.compactRowPool) do
+        if row:IsShown() and row.check and row.entry and row.entry.isQueueTarget then
+            local mapId = tonumber(row.entry.queueMapId) or 0
+            local on
+            if mapId == 0 then
+                on = not anyTicked        -- Random is on when nothing specific is
+            else
+                on = self:IsDungeonTicked(mapId)
+            end
+            row.check:SetChecked(on)
+            if row.bg then
+                SetRetailBlueMenuBackground(row.bg, on and "selected" or "normal")
+            end
+        end
+    end
 end
 
 function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
@@ -943,8 +1028,12 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
     -- Dungeon/raid rows show the dungeon teleporter art as a thumbnail.
     local showThumb = (kind == "dungeons" or kind == "mythic" or kind == "raid")
-    local textInset = showThumb and 62 or 10
-    local textWidth = showThumb and 110 or 162
+    -- Dungeon queue rows gain a leading checkbox, so art and text shift right.
+    local tickMode = (kind == "dungeons" or kind == "mythic")
+        and self.retailNavContext ~= "premade"
+    local checkInset = tickMode and 24 or 0
+    local textInset = (showThumb and 62 or 10) + checkInset
+    local textWidth = (showThumb and 110 or 162) - checkInset
 
     self.compactRowPool = self.compactRowPool or {}
 
@@ -971,17 +1060,50 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
             row.roles:SetPoint("BOTTOMRIGHT", -8, 7)
 
             row:SetScript("OnEnter", function(self)
-                if self ~= GF.compactSelectedRow and self.bg then
+                local entry = self.entry
+                if self ~= GF.compactSelectedRow and self.bg and not (entry and entry.locked) then
                     SetRetailBlueMenuBackground(self.bg, "hover")
+                end
+
+                -- Retail shows the requirement on hover for anything locked.
+                if entry and (entry.locked or entry.reqLevel or entry.reqItemLevel) then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(entry.dungeonName or entry.name or "", 1, 1, 1)
+                    if entry.difficultyName and entry.difficultyName ~= "" then
+                        GameTooltip:AddLine(entry.difficultyName, 0.7, 0.7, 0.7)
+                    end
+                    local reqLevel = tonumber(entry.reqLevel) or 0
+                    if reqLevel > 0 then
+                        local met = (UnitLevel("player") or 1) >= reqLevel
+                        GameTooltip:AddLine("Requires level " .. reqLevel,
+                            met and 0.1 or 1, met and 1 or 0.1, 0.1)
+                    end
+                    local reqIlvl = tonumber(entry.reqItemLevel) or 0
+                    if reqIlvl > 0 then
+                        GameTooltip:AddLine("Requires item level " .. reqIlvl, 0.7, 0.7, 0.7)
+                    end
+                    -- Server lock reason (attunement, deserter, gear...) when it
+                    -- says more than the level line already did.
+                    if entry.locked and entry.lockReason
+                        and not entry.lockReason:find("^Requires level") then
+                        GameTooltip:AddLine(entry.lockReason, 1, 0.1, 0.1)
+                    end
+                    GameTooltip:Show()
                 end
             end)
             row:SetScript("OnLeave", function(self)
-                if self ~= GF.compactSelectedRow and self.bg then
+                if self ~= GF.compactSelectedRow and self.bg
+                    and not (self.entry and self.entry.locked) then
                     SetRetailBlueMenuBackground(self.bg, "normal")
                 end
+                GameTooltip:Hide()
             end)
             row:SetScript("OnClick", function(self)
-                PlayUISound("igMainMenuOptionCheckBoxOn")
+                if self.entry and self.entry.locked then
+                    PlayUISound("igQuestFailed")
+                else
+                    PlayUISound("igMainMenuOptionCheckBoxOn")
+                end
                 GF:CompactSelectRow(self, self.entry)
             end)
 
@@ -996,6 +1118,29 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
         SetRetailBlueMenuBackground(row.bg, "normal")
 
+        -- Queue-target dungeon rows carry a real checkbox (blizzlike LFD lets
+        -- you tick several dungeons at once); everything else keeps the plain
+        -- single-selection row.
+        local isTickRow = entry.isQueueTarget and entry.queueCategory ~= 2
+            and (kind == "dungeons" or kind == "mythic")
+            and self.retailNavContext ~= "premade"
+        if isTickRow then
+            if not row.check then
+                local check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+                check:SetSize(22, 22)
+                check:SetPoint("LEFT", 2, 0)
+                check:SetHitRectInsets(0, 0, 0, 0)
+                row.check = check
+            end
+            row.check:Show()
+            row.check:SetScript("OnClick", function()
+                GF:CompactSelectRow(row, row.entry)
+            end)
+        elseif row.check then
+            row.check:Hide()
+            row.check:SetScript("OnClick", nil)
+        end
+
         if showThumb then
             if not row.thumb then
                 local thumb = row:CreateTexture(nil, "ARTWORK")
@@ -1003,6 +1148,8 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
                 thumb:SetPoint("LEFT", 6, 0)
                 row.thumb = thumb
             end
+            row.thumb:ClearAllPoints()
+            row.thumb:SetPoint("LEFT", 6 + checkInset, 0)
             local candidates = GetEntryDungeonArtCandidates(entry)
             if not ApplyTextureCandidates(row.thumb, candidates,
                 "Interface\\LFGFrame\\UI-LFG-DUNGEON-WAILINGCAVERNS") then
@@ -1036,6 +1183,36 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
             GFAtlasEscape("dps-micro", 13),
             tostring(entry.needDps or entry.dps or 0)))
 
+        -- Locked content reads greyed with a padlock over the thumbnail, the way
+        -- retail renders a dungeon whose requirements you do not meet yet.
+        if entry.locked then
+            if not row.lock then
+                local lock = row:CreateTexture(nil, "OVERLAY")
+                lock:SetSize(20, 20)
+                lock:SetPoint("BOTTOMLEFT", 4, 4)
+                lock:SetTexture("Interface\\Buttons\\LockButton-Small")
+                row.lock = lock
+            end
+            row.lock:Show()
+            if row.thumb then
+                row.thumb:SetVertexColor(0.35, 0.35, 0.35)
+            end
+            row.name:SetTextColor(0.5, 0.5, 0.5)
+            row.leader:SetTextColor(0.4, 0.4, 0.4)
+            row.leader:SetText(entry.lockReason or "Requirements not met")
+            row.meta:SetTextColor(0.5, 0.5, 0.5)
+            row.roles:SetTextColor(0.4, 0.4, 0.4)
+        else
+            if row.lock then row.lock:Hide() end
+            if row.thumb then
+                row.thumb:SetVertexColor(1, 1, 1)
+            end
+            row.name:SetTextColor(1, 0.82, 0)
+            row.leader:SetTextColor(1, 1, 1)
+            row.meta:SetTextColor(1, 1, 1)
+            row.roles:SetTextColor(0.5, 0.5, 0.5)
+        end
+
         row:Show()
 
         yOffset = yOffset + rowHeight
@@ -1045,6 +1222,7 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
     if self.compactResultsText then
         self.compactResultsText:SetText("Results: " .. #entries)
     end
+    self:CompactRefreshTickMarks()
     self:UpdateCompactButtons()
 end
 
@@ -1086,7 +1264,18 @@ function GF:UpdateCompactButtons()
         and (kind == "dungeons" or kind == "mythic" or kind == "raid")
 
     if finderQueueMode then
-        self.compactPrimaryButton:SetText(option.actionText or "Find Group")
+        if kind ~= "raid" then
+            local n = self:CountDungeonTicks()
+            if n == 0 then
+                self.compactPrimaryButton:SetText("Find Random Group")
+            elseif n == 1 then
+                self.compactPrimaryButton:SetText("Find Group (1 dungeon)")
+            else
+                self.compactPrimaryButton:SetText(string.format("Find Group (%d dungeons)", n))
+            end
+        else
+            self.compactPrimaryButton:SetText(option.actionText or "Find Group")
+        end
     elseif selected and (kind == "mythic" or kind == "raid" or kind == "quest" or kind == "other") then
         self.compactPrimaryButton:SetText("Apply")
     elseif selected and kind == "live" then

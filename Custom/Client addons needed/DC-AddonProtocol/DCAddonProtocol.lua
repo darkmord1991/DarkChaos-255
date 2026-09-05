@@ -1543,6 +1543,8 @@ DC.GroupFinderOpcodes = {
     CMSG_START_SPECTATE      = 0x25,  -- Request to spectate a run
     CMSG_STOP_SPECTATE       = 0x26,  -- Stop spectating
     CMSG_GET_SPECTATE_LIST   = 0x27,  -- Get available runs to spectate
+    CMSG_QUEUE_BOOT_START    = 0x28,  -- Propose kicking a group member
+    CMSG_QUEUE_BOOT_VOTE     = 0x29,  -- Vote on the active kick
     
     -- Client -> Server: Scheduled Events
     CMSG_CREATE_EVENT        = 0x60,  -- Create scheduled event
@@ -1581,6 +1583,7 @@ DC.GroupFinderOpcodes = {
     SMSG_SPECTATE_LIST       = 0x47,  -- Available runs to spectate
     SMSG_SPECTATE_STARTED    = 0x48,  -- Spectating started
     SMSG_SPECTATE_ENDED      = 0x49,  -- Spectating ended
+    SMSG_QUEUE_BOOT_UPDATE   = 0x4A,  -- Vote kick state / result
     SMSG_OPEN_UI             = 0x50,  -- Open the Group Finder UI
     
     -- Server -> Client: Scheduled Events

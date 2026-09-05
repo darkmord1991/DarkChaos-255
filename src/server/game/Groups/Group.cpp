@@ -632,6 +632,16 @@ void Group::AddMemberWithGuid(ObjectGuid guid)
     SubGroupCounterIncrease(subGroup);
 }
 
+namespace
+{
+    GroupKickInterceptorFn s_groupKickInterceptor = nullptr;
+}
+
+void SetGroupKickInterceptor(GroupKickInterceptorFn fn)
+{
+    s_groupKickInterceptor = fn;
+}
+
 bool Group::RemoveMember(ObjectGuid guid, RemoveMethod const& method /*= GROUP_REMOVEMETHOD_DEFAULT*/, ObjectGuid kicker /*= ObjectGuid::Empty*/, char const* reason /*= nullptr*/)
 {
     BroadcastGroupUpdate();
@@ -640,6 +650,14 @@ bool Group::RemoveMember(ObjectGuid guid, RemoveMethod const& method /*= GROUP_R
     if (isLFGGroup(true) && method == GROUP_REMOVEMETHOD_KICK)
     {
         sLFGMgr->InitBoot(GetGUID(), kicker, guid, std::string(reason ? reason : ""));
+        return m_memberSlots.size() > 0;
+    }
+
+    // Same rule for a group the DC Group Finder formed: the leader cannot kick
+    // outright, it opens a vote (see SetGroupKickInterceptor).
+    if (method == GROUP_REMOVEMETHOD_KICK && s_groupKickInterceptor
+        && s_groupKickInterceptor(this, kicker, guid, reason))
+    {
         return m_memberSlots.size() > 0;
     }
 

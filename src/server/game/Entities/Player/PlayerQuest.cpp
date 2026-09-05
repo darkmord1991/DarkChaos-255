@@ -28,6 +28,11 @@
 #include "PoolMgr.h"
 #include "QuestPackets.h"
 #include "ReputationMgr.h"
+
+#include <algorithm>
+#include <cstdlib>
+#include <iterator>
+#include <vector>
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
@@ -68,8 +73,17 @@ void Player::PrepareQuestMenu(ObjectGuid guid)
     QuestMenu& qm = PlayerTalkClass->GetQuestMenu();
     qm.ClearMenu();
 
+    // Custom quest givers can hold hundreds of relations (the DC Universal
+    // Quest Master holds 756). QuestMenu drops everything past
+    // GOSSIP_MAX_MENU_ITEMS anyway, so stop walking the relations once the menu
+    // is full instead of running CanTakeQuest over the whole list -- this runs
+    // on a map update thread for every playerbot that considers the NPC.
+    // Turn-ins are collected first, so they keep priority over new quests.
     for (QuestRelations::const_iterator i = objectQIR.first; i != objectQIR.second; ++i)
     {
+        if (qm.GetMenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)
+            break;
+
         uint32 quest_id = i->second;
         QuestStatus status = GetQuestStatus(quest_id);
         if (status == QUEST_STATUS_COMPLETE)
@@ -80,15 +94,10 @@ void Player::PrepareQuestMenu(ObjectGuid guid)
         //    qm.AddMenuItem(quest_id, 2);
     }
 
-    for (QuestRelations::const_iterator i = objectQR.first; i != objectQR.second; ++i)
+    auto offerQuest = [&](uint32 quest_id, Quest const* quest)
     {
-        uint32 quest_id = i->second;
-        Quest const* quest = sObjectMgr->GetQuestTemplate(quest_id);
-        if (!quest)
-            continue;
-
         if (!CanTakeQuest(quest, false))
-            continue;
+            return;
 
         if (quest->IsAutoComplete() && (!quest->IsRepeatable() || quest->IsDaily() || quest->IsWeekly() || quest->IsMonthly()))
             qm.AddMenuItem(quest_id, 0);
@@ -96,6 +105,68 @@ void Player::PrepareQuestMenu(ObjectGuid guid)
             qm.AddMenuItem(quest_id, 4);
         else if (GetQuestStatus(quest_id) == QUEST_STATUS_NONE)
             qm.AddMenuItem(quest_id, 2);
+    };
+
+    std::size_t const availableRelations =
+        static_cast<std::size_t>(std::distance(objectQR.first, objectQR.second));
+
+    if (availableRelations <= GOSSIP_MAX_MENU_ITEMS)
+    {
+        // Normal quest giver: keep the relation order exactly as it always was.
+        // Nothing can overflow here, so there is nothing to prioritise and no
+        // reason to change what players are used to seeing.
+        for (QuestRelations::const_iterator i = objectQR.first; i != objectQR.second; ++i)
+        {
+            uint32 quest_id = i->second;
+            if (Quest const* quest = sObjectMgr->GetQuestTemplate(quest_id))
+                offerQuest(quest_id, quest);
+        }
+
+        return;
+    }
+
+    // More relations than the menu can hold (the DC Universal Quest Master
+    // carries 756). Taking the first 32 in relation order is effectively
+    // arbitrary, so offer the ones closest to the player's level instead.
+    //
+    // The sort key comes from the quest template, which is a cheap cached
+    // lookup; CanTakeQuest -- the expensive part, and the reason this path
+    // showed up on a map update thread once playerbots started using it -- runs
+    // only while the menu still has room.
+    uint8 const playerLevel = GetLevel();
+    std::vector<std::pair<uint32, uint32>> ranked;   // (level distance, quest id)
+    ranked.reserve(availableRelations);
+
+    for (QuestRelations::const_iterator i = objectQR.first; i != objectQR.second; ++i)
+    {
+        uint32 quest_id = i->second;
+        Quest const* quest = sObjectMgr->GetQuestTemplate(quest_id);
+        if (!quest)
+            continue;
+
+        // Level -1 marks a quest that scales to the player, so treat it as an
+        // exact match. Otherwise fall back to the required level when a quest
+        // carries no level of its own.
+        int32 questLevel = quest->GetQuestLevel();
+        if (questLevel <= 0)
+            questLevel = static_cast<int32>(quest->GetMinLevel());
+
+        uint32 distance = questLevel <= 0
+            ? 0u
+            : static_cast<uint32>(std::abs(questLevel - static_cast<int32>(playerLevel)));
+
+        ranked.emplace_back(distance, quest_id);
+    }
+
+    std::sort(ranked.begin(), ranked.end());
+
+    for (auto const& [distance, quest_id] : ranked)
+    {
+        if (qm.GetMenuItemCount() >= GOSSIP_MAX_MENU_ITEMS)
+            break;
+
+        if (Quest const* quest = sObjectMgr->GetQuestTemplate(quest_id))
+            offerQuest(quest_id, quest);
     }
 }
 

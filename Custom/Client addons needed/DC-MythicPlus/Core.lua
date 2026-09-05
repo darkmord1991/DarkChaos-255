@@ -4290,6 +4290,15 @@ if DC then
         end
     end)
 
+    -- SMSG_QUEUE_BOOT_UPDATE (0x4A) - vote kick state / result
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_BOOT_UPDATE or 0x4A, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnBootUpdate then
+            namespace.GroupFinder:OnBootUpdate(args[1])
+        end
+    end)
+
     -- SMSG_OPEN_UI (0x50) - Open Group Finder UI from server
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_OPEN_UI or 0x50, function(...)
         local args = {...}
@@ -4307,6 +4316,11 @@ if DC then
             local data = args[1]
             local err = data.error or data.message or "Unknown Group Finder error"
             PrintGroupFinder("|cffff4444" .. err .. "|r", true)
+
+            -- Cancel a join that the server just refused.
+            if namespace.GroupFinder and namespace.GroupFinder.OnQueueError then
+                namespace.GroupFinder:OnQueueError(err)
+            end
 
             if namespace.GroupFinder and namespace.GroupFinder.MythicCreatePanel and namespace.GroupFinder.MythicCreatePanel.statusText then
                 namespace.GroupFinder.MythicCreatePanel.statusText:SetText("|cffff4444Group Finder: " .. err .. "|r")

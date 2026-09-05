@@ -825,6 +825,9 @@ public:
         handler->PSendSysMessage("Reloading Universal Quest Master cache...");
 
         UniversalQuestMasterCache::ReloadCache();
+        // The gossip cache above only drives the menu. The model a player sees is the
+        // follower's, cached separately -- drop that too or display_id edits stay invisible.
+        DungeonQuestHelpers::ClearQuestMasterDisplayIdCache();
 
         handler->PSendSysMessage("Done! Loaded %u dungeons, %u display IDs.",
                                 UniversalQuestMasterCache::GetTotalQuestMappings(),

@@ -11,7 +11,15 @@
 -- discriminator either, since Blood Fury and Arcane Torrent carry one.
 --
 -- skilllineability_dbc is empty on a stock install: these rows OVERRIDE the .dbc entries of the
--- same ID, so no client patch or server-side DBC deploy is needed.
+-- same ID (DBCStores.cpp LoadDBC runs storage.LoadFromDB AFTER reading the file), so the
+-- WORLDSERVER needs no DBC deploy.
+--
+-- The CLIENT does. It never sees this table -- it reads DBFilesClient\SkillLineAbility.dbc out of
+-- the MPQ chain -- so an overlay row here and a stale .dbc there silently disagree. That gap sat
+-- open on rows 590/592 (the two faction LANGUAGES) until 2026-09-05: the client's copy still
+-- carried the stock+worgoblin masks 3149/946, listing none of races 22-27. Whenever a row here is
+-- re-masked, mirror it into `Custom/DBCs/SkillLineAbility.dbc` and deploy that to patch-4 plus the
+-- enGB patch chain (which outranks the numbered patches). Same rule for skillraceclassinfo_dbc.
 
 DELETE FROM `skilllineability_dbc` WHERE `ID` IN (590, 592, 20867, 20868, 14779, 14787, 14788, 18299, 20289, 20290, 3269, 3270, 3271, 3272, 3273, 3274, 5989, 5990, 5991, 5992, 5993, 5994, 14815, 14816, 14817, 14818, 15040, 15041, 15606, 15607, 16999, 17000, 17003, 17004, 21723, 13151, 21724, 7594, 12518, 20089, 20091, 20110, 20283);
 INSERT INTO `skilllineability_dbc` (`ID`, `SkillLine`, `Spell`, `RaceMask`, `ClassMask`, `ExcludeRace`, `ExcludeClass`, `MinSkillLineRank`, `SupercededBySpell`, `AcquireMethod`, `TrivialSkillLineRankHigh`, `TrivialSkillLineRankLow`, `CharacterPoints_1`, `CharacterPoints_2`) VALUES

@@ -176,6 +176,7 @@ void AddSC_ItemUpgradeExchange();             // ItemUpgrades/ItemUpgradeExchang
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades/ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades/ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades/ItemUpgradeStatApplication.cpp
+void AddSC_ItemUpgradeApiProvider();          // ItemUpgrades/ItemUpgradeApiProvider.cpp
 void AddSC_dc_cata_itemset_bonuses();         // ItemSets/dc_cata_itemset_bonuses.cpp
 
 // --- Random enchants system ---
@@ -476,6 +477,9 @@ void AddDCScripts()
     // Applies ItemUpgradeState::stat_multiplier to equipped items; without
     // this registration upgrades consume currency but grant no stats.
     DC_LOAD(AddSC_ItemUpgradeStatApplication);
+    // Publishes the server-side upgrade façade (game lib) that mod-playerbots
+    // drives; without it bots earn the currencies but can never spend them.
+    DC_LOAD(AddSC_ItemUpgradeApiProvider);
 
     LogSection("Random Enchants System");
     DC_LOAD(AddSC_dc_random_enchants);

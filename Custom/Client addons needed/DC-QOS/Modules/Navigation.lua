@@ -150,6 +150,8 @@ local ARROW_WIDTH = 22
 local ARROW_HEIGHT = 18
 local ARROW_ANCHOR_Y = 60
 local RUN_TRAVEL_SPEED_YARDS_PER_SEC = 7.0
+-- Last-resort fallback only: GetMinimapDiameterYards below defers to the shared
+-- mapUtils implementation, which is the one that decides indoor vs outdoor.
 local MINIMAP_DIAMETER_YARDS = {
     indoor = {
         [0] = 300,
@@ -4521,30 +4523,19 @@ local function ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target
 end
 
 local function IsMinimapRotating()
-    return type(GetCVar) == "function" and GetCVar("rotateMinimap") == "1"
+    return mapUtils.IsMinimapRotating()
 end
 
-local function IsMinimapIndoors()
-    if type(GetCVar) ~= "function" then
-        return false
-    end
-
-    local outsideZoom = tostring(GetCVar("minimapZoom") or "")
-    local insideZoom = tostring(GetCVar("minimapInsideZoom") or "")
-    return outsideZoom == insideZoom
-end
-
+-- Both of these now defer to the shared implementations in Core.lua. The local
+-- copies decided "indoors" by comparing minimapZoom against minimapInsideZoom --
+-- two INDEPENDENT user settings that read the same whenever the player picks the
+-- same step in both, and identical by default because neither CVar is written
+-- until the zoom is changed. Every group pin was then placed off the indoor yard
+-- table outdoors, which is 1.5-2.2x too small a diameter, so each one sat that
+-- much too far from the player. Core.lua uses IsIndoors(), the engine's own
+-- answer and the one the minimap itself follows.
 local function GetMinimapDiameterYards()
-    if not Minimap or type(Minimap.GetZoom) ~= "function" then
-        return MINIMAP_DIAMETER_YARDS.outdoor[1]
-    end
-
-    local zoom = tonumber(Minimap:GetZoom()) or 1
-    local zoomTable = IsMinimapIndoors()
-        and MINIMAP_DIAMETER_YARDS.indoor
-        or MINIMAP_DIAMETER_YARDS.outdoor
-
-    return zoomTable[zoom] or zoomTable[1] or MINIMAP_DIAMETER_YARDS.outdoor[1]
+    return mapUtils.GetMinimapDiameterYards() or MINIMAP_DIAMETER_YARDS.outdoor[1]
 end
 
 local function EnsureMinimapPinContainer()

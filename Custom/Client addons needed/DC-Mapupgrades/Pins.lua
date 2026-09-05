@@ -390,6 +390,11 @@ end
 -- pixels. DC-QoS already has that helper (rotation and zoom included), so use it
 -- when the suite is loaded and fall back to doing it here otherwise.
 
+-- Room left around the rim so a pin sitting on the boundary is not half-clipped
+-- by the minimap's border art. A visibility margin only -- never part of the
+-- yards-to-pixels scale.
+local MINIMAP_EDGE_PADDING = 10
+
 -- Visible minimap diameter in yards, outdoor table, by zoom step.
 local MINIMAP_DIAMETER = { [0] = 466.6, [1] = 400, [2] = 333.3, [3] = 266.6, [4] = 200, [5] = 133.3 }
 
@@ -400,7 +405,7 @@ local function ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy,
         if mapUtils and type(mapUtils.ProjectToMinimap) == "function" then
             local x, y, dist, clamped =
                 mapUtils.ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy, radiusPx)
-            if not x or clamped then
+            if not x or clamped or math.sqrt(x * x + y * y) > (radiusPx - MINIMAP_EDGE_PADDING) then
                 return nil
             end
             return x, y, dist
@@ -430,6 +435,10 @@ local function ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy,
         return nil
     end
 
+    if distance > halfDiameter * ((radiusPx - MINIMAP_EDGE_PADDING) / radiusPx) then
+        return nil
+    end
+
     local scale = radiusPx / halfDiameter
     local px, py = dxYards * scale, -dyYards * scale
 
@@ -440,6 +449,30 @@ local function ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy,
     end
 
     return px, py, distance
+end
+
+-- World-space counterpart, for pins whose position arrives as raw world
+-- coordinates (hotspots carry world x/y plus a game map id). World coordinates
+-- are already yards, so this skips normalization, the WorldMapArea rectangle and
+-- everything that depends on which zone the world map is showing.
+--
+-- Returns nil without DC-QoS loaded; the caller then falls back to the
+-- normalized path.
+local function ProjectWorldToMinimap(playerWorldX, playerWorldY, targetWorldX, targetWorldY, radiusPx)
+    local dcqos = rawget(_G, "DCQOS")
+    if dcqos and type(dcqos.GetMapUtils) == "function" then
+        local mapUtils = dcqos:GetMapUtils()
+        if mapUtils and type(mapUtils.ProjectWorldToMinimap) == "function" then
+            local x, y, dist, clamped = mapUtils.ProjectWorldToMinimap(
+                playerWorldX, playerWorldY, targetWorldX, targetWorldY, radiusPx)
+            if not x or clamped or math.sqrt(x * x + y * y) > (radiusPx - MINIMAP_EDGE_PADDING) then
+                return nil
+            end
+            return x, y, dist
+        end
+    end
+
+    return nil
 end
 
 -- Retail's own vignette markers, downported from the 11.2.5 client into
@@ -773,7 +806,47 @@ local function CopyTable(tbl)
     return copy
 end
 
-local function PlayerNormalizedPosition(state)
+-- How long a stale player position may still be used on the legacy path.
+--
+-- This used to be unbounded: a failed read returned state.lastPlayerPos with no
+-- expiry at all. A minimap pin is drawn at (target - player) from the minimap
+-- centre, and the centre IS the player, so a frozen player half leaves the pin
+-- at a fixed screen offset while the map art scrolls underneath -- the pin rides
+-- along with the player, for as long as the read keeps failing. And it keeps
+-- failing for as long as the world map is open on another zone, because
+-- GetPlayerMapPosition answers in the coordinate space of whatever the world map
+-- is showing, and SetMapToCurrentZone (the only fix) must not run while the map
+-- is up. Better a pin that disappears for a moment than one that lies.
+local STALE_POSITION_SECONDS = 0.35
+
+local function Now()
+    return (type(GetTime) == "function" and GetTime()) or 0
+end
+
+-- Where the pins are measured from.
+--
+-- Returns normX, normY, uiMapId, worldX, worldY, gameMapId.
+--
+-- Prefers DC-QoS's shared helper, which takes the player's position from the
+-- client's own movement info (via WotLKExtensions) rather than from the world
+-- map view: it is exact, it never fails, and it does not care which zone the
+-- world map happens to be showing. It also reports the UI map id of the area the
+-- player is really standing in, instead of whichever one the map is displaying.
+--
+-- worldX/worldY/gameMapId are nil on the legacy path, which is the local
+-- world-map read kept for a client without that helper.
+local function PlayerAnchor(state)
+    local dcqos = rawget(_G, "DCQOS")
+    if dcqos and type(dcqos.GetMapUtils) == "function" then
+        local mapUtils = dcqos:GetMapUtils()
+        if mapUtils and type(mapUtils.GetPlayerPosition) == "function" then
+            local normX, normY, uiMapId, worldX, worldY, gameMapId = mapUtils.GetPlayerPosition()
+            if (worldX and worldY) or (normX and normY) then
+                return normX, normY, uiMapId, worldX, worldY, gameMapId
+            end
+        end
+    end
+
     local mapId
     if C_Map and C_Map.GetBestMapForUnit then
         mapId = C_Map.GetBestMapForUnit("player")
@@ -811,10 +884,11 @@ local function PlayerNormalizedPosition(state)
                     last = {}
                     state.lastPlayerPos = last
                 end
-                last.x, last.y, last.mapId = x, y, mapId
+                last.x, last.y, last.mapId, last.time = x, y, mapId, Now()
             end
             return x, y, mapId
-        elseif state and state.lastPlayerPos then
+        elseif state and state.lastPlayerPos and state.lastPlayerPos.time
+            and (Now() - state.lastPlayerPos.time) <= STALE_POSITION_SECONDS then
             return state.lastPlayerPos.x, state.lastPlayerPos.y, state.lastPlayerPos.mapId
         end
     end
@@ -1696,16 +1770,21 @@ function Pins:UpdateMinimapPins()
         return
     end
 
-    local px, py, playerMap = PlayerNormalizedPosition(self.state)
-    if not px or not py then
+    local px, py, playerMap, pwx, pwy, playerGameMap = PlayerAnchor(self.state)
+    local worldMode = (pwx and pwy and playerGameMap) and true or false
+    if not worldMode and (not px or not py) then
         for _, pin in pairs(self.minimapPins) do pin:Hide() end
         return
     end
 
     -- Usable radius of the minimap, leaving a little room so a pin sitting right
     -- on the boundary is not half-clipped by the ring art.
-    local minimapRadius = (math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5) - 10
-    if minimapRadius <= 0 then
+    -- FULL half-width: that is the radius the zoom's yard diameter spans.
+    -- Subtracting the edge padding here instead shrank every pin's distance by
+    -- the padding's share of the radius on top of the projection. The padding
+    -- is applied as a visibility margin inside the two projection helpers.
+    local minimapRadius = math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5
+    if minimapRadius <= MINIMAP_EDGE_PADDING then
         return
     end
 
@@ -1713,17 +1792,45 @@ function Pins:UpdateMinimapPins()
     local canShowHotspots = PlayerCanGainXP()
     if canShowHotspots then
         for id, hotspot in pairs(self.state.hotspots) do
-            if not playerMap or not hotspot.map or tonumber(hotspot.map) == tonumber(playerMap) then
-                local targetNx, targetNy = NormalizeCoords(hotspot)
-                if targetNx and targetNy then
-                    local offsetX, offsetY
-                    if Astrolabe and Astrolabe.WorldToMinimapOffset then
-                        offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, targetNx, targetNy)
-                    else
-                        -- Same unit bug as the entity pins had; see ProjectToMinimap.
-                        offsetX, offsetY = ProjectToMinimap(
-                            playerMap, px, py, targetNx, targetNy, minimapRadius)
+            -- hotspot.map is a GAME map id (the server sends the map the hotspot
+            -- spawned on), so it is only comparable to the player's game map --
+            -- never to a UI map id, which is what the legacy path had to make do
+            -- with.
+            local sameMap
+            if worldMode then
+                sameMap = not hotspot.map or tonumber(hotspot.map) == playerGameMap
+            else
+                sameMap = not playerMap or not hotspot.map
+                    or tonumber(hotspot.map) == tonumber(playerMap)
+            end
+
+            if sameMap then
+                local targetNx, targetNy
+                local worldX, worldY
+                local offsetX, offsetY
+
+                if worldMode then
+                    worldX, worldY = tonumber(hotspot.x), tonumber(hotspot.y)
+                    if worldX and worldY then
+                        offsetX, offsetY = ProjectWorldToMinimap(
+                            pwx, pwy, worldX, worldY, minimapRadius)
                     end
+                end
+
+                if not worldX then
+                    targetNx, targetNy = NormalizeCoords(hotspot)
+                    if targetNx and targetNy then
+                        if Astrolabe and Astrolabe.WorldToMinimapOffset then
+                            offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, targetNx, targetNy)
+                        else
+                            -- Same unit bug as the entity pins had; see ProjectToMinimap.
+                            offsetX, offsetY = ProjectToMinimap(
+                                playerMap, px, py, targetNx, targetNy, minimapRadius)
+                        end
+                    end
+                end
+
+                if worldX or targetNx then
                     local pin = self.minimapPins[id]
                         or (offsetX and self:AcquireMinimapPin(id, hotspot))
                     if pin then
@@ -1733,6 +1840,7 @@ function Pins:UpdateMinimapPins()
                             pin.lastTexture = tex
                         end
                         pin.targetNx, pin.targetNy = targetNx, targetNy
+                        pin.targetWorldX, pin.targetWorldY = worldX, worldY
                         pin.dcTracked = true
                         if offsetX then
                             pin:ClearAllPoints()
@@ -1835,24 +1943,34 @@ function Pins:RepositionMinimapPins()
         return
     end
 
-    local px, py, playerMap = PlayerNormalizedPosition(self.state)
-    if not px or not py then
+    local px, py, playerMap, pwx, pwy, playerGameMap = PlayerAnchor(self.state)
+    local worldMode = (pwx and pwy and playerGameMap) and true or false
+    if not worldMode and (not px or not py) then
         return
     end
 
-    local minimapRadius = (math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5) - 10
-    if minimapRadius <= 0 then
+    -- FULL half-width: that is the radius the zoom's yard diameter spans.
+    -- Subtracting the edge padding here instead shrank every pin's distance by
+    -- the padding's share of the radius on top of the projection. The padding
+    -- is applied as a visibility margin inside the two projection helpers.
+    local minimapRadius = math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5
+    if minimapRadius <= MINIMAP_EDGE_PADDING then
         return
     end
 
     for _, pin in pairs(self.minimapPins) do
-        if pin.dcTracked and pin.targetNx and pin.targetNy then
+        if pin.dcTracked and ((pin.targetWorldX and pin.targetWorldY) or (pin.targetNx and pin.targetNy)) then
             local offsetX, offsetY
-            if Astrolabe and Astrolabe.WorldToMinimapOffset then
-                offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, pin.targetNx, pin.targetNy)
-            else
-                offsetX, offsetY = ProjectToMinimap(
-                    playerMap, px, py, pin.targetNx, pin.targetNy, minimapRadius)
+            if worldMode and pin.targetWorldX then
+                offsetX, offsetY = ProjectWorldToMinimap(
+                    pwx, pwy, pin.targetWorldX, pin.targetWorldY, minimapRadius)
+            elseif px and py and pin.targetNx then
+                if Astrolabe and Astrolabe.WorldToMinimapOffset then
+                    offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, pin.targetNx, pin.targetNy)
+                else
+                    offsetX, offsetY = ProjectToMinimap(
+                        playerMap, px, py, pin.targetNx, pin.targetNy, minimapRadius)
+                end
             end
             if offsetX then
                 pin:ClearAllPoints()
@@ -1864,16 +1982,21 @@ function Pins:RepositionMinimapPins()
         end
     end
 
-    for _, pin in pairs(self.entityMinimapPins) do
-        if pin.dcTracked and pin.targetNx and pin.targetNy then
-            local offsetX, offsetY = ProjectToMinimap(
-                playerMap, px, py, pin.targetNx, pin.targetNy, minimapRadius)
-            if offsetX then
-                pin:ClearAllPoints()
-                pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
-                if not pin:IsShown() then pin:Show() end
-            elseif pin:IsShown() then
-                pin:Hide()
+    -- Entities are stored as normalized zone coordinates, so they still need a
+    -- normalized player position. It is absent only where no zone rectangle
+    -- contains the player, and there is nothing to project against then.
+    if px and py and playerMap then
+        for _, pin in pairs(self.entityMinimapPins) do
+            if pin.dcTracked and pin.targetNx and pin.targetNy then
+                local offsetX, offsetY = ProjectToMinimap(
+                    playerMap, px, py, pin.targetNx, pin.targetNy, minimapRadius)
+                if offsetX then
+                    pin:ClearAllPoints()
+                    pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                    if not pin:IsShown() then pin:Show() end
+                elseif pin:IsShown() then
+                    pin:Hide()
+                end
             end
         end
     end

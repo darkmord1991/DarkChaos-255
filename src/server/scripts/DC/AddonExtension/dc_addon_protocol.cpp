@@ -3823,7 +3823,12 @@ namespace DCAddon
 class DCAddonWorldScript : public WorldScript
 {
 public:
-    DCAddonWorldScript() : WorldScript("DCAddonWorldScript") {}
+    // Explicit hook list (WorldScript expands an empty list to all hooks, so
+    // this is equivalent to the old form; spelled out for consistency).
+    DCAddonWorldScript()
+        : WorldScript("DCAddonWorldScript",
+            { WORLDHOOK_ON_AFTER_CONFIG_LOAD, WORLDHOOK_ON_STARTUP,
+              WORLDHOOK_ON_UPDATE, WORLDHOOK_ON_SHUTDOWN }) {}
 
     void OnUpdate(uint32 diff) override
     {

@@ -173,6 +173,15 @@ public:
 
 /** request member stats checken **/
 /** todo: uninvite people that not accepted invite **/
+// Dark Chaos: groups formed by the DC Group Finder run the same vote-kick as a
+// stock LFG group, but the queue that owns them lives in scripts.lib, which
+// game.lib cannot call into. The Group Finder registers this interceptor at
+// startup; Group::RemoveMember consults it for a leader kick and skips the
+// removal when it returns true (a vote was started instead).
+typedef bool (*GroupKickInterceptorFn)(Group* group, ObjectGuid kicker, ObjectGuid victim,
+                                       char const* reason);
+void SetGroupKickInterceptor(GroupKickInterceptorFn fn);
+
 class Group
 {
     friend class ToCloud9GroupHooks;

@@ -100,6 +100,18 @@ static uint32 GetDisplayIdForMap(uint32 mapId)
     return displayId;
 }
 
+// Declared in DungeonQuestHelpers.h -- called by `.reload dc_dungeon_quests` so an edited
+// dc_dungeon_npc_mapping.display_id takes effect on the next follower spawn instead of
+// requiring a worldserver restart.
+namespace DungeonQuestHelpers
+{
+    void ClearQuestMasterDisplayIdCache()
+    {
+        std::lock_guard<std::mutex> lock(sDungeonDisplayIdCacheMutex);
+        sDungeonDisplayIdCache.clear();
+    }
+}
+
 // Helper: is this map at a difficulty the quest master should stay out of?
 //
 // "Mythic" is a DUNGEON concept. Map::GetDifficulty() is just the raw spawn mode
@@ -337,7 +349,21 @@ public:
         if (GetQuestMasterFollower(player))
             return;
 
-        // Spawn follower for solo players or any dungeon participant
+        // One quest master per GROUP. The follower is a world NPC every member
+        // can talk to, so spawning it per player stacked one per head at the
+        // instance entrance. Solo players still get their own.
+        if (Group* group = player->GetGroup())
+        {
+            if (!group->IsLeader(player->GetGUID()))
+            {
+                // Someone else's follower serves the whole group; make sure we
+                // are not carrying a stale one of our own from a previous run.
+                DespawnQuestMasterFollower(player);
+                return;
+            }
+        }
+
+        // Spawn follower for solo players or the group leader
         uint32 entry = 0;
         if (Creature* follower = SpawnQuestMasterFollower(player, &entry))
         {

@@ -865,19 +865,35 @@ function addon:GetMapUtils()
 
     local exclusiveOwnerCache = {}
 
-    local function ResolveOwningArea(gameMapId, worldX, worldY)
+    -- Is this world point inside one WorldMapArea rectangle? Returns
+    -- true, normX, normY, areaId -- so a caller that already knows which area it
+    -- wants gets the normalized position out of the same test.
+    local function AreaContainsWorldPoint(uiMapId, gameMapId, worldX, worldY)
+        local areaMapId, left, right, top, bottom, areaId = GetMapAreaBounds(uiMapId)
+        if not areaMapId or areaMapId ~= gameMapId then
+            return false
+        end
+
+        local normX = (left - worldY) / (left - right)
+        local normY = (top - worldX) / (top - bottom)
+        if normX < 0 or normX > 1 or normY < 0 or normY > 1 then
+            return false
+        end
+
+        return true, normX, normY, areaId
+    end
+
+    -- Which zone rectangle on `gameMapId` owns this world point (raw
+    -- WorldMapArea.ID, i.e. uiMapId - 1), or nil when no zone row contains it.
+    --
+    -- Uncached on purpose. The memoized wrapper below is for FIXED points --
+    -- POIs, teleport destinations -- whose owner never changes. The PLAYER must
+    -- not go through it: the cache key is quantized to a yard, so a moving
+    -- player would mint a fresh entry (and a string.format) every yard walked.
+    local function ResolveOwningAreaUncached(gameMapId, worldX, worldY)
         gameMapId = tonumber(gameMapId)
         if not gameMapId then
             return nil
-        end
-
-        -- POI/teleport positions are fixed world data, so a resolved owner
-        -- stays valid for the session; memoize per point to keep map redraws
-        -- off the full bounds scan.
-        local key = gameMapId .. ":" .. string.format("%.0f:%.0f", worldX, worldY)
-        local cached = exclusiveOwnerCache[key]
-        if cached ~= nil then
-            return (cached ~= false) and cached or nil
         end
 
         local candidates = GetMapAreaIDsForMap(gameMapId)
@@ -902,8 +918,248 @@ function addon:GetMapUtils()
             end
         end
 
+        return bestId
+    end
+
+    local function ResolveOwningArea(gameMapId, worldX, worldY)
+        gameMapId = tonumber(gameMapId)
+        if not gameMapId then
+            return nil
+        end
+
+        -- POI/teleport positions are fixed world data, so a resolved owner
+        -- stays valid for the session; memoize per point to keep map redraws
+        -- off the full bounds scan.
+        local key = gameMapId .. ":" .. string.format("%.0f:%.0f", worldX, worldY)
+        local cached = exclusiveOwnerCache[key]
+        if cached ~= nil then
+            return (cached ~= false) and cached or nil
+        end
+
+        local bestId = ResolveOwningAreaUncached(gameMapId, worldX, worldY)
+
         exclusiveOwnerCache[key] = bestId or false
         return bestId
+    end
+
+    mapUtils.ResolveOwningArea = ResolveOwningArea
+    mapUtils.AreaContainsWorldPoint = AreaContainsWorldPoint
+
+    -- Place a world position on the map area the world map is CURRENTLY showing,
+    -- using the client's own world->map translation rather than the rectangle
+    -- arithmetic above.
+    --
+    -- Needed because not every map area HAS a rectangle. Dalaran's WorldMapArea
+    -- row (504) is 0/0/0/0, as is Deeprun Tram's: the client places its own
+    -- markers there through this translation, so nothing in the DBC has to say
+    -- where Dalaran is. The rectangle path cannot serve those maps at all -- it
+    -- reads no bounds, so it rejects every point -- and worse, the smallest-rect
+    -- owner test hands Dalaran's POIs to Crystalsong Forest, which is the zone
+    -- the city floats over. That is why the map POI layer went blank in Dalaran.
+    --
+    -- The translation is relative to the client's current map state, so it is
+    -- only valid for the displayed area and for a point on the map the player is
+    -- actually on. Returns nil when the export is missing (older
+    -- WotLKExtensions) or the point is not on the displayed area.
+    function mapUtils.WorldToDisplayedMapPosition(gameMapId, worldX, worldY, worldZ)
+        gameMapId = tonumber(gameMapId)
+        worldX, worldY = tonumber(worldX), tonumber(worldY)
+        if not gameMapId or not worldX or not worldY then
+            return nil
+        end
+
+        -- TranslateWorldPositionToCurrentMap CLAMPS its result into 0..1, which
+        -- would pin every off-map point onto an edge; TranslateToMapCoords is the
+        -- same translation without the clamp, so out-of-range means off-map.
+        local nativeFn = rawget(_G, "TranslateToMapCoords")
+            or rawget(_G, "C_Map_TranslateToMapCoords")
+        if type(nativeFn) ~= "function" then
+            return nil
+        end
+
+        local ok, normX, normY = pcall(nativeFn, gameMapId, worldX, worldY, tonumber(worldZ) or 0)
+        if not ok then
+            return nil
+        end
+
+        normX, normY = mapUtils.NormalizeCoord(normX), mapUtils.NormalizeCoord(normY)
+        if not normX or not normY then
+            return nil
+        end
+
+        return normX, normY
+    end
+
+    -- Whether a UI map area has a usable WorldMapArea rectangle. False for the
+    -- 0/0/0/0 rows described above, which is the signal to use the client
+    -- translation instead.
+    function mapUtils.HasMapAreaBounds(uiMapId)
+        return GetMapAreaBounds(uiMapId) and true or false
+    end
+
+    -- ========================================================================
+    -- Player position, taken from the world instead of the world map
+    -- ========================================================================
+    -- GetPlayerMapPosition("player") answers in the coordinate space of whatever
+    -- the WORLD MAP is currently showing, and returns 0,0 whenever that is not
+    -- the player's own zone. SetMapToCurrentZone heals it -- but deliberately
+    -- not while the world map is open, so running around with the map up on
+    -- another zone makes the read fail on every frame.
+    --
+    -- That is the bug this replaces. A minimap pin is drawn at
+    -- (target - player) from the minimap centre, and the centre IS the player,
+    -- so a frozen player half leaves the pin at a fixed screen offset while the
+    -- map art scrolls underneath: the POI appears to travel with the player.
+    -- Both pin layers used to fall back to the last good read (DC-QoS for a
+    -- second, DC-Mapupgrades indefinitely), which is exactly that failure.
+    --
+    -- WotLKExtensions reports the player's raw world position out of the
+    -- client's own movement info, which has no opinion about the world map at
+    -- all. World coordinates are already in yards, so a minimap consumer needs
+    -- no map rectangle, no normalization and no zone-ownership test -- see
+    -- ProjectWorldToMinimap.
+    local playerGuidString = nil
+
+    -- The GUID is stable for the session, but not readable before the player
+    -- object exists, so it is fetched lazily rather than at load.
+    local function GetPlayerGuidString()
+        if playerGuidString then
+            return playerGuidString
+        end
+        if type(UnitGUID) ~= "function" then
+            return nil
+        end
+        local guid = UnitGUID("player")
+        if type(guid) == "string" and guid ~= "" and guid ~= "0x0000000000000000" then
+            playerGuidString = guid
+        end
+        return playerGuidString
+    end
+
+    -- Returns worldX, worldY, worldZ, gameMapId. gameMapId is nil when the
+    -- client did not report one -- notably map 0 (Eastern Kingdoms), which the
+    -- export suppresses along with every other non-positive id.
+    function mapUtils.GetPlayerWorldPosition()
+        local nativeFn = rawget(_G, "ResolveEntityPositionByGUID")
+            or rawget(_G, "C_Ping_ResolveEntityPositionByGUID")
+        if type(nativeFn) ~= "function" then
+            return nil
+        end
+
+        local guid = GetPlayerGuidString()
+        if not guid then
+            return nil
+        end
+
+        -- guid, kind, gameMapId, mapX, mapY, worldX, worldY, worldZ
+        local ok, _, _, gameMapId, _, _, worldX, worldY, worldZ = pcall(nativeFn, guid)
+        worldX, worldY = tonumber(worldX), tonumber(worldY)
+        if not ok or not worldX or not worldY then
+            return nil
+        end
+
+        return worldX, worldY, tonumber(worldZ), tonumber(gameMapId)
+    end
+
+    -- Map 0 is reported as "no map id", and a failed translation looks the same,
+    -- so work it out from the rectangles: take the map the world map view names
+    -- and then map 0, and keep the first that actually has a zone box around the
+    -- player.
+    local function ResolvePlayerGameMapId(worldX, worldY)
+        local viewMapId = (type(GetCurrentMapAreaID) == "function") and GetCurrentMapAreaID() or nil
+        local viewGameMapId = viewMapId and GetMapAreaBounds(viewMapId) or nil
+
+        if viewGameMapId and ResolveOwningAreaUncached(viewGameMapId, worldX, worldY) then
+            return viewGameMapId
+        end
+        if ResolveOwningAreaUncached(0, worldX, worldY) then
+            return 0
+        end
+
+        return viewGameMapId
+    end
+
+    local playerAreaUiMapId = nil
+    local playerAreaGameMapId = nil
+    local playerPositionFrame = nil
+    local playerPositionCache = {}
+
+    local function ComputePlayerPosition()
+        local worldX, worldY, worldZ, gameMapId = mapUtils.GetPlayerWorldPosition()
+
+        if worldX and worldY then
+            if not gameMapId then
+                gameMapId = ResolvePlayerGameMapId(worldX, worldY)
+            end
+
+            if gameMapId then
+                -- Re-use the area the player was last in for as long as it still
+                -- contains them, so the full rectangle scan runs on a zone
+                -- change rather than on every frame.
+                if playerAreaUiMapId and playerAreaGameMapId == gameMapId then
+                    local inside, normX, normY =
+                        AreaContainsWorldPoint(playerAreaUiMapId, gameMapId, worldX, worldY)
+                    if inside then
+                        return normX, normY, playerAreaUiMapId, worldX, worldY, gameMapId, worldZ
+                    end
+                end
+
+                local owner = ResolveOwningAreaUncached(gameMapId, worldX, worldY)
+                if owner then
+                    local uiMapId = owner + 1
+                    local inside, normX, normY =
+                        AreaContainsWorldPoint(uiMapId, gameMapId, worldX, worldY)
+                    if inside then
+                        playerAreaUiMapId, playerAreaGameMapId = uiMapId, gameMapId
+                        return normX, normY, uiMapId, worldX, worldY, gameMapId, worldZ
+                    end
+                end
+
+                -- No zone rectangle owns the point: a map that carries only a
+                -- continent row, or a spot outside every zone box. The world
+                -- position is still exact, and that is all the minimap needs.
+                playerAreaUiMapId, playerAreaGameMapId = nil, nil
+                return nil, nil, nil, worldX, worldY, gameMapId, worldZ
+            end
+        end
+
+        -- Older WotLKExtensions build without the export: the legacy world-map
+        -- read, which is what this exists to replace. No world position.
+        local x, y, uiMapId = mapUtils.GetPlayerMapPositionSafe()
+        if x and y then
+            return x, y, uiMapId, nil, nil, nil, nil
+        end
+
+        return nil
+    end
+
+    -- normX, normY, uiMapId, worldX, worldY, gameMapId, worldZ
+    --
+    -- normX/normY/uiMapId are nil when no zone rectangle owns the player;
+    -- worldX/worldY/gameMapId are nil only on a client without the native
+    -- export. A consumer that can work in world space should prefer it: it is
+    -- exact, it never fails, and it does not care what the world map is showing.
+    --
+    -- Memoized per frame. GetTime() holds the frame's start time and does not
+    -- change within a frame, so every consumer in one frame shares a single
+    -- native read with no staleness at all.
+    function mapUtils.GetPlayerPosition()
+        local now = (type(GetTime) == "function" and GetTime()) or nil
+        if now and playerPositionFrame == now then
+            local c = playerPositionCache
+            return c[1], c[2], c[3], c[4], c[5], c[6], c[7]
+        end
+
+        local normX, normY, uiMapId, worldX, worldY, gameMapId, worldZ = ComputePlayerPosition()
+
+        if now then
+            playerPositionFrame = now
+            local c = playerPositionCache
+            c[1], c[2], c[3], c[4], c[5], c[6], c[7] =
+                normX, normY, uiMapId, worldX, worldY, gameMapId, worldZ
+        end
+
+        return normX, normY, uiMapId, worldX, worldY, gameMapId, worldZ
     end
 
     -- exclusive (optional): when true, a point that lies inside several zone
@@ -1012,30 +1268,74 @@ function addon:GetMapUtils()
         return type(GetCVar) == "function" and GetCVar("rotateMinimap") == "1"
     end
 
-    -- Which zoom table applies. `IsIndoors()` is the engine's own answer and is
-    -- what the minimap itself uses, so prefer it.
+    -- Which zoom table applies -- i.e. whether the minimap is drawing at its
+    -- OUTDOOR scale. 3.3.5 exposes no API for this, and neither obvious proxy
+    -- works:
     --
-    -- The old test compared minimapZoom against minimapInsideZoom. Those are two
-    -- INDEPENDENT user settings, so they collide whenever the player happens to
-    -- pick the same zoom step in both, and the reading then flips outdoors to
-    -- "indoors" -- at zoom 3 that swaps a 266y diameter for a 120y one and every
-    -- pin jumps outward by 2.2x in a single frame (most of them past the ring, so
-    -- they blink out). Kept only as a fallback where IsIndoors is missing.
+    --   * `IsIndoors()` is the WORLD's indoor flag, not the minimap's. In a city
+    --     the minimap switches to its inside scale across the whole zone while
+    --     IsIndoors() still reports outdoors on any open-air part of it. Measured
+    --     in Dalaran: the minimap was showing 120y (indoor, zoom 3) while this
+    --     read said outdoors, so the pins were placed against 266.67y. Every pin
+    --     then sat at 45% of its true distance -- and a pin at 45% of its
+    --     distance travels along with the player instead of staying on its
+    --     landmark, which is what "the POIs follow me" was.
+    --   * Comparing minimapZoom to minimapInsideZoom is ambiguous exactly when
+    --     the two CVars hold the same value, which is the DEFAULT: neither is
+    --     written until the player zooms that minimap.
+    --
+    -- Astrolabe's probe settles it. Minimap:SetZoom writes back to whichever of
+    -- the two CVars is currently in effect, so nudging the zoom one step and
+    -- seeing which CVar followed identifies the state exactly. The nudge is
+    -- reverted in the same call and is invisible. It runs when the minimap's zoom
+    -- actually changes and on a zone/world change -- never per frame.
+    local minimapOutside = true
+    local minimapOutsideProbed = false
+    local minimapProbeRunning = false
+
+    local function ProbeMinimapOutside()
+        if minimapProbeRunning then
+            return
+        end
+        if not Minimap or type(Minimap.GetZoom) ~= "function"
+            or type(Minimap.SetZoom) ~= "function" or type(GetCVar) ~= "function" then
+            return
+        end
+
+        -- SetZoom fires MINIMAP_UPDATE_ZOOM, which is what calls this.
+        minimapProbeRunning = true
+
+        local restore = Minimap:GetZoom()
+        if GetCVar("minimapZoom") == GetCVar("minimapInsideZoom") then
+            Minimap:SetZoom(restore < 2 and (restore + 1) or (restore - 1))
+        end
+
+        minimapOutside = (tonumber(GetCVar("minimapZoom")) == Minimap:GetZoom())
+        minimapOutsideProbed = true
+
+        Minimap:SetZoom(restore)
+        minimapProbeRunning = false
+    end
+
+    mapUtils.ProbeMinimapOutside = ProbeMinimapOutside
+
+    do
+        local watcher = CreateFrame("Frame")
+        watcher:SetScript("OnEvent", function()
+            ProbeMinimapOutside()
+        end)
+        watcher:RegisterEvent("MINIMAP_UPDATE_ZOOM")
+        watcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+        watcher:RegisterEvent("ZONE_CHANGED")
+        watcher:RegisterEvent("ZONE_CHANGED_INDOORS")
+        watcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    end
+
     function mapUtils.IsMinimapIndoors()
-        if type(IsIndoors) == "function" then
-            local ok, indoors = pcall(IsIndoors)
-            if ok then
-                return indoors and true or false
-            end
+        if not minimapOutsideProbed then
+            ProbeMinimapOutside()
         end
-
-        if type(GetCVar) ~= "function" then
-            return false
-        end
-
-        local outsideZoom = tostring(GetCVar("minimapZoom") or "")
-        local insideZoom = tostring(GetCVar("minimapInsideZoom") or "")
-        return outsideZoom == insideZoom
+        return not minimapOutside
     end
 
     function mapUtils.GetMinimapDiameterYards()
@@ -1104,6 +1404,63 @@ function addon:GetMapUtils()
         end
 
         return math.sin(heading) * projected, math.cos(heading) * projected, distanceYards, isClamped
+    end
+
+    -- Minimap projection straight from WORLD coordinates.
+    --
+    -- Prefer this over ProjectToMinimap wherever both ends are known in world
+    -- space. World coordinates are already yards, so there is no WorldMapArea
+    -- rectangle in the path at all: nothing to normalize, no zone-ownership test
+    -- to get wrong, no dependence on which map the world map happens to be
+    -- showing, and no baked map size to go stale.
+    --
+    -- Axes: +X is north and +Y is WEST, so screen right (east) is -deltaY and
+    -- screen up (north) is +deltaX.
+    --
+    -- Returns pixelX, pixelY (offsets from the minimap centre), the distance in
+    -- yards, and whether the point sits outside the visible ring (the offset is
+    -- then clamped onto that ring; callers decide whether to draw an edge marker
+    -- or hide the pin).
+    function mapUtils.ProjectWorldToMinimap(playerX, playerY, targetX, targetY, radiusPx)
+        radiusPx = tonumber(radiusPx)
+        if not radiusPx or radiusPx <= 0 then
+            return nil
+        end
+
+        if not playerX or not playerY or not targetX or not targetY then
+            return nil
+        end
+
+        local north = targetX - playerX
+        local east = -(targetY - playerY)
+        local distanceYards = math.sqrt((north * north) + (east * east))
+
+        local diameterYards = mapUtils.GetMinimapDiameterYards()
+        if not diameterYards or diameterYards <= 0 then
+            return nil
+        end
+
+        local pixelX, pixelY = east, north
+        if mapUtils.IsMinimapRotating() then
+            -- Turn the world vector into the frame where the player's facing
+            -- points up. GetPlayerFacing grows COUNTER-clockwise from north, so
+            -- the screen frame is the world frame rotated by -facing.
+            local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+            local cosF, sinF = math.cos(facing), math.sin(facing)
+            pixelX, pixelY = (east * cosF) + (north * sinF), (north * cosF) - (east * sinF)
+        end
+
+        local scale = radiusPx / (diameterYards * 0.5)
+        pixelX, pixelY = pixelX * scale, pixelY * scale
+
+        local projected = distanceYards * scale
+        local isClamped = projected > radiusPx
+        if isClamped and projected > 0 then
+            local shrink = radiusPx / projected
+            pixelX, pixelY = pixelX * shrink, pixelY * shrink
+        end
+
+        return pixelX, pixelY, distanceYards, isClamped
     end
 
     self._mapUtils = mapUtils

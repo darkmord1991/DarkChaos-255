@@ -48,6 +48,7 @@ if L then
     ["ma_GmatchAccountInfo2"] = "Race: (.*) Class: (.*) Played time: (.*) Level: (%d+) Money: (.*)",
     ["ma_GmatchOnlinePlayers"] = "Connected players: (%d+). Characters in world: (%d+).",
     ["ma_GmatchMaxConnections"] = "Connection peak: (%d+).",
+    ["ma_GmatchSecurityLevel"] = "Minimum account security level to log in: (%d+)%.",
     ["ma_GmatchUptime"] = "Server uptime: (.*)",
     ["ma_GmatchActiveConnections"] = "Active connections.*",
 

@@ -271,28 +271,58 @@ namespace DCFakePlayers
             }
         }
 
+        // How many of the generated fakes are currently shown. The pool is only padding, so it
+        // shrinks as the world fills with real characters and bots -- at a full house none are
+        // shown at all, which keeps the apparent population at the configured target instead of
+        // stacking on top of it.
+        //
+        // Must use GetInWorldPlayerCount(), NOT GetPlayerCount(): this is called from the
+        // extra-player-count provider, and GetPlayerCount() adds that provider back in, so it
+        // would recurse forever.
         uint32 GetCount() const
         {
-            return (_enabled ? static_cast<uint32>(_players.size()) : 0u);
+            if (!_enabled)
+                return 0u;
+
+            uint32 const pool = static_cast<uint32>(_players.size());
+            uint32 const occupied = sWorldSessionMgr->GetInWorldPlayerCount();
+
+            return occupied >= pool ? 0u : pool - occupied;
         }
 
         void AppendWhoList(WhoListInfoVector& out) const
         {
-            if (!_enabled)
+            uint32 visible = GetCount();
+            if (!visible)
                 return;
+
+            size_t const realEntries = out.size();
 
             for (uint32 index : _shuffleOrder)
             {
+                if (!visible)
+                    break;
+
                 if (index >= _players.size())
                     continue;
 
                 auto const& player = _players[index];
-                WhoListPlayerInfo entry(player.guid, player.team, player.security, player.level,
+                out.emplace_back(player.guid, player.team, player.security, player.level,
                     player.classId, player.race, player.zoneId, player.gender, true,
                     player.wideName, player.wideGuildName, player.name, player.guildName);
 
-                uint32 insertPos = out.empty() ? 0u : urand(0u, static_cast<uint32>(out.size()));
-                out.insert(out.begin() + insertPos, std::move(entry));
+                --visible;
+            }
+
+            // Interleave with the real entries. One shuffle of the whole list replaces the old
+            // insert-at-a-random-index-per-fake, which was quadratic in the pool size.
+            if (out.size() > realEntries + 1)
+            {
+                for (size_t i = out.size() - 1; i > 0; --i)
+                {
+                    size_t const j = urand(0u, static_cast<uint32>(i));
+                    std::swap(out[i], out[j]);
+                }
             }
         }
 

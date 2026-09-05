@@ -1123,6 +1123,13 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
         catchedSth = true
         output = AzerothAdmin.db.profile.style.showchat
     end
+    -- .server info also reports the realm-wide login security gate (realmlist.allowedSecurityLevel).
+    -- There is no panel field for it, but absorb it like the other info lines so it does not leak
+    -- into chat on its own while every other line is captured.
+    for _ in string.gmatch(text, Strings["ma_GmatchSecurityLevel"]) do
+        catchedSth = true
+        output = AzerothAdmin.db.profile.style.showchat
+    end
     for uptime in string.gmatch(text, Strings["ma_GmatchUptime"]) do
       ma_infouptimetext:SetText(Locale["info_uptime"]..uptime)
         catchedSth = true

@@ -13,10 +13,22 @@
 -- masters) waits until the player has discovered the flight point, so the pin
 -- never stacks on the client's own undiscovered-flight-point marker.
 --
--- Positioning uses the shared mapUtils.ProjectToMinimap helper, which honours
--- minimap rotation and zoom. Like the client's own minimap POI blips, a pin is
--- drawn only while it falls inside the visible minimap ring; beyond that it is
--- hidden rather than piled onto the edge.
+-- Positioning works in WORLD coordinates: both the player (from
+-- mapUtils.GetPlayerPosition, which reads the client's movement info) and the
+-- server-fed POIs are world positions, and world coordinates are already yards,
+-- so mapUtils.ProjectWorldToMinimap turns the difference into pixels with no
+-- WorldMapArea rectangle in the path -- nothing to normalize and nothing that
+-- depends on which zone the world map happens to be showing. Minimap rotation
+-- and zoom are honoured. Like the client's own minimap POI blips, a pin is drawn
+-- only while it falls inside the visible minimap ring; beyond that it is hidden
+-- rather than piled onto the edge.
+--
+-- The normalized path (mapUtils.ProjectToMinimap) is kept only as a fallback for
+-- a client whose WotLKExtensions build predates the native world position. It
+-- reads GetPlayerMapPosition, which answers 0,0 whenever the world map is not on
+-- the player's own zone; a pin projected from the last good answer holds a fixed
+-- offset from the minimap centre -- and the centre IS the player -- so it rides
+-- along until a fresh read arrives. That is what the world path removes.
 --
 -- The scan/draw split matters: the POI scan is throttled but drawing runs every
 -- frame, because doing both at the scan rate is what made pins visibly step and
@@ -67,9 +79,18 @@ local MAX_PIN_SIZE = 28
 -- visible slightly past the edge.
 local CLAMP_HYSTERESIS = 0.08
 
--- GetPlayerMapPosition reports nothing while the world map is open on another
--- zone. Without a grace window every minimap pin blinked out for those frames.
-local POSITION_GRACE_SECONDS = 1.0
+-- Legacy path only (a client without the native world position). See
+-- GetPinAnchor: the world-map read reports nothing while the world map is open
+-- on another zone, and without a grace window every pin blinked out for those
+-- frames. Kept deliberately short -- a pin drawn from a stale player position is
+-- a pin that travels with the player.
+local POSITION_GRACE_SECONDS = 0.35
+
+-- How far past the visible ring the throttled scan collects POIs, as a multiple
+-- of the minimap's radius in yards. The surplus is what lets the scan stay on
+-- its 0.2s throttle while the player keeps moving: anything that could enter the
+-- ring before the next scan is already in the candidate list.
+local SCAN_RADIUS_MULTIPLIER = 2.0
 
 local state = {
     container = nil,
@@ -78,7 +99,13 @@ local state = {
     candidates = {},
     candidateCount = 0,
     candidateMapId = nil,
+    candidateMode = nil,
     candidatesStale = true,
+    -- Where the last scan was taken from, and how far the player may travel
+    -- from it before the collected set could be missing something (world mode).
+    scanX = nil,
+    scanY = nil,
+    scanSlackYards = 0,
     rescanElapsed = 0,
     driver = nil,
     eventFrame = nil,
@@ -157,25 +184,37 @@ local function Now()
     return (type(GetTime) == "function" and GetTime()) or 0
 end
 
--- How long a successful position read stays "fresh". Reposition runs every
--- frame; the expensive GetPlayerMapPositionSafe path only needs to run ~10x/s.
-local POSITION_FRESH_SECONDS = 0.1
+-- What the pins are measured from, resolved fresh every frame.
+--
+-- Returns mode, a, b, mapId:
+--   "world" -> a,b are the player's WORLD x/y and mapId is the game map id.
+--              POI positions are world coordinates too, so nothing has to be
+--              normalized, no WorldMapArea rectangle is involved, and the read
+--              cannot fail or go stale.
+--   "map"   -> a,b are normalized map coordinates and mapId is a UI map id.
+--              Legacy fallback for a client whose WotLKExtensions build has no
+--              native world position.
+--
+-- The world path is what stops pins from travelling with the player. The map
+-- path reads GetPlayerMapPosition, which answers 0,0 whenever the world map is
+-- showing something other than the player's zone -- and a pin projected from the
+-- last good answer holds a fixed offset from the minimap centre, which is the
+-- player, so it rides along until a fresh read arrives.
+local function GetPinAnchor(mapUtils)
+    local normX, normY, uiMapId, worldX, worldY, gameMapId = mapUtils.GetPlayerPosition()
 
--- Player position with a short grace window (see POSITION_GRACE_SECONDS).
-local function GetPlayerPositionCached(mapUtils)
-    if state.lastPlayerX and (Now() - state.lastPlayerTime) <= POSITION_FRESH_SECONDS then
-        return state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId
+    if worldX and worldY and gameMapId then
+        return "world", worldX, worldY, gameMapId
     end
 
-    local x, y, mapId = mapUtils.GetPlayerMapPositionSafe()
-    if x and y and mapId then
-        state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId = x, y, mapId
+    if normX and normY and uiMapId then
+        state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId = normX, normY, uiMapId
         state.lastPlayerTime = Now()
-        return x, y, mapId
+        return "map", normX, normY, uiMapId
     end
 
     if state.lastPlayerX and (Now() - state.lastPlayerTime) <= POSITION_GRACE_SECONDS then
-        return state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId
+        return "map", state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId
     end
 
     return nil
@@ -238,12 +277,17 @@ end
 -- Apply the type's minimap icon. Paths are validated when a type is added to
 -- MapPOIData.TYPES, not here: the client draws nothing for an unknown texture
 -- and reports no error, so there is nothing meaningful to detect at runtime.
-local function ApplyPinIcon(pin, typeInfo)
+--
+-- Keyed on the TYPE, not on the texture path: teleporter, dungeon and raid all
+-- draw the same portal art and differ only in tint, so keying on the path let a
+-- recycled pin keep the previous type's colour -- a dungeon entrance rendered in
+-- teleporter purple.
+local function ApplyPinIcon(pin, poiType, typeInfo)
     local desired = typeInfo and (typeInfo.minimapIcon or typeInfo.worldIcon)
     if not desired then
         return
     end
-    if pin.appliedIcon == desired then
+    if pin.appliedIcon == poiType then
         return
     end
 
@@ -263,7 +307,7 @@ local function ApplyPinIcon(pin, typeInfo)
         pin.Icon:SetVertexColor(1, 1, 1, 1)
     end
 
-    pin.appliedIcon = desired
+    pin.appliedIcon = poiType
 end
 
 -- Whether a POI may show on the minimap right now. Static type opt-outs are
@@ -276,14 +320,20 @@ local function IsPOIVisibleNow(poiData, poi)
     return poiData:IsMinimapVisibleNow(poi)
 end
 
--- Re-scan every POI for the ones that belong on the map the player is standing
--- on, caching their normalized positions. Throttled; see RESCAN_INTERVAL_SECONDS.
+-- Re-scan every POI for the ones that could be on the minimap, so the per-frame
+-- pass walks a handful of entries instead of the whole server list. Throttled;
+-- see RESCAN_INTERVAL_SECONDS.
+--
+-- In world mode the entry keeps no position of its own: the POI's world x/y is
+-- already what the projection wants, so there is nothing to cache and nothing to
+-- invalidate. In the legacy map mode the normalized position is cached, because
+-- deriving it costs a bounds lookup per POI.
 --
 -- The cached order is what pins are keyed by, so a pin keeps showing the same
 -- POI for the life of the scan. Assigning pins by "how many are visible right
 -- now" instead made every pin after a POI that left the ring shift down a slot
 -- and swap icon with its neighbour.
-local function RebuildCandidates(poiData, mapUtils, uiMapId)
+local function RebuildCandidates(poiData, mapUtils, mode, anchorA, anchorB, mapId, scanRadiusYards)
     local candidates = state.candidates
     local count = 0
 
@@ -298,10 +348,31 @@ local function RebuildCandidates(poiData, mapUtils, uiMapId)
             for i = 1, #pois do
                 local poi = pois[i]
                 if IsPOIVisibleNow(poiData, poi) then
-                    -- WorldToMapPosition rejects points that are not on the map area
-                    -- currently under the player, so this doubles as the map filter.
-                    local normX, normY = mapUtils.WorldToMapPosition(uiMapId, poi.map, poi.x, poi.y, true)
-                    if normX and normY then
+                    local keep, normX, normY
+
+                    if mode == "world" then
+                        -- Same game map, and near enough that it could be on the
+                        -- minimap before the next scan. A box test, not a circle:
+                        -- two comparisons per POI, and the surplus corners cost
+                        -- nothing because the per-frame projection hides anything
+                        -- outside the ring anyway.
+                        --
+                        -- Note there is no map-AREA test here. The zone rectangle
+                        -- a POI falls in is a world-map concern; the minimap only
+                        -- cares how far away it is, so a flight master fifty yards
+                        -- outside the city's rectangle still gets a pin.
+                        keep = poi.map == mapId
+                            and math.abs(poi.x - anchorA) <= scanRadiusYards
+                            and math.abs(poi.y - anchorB) <= scanRadiusYards
+                    else
+                        -- Legacy path: WorldToMapPosition rejects points that are
+                        -- not on the map area currently under the player, so this
+                        -- doubles as the map filter.
+                        normX, normY = mapUtils.WorldToMapPosition(mapId, poi.map, poi.x, poi.y, true)
+                        keep = normX and normY
+                    end
+
+                    if keep then
                         count = count + 1
                         local entry = candidates[count]
                         if not entry then
@@ -309,6 +380,7 @@ local function RebuildCandidates(poiData, mapUtils, uiMapId)
                             candidates[count] = entry
                         end
                         entry.poi = poi
+                        entry.poiType = poiType
                         entry.typeInfo = typeInfo
                         entry.normX = normX
                         entry.normY = normY
@@ -319,8 +391,15 @@ local function RebuildCandidates(poiData, mapUtils, uiMapId)
     end
 
     state.candidateCount = count
-    state.candidateMapId = uiMapId
+    state.candidateMapId = mapId
+    state.candidateMode = mode
     state.candidatesStale = false
+
+    if mode == "world" then
+        state.scanX, state.scanY = anchorA, anchorB
+    else
+        state.scanX, state.scanY = nil, nil
+    end
 end
 
 -- Place the cached candidates. Cheap enough to run every frame, which is what
@@ -342,21 +421,27 @@ local function Reposition()
     if not poiData or not mapUtils
         or type(poiData.GetTypeKeys) ~= "function"
         or type(poiData.GetPOIsByType) ~= "function"
+        or type(mapUtils.GetPlayerPosition) ~= "function"
+        or type(mapUtils.ProjectWorldToMinimap) ~= "function"
         or type(mapUtils.ProjectToMinimap) ~= "function"
         or type(mapUtils.WorldToMapPosition) ~= "function" then
         HidePinsFrom(1)
         return
     end
 
-    local playerX, playerY, uiMapId = GetPlayerPositionCached(mapUtils)
-    if not playerX or not playerY or not uiMapId then
+    local mode, anchorA, anchorB, mapId = GetPinAnchor(mapUtils)
+    if not mode then
         HidePinsFrom(1)
         return
     end
 
-    local radiusPx = (math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5)
-        - EDGE_PADDING_PIXELS
-    if radiusPx <= 0 then
+    -- The SCALE must use the minimap's full half-width, because that is the
+    -- radius the zoom's yard diameter actually spans. Subtracting the edge
+    -- padding here instead shrank every pin's distance by the padding's share of
+    -- the radius (10 of 70 -- a seventh) on top of whatever the projection said.
+    -- The padding belongs to the visibility test only, below.
+    local radiusPx = math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5
+    if radiusPx <= EDGE_PADDING_PIXELS then
         HidePinsFrom(1)
         return
     end
@@ -366,14 +451,31 @@ local function Reposition()
         return
     end
 
-    if state.candidatesStale or state.candidateMapId ~= uiMapId then
-        RebuildCandidates(poiData, mapUtils, uiMapId)
-    end
-
     local halfDiameterYards = (mapUtils.GetMinimapDiameterYards() or 0) * 0.5
     if halfDiameterYards <= 0 then
         HidePinsFrom(1)
         return
+    end
+
+    local scanRadiusYards = halfDiameterYards * SCAN_RADIUS_MULTIPLIER
+
+    -- Where a pin stops being drawn: the ring, pulled in by the edge padding so
+    -- a pin on the boundary is not half-clipped by the minimap's border art.
+    local ringYards = halfDiameterYards * ((radiusPx - EDGE_PADDING_PIXELS) / radiusPx)
+
+    local rescan = state.candidatesStale
+        or state.candidateMapId ~= mapId
+        or state.candidateMode ~= mode
+    if not rescan and mode == "world" and state.scanX then
+        -- A teleport, or simply the ring growing after a zoom out, can put the
+        -- player further from the last scan point than its surplus covers before
+        -- the throttle comes round again.
+        local dx, dy = anchorA - state.scanX, anchorB - state.scanY
+        local slack = scanRadiusYards - halfDiameterYards
+        rescan = ((dx * dx) + (dy * dy)) > (slack * slack)
+    end
+    if rescan then
+        RebuildCandidates(poiData, mapUtils, mode, anchorA, anchorB, mapId, scanRadiusYards)
     end
 
     local pinSize = GetPinSize()
@@ -383,14 +485,20 @@ local function Reposition()
         local entry = state.candidates[index]
         local pin = AcquirePin(index)
         if pin then
-            local pixelX, pixelY, distanceYards = mapUtils.ProjectToMinimap(
-                uiMapId, playerX, playerY, entry.normX, entry.normY, radiusPx)
+            local pixelX, pixelY, distanceYards
+            if mode == "world" then
+                pixelX, pixelY, distanceYards = mapUtils.ProjectWorldToMinimap(
+                    anchorA, anchorB, entry.poi.x, entry.poi.y, radiusPx)
+            else
+                pixelX, pixelY, distanceYards = mapUtils.ProjectToMinimap(
+                    mapId, anchorA, anchorB, entry.normX, entry.normY, radiusPx)
+            end
 
             -- A pin already on screen is allowed a little past the ring before
             -- it drops out, so a POI sitting on the boundary cannot strobe.
             local limit = pin:IsShown() and (1 + CLAMP_HYSTERESIS) or 1
             local withinRing = pixelX and distanceYards
-                and (distanceYards / halfDiameterYards) <= limit
+                and (distanceYards / ringYards) <= limit
 
             if withinRing then
                 local poiInfo = pin.poiData
@@ -402,7 +510,7 @@ local function Reposition()
                 poiInfo.label = entry.typeInfo.label
                 poiInfo.distanceYards = distanceYards
 
-                ApplyPinIcon(pin, entry.typeInfo)
+                ApplyPinIcon(pin, entry.poiType, entry.typeInfo)
                 pin:SetSize(pinSize, pinSize)
                 pin:EnableMouse(mouseEnabled)
                 pin:ClearAllPoints()

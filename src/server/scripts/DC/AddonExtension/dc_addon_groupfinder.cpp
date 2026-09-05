@@ -1890,7 +1890,11 @@ namespace GroupFinder
 class GroupFinderWorldScript : public WorldScript
 {
 public:
-    GroupFinderWorldScript() : WorldScript("GroupFinderWorldScript") {}
+    // Explicit hook list (WorldScript expands an empty list to all hooks, so
+    // this is equivalent to the old form; spelled out for consistency).
+    GroupFinderWorldScript()
+        : WorldScript("GroupFinderWorldScript",
+            { WORLDHOOK_ON_STARTUP, WORLDHOOK_ON_UPDATE }) {}
 
     void OnStartup() override
     {
