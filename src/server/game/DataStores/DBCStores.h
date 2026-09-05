@@ -35,7 +35,6 @@ TalentSpellPos const* GetTalentSpellPos(uint32 spellId);
 
 WMOAreaTableEntry const* GetWMOAreaTableEntryByTripple(int32 rootid, int32 adtid, int32 groupid);
 
-
 // -1 if not found
 int32 GetAreaFlagByAreaID(uint32 area_id);
 uint32 GetAreaFlagByMapId(uint32 mapid);

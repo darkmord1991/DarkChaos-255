@@ -121,7 +121,7 @@ ScriptMgr* ScriptMgr::instance()
     return &instance;
 }
 
-PlayerbotScript::PlayerbotScript(const char* name) : ScriptObject(name)
+PlayerbotScript::PlayerbotScript(char const* name) : ScriptObject(name)
 {
     ScriptRegistry<PlayerbotScript>::AddScript(this);
 }

@@ -220,7 +220,6 @@ public:
     void SetEmblem(uint32 backgroundColor, uint8 emblemStyle, uint32 emblemColor, uint8 borderStyle, uint32 borderColor);
     void SetRatingForAll(uint32 rating);
 
-
 protected:
     uint32      TeamId;
     uint8       Type;

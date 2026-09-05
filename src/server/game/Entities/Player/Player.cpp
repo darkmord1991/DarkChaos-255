@@ -5227,9 +5227,9 @@ void Player::CleanupChannels()
 }
 
 // Playerbot helper if bot talks in a different locale
-bool Player::IsInChannel(const Channel* c)
+bool Player::IsInChannel(Channel const* c)
 {
-    return std::any_of(m_channels.begin(), m_channels.end(), [c](const Channel* chan)
+    return std::any_of(m_channels.begin(), m_channels.end(), [c](Channel const* chan)
     {
         return c->GetChannelId() == chan->GetChannelId();
     });
