@@ -24,6 +24,11 @@ macro(fetch_googletest _download_module_path _download_root)
             ${_download_root}
     )
 
+    # MSVC defaults googletest to the static runtime (/MT) while the rest of the
+    # project uses the dynamic one (/MD), which makes unit_tests fail to link
+    # with LNK2038 RuntimeLibrary conflicts. Must be set before add_subdirectory.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
     # adds the targers: gtest, gtest_main, gmock, gmock_main
     add_subdirectory(
             ${_download_root}/googletest-src

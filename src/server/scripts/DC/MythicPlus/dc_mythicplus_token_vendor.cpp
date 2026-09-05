@@ -15,6 +15,7 @@
 #include "DatabaseEnv.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeExchange.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DC/AddonExtension/dc_addon_transmutation.h"
 #include "SharedDefines.h"
@@ -32,7 +33,100 @@
 // Resolved from ItemUpgrade/CrossSystem config helpers.
 // uint32 GetMythicTokenId() - Removed, using shared function
 
-constexpr uint32 ESSENCE_PER_TOKEN = 500; // 1 Token = 500 Essence
+// Currency exchange rates are NOT defined here. They live in exactly one place,
+// TransmutationManager::GetExchangeRateTable(), and every exchange on this
+// vendor goes through TransmutationManager::ExchangeCurrency(). A local rate
+// constant used to sit here (ESSENCE_PER_TOKEN = 500) while the exchange window
+// traded at 2 tokens per essence -- the two disagreed by a factor of ~1000, and
+// because these currencies are inventory items the round trip minted them.
+
+// Look a conversion up in the single shared rate table.
+static bool FindVendorExchangeRate(DarkChaos::ItemUpgrade::CurrencyType from,
+    DarkChaos::ItemUpgrade::CurrencyType to,
+    DarkChaos::ItemUpgrade::CurrencyExchangeRate& out)
+{
+    auto* transMgr = DarkChaos::ItemUpgrade::GetTransmutationManager();
+    if (!transMgr)
+        return false;
+
+    for (auto const& row : transMgr->GetExchangeRateTable())
+    {
+        if (row.from == from && row.to == to)
+        {
+            out = row;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Gossip offers a single trade or five of each conversion.
+constexpr uint32 GOSSIP_EXCHANGE_MULTIPLIERS[] = { 1, 5 };
+constexpr uint32 GOSSIP_EXCHANGE_MULTIPLIER_COUNT =
+    sizeof(GOSSIP_EXCHANGE_MULTIPLIERS) / sizeof(GOSSIP_EXCHANGE_MULTIPLIERS[0]);
+
+// Exchange gossip actions occupy 2100-2199, clear of the item-level tiers
+// (200-600), the vendor menus (1000/2000) and the UI actions (9000/9100/9999).
+// Layout: base + from*10 + to*2 + multiplierIndex. `from`/`to` are 1-3 and
+// to*2+multiplierIndex is at most 7, so every triple maps to a distinct id.
+constexpr uint32 GOSSIP_ACTION_EXCHANGE_BASE = 2100;
+constexpr uint32 GOSSIP_ACTION_EXCHANGE_SPAN = 100;
+
+static uint32 EncodeExchangeAction(DarkChaos::ItemUpgrade::CurrencyType from,
+    DarkChaos::ItemUpgrade::CurrencyType to, uint32 multiplierIndex)
+{
+    return GOSSIP_ACTION_EXCHANGE_BASE
+        + static_cast<uint32>(from) * 10
+        + static_cast<uint32>(to) * 2
+        + multiplierIndex;
+}
+
+static bool DecodeExchangeAction(uint32 action, DarkChaos::ItemUpgrade::CurrencyType& from,
+    DarkChaos::ItemUpgrade::CurrencyType& to, uint32& multiplierIndex)
+{
+    using namespace DarkChaos::ItemUpgrade;
+
+    uint32 value = action - GOSSIP_ACTION_EXCHANGE_BASE;
+    uint32 fromRaw = value / 10;
+    uint32 remainder = value % 10;
+    uint32 toRaw = remainder / 2;
+    multiplierIndex = remainder % 2;
+
+    if (fromRaw < CURRENCY_UPGRADE_TOKEN || fromRaw > CURRENCY_FRONTIER_SAP
+        || toRaw < CURRENCY_UPGRADE_TOKEN || toRaw > CURRENCY_FRONTIER_SAP
+        || fromRaw == toRaw || multiplierIndex >= GOSSIP_EXCHANGE_MULTIPLIER_COUNT)
+    {
+        return false;
+    }
+
+    from = static_cast<CurrencyType>(fromRaw);
+    to = static_cast<CurrencyType>(toRaw);
+    return true;
+}
+
+static char const* GetCurrencyDisplayName(DarkChaos::ItemUpgrade::CurrencyType currency)
+{
+    using namespace DarkChaos::ItemUpgrade;
+    switch (currency)
+    {
+        case CURRENCY_ARTIFACT_ESSENCE: return "Artifact Essence";
+        case CURRENCY_FRONTIER_SAP:     return "Emberwood Sap";
+        case CURRENCY_UPGRADE_TOKEN:    return "Upgrade Tokens";
+        default:                        return "currency";
+    }
+}
+
+static uint32 GetVendorCurrencyBalance(Player* player, DarkChaos::ItemUpgrade::CurrencyType currency)
+{
+    using namespace DarkChaos::ItemUpgrade;
+    switch (currency)
+    {
+        case CURRENCY_ARTIFACT_ESSENCE: return GetPlayerEssence(player);
+        case CURRENCY_FRONTIER_SAP:     return GetPlayerFrontierSap(player);
+        case CURRENCY_UPGRADE_TOKEN:    return GetPlayerTokens(player);
+        default:                        return 0;
+    }
+}
 
 // Gear slot categories
 enum TokenGearSlot : uint8
@@ -903,84 +997,60 @@ namespace
             }
         }
 
+        // `amount` is a number of TRADES, not a currency amount -- the UI offers
+        // a single trade or five.
         if (!(amount == 1 || amount == 5))
         {
             SendVendorResult(player, false, "Invalid exchange amount.");
             return;
         }
 
-        auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-        if (!upgradeMgr)
-        {
-            SendVendorResult(player, false, "Upgrade manager not available.");
-            return;
-        }
+        using namespace DarkChaos::ItemUpgrade;
 
-        uint32 essenceDelta = ESSENCE_PER_TOKEN * amount;
-
+        CurrencyType from;
+        CurrencyType to;
         if (direction == "token_to_essence")
         {
-            if (!player->HasItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount))
-            {
-                SendVendorResult(player, false, "You don't have enough tokens.");
-                return;
-            }
-
-            player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount, true);
-            uint32 playerGuid = player->GetGUID().GetCounter();
-
-            if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
-                playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta,
-                DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
-            {
-                SendVendorResult(player, true, Acore::StringFormat("Exchanged {} tokens for {} essence.", amount, essenceDelta));
-            }
-            else
-            {
-                SendVendorResult(player, false, "Failed to add essence.");
-            }
-            return;
+            from = CURRENCY_UPGRADE_TOKEN;
+            to = CURRENCY_ARTIFACT_ESSENCE;
         }
-
-        if (direction == "essence_to_token")
+        else if (direction == "essence_to_token")
         {
-            uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
-            if (currentEssence < essenceDelta)
-            {
-                SendVendorResult(player, false, "You don't have enough essence.");
-                return;
-            }
-
-            ItemPosCountVec dest;
-            InventoryResult canStore = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount);
-            if (canStore != EQUIP_ERR_OK)
-            {
-                player->SendEquipError(canStore, nullptr, nullptr, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
-                SendVendorResult(player, false, "Not enough bag space.");
-                return;
-            }
-
-            uint32 playerGuid = player->GetGUID().GetCounter();
-            if (!DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
-                playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta,
-                DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
-            {
-                SendVendorResult(player, false, "Failed to remove essence.");
-                return;
-            }
-
-            if (Item* item = player->StoreNewItem(dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true))
-            {
-                player->SendNewItem(item, amount, true, false);
-                SendVendorResult(player, true, Acore::StringFormat("Exchanged {} essence for {} tokens.", essenceDelta, amount));
-                return;
-            }
-
-            SendVendorResult(player, false, "Failed to create token item.");
+            from = CURRENCY_ARTIFACT_ESSENCE;
+            to = CURRENCY_UPGRADE_TOKEN;
+        }
+        else
+        {
+            SendVendorResult(player, false, "Invalid exchange direction.");
             return;
         }
 
-        SendVendorResult(player, false, "Invalid exchange direction.");
+        CurrencyExchangeRate rate;
+        if (!FindVendorExchangeRate(from, to, rate))
+        {
+            SendVendorResult(player, false, "That exchange is not available.");
+            return;
+        }
+
+        auto* transMgr = GetTransmutationManager();
+        if (!transMgr)
+        {
+            SendVendorResult(player, false, "Exchange manager not available.");
+            return;
+        }
+
+        // One authority for the maths: ExchangeCurrency validates the balance and
+        // the bag space, and moves both sides. Nothing is computed twice here.
+        uint32 spend = rate.from_units * amount;
+        if (!transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), from, to, spend))
+        {
+            SendVendorResult(player, false, "Exchange failed - not enough currency or bag space.");
+            return;
+        }
+
+        DCAddon::Upgrade::SendCurrencyUpdate(player);
+        SendVendorResult(player, true, Acore::StringFormat("Exchanged {} for {}.",
+            spend, rate.to_units * amount));
     }
 
     static void SendVendorOpen(Player* player, uint32 vendorEntry)
@@ -1160,35 +1230,60 @@ public:
         }
 
         // Currency Exchange Menu
+        //
+        // Rates and execution both come from TransmutationManager. The gossip
+        // offers one trade or five of each conversion the rate table lists, so
+        // adding or retiring a pair in the table changes this menu with no code
+        // change here -- and nothing on this NPC can charge a rate the exchange
+        // window does not also quote.
         if (action == 2000)
         {
-            auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-            if (!upgradeMgr) return true;
+            using namespace DarkChaos::ItemUpgrade;
 
-            uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
-            uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
+            auto* transMgr = GetTransmutationManager();
+            if (!transMgr)
+                return true;
 
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Token Exchange ===|r", GOSSIP_SENDER_MAIN, 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Currency Exchange ===|r", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                "Current Essence: |cffffffff" + std::to_string(currentEssence) + "|r",
+                "Upgrade Tokens: |cffffffff" + std::to_string(GetPlayerTokens(player)) + "|r",
                 GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                "Current Tokens: |cffffffff" + std::to_string(tokenCount) + "|r",
+                "Artifact Essence: |cffffffff" + std::to_string(GetPlayerEssence(player)) + "|r",
                 GOSSIP_SENDER_MAIN, 0);
-
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                "Emberwood Sap: |cffffffff" + std::to_string(GetPlayerFrontierSap(player)) + "|r",
+                GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
-            // Token -> Essence
-            if (tokenCount >= 1)
-                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange 1 Token for " + std::to_string(ESSENCE_PER_TOKEN) + " Essence", GOSSIP_SENDER_MAIN, 2001);
-            if (tokenCount >= 5)
-                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange 5 Tokens for " + std::to_string(ESSENCE_PER_TOKEN * 5) + " Essence", GOSSIP_SENDER_MAIN, 2002);
+            bool anyOffered = false;
+            for (auto const& rate : transMgr->GetExchangeRateTable())
+            {
+                if (rate.from_units == 0)
+                    continue;
 
-            // Essence -> Token
-            if (currentEssence >= ESSENCE_PER_TOKEN)
-                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange " + std::to_string(ESSENCE_PER_TOKEN) + " Essence for 1 Token", GOSSIP_SENDER_MAIN, 2003);
-            if (currentEssence >= ESSENCE_PER_TOKEN * 5)
-                AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Exchange " + std::to_string(ESSENCE_PER_TOKEN * 5) + " Essence for 5 Tokens", GOSSIP_SENDER_MAIN, 2004);
+                uint32 balance = GetVendorCurrencyBalance(player, rate.from);
+
+                for (uint32 i = 0; i < GOSSIP_EXCHANGE_MULTIPLIER_COUNT; ++i)
+                {
+                    uint32 multiplier = GOSSIP_EXCHANGE_MULTIPLIERS[i];
+                    uint32 spend = rate.from_units * multiplier;
+
+                    // Only offer what the player can actually pay for; an
+                    // unaffordable row is just a failed click.
+                    if (balance < spend)
+                        continue;
+
+                    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
+                        "Exchange " + std::to_string(spend) + " " + GetCurrencyDisplayName(rate.from)
+                        + " for " + std::to_string(rate.to_units * multiplier) + " " + GetCurrencyDisplayName(rate.to),
+                        GOSSIP_SENDER_MAIN, EncodeExchangeAction(rate.from, rate.to, i));
+                    anyOffered = true;
+                }
+            }
+
+            if (!anyOffered)
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888Nothing to exchange right now.|r", GOSSIP_SENDER_MAIN, 0);
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, 9999);
@@ -1198,72 +1293,44 @@ public:
         }
 
         // Perform Exchange
-        if (action >= 2001 && action <= 2004)
+        if (action >= GOSSIP_ACTION_EXCHANGE_BASE
+            && action < GOSSIP_ACTION_EXCHANGE_BASE + GOSSIP_ACTION_EXCHANGE_SPAN)
         {
-            auto* upgradeMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-            if (!upgradeMgr) return true;
+            using namespace DarkChaos::ItemUpgrade;
 
-            uint32 tokensToTake = 0;
-            uint32 essenceToGive = 0;
-            uint32 essenceToTake = 0;
-            uint32 tokensToGive = 0;
+            // The currency pair travels in the action id rather than an index
+            // into the rate table, so a config reload that reorders or retires
+            // rows between drawing the menu and clicking it can never silently
+            // execute a different trade than the one on the button.
+            CurrencyType from;
+            CurrencyType to;
+            uint32 multiplierIndex;
+            if (!DecodeExchangeAction(action, from, to, multiplierIndex))
+                return OnGossipSelect(player, creature, sender, 2000);
 
-            switch (action)
+            CurrencyExchangeRate rate;
+            auto* transMgr = GetTransmutationManager();
+            if (!transMgr || !FindVendorExchangeRate(from, to, rate))
             {
-                case 2001: tokensToTake = 1; essenceToGive = ESSENCE_PER_TOKEN; break;
-                case 2002: tokensToTake = 5; essenceToGive = ESSENCE_PER_TOKEN * 5; break;
-                case 2003: essenceToTake = ESSENCE_PER_TOKEN; tokensToGive = 1; break;
-                case 2004: essenceToTake = ESSENCE_PER_TOKEN * 5; tokensToGive = 5; break;
+                ChatHandler(player->GetSession()).SendSysMessage("That exchange is no longer available.");
+                return OnGossipSelect(player, creature, sender, 2000);
             }
 
-            if (tokensToTake > 0)
-            {
-                if (player->HasItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake))
-                {
-                    player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake, true);
-                    uint32 playerGuid = player->GetGUID().GetCounter();
+            uint32 multiplier = GOSSIP_EXCHANGE_MULTIPLIERS[multiplierIndex];
+            uint32 spend = rate.from_units * multiplier;
 
-                    if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
-                        playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToGive,
-                        DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage("Exchanged {} Tokens for {} Essence.", tokensToTake, essenceToGive);
-                    }
-                }
-                else
-                    ChatHandler(player->GetSession()).SendSysMessage("You don't have enough tokens.");
-            }
-            else if (essenceToTake > 0)
+            if (transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), from, to, spend))
             {
-                uint32 currentEssence = upgradeMgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
-                if (currentEssence >= essenceToTake)
-                {
-                    ItemPosCountVec dest;
-                    InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToGive);
-                    if (msg == EQUIP_ERR_OK)
-                    {
-                        uint32 playerGuid = player->GetGUID().GetCounter();
-                        if (DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
-                            playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToTake,
-                            DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
-                        {
-                            if (Item* item = player->StoreNewItem(dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true))
-                            {
-                                player->SendNewItem(item, tokensToGive, true, false);
-                                ChatHandler(player->GetSession()).PSendSysMessage("Exchanged {} Essence for {} Tokens.", essenceToTake, tokensToGive);
-                            }
-                        }
-                    }
-                    else
-                        player->SendEquipError(msg, nullptr, nullptr, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
-                }
-                else
-                    ChatHandler(player->GetSession()).SendSysMessage("You don't have enough Essence.");
+                ChatHandler(player->GetSession()).PSendSysMessage("Exchanged {} {} for {} {}.",
+                    spend, GetCurrencyDisplayName(from),
+                    rate.to_units * multiplier, GetCurrencyDisplayName(to));
+                DCAddon::Upgrade::SendCurrencyUpdate(player);
             }
+            else
+                ChatHandler(player->GetSession()).SendSysMessage("Exchange failed - not enough currency or bag space.");
 
             // Return to exchange menu
-            OnGossipSelect(player, creature, sender, 2000);
-            return true;
+            return OnGossipSelect(player, creature, sender, 2000);
         }
 
         // Back to main menu

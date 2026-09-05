@@ -38,9 +38,9 @@
 
             <!-- Tabs -->
             <!-- Single tab active: Exchange -->
-            
+
             <!-- Tab 1: Currency Exchange -->
-            <Frame parentKey="ExchangeFrame" hidden="false">
+            <Frame name="DarkChaos_TransmutationExchangeFrame" parentKey="ExchangeFrame" hidden="false">
                 <Anchors>
                     <Anchor point="TOPLEFT" x="20" y="-40"/>
                     <Anchor point="BOTTOMRIGHT" x="-20" y="40"/>
@@ -49,21 +49,52 @@
                     <Layer level="ARTWORK">
                         <FontString parentKey="BalanceText" inherits="GameFontHighlightLarge" text="Loading Balances..." justifyH="CENTER">
                             <Anchors>
-                                <Anchor point="TOP" y="-40"/>
+                                <Anchor point="TOP" y="-10"/>
                             </Anchors>
                         </FontString>
-                        <FontString parentKey="RateText" inherits="GameFontNormal" text="Exchange Rates" justifyH="CENTER">
+                        <!-- Dropdown captions. UIDropDownMenuTemplate has no label of
+                             its own, so the column headings live here. -->
+                        <FontString parentKey="FromLabel" inherits="GameFontNormal" text="Give" justifyH="CENTER">
                             <Anchors>
-                                <Anchor point="TOP" y="-80"/>
+                                <Anchor point="TOP" x="-115" y="-44"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="ToLabel" inherits="GameFontNormal" text="Receive" justifyH="CENTER">
+                            <Anchors>
+                                <Anchor point="TOP" x="115" y="-44"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="PreviewText" inherits="GameFontHighlight" text="" justifyH="CENTER">
+                            <Anchors>
+                                <Anchor point="TOP" y="-150"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="RateText" inherits="GameFontDisableSmall" text="Exchange Rates" justifyH="CENTER">
+                            <Anchors>
+                                <Anchor point="BOTTOM" y="10"/>
                             </Anchors>
                         </FontString>
                     </Layer>
                 </Layers>
                 <Frames>
+                    <!-- Frame, not Button: UIDropDownMenuTemplate is a Frame template
+                         in 3.3.5 and inheriting it on a Button silently breaks the
+                         menu's own child buttons. -->
+                    <Frame name="$parentFromDropdown" parentKey="FromDropdown" inherits="UIDropDownMenuTemplate">
+                        <Anchors>
+                            <Anchor point="TOP" x="-115" y="-60"/>
+                        </Anchors>
+                    </Frame>
+                    <Frame name="$parentToDropdown" parentKey="ToDropdown" inherits="UIDropDownMenuTemplate">
+                        <Anchors>
+                            <Anchor point="TOP" x="115" y="-60"/>
+                        </Anchors>
+                    </Frame>
+
                     <EditBox name="$parentAmountInput" parentKey="AmountInput" inherits="InputBoxTemplate" autoFocus="false" numeric="true">
                         <Size x="80" y="20"/>
                         <Anchors>
-                            <Anchor point="CENTER" x="0" y="20"/>
+                            <Anchor point="TOP" x="20" y="-115"/>
                         </Anchors>
                         <Layers>
                             <Layer level="ARTWORK">
@@ -81,28 +112,35 @@
                             <OnTextChanged>
                                 DarkChaos_Transmutation_UpdateExchangeCalculations();
                             </OnTextChanged>
+                            <OnEnterPressed>
+                                DarkChaos_Transmutation_DoExchange();
+                            </OnEnterPressed>
+                            <OnEscapePressed>
+                                this:ClearFocus();
+                            </OnEscapePressed>
                         </Scripts>
                     </EditBox>
 
-                    <Button name="$parentToEssenceBtn" parentKey="ToEssenceBtn" inherits="UIPanelButtonTemplate" text="Tokens -> Essence">
-                        <Size x="160" y="40"/>
+                    <Button name="$parentMaxBtn" parentKey="MaxBtn" inherits="UIPanelButtonTemplate" text="Max">
+                        <Size x="50" y="22"/>
                         <Anchors>
-                            <Anchor point="TOPRIGHT" relativePoint="CENTER" x="-10" y="-20"/>
+                            <Anchor point="LEFT" relativeTo="$parentAmountInput" relativePoint="RIGHT" x="8" y="0"/>
                         </Anchors>
                         <Scripts>
                             <OnClick>
-                                DarkChaos_Transmutation_DoExchange(1);
+                                DarkChaos_Transmutation_FillMax();
                             </OnClick>
                         </Scripts>
                     </Button>
-                    <Button name="$parentToTokensBtn" parentKey="ToTokensBtn" inherits="UIPanelButtonTemplate" text="Essence -> Tokens">
-                        <Size x="160" y="40"/>
+
+                    <Button name="$parentExchangeBtn" parentKey="ExchangeBtn" inherits="UIPanelButtonTemplate" text="Exchange">
+                        <Size x="160" y="30"/>
                         <Anchors>
-                            <Anchor point="TOPLEFT" relativePoint="CENTER" x="10" y="-20"/>
+                            <Anchor point="TOP" y="-185"/>
                         </Anchors>
                         <Scripts>
                             <OnClick>
-                                DarkChaos_Transmutation_DoExchange(2);
+                                DarkChaos_Transmutation_DoExchange();
                             </OnClick>
                         </Scripts>
                     </Button>

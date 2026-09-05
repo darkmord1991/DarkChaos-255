@@ -266,28 +266,35 @@ BattlegroundHLBG::BattlegroundHLBG()
 {
     InitAffixDefaults();
     _killHonorValues = { 17u, 11u, 19u, 22u };
+    // Alliance_Healer/Squadleader and their Horde equivalents are deliberately
+    // absent: entries 600004/600005/600008/600011 have no creature_template row,
+    // so listing them only pads the lookup.
     _npcRewardEntriesAlliance = {
-        Alliance_Boss, Alliance_Healer, Alliance_Infantry, Alliance_Squadleader,
+        Alliance_Boss, Alliance_Infantry,
         Alliance_Battlewarden, Alliance_Sentry, Alliance_Scout, Alliance_GryphonHerald,
         Alliance_BannerBearer, Alliance_WatchCaptain, Alliance_Marksman,
         Alliance_Pathfinder, Alliance_RoostTender
     };
     _npcRewardEntriesHorde = {
-        Horde_Boss, Horde_Heal, Horde_Infantry, Horde_Squadleader, Horde_Warcaller,
+        Horde_Boss, Horde_Infantry, Horde_Warcaller,
         Horde_Watchblade, Horde_Spiritmender, Horde_BannerSinger, Horde_Drumkeeper,
-        Horde_FiresideShaman, Horde_Headhunter, Horde_Ritespeaker, Horde_BonfireTender
+        Horde_FiresideShaman, Horde_Headhunter, Horde_Ritespeaker, Horde_BonfireTender,
+        Horde_KorkronGrunt, Horde_KorkronShieldguard, Horde_KorkronAxethrower,
+        Horde_KorkronOverseer
     };
     _npcBossEntriesAlliance = { Alliance_Boss };
     _npcBossEntriesHorde = { Horde_Boss };
     _npcNormalEntriesAlliance = {
-        Alliance_Healer, Alliance_Infantry, Alliance_Squadleader, Alliance_Battlewarden,
+        Alliance_Infantry, Alliance_Battlewarden,
         Alliance_Sentry, Alliance_Scout, Alliance_GryphonHerald, Alliance_BannerBearer,
         Alliance_WatchCaptain, Alliance_Marksman, Alliance_Pathfinder, Alliance_RoostTender
     };
     _npcNormalEntriesHorde = {
-        Horde_Heal, Horde_Infantry, Horde_Squadleader, Horde_Warcaller,
+        Horde_Infantry, Horde_Warcaller,
         Horde_Watchblade, Horde_Spiritmender, Horde_BannerSinger, Horde_Drumkeeper,
-        Horde_FiresideShaman, Horde_Headhunter, Horde_Ritespeaker, Horde_BonfireTender
+        Horde_FiresideShaman, Horde_Headhunter, Horde_Ritespeaker, Horde_BonfireTender,
+        Horde_KorkronGrunt, Horde_KorkronShieldguard, Horde_KorkronAxethrower,
+        Horde_KorkronOverseer
     };
 
     LoadConfig();

@@ -50,6 +50,18 @@ namespace Upgrade
             DarkChaos::ItemUpgrade::CachePlayerMapContext(player);
     }
 
+    static char const* CurrencyDisplayName(DarkChaos::ItemUpgrade::CurrencyType currency)
+    {
+        using namespace DarkChaos::ItemUpgrade;
+        switch (currency)
+        {
+            case CURRENCY_ARTIFACT_ESSENCE: return "Artifact Essence";
+            case CURRENCY_FRONTIER_SAP:     return "Emberwood Sap";
+            case CURRENCY_UPGRADE_TOKEN:    return "Upgrade Tokens";
+            default:                        return "currency";
+        }
+    }
+
     // Send Open UI Signal
     void SendOpenTransmutationUI(Player* player)
     {
@@ -65,16 +77,58 @@ namespace Upgrade
         TransmutationManager* transMgr = GetTransmutationManager();
 
         // 1. Get Exchange Rates
-        uint32 tokensToEssence, essenceToTokens;
-        transMgr->GetExchangeRates(tokensToEssence, essenceToTokens);
+        std::vector<CurrencyExchangeRate> rateTable = transMgr->GetExchangeRateTable();
 
         // 2. Get Transmutation Status
         TransmutationSession session = transMgr->GetTransmutationStatus(player->GetGUID().GetCounter());
 
         JsonValue exchange;
         exchange.SetObject();
-        exchange.Set("tokensToEssence", JsonValue(tokensToEssence));
-        exchange.Set("essenceToTokens", JsonValue(essenceToTokens));
+
+        // Every supported (from, to) pair as a give/get ratio. The client drives
+        // its dropdowns off this list, so a pair the server does not offer is
+        // not selectable and the displayed cost always matches what is charged.
+        JsonValue ratesArray;
+        ratesArray.SetArray(rateTable.size());
+        for (auto const& rate : rateTable)
+        {
+            JsonValue row;
+            row.SetObject();
+            row.Set("from", JsonValue(static_cast<uint32>(rate.from)));
+            row.Set("to", JsonValue(static_cast<uint32>(rate.to)));
+            row.Set("give", JsonValue(rate.from_units));
+            row.Set("get", JsonValue(rate.to_units));
+            ratesArray.Push(std::move(row));
+        }
+        exchange.Set("rates", std::move(ratesArray));
+
+        // Balances for all three currencies, so the window does not have to
+        // guess at the sap balance the upgrade tab already knows.
+        JsonValue balances;
+        balances.SetObject();
+        balances.Set("tokens", JsonValue(GetPlayerTokens(player)));
+        balances.Set("essence", JsonValue(GetPlayerEssence(player)));
+        balances.Set("sap", JsonValue(GetPlayerFrontierSap(player)));
+        exchange.Set("balances", std::move(balances));
+
+        // Item ids so the client can resolve icons and names for each currency.
+        JsonValue itemIds;
+        itemIds.SetObject();
+        itemIds.Set("tokens", JsonValue(GetCurrencyItemId(CURRENCY_UPGRADE_TOKEN)));
+        itemIds.Set("essence", JsonValue(GetCurrencyItemId(CURRENCY_ARTIFACT_ESSENCE)));
+        itemIds.Set("sap", JsonValue(GetCurrencyItemId(CURRENCY_FRONTIER_SAP)));
+        exchange.Set("itemIds", std::move(itemIds));
+
+        // Legacy scalars for an addon that predates the rate table. Derived from
+        // the table rather than restated, so an un-updated client shows the real
+        // token<->essence rates instead of its 100/80 placeholder defaults.
+        for (auto const& rate : rateTable)
+        {
+            if (rate.from == CURRENCY_UPGRADE_TOKEN && rate.to == CURRENCY_ARTIFACT_ESSENCE)
+                exchange.Set("tokensToEssence", JsonValue(rate.from_units));
+            else if (rate.from == CURRENCY_ARTIFACT_ESSENCE && rate.to == CURRENCY_UPGRADE_TOKEN)
+                exchange.Set("essenceToTokens", JsonValue(rate.to_units));
+        }
 
         bool sessionActive = (session.player_guid != 0 && !session.completed);
         JsonValue sessionObj;
@@ -108,15 +162,22 @@ namespace Upgrade
         CacheContext(player);
         // Format: Type|Arg1|Arg2...
         // Type 1: Tier Conversion (ItemGUID, TargetTier) - Not implemented
-        // Type 2: Currency Exchange (Type, Amount)
+        // Type 2: Currency Exchange (from, to, amount -- amount is SOURCE units)
         // Type 3: Synthesis - REMOVED
 
         LOG_DEBUG("scripts.dc", "HandleDoTransmute called for player {} with {} data fields",
                   player->GetGUID().GetCounter(), msg.GetDataCount());
 
+        using namespace DarkChaos::ItemUpgrade;
+
         uint32 type = msg.GetUInt32(0);
         uint32 exchangeType = msg.GetUInt32(1);
         uint32 amount = msg.GetUInt32(2);
+
+        // Explicit currency pair (rate-table era). Zero means "not supplied",
+        // in which case exchangeType still carries the legacy 1/2 direction.
+        uint32 fromCurrency = 0;
+        uint32 toCurrency = 0;
 
         JsonValue json;
         if (IsJsonMessage(msg))
@@ -139,8 +200,10 @@ namespace Upgrade
                 type = 2;
                 exchangeType = static_cast<uint32>(JsonGetInt(json, "type", 0));
                 amount = static_cast<uint32>(JsonGetInt(json, "amount", 0));
-                LOG_DEBUG("scripts.dc", "HandleDoTransmute exchange: type={} exchangeType={} amount={}",
-                          type, exchangeType, amount);
+                fromCurrency = static_cast<uint32>(JsonGetInt(json, "from", 0));
+                toCurrency = static_cast<uint32>(JsonGetInt(json, "to", 0));
+                LOG_DEBUG("scripts.dc", "HandleDoTransmute exchange: type={} exchangeType={} from={} to={} amount={}",
+                          type, exchangeType, fromCurrency, toCurrency, amount);
             }
             else if (action == "synthesis")
             {
@@ -148,8 +211,6 @@ namespace Upgrade
                 amount = static_cast<uint32>(JsonGetInt(json, "recipeId", 0));
             }
         }
-
-        using namespace DarkChaos::ItemUpgrade;
 
         if (type == 1) // Tier Conversion
         {
@@ -160,13 +221,36 @@ namespace Upgrade
             TransmutationManager* transMgr = GetTransmutationManager();
             bool success = false;
 
-            LOG_DEBUG("scripts.dc", "HandleDoTransmute currency exchange: transMgr={} exchangeType={} amount={}",
-                      (transMgr != nullptr), exchangeType, amount);
-
-            if (!transMgr || exchangeType < 1 || exchangeType > 2 || amount == 0)
+            // An addon that predates the rate table sends only the legacy
+            // direction flag: 1 = tokens->essence, 2 = essence->tokens. Map it
+            // onto the currency pair so both client generations share one path.
+            if (fromCurrency == 0 && toCurrency == 0)
             {
-                LOG_WARN("scripts.dc", "HandleDoTransmute invalid params: transMgr={} exchangeType={} amount={}",
-                         (transMgr != nullptr), exchangeType, amount);
+                if (exchangeType == 1)
+                {
+                    fromCurrency = CURRENCY_UPGRADE_TOKEN;
+                    toCurrency = CURRENCY_ARTIFACT_ESSENCE;
+                }
+                else if (exchangeType == 2)
+                {
+                    fromCurrency = CURRENCY_ARTIFACT_ESSENCE;
+                    toCurrency = CURRENCY_UPGRADE_TOKEN;
+                }
+            }
+
+            LOG_DEBUG("scripts.dc", "HandleDoTransmute currency exchange: transMgr={} from={} to={} amount={}",
+                      (transMgr != nullptr), fromCurrency, toCurrency, amount);
+
+            bool validPair = fromCurrency >= CURRENCY_UPGRADE_TOKEN
+                && fromCurrency <= CURRENCY_FRONTIER_SAP
+                && toCurrency >= CURRENCY_UPGRADE_TOKEN
+                && toCurrency <= CURRENCY_FRONTIER_SAP
+                && fromCurrency != toCurrency;
+
+            if (!transMgr || !validPair || amount == 0)
+            {
+                LOG_WARN("scripts.dc", "HandleDoTransmute invalid params: transMgr={} from={} to={} amount={}",
+                         (transMgr != nullptr), fromCurrency, toCurrency, amount);
                 JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
                     .Set("success", false)
                     .Set("type", static_cast<int32>(type))
@@ -175,8 +259,11 @@ namespace Upgrade
                 return;
             }
 
-            // Use the manager's ExchangeCurrency interface
-            success = transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), exchangeType == 1, amount);
+            // Use the manager's ExchangeCurrency interface. The manager owns the
+            // rate lookup, so an unsupported pair is rejected there, not here.
+            success = transMgr->ExchangeCurrency(player->GetGUID().GetCounter(),
+                static_cast<CurrencyType>(fromCurrency),
+                static_cast<CurrencyType>(toCurrency), amount);
 
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
                 .Set("success", success)
@@ -186,18 +273,22 @@ namespace Upgrade
 
             if (success)
             {
-                // Send chat confirmation
-                if (exchangeType == 1)
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Transmutation]|r Exchanged {} tokens for {} essence.", amount * 2, amount);
-                else
-                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Transmutation]|r Exchanged {} essence for {} tokens.", amount, amount);
+                // Name the pair rather than restating amounts. The manager floors
+                // the request to whole trades and adds the fee, so any figure
+                // recomputed here would be a second copy of the rate maths and
+                // would drift from what was actually charged. The currency
+                // update that follows carries the real balances.
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFF00FF00[Exchange]|r Converted {} to {}.",
+                    CurrencyDisplayName(static_cast<CurrencyType>(fromCurrency)),
+                    CurrencyDisplayName(static_cast<CurrencyType>(toCurrency)));
 
                 SendCurrencyUpdate(player);
                 SendTransmutationInfo(player);
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000[Transmutation]|r Exchange failed - insufficient currency.");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000[Exchange]|r Exchange failed - insufficient currency, or less than one full trade.");
             }
         }
         else if (type == 3) // Synthesis

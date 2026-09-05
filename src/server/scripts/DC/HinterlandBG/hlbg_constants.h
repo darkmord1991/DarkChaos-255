@@ -122,6 +122,12 @@ namespace HinterlandBGConstants
         Horde_Headhunter = 810018,
         Horde_Ritespeaker = 810019,
         Horde_BonfireTender = 810020,
+        // Kor'kron orcs - the Horde's second people, mirroring the Alliance's
+        // human + Wildhammer dwarf mix.
+        Horde_KorkronGrunt = 810024,
+        Horde_KorkronShieldguard = 810025,
+        Horde_KorkronAxethrower = 810026,
+        Horde_KorkronOverseer = 810027,
     };
 
     inline uint32 GetDefaultAffixPlayerSpell(uint8 affixCode)

@@ -29,6 +29,18 @@ target_link_libraries(
         gtest_main
         gmock_main
         game-interface
+        # NOTE: this fork's `game` library calls into script-tree symbols
+        # (DCAddon::DeathMarkers, BattlegroundBFG, BattlegroundHLBG), which
+        # upstream's does not, so `game` alone does not link here. Adding
+        # `scripts` resolves the symbols but drags in every AddSC_* global
+        # constructor, and the binary then segfaults during static init before
+        # gtest reaches main. Running this target needs the pure logic split
+        # away from the script registration graph; it is not a link-list fix.
+        # game links acore-core-interface PRIVATE, so its compile options do not
+        # propagate here. Without it this target misses /utf-8 (fmt refuses to
+        # build) and NOMINMAX (windows.h min/max macros break GridDefines.h),
+        # and unit_tests does not compile on MSVC at all.
+        acore-core-interface
 )
 
 # Add module test sources if any modules registered tests

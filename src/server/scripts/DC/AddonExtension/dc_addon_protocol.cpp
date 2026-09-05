@@ -2647,6 +2647,16 @@ namespace DCAddon
         if (!CanUseModuleNativeMessage(player, module))
             return false;
 
+        // Packet_SMSG_DC_NATIVE_MESSAGE (WotLKExtensions CNetClient.cpp) treats
+        // an empty body as a malformed frame and drops it before it ever reaches
+        // the Lua queue. Bare signal opcodes carry no fields at all -- "open the
+        // exchange window", "open the group finder" -- so on the native route
+        // they vanish and the NPC appears dead on click. Refuse the native route
+        // and let them go out over the addon-chat transport, which carries a
+        // field-less message fine.
+        if (body.empty())
+            return false;
+
         // The client DLL reads the native body into a fixed 64 KB buffer
         // (kDcNativeMessageBodyMaxLength = 65535 in WotLKExtensions
         // CNetClient.cpp); larger bodies arrive truncated and fail to parse.

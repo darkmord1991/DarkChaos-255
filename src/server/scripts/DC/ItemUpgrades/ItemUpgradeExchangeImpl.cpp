@@ -1,7 +1,8 @@
 /*
  * DarkChaos Item Upgrade System - Currency Exchange Implementation
  *
- * Implementation of currency exchange between Upgrade Tokens and Artifact Essence.
+ * Implementation of currency exchange between Upgrade Tokens, Artifact
+ * Essence and Emberwood Sap.
  * Synthesis system removed (Jan 2026).
  *
  * Author: DarkChaos Development Team
@@ -16,6 +17,7 @@
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "Player.h"
 #include "Item.h"
+#include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "World.h"
@@ -43,7 +45,6 @@ namespace DarkChaos
                 uint32 base_cooldown_seconds;
                 float tier_downgrade_success_rate;
                 float tier_upgrade_success_rate;
-                uint32 currency_exchange_fee_percent;
                 uint32 synthesis_base_cost_essence;
                 uint32 synthesis_base_cost_tokens;
                 bool allow_partial_refunds;
@@ -51,7 +52,7 @@ namespace DarkChaos
 
                 TransmutationConfig() :
                     base_cooldown_seconds(3600), tier_downgrade_success_rate(0.95f),
-                    tier_upgrade_success_rate(0.75f), currency_exchange_fee_percent(5),
+                    tier_upgrade_success_rate(0.75f),
                     synthesis_base_cost_essence(100), synthesis_base_cost_tokens(50),
                     allow_partial_refunds(true), max_concurrent_transmutations(3) {}
             } config;
@@ -65,7 +66,7 @@ namespace DarkChaos
             }
 
             // LoadTransmutationData removed - synthesis recipes no longer used
-            // Currency exchange uses hardcoded rates (see GetExchangeRates)
+            // Currency exchange rates come from GetExchangeRateTable()
 
             std::vector<TransmutationRecipe> GetAvailableRecipes([[maybe_unused]] uint32 player_guid) override
             {
@@ -339,18 +340,85 @@ namespace DarkChaos
                 }
             }
 
-            void GetExchangeRates(uint32& tokens_to_essence_rate, uint32& essence_to_tokens_rate) override
+            std::vector<CurrencyExchangeRate> GetExchangeRateTable() override
             {
-                // Base exchange rate: 1 essence = 2 tokens
-                tokens_to_essence_rate = 2;
-                essence_to_tokens_rate = 1;
+                // Emberwood Sap is a ZONE currency: it is earned on the Hyjal
+                // Frontier and pays for T4/T5. Converting *into* sap therefore
+                // buys endgame upgrade progress with content the player did not
+                // do, and the inbound rates are deliberately punitive to keep
+                // the Frontier the cheapest way to get sap. Converting *out of*
+                // sap is a surplus drain and pays a fair rate.
+                //
+                // Round trips are lossy on purpose: 10 essence buys 1 sap, and
+                // that sap sells back for 2 essence.
+                uint32 const tokensPerSap = sConfigMgr->GetOption<uint32>("ItemUpgrade.Exchange.TokensPerSap", 20);
+                uint32 const essencePerSap = sConfigMgr->GetOption<uint32>("ItemUpgrade.Exchange.EssencePerSap", 10);
+                uint32 const sapPayout = sConfigMgr->GetOption<uint32>("ItemUpgrade.Exchange.SapPayout", 2);
+
+                std::vector<CurrencyExchangeRate> rates;
+                rates.reserve(6);
+
+                // Unchanged legacy pair: 2 tokens buy 1 essence, 1 essence sells
+                // back for 1 token.
+                rates.emplace_back(CURRENCY_UPGRADE_TOKEN, CURRENCY_ARTIFACT_ESSENCE, 2, 1);
+                rates.emplace_back(CURRENCY_ARTIFACT_ESSENCE, CURRENCY_UPGRADE_TOKEN, 1, 1);
+
+                // Into sap -- punitive.
+                if (tokensPerSap > 0)
+                    rates.emplace_back(CURRENCY_UPGRADE_TOKEN, CURRENCY_FRONTIER_SAP, tokensPerSap, 1);
+                if (essencePerSap > 0)
+                    rates.emplace_back(CURRENCY_ARTIFACT_ESSENCE, CURRENCY_FRONTIER_SAP, essencePerSap, 1);
+
+                // Out of sap -- surplus drain.
+                if (sapPayout > 0)
+                {
+                    rates.emplace_back(CURRENCY_FRONTIER_SAP, CURRENCY_ARTIFACT_ESSENCE, 1, sapPayout);
+                    rates.emplace_back(CURRENCY_FRONTIER_SAP, CURRENCY_UPGRADE_TOKEN, 1, sapPayout);
+                }
+
+                return rates;
             }
 
-            bool ExchangeCurrency(uint32 player_guid, bool tokens_to_essence, uint32 amount) override
+            bool ExchangeCurrency(uint32 player_guid, CurrencyType from, CurrencyType to,
+                uint32 source_amount) override
             {
-                if (amount == 0)
+                // source_amount is client input. Cap it well below the point
+                // where trades * to_units could wrap a uint32; a balance this
+                // large is not reachable through play anyway.
+                constexpr uint32 MAX_EXCHANGE_SOURCE_AMOUNT = 10000000;
+
+                if (source_amount == 0 || source_amount > MAX_EXCHANGE_SOURCE_AMOUNT)
                 {
-                    LOG_ERROR("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - amount is 0 for player {}", player_guid);
+                    LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - amount {} out of range for player {}",
+                             source_amount, player_guid);
+                    return false;
+                }
+
+                if (from == to)
+                {
+                    LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - same currency {} for player {}",
+                             static_cast<uint32>(from), player_guid);
+                    return false;
+                }
+
+                // Look the pair up in the table rather than branching on it, so
+                // the rates the UI was shown and the rates charged cannot drift.
+                CurrencyExchangeRate rate;
+                bool found = false;
+                for (auto const& row : GetExchangeRateTable())
+                {
+                    if (row.from == from && row.to == to)
+                    {
+                        rate = row;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found || rate.from_units == 0 || rate.to_units == 0)
+                {
+                    LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - unsupported pair {}->{} for player {}",
+                             static_cast<uint32>(from), static_cast<uint32>(to), player_guid);
                     return false;
                 }
 
@@ -371,67 +439,76 @@ namespace DarkChaos
                 }
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-                LOG_DEBUG("scripts.dc", "ItemUpgrade: ExchangeCurrency - player {} amount {} tokens_to_essence {}",
-                          player_guid, amount, tokens_to_essence);
 
                 try
                 {
-                    uint32 exchange_rate, fee_amount, final_amount;
-
-                    if (tokens_to_essence)
+                    // Whole trades only. The remainder below one full trade is
+                    // never spent -- charging for a partial trade that yields
+                    // nothing is how currency quietly disappears.
+                    uint32 trades = source_amount / rate.from_units;
+                    if (trades == 0)
                     {
-                        // Tokens to Essence: 2 tokens = 1 essence
-                        exchange_rate = 2;
-                        uint32 required_tokens = amount * exchange_rate;
-                        fee_amount = required_tokens * config.currency_exchange_fee_percent / 100;
-                        final_amount = amount;
-
-                        uint32 total_needed = required_tokens + fee_amount;
-                        uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, season);
-
-                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Tokens->Essence: current {} required {} fee {} total_needed {}",
-                                  current_tokens, required_tokens, fee_amount, total_needed);
-
-                        if (current_tokens < total_needed)
-                        {
-                            LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - insufficient tokens ({} < {}) for player {}",
-                                     current_tokens, total_needed, player_guid);
-                            return false;
-                        }
-
-                        // Update DB-backed currency only
-                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, total_needed, season);
-                        mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, final_amount, season);
-                    }
-                    else
-                    {
-                        // Essence to Tokens: 1 essence = 1 token
-                        exchange_rate = 1;
-                        uint32 required_essence = amount * exchange_rate;
-                        fee_amount = required_essence * config.currency_exchange_fee_percent / 100;
-                        final_amount = amount;
-
-                        uint32 total_needed = required_essence + fee_amount;
-                        uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, season);
-
-                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Essence->Tokens: current {} required {} fee {} total_needed {}",
-                                  current_essence, required_essence, fee_amount, total_needed);
-
-                        if (current_essence < total_needed)
-                        {
-                            LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - insufficient essence ({} < {}) for player {}",
-                                     current_essence, total_needed, player_guid);
-                            return false;
-                        }
-
-                        // Update DB-backed currency only
-                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, total_needed, season);
-                        mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, final_amount, season);
+                        LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - {} is below one trade ({}) for player {}",
+                                 source_amount, rate.from_units, player_guid);
+                        return false;
                     }
 
-                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} exchanged {} {} for {} {} (fee: {})",
-                            player_guid, amount, tokens_to_essence ? "tokens" : "essence",
-                            final_amount, tokens_to_essence ? "essence" : "tokens", fee_amount);
+                    uint32 spend_amount = trades * rate.from_units;
+                    uint32 receive_amount = trades * rate.to_units;
+
+                    uint32 current = mgr->GetCurrency(player_guid, from, season);
+
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Exchange {}->{}: current {} spend {} receive {}",
+                              static_cast<uint32>(from), static_cast<uint32>(to),
+                              current, spend_amount, receive_amount);
+
+                    if (current < spend_amount)
+                    {
+                        LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - insufficient currency {} ({} < {}) for player {}",
+                                 static_cast<uint32>(from), current, spend_amount, player_guid);
+                        return false;
+                    }
+
+                    // The currencies ARE inventory items (UpgradeManager::Add/
+                    // RemoveCurrency operate on item counts), so a full bag makes
+                    // the grant fail. Check space BEFORE spending: removing first
+                    // and failing to grant would destroy the player's currency.
+                    // Conservative on purpose -- freeing the source stack might
+                    // have made room, but refusing a trade beats deleting one.
+                    uint32 targetItemId = GetCurrencyItemId(to);
+                    ItemPosCountVec dest;
+                    InventoryResult storeResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest,
+                        targetItemId, receive_amount);
+                    if (storeResult != EQUIP_ERR_OK)
+                    {
+                        player->SendEquipError(storeResult, nullptr, nullptr, targetItemId);
+                        LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - no room for {} of item {} for player {}",
+                                 receive_amount, targetItemId, player_guid);
+                        return false;
+                    }
+
+                    if (!mgr->RemoveCurrency(player_guid, from, spend_amount, season))
+                    {
+                        LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - could not spend {} of currency {} for player {}",
+                                 spend_amount, static_cast<uint32>(from), player_guid);
+                        return false;
+                    }
+
+                    if (!mgr->AddCurrency(player_guid, to, receive_amount, season))
+                    {
+                        // The space check above should have prevented this. Give
+                        // the source currency back rather than leaving the player
+                        // having paid for nothing.
+                        mgr->AddCurrency(player_guid, from, spend_amount, season);
+                        LOG_ERROR("scripts.dc", "ItemUpgrade: ExchangeCurrency could not grant {} of currency {} to player {}; refunded {} of currency {}",
+                                  receive_amount, static_cast<uint32>(to), player_guid,
+                                  spend_amount, static_cast<uint32>(from));
+                        return false;
+                    }
+
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} exchanged {} of currency {} for {} of currency {}",
+                            player_guid, spend_amount, static_cast<uint32>(from),
+                            receive_amount, static_cast<uint32>(to));
 
                     return true;
                 }

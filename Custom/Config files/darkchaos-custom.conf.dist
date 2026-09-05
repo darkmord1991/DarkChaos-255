@@ -1517,6 +1517,45 @@ ItemUpgrade.Currency.EssenceId = 300312
 ItemUpgrade.Currency.SapId = 400000
 
 # -----------------------------------------------------------------------------
+# Currency Exchange (Transmutation Master, NPC 190004)
+# -----------------------------------------------------------------------------
+# The exchange converts between all three upgrade currencies. Rates are
+# expressed as "how many units you must give up for one unit of the target",
+# and every trade is whole units -- a remainder below one full trade is left
+# in the player's balance rather than consumed.
+#
+# Emberwood Sap is a ZONE currency: it is earned on the Hyjal Frontier and pays
+# for T4/T5. Converting INTO sap therefore buys endgame progress with content
+# the player did not do, so the inbound rates are deliberately punitive. Lower
+# them and the Frontier stops being the cheapest source of sap.
+
+#
+#    ItemUpgrade.Exchange.TokensPerSap
+#        Description: Upgrade Tokens required to buy 1 Emberwood Sap.
+#                     Set to 0 to remove the tokens -> sap conversion entirely.
+#        Default:     20
+#
+ItemUpgrade.Exchange.TokensPerSap = 20
+
+#
+#    ItemUpgrade.Exchange.EssencePerSap
+#        Description: Artifact Essence required to buy 1 Emberwood Sap.
+#                     Set to 0 to remove the essence -> sap conversion entirely.
+#        Default:     10
+#
+ItemUpgrade.Exchange.EssencePerSap = 10
+
+#
+#    ItemUpgrade.Exchange.SapPayout
+#        Description: Tokens or Essence received for spending 1 Emberwood Sap.
+#                     This is the surplus drain for Frontier farmers; with the
+#                     defaults a round trip (10 essence -> 1 sap -> 2 essence)
+#                     loses 80%. Set to 0 to remove both sap -> X conversions.
+#        Default:     2
+#
+ItemUpgrade.Exchange.SapPayout = 2
+
+# -----------------------------------------------------------------------------
 # Quest Token Payout
 # -----------------------------------------------------------------------------
 
@@ -2712,10 +2751,15 @@ HinterlandBG.ResourcesLoss.NpcNormal = 5
 HinterlandBG.ResourcesLoss.NpcBoss = 200
 
 # NPC Classification for Resource Loss (CSV entry IDs)
+# These lists REPLACE the C++ defaults rather than adding to them, so anything
+# missing here drains nothing when killed. They previously named only 810000 /
+# 810001 plus four entries (600004/600005/600008/600011) that have no
+# creature_template row at all - which left every Wildhammer and Revantusk
+# specialist, 18 NPCs in total, as pure decoration worth zero resources.
 HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance = 810003
-HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810001,600011
+HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 810001,810009,810010,810011,810013,810015,810017,810021,810022,810023
 HinterlandBG.ResourcesLoss.NPCBossEntriesHorde = 810002
-HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
+HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 810000,810006,810007,810008,810012,810014,810016,810018,810019,810020,810024,810025,810026,810027
 
 # -----------------------------------------------------------------------------
 # Rewards
@@ -2734,8 +2778,8 @@ HinterlandBG.Reward.KillHonorValues = "17,11,19,22"
 # NPC Token Rewards
 HinterlandBG.Reward.NPCTokenItemId = 300311
 HinterlandBG.Reward.NPCTokenItemCount = 100
-HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810001,600011
-HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810000,810002
+HinterlandBG.Reward.NPCEntriesAlliance = 810001,810003,810009,810010,810011,810013,810015,810017,810021,810022,810023
+HinterlandBG.Reward.NPCEntriesHorde = 810000,810002,810006,810007,810008,810012,810014,810016,810018,810019,810020,810024,810025,810026,810027
 HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
 HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
 
@@ -2823,6 +2867,21 @@ HinterlandBG.Affix.PlayerSpell.ClearSkies = 910011
 HinterlandBG.Affix.PlayerSpell.GentleBreeze = 910012
 
 # NPC-Affecting Affix Spells
+#    HinterlandBG.Affix.NpcSpell.<Affix>
+#        Description: Optional extra aura applied to the battleground's guard
+#                     NPCs while the affix is active, on top of the player aura.
+#                     0 disables it - and while every entry is 0 the map
+#                     traversal that applies these is skipped entirely, so the
+#                     default costs nothing.
+#        Default:     0 (all)
+HinterlandBG.Affix.NpcSpell.Sunlight = 0
+HinterlandBG.Affix.NpcSpell.ClearSkies = 0
+HinterlandBG.Affix.NpcSpell.GentleBreeze = 0
+HinterlandBG.Affix.NpcSpell.Storm = 0
+HinterlandBG.Affix.NpcSpell.HeavyRain = 0
+HinterlandBG.Affix.NpcSpell.Fog = 0
+HinterlandBG.Affix.NpcSpell.Nightfall = 0
+
 HinterlandBG.Affix.PlayerSpell.Storm = 910020
 HinterlandBG.Affix.PlayerSpell.HeavyRain = 910021
 HinterlandBG.Affix.PlayerSpell.Fog = 910022

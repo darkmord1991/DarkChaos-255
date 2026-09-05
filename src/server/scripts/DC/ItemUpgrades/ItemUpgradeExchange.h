@@ -25,6 +25,31 @@ namespace DarkChaos
         // =====================================================================
 
         /**
+         * One supported currency conversion, as a give/get ratio.
+         *
+         * A ratio pair rather than a single "cost per unit" scalar because the
+         * currencies are not ordered by value: Emberwood Sap is worth more than
+         * an Artifact Essence, so "sap per 1 essence" would be a fraction and
+         * cannot be expressed as an integer. `from_units` of `from` buys exactly
+         * `to_units` of `to`, and both sides stay whole numbers in every
+         * direction.
+         */
+        struct CurrencyExchangeRate
+        {
+            CurrencyType from;
+            CurrencyType to;
+            uint32 from_units;  // spend this many of `from`
+            uint32 to_units;    // to receive this many of `to`
+
+            CurrencyExchangeRate() :
+                from(CURRENCY_UPGRADE_TOKEN), to(CURRENCY_ARTIFACT_ESSENCE),
+                from_units(1), to_units(1) {}
+
+            CurrencyExchangeRate(CurrencyType f, CurrencyType t, uint32 fu, uint32 tu) :
+                from(f), to(t), from_units(fu), to_units(tu) {}
+        };
+
+        /**
          * Exchange/Transmutation recipe types (legacy, mostly unused)
          */
         enum TransmutationType
@@ -150,14 +175,23 @@ namespace DarkChaos
             virtual bool CancelTransmutation(uint32 player_guid) = 0;
 
             /**
-             * Get currency exchange rates
+             * Get every supported currency conversion.
+             *
+             * One row per ordered (from, to) pair; a pair with no row cannot be
+             * exchanged. Read the rows, never hardcode a direction at a call
+             * site -- that is how the old two-scalar API drifted from the UI.
              */
-            virtual void GetExchangeRates(uint32& tokens_to_essence_rate, uint32& essence_to_tokens_rate) = 0;
+            virtual std::vector<CurrencyExchangeRate> GetExchangeRateTable() = 0;
 
             /**
-             * Perform currency exchange
+             * Perform a currency exchange.
+             *
+             * @param source_amount  Units of `from` the player offers to spend.
+             *                       Floored to a whole number of trades; the
+             *                       remainder is left untouched, never consumed.
              */
-            virtual bool ExchangeCurrency(uint32 player_guid, bool tokens_to_essence, uint32 amount) = 0;
+            virtual bool ExchangeCurrency(uint32 player_guid, CurrencyType from,
+                CurrencyType to, uint32 source_amount) = 0;
 
             /**
              * Get player's transmutation statistics

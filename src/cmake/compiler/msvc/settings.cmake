@@ -50,9 +50,13 @@ if(PLATFORM EQUAL 64)
       -D_WIN64)
   message(STATUS "MSVC: 64-bit platform, enforced -D_WIN64 parameter")
 
-  # Enable extended object support for debug compiles on X64 (not required on X86)
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /bigobj")
-  message(STATUS "MSVC: Enabled extended object-support for debug-compiles")
+  # Enable extended object support on X64 (not required on X86).
+  # mod-playerbots pushes several translation units past the 65535-section limit in
+  # optimised builds too, so this cannot stay debug-only.
+  target_compile_options(acore-compile-option-interface
+    INTERFACE
+      /bigobj)
+  message(STATUS "MSVC: Enabled extended object-support")
 else()
   # mark 32 bit executables large address aware so they can use > 2GB address space
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LARGEADDRESSAWARE")
