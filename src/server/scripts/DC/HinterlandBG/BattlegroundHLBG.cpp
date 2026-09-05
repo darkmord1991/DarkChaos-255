@@ -297,7 +297,12 @@ BattlegroundHLBG::BattlegroundHLBG()
         Horde_KorkronOverseer
     };
 
-    LoadConfig();
+    // No LoadConfig() here on purpose. This constructor runs from the dynamic initialiser of
+    // BattlegroundMgr::bgtypeToBattleground, i.e. before main(), and ConfigMgr's state lives in
+    // file-scope globals in Config.cpp. Whenever that translation unit happens to initialise
+    // after this one, reading an option dereferences an unconstructed container and the server
+    // dies before it starts. Every option falls back to the matching member's in-class default,
+    // so the config is read in Init() instead: once per match, long after the file is loaded.
 }
 
 void BattlegroundHLBG::InitAffixDefaults()
@@ -449,6 +454,9 @@ void BattlegroundHLBG::LoadConfig()
 void BattlegroundHLBG::Init()
 {
     Battleground::Init();
+    // Before ResetMatchState() -- that seeds the scores from _initialResources*.
+    // Re-reading per match also makes `.reload config` take effect on the next one.
+    LoadConfig();
     ResetMatchState();
 }
 
