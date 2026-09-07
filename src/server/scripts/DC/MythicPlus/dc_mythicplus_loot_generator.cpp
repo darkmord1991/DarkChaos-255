@@ -25,10 +25,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
+#include "dc_mythicplus_constants.h"
 
 namespace
 {
@@ -124,6 +128,32 @@ bool PlayerAlreadyAtUniqueLimit(Player* player, LootTableRow const& row)
     return player->GetItemCount(row.itemId, true) >= static_cast<uint32>(row.maxCount);
 }
 
+// Draws taken while looking for an item the player does not already own.
+// Testing every candidate would mean one full inventory scan per row - a
+// filtered pool runs to a couple of hundred entries, and a run-end reward
+// roll makes one pick per boss reward - so draw a handful of times instead.
+// This cannot guarantee a new item, and must not: once a player has cleared
+// out the pool for their spec they should still be paid something.
+constexpr uint32 UNOWNED_DRAW_ATTEMPTS = 4;
+
+uint32 PickPreferringUnowned(Player* player, std::vector<uint32> const& candidates)
+{
+    uint32 picked = candidates[urand(0, candidates.size() - 1)];
+    if (candidates.size() == 1)
+        return picked;
+
+    for (uint32 draw = 1; draw < UNOWNED_DRAW_ATTEMPTS; ++draw)
+    {
+        // inBankAlso = true: a copy sitting in the bank is still a duplicate.
+        if (player->GetItemCount(picked, true) == 0)
+            break;
+
+        picked = candidates[urand(0, candidates.size() - 1)];
+    }
+
+    return picked;
+}
+
 std::vector<LootTableRow> s_lootTable;
 // item level -> rows valid at that level. Built once at load so a reward roll
 // filters a few dozen candidates instead of rescanning the whole table five
@@ -138,7 +168,12 @@ std::vector<LootTableRow const*> const& GetLootRowsForLevel(uint32 itemLevel)
     return itr != s_lootTableByLevel.end() ? itr->second : empty;
 }
 
-bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId)
+// exclude: item ids the caller has already handed out in this run. Passing
+// them in rather than rerolling afterwards keeps the fallback stages honest -
+// a stage whose every candidate is already spoken for correctly falls through
+// to the next one instead of reporting a pick the caller has to throw away.
+bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId,
+                       std::unordered_set<uint32> const* exclude = nullptr)
 {
     if (!player)
         return false;
@@ -196,6 +231,9 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
                 continue;
             if (stage.filterRole && !(row.roleMask & roleMask) && row.roleMask != 7)
                 continue;
+            // Cheap set lookup before the unique-limit inventory scan below.
+            if (exclude && exclude->find(row.itemId) != exclude->end())
+                continue;
             if (PlayerAlreadyAtUniqueLimit(player, row))
                 continue;
 
@@ -204,7 +242,7 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
 
         if (!candidates.empty())
         {
-            outItemId = candidates[urand(0, candidates.size() - 1)];
+            outItemId = PickPreferringUnowned(player, candidates);
             return true;
         }
     }
@@ -213,19 +251,54 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
 }
 }
 
+bool MythicPlusRunManager::SelectPooledItemForPlayer(Player* player, uint32 targetItemLevel, uint32& outItemId,
+                                                     std::unordered_set<uint32> const* exclude) const
+{
+    return TrySelectLootItem(player, targetItemLevel, outItemId, exclude);
+}
+
 void MythicPlusRunManager::LoadLootTable()
 {
     s_lootTable.clear();
     s_lootTableByLevel.clear();
 
-    QueryResult result = WorldDatabase.Query(
-        "SELECT v.item_id, v.item_level_min, v.item_level_max, v.class_mask, v.role_mask, v.spec_name, v.armor_type, it.MaxCount "
-        "FROM dc_vault_loot_table v "
-        "INNER JOIN item_template it ON it.entry = v.item_id "
-        "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'");
-
-    if (result)
+    // Both pools, one engine. dc_vault_loot_table covers ilvl 226-470 for
+    // Mythic+ and the Great Vault; dc_heroic_loot_pool covers 200-219 for
+    // Heroic and plain Mythic on the Classic/TBC maps, which have no
+    // heroic creature templates of their own and would otherwise drop
+    // their stock level-20 greens. The bands are disjoint, so a row can
+    // only ever be reached by the tier it was authored for.
+    //
+    // The two tables stay separate on purpose: the Great Vault reads
+    // dc_vault_loot_table directly and must not start handing out ilvl
+    // 200 gear.
+    //
+    // Deliberately TWO queries rather than one UNION.
+    //
+    // A UNION makes the two tables share a fate: anything that upsets it
+    // returns no result at all, and the vault rows vanish along with the
+    // heroic ones. That is not hypothetical - the first deploy of this
+    // feature did exactly that. dc_heroic_loot_pool was created with a
+    // bare "DEFAULT CHARSET=utf8mb4", which on MySQL 8 means
+    // utf8mb4_0900_ai_ci, while every other table here is
+    // utf8mb4_unicode_ci. Unioning spec_name/armor_type across the two
+    // collations raises errno 1271 ("illegal mix of collations"), so the
+    // statement returned nothing and the server logged
+    // "loot table preloaded: 0 entries" - taking down Mythic+ rewards
+    // that had worked fine before the heroic pool existed.
+    //
+    // Loading them independently means a broken or missing heroic pool
+    // costs only heroic loot, which is the blast radius it should have.
+    auto loadFrom = [](char const* sql, char const* label) -> uint32
     {
+        QueryResult result = WorldDatabase.Query(sql);  // sql-ok: compile-time literal
+        if (!result)
+        {
+            LOG_WARN("server.loading", ">> Loot pool '{}' returned no rows", label);
+            return 0;
+        }
+
+        uint32 loaded = 0;
         do
         {
             Field* fields = result->Fetch();
@@ -239,16 +312,59 @@ void MythicPlusRunManager::LoadLootTable()
             row.armorType = fields[6].Get<std::string>();
             row.maxCount = fields[7].Get<int32>();
             s_lootTable.push_back(std::move(row));
+            ++loaded;
         } while (result->NextRow());
+
+        return loaded;
+    };
+
+    uint32 vaultRows = loadFrom(
+        "SELECT v.item_id, v.item_level_min, v.item_level_max, v.class_mask, v.role_mask, v.spec_name, v.armor_type, it.MaxCount "
+        "FROM dc_vault_loot_table v "
+        "INNER JOIN item_template it ON it.entry = v.item_id "
+        "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'",
+        "dc_vault_loot_table");
+
+    uint32 heroicRows = 0;
+    if (DC::DbSchema::WorldTableExists("dc_heroic_loot_pool"))
+    {
+        heroicRows = loadFrom(
+            "SELECT h.item_id, h.item_level_min, h.item_level_max, h.class_mask, h.role_mask, h.spec_name, h.armor_type, it.MaxCount "
+            "FROM dc_heroic_loot_pool h "
+            "INNER JOIN item_template it ON it.entry = h.item_id "
+            "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'",
+            "dc_heroic_loot_pool");
     }
+    else
+    {
+        LOG_WARN("server.loading",
+                 ">> dc_heroic_loot_pool is missing; Heroic and plain Mythic dungeons will award no gear. "
+                 "Apply Custom/Custom feature SQLs/worlddb/Mythic+/dc_heroic_loot_pool.sql");
+    }
+
+    LOG_INFO("server.loading", ">> Loot pools: {} vault rows, {} heroic rows", vaultRows, heroicRows);
 
     // Index by the item levels the system can actually ask for - one per
     // keystone level, not every integer between the table's min and max.
     // Pointers are stable because s_lootTable is never mutated after this.
+    std::vector<uint32> targetItemLevels;
     for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL;
          level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL; ++level)
     {
-        uint32 targetItemLevel = MythicPlusConstants::GetItemLevelForKeystoneLevel(level);
+        targetItemLevels.push_back(MythicPlusConstants::GetItemLevelForKeystoneLevel(level));
+    }
+
+    // Plus the Heroic band. Every integer in it, because the target comes
+    // from dc_dungeon_mythic_profile.loot_ilvl, which is authored per
+    // dungeon at odd values (202, 206, 217, ...) rather than off a curve.
+    for (uint32 itemLevel = MythicPlusConstants::HEROIC_ITEM_LEVEL_MIN;
+         itemLevel <= MythicPlusConstants::HEROIC_ITEM_LEVEL_MAX; ++itemLevel)
+    {
+        targetItemLevels.push_back(itemLevel);
+    }
+
+    for (uint32 targetItemLevel : targetItemLevels)
+    {
         if (s_lootTableByLevel.find(targetItemLevel) != s_lootTableByLevel.end())
             continue;
 
@@ -416,10 +532,17 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
         if (!player)
             continue;
 
+        // Everything this player has already been handed on this run. Per
+        // player, not per run: two plate wearers both winning the same boots
+        // is fine, the same player winning them twice is not.
+        std::unordered_set<uint32>& alreadyAwarded =
+            state->awardedItemsByPlayer[player->GetGUID().GetCounter()];
+
         uint32 itemId = 0;
-        if (!TrySelectLootItem(player, targetItemLevel, itemId))
+        if (!TrySelectLootItem(player, targetItemLevel, itemId, &alreadyAwarded))
         {
-            LOG_WARN("mythic.loot", "No eligible items found for {} (class {}, ilvl {})", player->GetName(), player->getClass(), targetItemLevel);
+            LOG_WARN("mythic.loot", "No eligible items found for {} (class {}, ilvl {}, {} already awarded this run)",
+                     player->GetName(), player->getClass(), targetItemLevel, alreadyAwarded.size());
             continue;
         }
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
@@ -436,6 +559,7 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
             continue;
         }
 
+        alreadyAwarded.insert(itemId);
         ++itemsGenerated;
 
         bool mailed = (delivery == LootDelivery::Mailed);

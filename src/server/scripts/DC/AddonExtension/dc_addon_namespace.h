@@ -1466,6 +1466,14 @@ namespace DCAddon
     // "<f1>|<f2>..."), and CMSG_DC_NATIVE_REQUEST is decoded back through the
     // MessageRouter. Returns 0 when the module has no native bridge.
     uint32 GetModuleNativeCapability(std::string const& module);
+    // Playerbots are ordinary Player objects on a session flagged IsBot(), but
+    // they have no client and no addon: every S2C frame aimed at one is built,
+    // serialized, pushed at a socket-less session and logged for nobody. On a
+    // populated bot realm that is the overwhelming majority of all protocol
+    // traffic (measured: 95.6% of dc_addon_protocol_log), so the send paths
+    // drop it at the door rather than paying for it and then discarding it.
+    bool IsBotRecipient(Player* player);
+
     // Cheap eligibility probe (capability + negotiated transport policy, no
     // body needed). Send paths call this BEFORE serializing the native body so
     // recipients on the addon transport never pay for a speculative encode.

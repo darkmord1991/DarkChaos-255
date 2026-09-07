@@ -171,6 +171,7 @@ local FACE_TUNE = {
 	[11] = { df = -1.20, dz = 0.0 },    -- Draenei: distance settled in r3; +0.90 raise showed
 	                                    -- only the torso -- character back down (r4)
 	[12] = { dz = 0.25 },               -- Worgen: up a bit (round 3)
+	[27] = { dz = 0.25 },               -- Dark Iron Dwarf: dwarf model on the dwarf scene, same trim
 	[22] = { dz = -0.40 },              -- Pandaren: face sat above the frame on the tauren
 	[23] = { dz = -0.40 },              -- scene - character down (round 1, untrimmed guess)
 	-- Scourge: pure analytic is the keeper.

@@ -408,6 +408,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->countdownStarted = 0;
     state->participants.clear();
     state->lootAwards.clear();
+    state->awardedItemsByPlayer.clear();
     state->recentBossEvades.clear();
     state->bossDeathTimes.clear();
     state->bossKillStamps.clear();
@@ -620,7 +621,7 @@ void MythicPlusRunManager::RegisterPlayerEnter(Player* player)
     if (!state)
         return;
 
-    state->participants.insert(player->GetGUID().GetCounter());
+    AddParticipant(state, player);
 
     SyncHudToPlayer(state, player);
 }
@@ -640,7 +641,7 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
     if (!state || state->completed)
         return;
 
-    state->participants.insert(player->GetGUID().GetCounter());
+    AddParticipant(state, player);
     ++state->deaths;
 
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DEATHS, state->deaths);
@@ -1016,8 +1017,22 @@ void MythicPlusRunManager::RegisterGroupMembers(Player* activator, InstanceState
     for (auto const& ref : players)
     {
         if (Player* member = ref.GetSource())
-            state->participants.insert(member->GetGUID().GetCounter());
+            AddParticipant(state, member);
     }
+}
+
+// Bots ride along in a run exactly like players, but are remembered as bots
+// so RecordRunResult can flag their rows. WorldSession::IsBot() is the
+// core-side marker added by the playerbots core patch.
+void MythicPlusRunManager::AddParticipant(InstanceState* state, Player* player)
+{
+    if (!state || !player)
+        return;
+
+    ObjectGuid::LowType guidLow = player->GetGUID().GetCounter();
+    state->participants.insert(guidLow);
+    if (player->GetSession() && player->GetSession()->IsBot())
+        state->bots.insert(guidLow);
 }
 
 bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor)
@@ -1426,10 +1441,11 @@ void MythicPlusRunManager::RecordRunResult(InstanceState const* state, bool succ
     for (ObjectGuid::LowType guidLow : recipients)
     {
         CharacterDatabase.Execute(
-            "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, group_members, completed_at) "
-            "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', FROM_UNIXTIME({}))",
+            "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, group_members, is_bot, completed_at) "
+            "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {}, FROM_UNIXTIME({}))",
             guidLow, state->seasonId, state->mapId, state->keystoneLevel,
-            unsignedScore, state->deaths, state->wipes, duration, success ? 1 : 0, groupBlob, now);
+            unsignedScore, state->deaths, state->wipes, duration, success ? 1 : 0, groupBlob,
+            state->bots.count(guidLow) ? 1 : 0, now);
     }
 
     // Track Dungeon Statistics. The run is counted once for the group, not once

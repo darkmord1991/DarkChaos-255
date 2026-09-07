@@ -21,6 +21,7 @@
 #include "DC/Progression/Prestige/dc_prestige_api.h"
 
 #include <array>
+#include <vector>
 
 using namespace Acore::ChatCommands;
 
@@ -1171,6 +1172,62 @@ public:
         return false;
     }
 };
+
+// ==============================================
+// DarkChaos-255: CROSS-LIBRARY API
+//
+// Declared in dc_challenge_modes.h and mirrored by mod-playerbots so bots can
+// roll a challenge mode of their own. Everything here delegates to the shrine
+// gossip's own helpers, so the bot path and the player path can never drift.
+// ==============================================
+namespace DCChallengeModes
+{
+    bool HasAnyActiveMode(Player* player)
+    {
+        return gobject_challenge_modes::PlayerHasAnyActiveChallengeMode(player);
+    }
+
+    void GetEligibleModes(Player* player, std::vector<uint8>& out)
+    {
+        out.clear();
+
+        for (ChallengeModeSettings setting : gobject_challenge_modes::GetEligibleRandomChallengeModes(player))
+            out.push_back(static_cast<uint8>(setting));
+    }
+
+    bool ActivateMode(Player* player, uint8 mode)
+    {
+        if (!player || !sChallengeModes->enabled())
+            return false;
+
+        ChallengeModeSettings setting = static_cast<ChallengeModeSettings>(mode);
+
+        // Reject reserved values (HARDCORE_DEAD) and anything not selectable.
+        if (g_ChallengeSettingConfigs.find(setting) == g_ChallengeSettingConfigs.end())
+            return false;
+
+        if (!sChallengeModes->challengeEnabled(setting))
+            return false;
+
+        uint32 disableLevel = sChallengeModes->getDisableLevel(setting);
+        if (disableLevel > 0 && player->GetLevel() >= disableLevel)
+            return false;
+
+        player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
+        sChallengeModes->RefreshChallengeAuras(player);
+
+        if (setting == SETTING_IRON_MAN || setting == SETTING_IRON_MAN_PLUS)
+            gobject_challenge_modes::ApplyIronManOrPlusImmediateRestrictions(player);
+
+        ChallengeModeDatabase::InitializeTracking(player->GetGUID());
+        ChallengeModeDatabase::SyncActiveModesFromSettings(player);
+
+        LOG_DEBUG("dc.challenge", "ChallengeMode: {} activated for {} via the cross-library API",
+            GetChallengeTitle(setting), player->GetName());
+
+        return true;
+    }
+}
 
 // ==============================================
 // DarkChaos-255: SCRIPT REGISTRATION

@@ -14,6 +14,7 @@
 #include "Pet.h"
 #include <map>
 #include <sstream>
+#include <vector>
 
 enum ChallengeModeSettings
 {
@@ -87,6 +88,34 @@ public:
 // Shared utility functions (implemented in dc_challenge_modes_customized.cpp)
 std::string GetChallengeExplanation(ChallengeModeSettings setting);
 std::string GetChallengeTitle(ChallengeModeSettings setting);
+
+// ---------------------------------------------------------------------------
+// Cross-library API
+//
+// modules.lib does not link scripts.lib and cannot see this header, so
+// mod-playerbots mirrors these three declarations verbatim in
+// modules/mod-playerbots/src/Script/DCBotChallengeModes.cpp. Both libraries end
+// up in worldserver, so the symbols resolve at the final link - but only while
+// the signatures stay byte-for-byte identical on both sides.
+//
+// The API is intentionally narrow and speaks plain integers: the caller never
+// needs ChallengeModeSettings, g_ChallengeSettingConfigs or the tracking DB.
+// ---------------------------------------------------------------------------
+namespace DCChallengeModes
+{
+    // True when the player already runs at least one challenge mode.
+    bool HasAnyActiveMode(Player* player);
+
+    // Modes the player could take on right now, as ChallengeModeSettings values
+    // in ascending order. Empty when challenges are off, when the player already
+    // runs a mode, or when every mode is config- or level-disabled for them.
+    void GetEligibleModes(Player* player, std::vector<uint8>& out);
+
+    // Turns one mode on: player setting, auras, Iron Man restrictions and the
+    // tracking row, exactly as the shrine gossip does. Returns false when the
+    // mode is unknown, disabled in config, or level-disabled for this player.
+    bool ActivateMode(Player* player, uint8 mode);
+}
 
 // Script registration
 void AddSC_dc_challenge_modes();

@@ -60,6 +60,25 @@ namespace DarkChaos
             bool stateKnown = false;
         };
 
+        // An equipped heirloom (an is_artifact tier). Deliberately separate from
+        // SlotUpgradeInfo: heirlooms are priced from dc_heirloom_upgrade_costs,
+        // levelled through a package-specific enchant rather than a stat
+        // multiplier, and their state lives in dc_heirloom_upgrades -- none of
+        // which the ordinary upgrade path touches.
+        //
+        // No level/cost fields here on purpose. That state is only in the DB and
+        // reading it would mean a blocking query on the world thread, so the
+        // level arithmetic and payment happen inside RequestHeirloomStep's async
+        // continuation, where the row is already in hand.
+        struct HeirloomSlotInfo
+        {
+            uint8 slot = 0;
+            uint32 itemGuid = 0;
+            uint32 itemEntry = 0;
+            uint8 tier = 0;
+            uint8 tierMaxLevel = 0;
+        };
+
         class Provider
         {
         public:
@@ -81,6 +100,38 @@ namespace DarkChaos
             // Buys exactly one upgrade level: verifies ownership and the balance,
             // spends the tier's currency, persists, logs and refreshes stats.
             virtual bool UpgradeOnce(Player* player, uint32 itemGuid) = 0;
+
+            // --- Heirlooms -------------------------------------------------
+            //
+            // Heirlooms are the artifact tiers DescribeEquippedSlot refuses, and
+            // they are worn in slots it skips (the starter heirloom is a SHIRT),
+            // so they need their own scan.
+
+            // Describes the heirloom equipped in `slot`, or false if there is
+            // none. Synchronous and DB-free: tier data is already in memory.
+            virtual bool DescribeEquippedHeirloom(Player* player, uint8 slot, HeirloomSlotInfo& out) = 0;
+
+            // Highest valid stat-package id (packages are 1..N).
+            virtual uint8 GetMaxHeirloomPackageId() = 0;
+
+            // Advances the heirloom one upgrade level, applying `packageId`'s
+            // stat enchant. Asynchronous: the current level and package come from
+            // dc_heirloom_upgrades, and affordability, payment, the enchant and
+            // the DB writes all happen in the continuation. Re-applies at the
+            // same level (for free) when only the package changes, which is how a
+            // caller switches an heirloom to a different stat package.
+            //
+            // Returns false only when the request could not be started; a started
+            // request may still decline once the row is read (too poor, maxed).
+            virtual bool RequestHeirloomStep(Player* player, uint32 itemGuid, uint8 packageId) = 0;
+
+            // The starter heirloom item id, or 0 when none is configured.
+            virtual uint32 GetStarterHeirloomItemId() = 0;
+
+            // Adds and equips the starter heirloom. Exists because the item is
+            // otherwise only obtainable from the onboarding quest chain, which
+            // playerbots never run.
+            virtual bool GrantStarterHeirloom(Player* player) = 0;
         };
 
         // Called once from the scripts side at load. Passing nullptr clears it.

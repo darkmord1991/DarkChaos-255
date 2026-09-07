@@ -18,6 +18,10 @@
 #include <sstream>
 #include <iomanip>
 #include <string>
+#include <map>
+#include <mutex>
+#include <utility>
+#include "DatabaseEnv.h"
 
 namespace DarkChaos
 {
@@ -349,6 +353,59 @@ namespace DarkChaos
                 uint8 tier = static_cast<uint8>(mgr->GetItemTier(itemEntry));
                 TierDefinition const* def = mgr->GetTierDefinition(tier);
                 return def && def->is_artifact;
+            }
+
+            // Sums heirloom token/essence costs over upgrade levels [fromLevel,
+            // toLevel] inclusive, from dc_heirloom_upgrade_costs.
+            //
+            // Shared rather than per-caller: the addon handler and the server-side
+            // façade (ItemUpgradeApiProvider.cpp, which is what drives playerbots)
+            // must price a heirloom identically, and two private caches of the same
+            // immutable table is exactly how they would come to disagree.
+            //
+            // Levels with no cost row contribute nothing, matching the SQL SUM this
+            // replaced; an empty range (fromLevel > toLevel) yields 0, like BETWEEN
+            // with lo > hi. The table is static config, so it is read once.
+            inline void SumHeirloomUpgradeCosts(uint32 tierId, uint32 fromLevel, uint32 toLevel,
+                uint32& outTokens, uint32& outEssence)
+            {
+                outTokens = 0;
+                outEssence = 0;
+
+                // Function-local statics in an inline function are one instance
+                // across every TU that includes this, so the cache really is shared.
+                static std::mutex s_mutex;
+                static bool s_loaded = false;
+                static std::map<std::pair<uint32, uint32>, std::pair<uint32, uint32>> s_costs;
+
+                std::lock_guard<std::mutex> lock(s_mutex);
+                if (!s_loaded)
+                {
+                    s_loaded = true;
+                    if (QueryResult result = WorldDatabase.Query(
+                        "SELECT tier_id, upgrade_level, token_cost, essence_cost FROM dc_heirloom_upgrade_costs"))
+                    {
+                        do
+                        {
+                            Field* fields = result->Fetch();
+                            s_costs[{ fields[0].Get<uint32>(), fields[1].Get<uint32>() }] =
+                                { fields[2].Get<uint32>(), fields[3].Get<uint32>() };
+                        } while (result->NextRow());
+                    }
+
+                    LOG_INFO("scripts.dc", "Cached {} rows from dc_heirloom_upgrade_costs; restart to reload",
+                        s_costs.size());
+                }
+
+                for (uint32 level = fromLevel; level <= toLevel; ++level)
+                {
+                    auto it = s_costs.find({ tierId, level });
+                    if (it != s_costs.end())
+                    {
+                        outTokens += it->second.first;
+                        outEssence += it->second.second;
+                    }
+                }
             }
 
             // Returns the max upgrade level for a heirloom item from its tier definition.

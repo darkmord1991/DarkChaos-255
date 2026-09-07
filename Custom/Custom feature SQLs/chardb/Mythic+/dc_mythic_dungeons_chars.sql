@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_runs` (
   `success` BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'TRUE if run completed successfully',
   `affix_pair_id` INT UNSIGNED DEFAULT NULL COMMENT 'Active affix pair',
   `group_members` JSON DEFAULT NULL COMMENT 'Array of participant GUIDs',
+  `is_bot` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '1 = this participant row belongs to a playerbot',
   `completed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Run completion timestamp',
   PRIMARY KEY (`run_id`),
   INDEX `idx_player_season` (`character_guid`, `season_id`, `completed_at` DESC),

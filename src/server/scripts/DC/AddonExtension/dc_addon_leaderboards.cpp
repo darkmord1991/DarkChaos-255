@@ -39,6 +39,14 @@
 
 namespace
 {
+    // Display name for the Mythic+ ranking queries. Playerbots that were
+    // backfilled into a run keep their rows; the is_bot flag on their
+    // dc_mplus_runs rows labels them "BOT <name>" wherever they rank.
+    char const kMPlusNameExpr[] =
+        "CASE WHEN EXISTS (SELECT 1 FROM dc_mplus_runs b "
+        "WHERE b.character_guid = s.character_guid AND b.is_bot = 1) "
+        "THEN CONCAT('BOT ', c.name) ELSE c.name END AS name";
+
     // Module identifier for leaderboards
     constexpr char const* MODULE_LEADERBOARD = "LBRD";
 
@@ -330,7 +338,7 @@ namespace
             if (myRunsOnly && requesterGuid > 0)
             {
                 return Acore::StringFormat(
-                    "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
+                    "SELECT IF(r.is_bot = 1, CONCAT('BOT ', c.name), c.name) AS name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
                     "FROM dc_mplus_runs r "
                     "JOIN characters c ON r.character_guid = c.guid "
                     "WHERE r.season_id = {} AND r.character_guid = {} "
@@ -340,7 +348,7 @@ namespace
             }
 
             return Acore::StringFormat(
-                "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
+                "SELECT IF(r.is_bot = 1, CONCAT('BOT ', c.name), c.name) AS name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
                 "FROM dc_mplus_runs r "
                 "JOIN characters c ON r.character_guid = c.guid "
                 "WHERE r.season_id = {} "
@@ -358,7 +366,7 @@ namespace
 
         // Aggregate per-player across all dungeons for the season
         return Acore::StringFormat(
-            "SELECT c.name, c.class, MAX(s.best_level) as best_level, SUM(s.best_score) as total_score, SUM(s.total_runs) as total_runs "
+            std::string("SELECT ") + kMPlusNameExpr + ", c.class, MAX(s.best_level) as best_level, SUM(s.best_score) as total_score, SUM(s.total_runs) as total_runs "
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
             "WHERE s.season_id = {} "
@@ -492,7 +500,7 @@ namespace
     {
         // Query best runs for this specific dungeon
         return Acore::StringFormat(
-            "SELECT c.name, c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
+            std::string("SELECT ") + kMPlusNameExpr + ", c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
             "WHERE s.season_id = {} AND s.map_id = {} "
@@ -536,7 +544,7 @@ namespace
     {
         // Get each player's best single dungeon run (highest level)
         return Acore::StringFormat(
-            "SELECT c.name, c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
+            std::string("SELECT ") + kMPlusNameExpr + ", c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
             "WHERE s.season_id = {} AND s.best_level = ("

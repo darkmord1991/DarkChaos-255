@@ -1384,7 +1384,11 @@ local function ApplyDeathStatusToEntity(entityId, death)
     state.db.entityStatus[entityId] = st
 end
 
-function Core:HandleWorldContent(data)
+-- skipDeaths is set by HandleWorldUpdate, which has already applied the death
+-- records incrementally. Without it the snapshot branch below would wipe every
+-- marker the client holds and re-add only the one death carried by that update,
+-- so each new death erased all the older pins.
+function Core:HandleWorldContent(data, skipDeaths)
     if type(data) ~= "table" or not state.db then return end
 
     if state.db.debug then
@@ -1396,7 +1400,7 @@ function Core:HandleWorldContent(data)
     end
 
     -- Death markers are snapshot-owned: replace on full content.
-    if type(data.deaths) == "table" then
+    if not skipDeaths and type(data.deaths) == "table" then
         RemoveAllDeathEntities()
         for _, d in ipairs(data.deaths) do
             local ent = UpsertDeathEntityFromServerRecord(d)
@@ -1478,8 +1482,10 @@ function Core:HandleWorldUpdate(data)
         end
     end
 
-    -- Updates can be partial (e.g., bosses only). Treat them like content.
-    self:HandleWorldContent(data)
+    -- Updates can be partial (e.g., bosses only). Treat them like content, but
+    -- keep our hands off deaths: they were upserted incrementally above, and the
+    -- content path would treat this single-death update as a full snapshot.
+    self:HandleWorldContent(data, true)
 end
 
 -- Also request on entering world (covers some relog/teleport edge cases)

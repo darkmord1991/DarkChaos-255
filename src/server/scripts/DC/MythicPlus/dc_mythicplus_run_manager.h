@@ -81,6 +81,10 @@ public:
         bool scalingApplied = false;
         ObjectGuid countdownBarrierGuid;
         std::unordered_set<ObjectGuid::LowType> participants;
+        // Participants driven by playerbots. They stay in every record the
+        // run writes (deaths, score, vault rows) but are flagged so the
+        // leaderboards can label them.
+        std::unordered_set<ObjectGuid::LowType> bots;
         std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
         std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot generation per boss (spawnId fallback to entry)
@@ -122,6 +126,13 @@ public:
             bool mailed = false;
         };
         std::vector<LootAward> lootAwards;
+
+        // Item ids each player has already been handed on this run, keyed by
+        // player GUID low. The reward roll draws uniformly from a filtered
+        // pool of a few dozen entries, and with MythicPlus.RewardsAtRunEndOnly
+        // the whole run is paid in one burst, so without this a player can be
+        // handed two or three copies of the same piece in a single roll.
+        std::unordered_map<ObjectGuid::LowType, std::unordered_set<uint32>> awardedItemsByPlayer;
     };
 
     // Public methods
@@ -180,10 +191,22 @@ public:
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
 
     // Boss loot generation (retail-like spec-based drops)
-    // LoadLootTable preloads dc_vault_loot_table into memory at startup so
-    // reward rolls never query the database on the map thread.
+    // LoadLootTable preloads dc_vault_loot_table and dc_heroic_loot_pool
+    // into memory at startup so reward rolls never query the database on
+    // the map thread.
     void LoadLootTable();
     void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
+
+    // Roll one item appropriate to this player from the preloaded pools.
+    // Applies the same five-stage class/spec/armour/role fallback the
+    // Mythic+ rewards use, so the Heroic path in
+    // dc_mythicplus_heroic_loot.cpp does not need a second copy of it.
+    // Returns false when no stage produced a candidate.
+    // exclude, when given, holds item ids the caller has already awarded and
+    // wants kept out of the roll (the Mythic+ path passes the per-player run
+    // ledger, the Heroic path its per-instance one).
+    bool SelectPooledItemForPlayer(Player* player, uint32 targetItemLevel, uint32& outItemId,
+                                   std::unordered_set<uint32> const* exclude = nullptr) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;
     bool IsMythicPlusActive(Map* map) const;
     bool IsMythicPlusDungeon(uint32 mapId) const;
@@ -214,6 +237,7 @@ private:
     InstanceState* GetState(Map* map);
     InstanceState const* GetState(Map* map) const;
     void RegisterGroupMembers(Player* activator, InstanceState* state);
+    void AddParticipant(InstanceState* state, Player* player);
     bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
     void ConsumePlayerKeystone(Player* player, uint32* consumedItemId = nullptr, uint8* consumedLevel = nullptr);
     void AnnounceToInstance(Map* map, std::string_view message) const;

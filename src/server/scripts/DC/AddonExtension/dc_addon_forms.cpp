@@ -39,6 +39,7 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
@@ -499,6 +500,101 @@ namespace Forms
     }
 
     // ------------------------------------------------------------------------
+    // Playerbots
+    //
+    // Bots have no addon and never talk to SET_FORM, so left alone every druid
+    // bot wears the same stock cat/bear its race defaults to. Give them a pick
+    // per form straight from the catalog instead.
+    //
+    // The choice is derived from the character GUID (StableRoll below), so a
+    // bot keeps the same skins for its whole life without a row in
+    // dc_character_shapeshift_form - bot characters churn, and their cosmetics
+    // are not worth persisting.
+    // ------------------------------------------------------------------------
+    // Playerbots are ordinary Player objects on a session flagged IsBot().
+    static bool IsPlayerbot(Player const* player)
+    {
+        return player && player->GetSession() && player->GetSession()->IsBot();
+    }
+
+    // splitmix64 finalizer over the character GUID: cheap, and it spreads
+    // adjacent GUIDs (bots are created in contiguous blocks) across the whole
+    // output range.
+    static uint32 StableRoll(ObjectGuidLow guid, uint32 salt)
+    {
+        uint64 h = uint64(guid) * 0x9E3779B97F4A7C15ull;
+        h ^= uint64(salt) * 0xBF58476D1CE4E5B9ull;
+        h ^= h >> 30;
+        h *= 0xBF58476D1CE4E5B9ull;
+        h ^= h >> 27;
+        h *= 0x94D049BB133111EBull;
+        h ^= h >> 31;
+        return uint32(h & 0xFFFFFFFFull);
+    }
+
+    static void AssignBotPicks(Player* player)
+    {
+        uint8 playerClass = player->getClass();
+        if (!ClassHasForms(playerClass))
+            return;
+
+        ObjectGuidLow guid = player->GetGUID().GetCounter();
+        uint8 race = player->getRace();
+
+        // Collect the forms this class can wear, from the catalog itself, so
+        // new pseudo-forms (totems, metamorphosis) are covered automatically.
+        std::vector<uint8> forms;
+        for (auto const& entry : s_catalog)
+        {
+            uint8 form = entry.first.first;
+            uint8 skinRace = entry.first.second;
+
+            if (ClassForForm(form) != playerClass)
+                continue;
+
+            // race 0 rows are universal; anything else must match the bot.
+            if (skinRace != 0 && skinRace != race)
+                continue;
+
+            if (std::find(forms.begin(), forms.end(), form) == forms.end())
+                forms.push_back(form);
+        }
+
+        std::map<uint8, uint32> picks;
+        for (uint8 form : forms)
+        {
+            std::vector<uint32> candidates;
+            for (uint8 r : { race, uint8(0) })
+            {
+                auto it = s_catalog.find(FormRaceKey(form, r));
+                if (it == s_catalog.end())
+                    continue;
+
+                for (SkinRow const& skin : it->second)
+                    candidates.push_back(skin.model);
+            }
+
+            if (candidates.empty())
+                continue;
+
+            picks[form] = candidates[StableRoll(guid, form) % candidates.size()];
+        }
+
+        {
+            std::unique_lock<std::shared_mutex> lock(s_picksMutex);
+            if (picks.empty())
+                s_picks.erase(guid);
+            else
+                s_picks[guid] = picks;
+        }
+
+        // A bot can log back in already shifted (the shapeshift aura is saved),
+        // in which case the display was resolved before the picks existed.
+        for (auto const& pick : picks)
+            RefreshActiveForm(player, pick.first);
+    }
+
+    // ------------------------------------------------------------------------
     // Player lifecycle: load/unload the in-memory pick cache.
     // ------------------------------------------------------------------------
     class FormsPlayerScript : public PlayerScript
@@ -508,11 +604,22 @@ namespace Forms
 
         void OnPlayerLogin(Player* player) override
         {
-            if (player)
+            if (!player)
+                return;
+
+            EnsureLoaded();
+
+            // Bots never send SET_FORM, so roll their skins here instead of
+            // reading a per-character row that will always be empty.
+            if (IsPlayerbot(player))
             {
-                EnsureLoaded();
-                LoadPicksFor(player->GetGUID().GetCounter());
+                if (sConfigMgr->GetOption<bool>("DC.AddonProtocol.Forms.BotSkins", true))
+                    AssignBotPicks(player);
+
+                return;
             }
+
+            LoadPicksFor(player->GetGUID().GetCounter());
         }
 
         void OnPlayerLogout(Player* player) override

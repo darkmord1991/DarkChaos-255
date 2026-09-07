@@ -144,10 +144,6 @@ namespace Upgrade
         bool s_ItemTierOverridesLoaded = false;
         std::unordered_map<uint32, uint32> s_ItemTierOverrides; // item_id -> tier_id (season 1, active)
 
-        bool s_HeirloomCostsLoaded = false;
-        // (tier_id, upgrade_level) -> (token_cost, essence_cost)
-        std::map<std::pair<uint32, uint32>, std::pair<uint32, uint32>> s_HeirloomCosts;
-
         // Returns true (and the tier) when an active season-1 override row
         // exists for the item; mirrors the old per-request row lookup.
         bool TryGetItemTierOverride(uint32 itemId, uint32& outTier)
@@ -179,47 +175,14 @@ namespace Upgrade
             return true;
         }
 
-        // Sums heirloom token/essence costs for upgrade levels
-        // [fromLevel, toLevel] inclusive. Levels without a cost row contribute
-        // nothing (matches the old SQL SUM over the rows it found); when no
-        // rows match at all both totals stay 0, exactly like the previous
-        // NULL-SUM handling. An empty range (fromLevel > toLevel) also yields
-        // 0, matching BETWEEN with lo > hi.
+        // Heirloom cost lookup now lives in ItemUpgradeUIHelpers.h so the
+        // server-side façade that drives playerbots prices heirlooms from the
+        // same cache. Kept as a thin forwarder so the call sites below are
+        // unchanged.
         void SumHeirloomCosts(uint32 tierId, uint32 fromLevel, uint32 toLevel,
             uint32& outTokens, uint32& outEssence)
         {
-            outTokens = 0;
-            outEssence = 0;
-
-            std::lock_guard<std::mutex> lock(s_StaticCacheMutex);
-            if (!s_HeirloomCostsLoaded)
-            {
-                s_HeirloomCostsLoaded = true;
-                if (QueryResult result = WorldDatabase.Query(
-                    "SELECT tier_id, upgrade_level, token_cost, essence_cost FROM dc_heirloom_upgrade_costs"))
-                {
-                    do
-                    {
-                        Field* fields = result->Fetch();
-                        s_HeirloomCosts[{ fields[0].Get<uint32>(), fields[1].Get<uint32>() }] =
-                            { fields[2].Get<uint32>(), fields[3].Get<uint32>() };
-                    } while (result->NextRow());
-                }
-
-                LOG_INFO("dc.addon.upgrade",
-                    "Cached {} rows from dc_heirloom_upgrade_costs; restart to reload",
-                    s_HeirloomCosts.size());
-            }
-
-            for (uint32 level = fromLevel; level <= toLevel; ++level)
-            {
-                auto it = s_HeirloomCosts.find({ tierId, level });
-                if (it != s_HeirloomCosts.end())
-                {
-                    outTokens += it->second.first;
-                    outEssence += it->second.second;
-                }
-            }
+            DarkChaos::ItemUpgrade::UI::SumHeirloomUpgradeCosts(tierId, fromLevel, toLevel, outTokens, outEssence);
         }
     }
 

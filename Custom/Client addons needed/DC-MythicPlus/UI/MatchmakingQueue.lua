@@ -9,6 +9,11 @@ _G.DCMythicPlusHUD = namespace
 namespace.GroupFinder = namespace.GroupFinder or {}
 local GF = namespace.GroupFinder
 
+-- Overridden by UI/MinimapQueue.lua, which loads after this file. The stub
+-- keeps every queue transition below callable on its own, so a broken or
+-- removed minimap module can never take the queue itself down with it.
+GF.UpdateMinimapQueueEye = GF.UpdateMinimapQueueEye or function() end
+
 -- Server enum mirrors
 local QUEUE_CAT_DUNGEON = 1
 local QUEUE_CAT_RAID    = 2
@@ -122,6 +127,7 @@ function GF:QueueForCurrent()
             return false
         end
         self._queueCategory = QUEUE_CAT_RAID
+        self._queueLabel = self:DescribeQueueSelection(kind, QUEUE_CAT_RAID, nil, nil, sel)
         DC.GroupFinder.JoinQueue(QUEUE_CAT_RAID, roles, sel.mapId,
             sel.difficulty or 0, sel.size or 10)
     else
@@ -166,6 +172,8 @@ function GF:QueueForCurrent()
             end
         end
         self._queueCategory = QUEUE_CAT_DUNGEON
+        self._queueLabel = self:DescribeQueueSelection(kind, QUEUE_CAT_DUNGEON,
+            dungeonIds, difficulty, nil)
         DC.GroupFinder.JoinQueue(QUEUE_CAT_DUNGEON, roles, dungeonIds,
             difficulty, 0)
     end
@@ -194,6 +202,47 @@ end
 local function RaidDiffLabel(diff, size)
     local heroic = (diff == 2 or diff == 3)
     return string.format("%d %s", size, heroic and "Heroic" or "Normal")
+end
+
+-- Human-readable name of one catalog entry, for the queue label below.
+function GF:CatalogEntryName(category, mapId)
+    local cat = self.queueCatalog
+    if not cat then return nil end
+    local list = (category == QUEUE_CAT_RAID) and cat.raids or cat.dungeons
+    for _, entry in ipairs(list or {}) do
+        if (tonumber(entry.mapId) or -1) == (tonumber(mapId) or -2) then
+            return entry.name
+        end
+    end
+    return nil
+end
+
+-- One-line description of what this character just queued for -- the same
+-- "you are queued for X" line the stock Dungeon Finder puts in its minimap
+-- tooltip. Kept as plain text so UI/MinimapQueue.lua can persist it across a
+-- /reload, which loses every other bit of client-side queue state.
+function GF:DescribeQueueSelection(kind, category, dungeonIds, difficulty, raidSel)
+    if category == QUEUE_CAT_RAID then
+        local name = (raidSel and self:CatalogEntryName(QUEUE_CAT_RAID, raidSel.mapId)) or "Raid"
+        return string.format("%s (%s)", name,
+            RaidDiffLabel(tonumber(raidSel and raidSel.difficulty) or 0,
+                tonumber(raidSel and raidSel.size) or 10))
+    end
+
+    local diffName = (kind == "mythic") and "Mythic"
+        or (self.DUNGEON_DIFFICULTY_LABELS
+            and self.DUNGEON_DIFFICULTY_LABELS[tonumber(difficulty) or 0])
+        or "Normal"
+
+    local count = #(dungeonIds or {})
+    if count == 0 then
+        return string.format("Random %s Dungeon", diffName)
+    end
+    if count == 1 then
+        return string.format("%s (%s)",
+            self:CatalogEntryName(QUEUE_CAT_DUNGEON, dungeonIds[1]) or "Dungeon", diffName)
+    end
+    return string.format("%d %s Dungeons", count, diffName)
 end
 
 -- Request the full dynamic catalog (mythic dungeons + raids) from the server.
@@ -416,6 +465,13 @@ local function SetEyeAnimationFrame(tex, frameIndex)
         row * 64 / 256, (row + 1) * 64 / 256)
 end
 
+-- Shared with UI/MinimapQueue.lua, which plays the same flipbook on the
+-- minimap eye. Keep the constants in one place so both spin in step.
+namespace.LFG_EYE_TEXTURE = EYE_TEXTURE
+namespace.LFG_EYE_FRAMES = EYE_FRAMES
+namespace.LFG_EYE_FRAME_TIME = EYE_FRAME_TIME
+namespace.SetLFGEyeFrame = SetEyeAnimationFrame
+
 local function CreateStyledButton(parent, width, height, label)
     if namespace.CreateRetailButton then
         return namespace.CreateRetailButton(parent, width, height, label)
@@ -489,9 +545,11 @@ function GF:ShowQueueStatus()
     local frame = self:CreateQueueStatusFrame()
     if not frame then return end
     self.queueActive = true
+    self.queueInProgress = true
     -- Keep an existing join time: OnQueueStatus seeds it from the server's
     -- waitSeconds, and overwriting it here restarted the timer at 0:00.
     self.queueJoinedAt = self.queueJoinedAt or GetTime()
+    self:UpdateMinimapQueueEye()
     frame.title:SetText("Finding Group...")
     frame.roleLine:SetText("")
     frame:Show()
@@ -518,12 +576,18 @@ end
 
 function GF:HideQueueStatus()
     self.queueActive = false
+    self.queueInProgress = false
     self._queuePending = nil
     self.queueJoinedAt = nil
+    self._queueStatus = nil
+    self._queueLabel = nil
+    self._proposalActive = nil
+    self._proposalAccepted = nil
     if self.queueStatusFrame then
         self.queueStatusFrame:SetScript("OnUpdate", nil)
         self.queueStatusFrame:Hide()
     end
+    self:UpdateMinimapQueueEye()
 end
 
 -- =====================================================================
@@ -665,6 +729,10 @@ function GF:RespondToQueueProposal(accept)
     if DC and DC.GroupFinder and DC.GroupFinder.RespondToProposal and self.currentProposalId then
         DC.GroupFinder.RespondToProposal(self.currentProposalId, accept)
     end
+    self._proposalAccepted = accept and true or nil
+    if not accept then
+        self._proposalActive = nil
+    end
     local frame = self.queueProposalFrame
     if frame then
         if accept then
@@ -676,6 +744,7 @@ function GF:RespondToQueueProposal(accept)
             frame:Hide()
         end
     end
+    self:UpdateMinimapQueueEye()
 end
 
 -- =====================================================================
@@ -685,6 +754,9 @@ end
 function GF:OnQueueJoined(data)
     self._queuePending = nil
     self._queueCategory = tonumber(data.category) or self._queueCategory
+    self.queueInProgress = true
+    self.queueJoinedAt = self.queueJoinedAt or GetTime()
+    self:UpdateMinimapQueueEye()
     self:ShowQueueStatus()
     self:SetStatusMessage("You are in the queue. Searching for a group...")
 end
@@ -723,13 +795,27 @@ function GF:OnQueueStatus(data)
         return
     end
 
-    local frame = self:CreateQueueStatusFrame()
-    if not frame then return end
     -- Always resync the wait timer to the server's authoritative value —
     -- this also restores the correct elapsed time after a /reload.
     if data.waitSeconds ~= nil then
         self.queueJoinedAt = GetTime() - (tonumber(data.waitSeconds) or 0)
     end
+
+    -- The minimap eye hangs off the minimap, not off the finder window, so it
+    -- has to be refreshed BEFORE the CreateQueueStatusFrame guard below: after
+    -- a /reload the restore status arrives while that window still does not
+    -- exist, and bailing out there would leave the player queued with no
+    -- indicator anywhere on screen.
+    self.queueInProgress = true
+    self._queueStatus = data
+    self._queueCategory = tonumber(data.category) or self._queueCategory
+    if data.proposalPending then
+        self._proposalActive = true
+    end
+    self:UpdateMinimapQueueEye()
+
+    local frame = self:CreateQueueStatusFrame()
+    if not frame then return end
     if not self.queueActive then
         self:ShowQueueStatus()
     end
@@ -768,6 +854,9 @@ end
 
 function GF:OnQueueProposal(data)
     self.currentProposalId = tonumber(data.proposalId)
+    self._proposalActive = true
+    self._proposalAccepted = nil
+    self._proposalRole = data.role
     local frame = self:CreateQueueProposalFrame()
 
     -- Assigned-role icon (retail prompt art), keyed by the server role name.
@@ -785,6 +874,8 @@ function GF:OnQueueProposal(data)
     -- Backfilled bots arrive already accepted, so the tally starts above zero.
     local acceptedCount = tonumber(data.accepted) or 0
     frame._proposalSize = totalSize
+    self._proposalTotal = totalSize
+    self._proposalAcceptedCount = acceptedCount
     self:SetProposalMarks(totalSize, acceptedCount)
     frame.accepted:SetText(string.format("%d / %d accepted", acceptedCount, totalSize))
     frame.acceptBtn:Enable()
@@ -807,21 +898,31 @@ function GF:OnQueueProposal(data)
             self_.bar:SetValue(0)
             self_:SetScript("OnUpdate", nil)
             self_:Hide()
+            -- SMSG_QUEUE_PROPOSAL_FAILED settles what happens next; until it
+            -- lands the eye must stop advertising a ready check nobody can
+            -- answer any more.
+            GF._proposalActive = nil
+            GF._proposalAccepted = nil
+            GF:UpdateMinimapQueueEye()
             return
         end
         self_.bar:SetValue(remain)
     end)
+    self:UpdateMinimapQueueEye()
 end
 
 function GF:OnQueueProposalUpdate(data)
+    self._proposalAcceptedCount = tonumber(data.accepted) or 0
+    self._proposalTotal = tonumber(data.total) or self._proposalTotal
     local frame = self.queueProposalFrame
     if frame and frame:IsShown() then
-        local acceptedCount = tonumber(data.accepted) or 0
-        local total = tonumber(data.total) or frame._proposalSize or 5
+        local acceptedCount = self._proposalAcceptedCount
+        local total = self._proposalTotal or frame._proposalSize or 5
         self:SetProposalMarks(total, acceptedCount)
         frame.accepted:SetText(string.format("%d / %d accepted",
             acceptedCount, total))
     end
+    self:UpdateMinimapQueueEye()
 end
 
 function GF:OnQueueProposalFailed(data)
@@ -830,6 +931,11 @@ function GF:OnQueueProposalFailed(data)
         self.queueProposalFrame:Hide()
     end
     self.currentProposalId = nil
+    self._proposalActive = nil
+    self._proposalAccepted = nil
+    self._proposalAcceptedCount = nil
+    self._proposalTotal = nil
+    self:UpdateMinimapQueueEye()
 
     local reason = (data and data.reason) or "The match was cancelled."
     if data and data.requeued then

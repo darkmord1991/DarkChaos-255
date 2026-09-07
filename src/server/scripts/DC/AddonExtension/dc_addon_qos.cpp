@@ -401,6 +401,11 @@ namespace DCQoS
         if (!player)
             return;
 
+        // Same reasoning as ScheduleFeatureInvalidation: bots have no client
+        // to apply a runtime graphics profile to.
+        if (DCAddon::IsBotRecipient(player))
+            return;
+
         RuntimeProfileSelection selection = SelectRuntimeProfile(player);
         if (!triggerContext.empty())
             selection.context = triggerContext + ":" + selection.context;
@@ -2237,6 +2242,13 @@ namespace DCQoS
         std::chrono::milliseconds delay = std::chrono::milliseconds(250))
     {
         if (!player)
+            return;
+
+        // A roaming bot crosses zone borders constantly, and each crossing
+        // would otherwise allocate a delayed event whose only job is to push a
+        // graphics-profile invalidation at a session with no graphics. Drop it
+        // here rather than at the send, so the event never gets scheduled.
+        if (DCAddon::IsBotRecipient(player))
             return;
 
         ObjectGuid guid = player->GetGUID();

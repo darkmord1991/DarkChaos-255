@@ -1050,6 +1050,20 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
             row.leader = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             row.leader:SetJustifyH("LEFT")
+            -- Never let this line grow downwards. It doubles as the lock
+            -- reason, and those run long ("You must complete the quest
+            -- 'Echoes of Tortured Souls' before entering the Pit of
+            -- Saron."). At the 86px text column a string like that wraps
+            -- to eight lines, overflows the 56px row and paints over the
+            -- rows underneath it. One clipped line here, full text in the
+            -- hover tooltip, which already carries it.
+            -- SetWordWrap only, and guarded. 3.3.5's FontString has no
+            -- SetMaxLines, and an unguarded call to a method this client
+            -- build lacks errors out and takes the whole row build with
+            -- it - leaving the dungeon list blank rather than untidy.
+            if row.leader.SetWordWrap then
+                row.leader:SetWordWrap(false)
+            end
 
             row.meta = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             row.meta:SetPoint("TOPRIGHT", -8, -8)
@@ -1169,7 +1183,13 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
         row.leader:ClearAllPoints()
         row.leader:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -4)
-        row.leader:SetWidth(textWidth)
+        -- Wider than the name column. The name has to stop short of
+        -- row.meta, which is pinned TOPRIGHT, but this second line sits
+        -- below meta and only has to clear row.roles at BOTTOMRIGHT - so
+        -- it can borrow the middle of the row. With word wrap off the
+        -- extra width is what makes a lock reason readable at a glance
+        -- instead of clipping after two words.
+        row.leader:SetWidth(textWidth + 60)
         row.leader:SetText(entry.leader or entry.leaderName or entry.owner or "")
 
         row.meta:SetText(CompactEntryMeta(entry, kind))

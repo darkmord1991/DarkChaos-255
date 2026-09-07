@@ -27,7 +27,8 @@
  *
  * Notes / Design:
  * - The duplicate uses the same entry (800009) and inherits the ScriptName; no extra DB rows needed.
- * - Chat uses Say/Whisper with LANG_UNIVERSAL so all players can read it.
+ * - Chat uses Whisper with LANG_UNIVERSAL so lines reach only the questing player;
+ *   the starter zone is busy and Say would spam everyone nearby.
  * - Returning false in hooks allows default processing to continue.
  */
 
@@ -230,8 +231,8 @@ public:
         {
             // === Quest 820056: Welcome — OnQuestAccept ===
             case Q_WELCOME:
-                // creature:SendUnitSay("A warm Welcome to DC-WoW! We wish you all the fun! HÖHÖHÖ", 0)
-                creature->Say("Welcome to the Azshara Crater, brave soul! May your journey through these untamed lands be glorious!", LANG_UNIVERSAL);
+                // Eluna original used SendUnitSay; whispered instead to avoid zone-wide spam
+                creature->Whisper("Welcome to the Azshara Crater, brave soul! May your journey through these untamed lands be glorious!", LANG_UNIVERSAL, player);
                 break;
 
             // === Quest 820057: LevelArea Show AC — OnQuestAccept ===
@@ -264,8 +265,8 @@ public:
         {
             // === Quest 820056: Welcome — OnQuestReward ===
             case Q_WELCOME:
-                // creature:SendUnitSay("For more questions please use the .faq commands or check on discord! There is also a world chat for everyone.", 0)
-                creature->Say("If you need help, use the .faq commands or reach out on Discord. The world chat is always open for adventurers!", LANG_UNIVERSAL);
+                // Eluna original used SendUnitSay; whispered instead to avoid zone-wide spam
+                creature->Whisper("If you need help, use the .faq commands or reach out on Discord. The world chat is always open for adventurers!", LANG_UNIVERSAL, player);
                 break;
             // === Quest 820057: LevelArea Show AC — OnQuestReward ===
             case Q_LEVELAREA:

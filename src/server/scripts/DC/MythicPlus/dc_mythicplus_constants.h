@@ -41,6 +41,27 @@ namespace MythicPlusConstants
     constexpr uint32 GO_FONT_OF_POWER = 700001;  // Keystone activation pedestal
     constexpr uint32 GO_KEYSTONE_PEDESTAL = 700001;
 
+    // Heroic / plain-Mythic gear tier, served by dc_heroic_loot_pool.
+    //
+    // dc_dungeon_mythic_profile.loot_ilvl has carried a hand-tuned 198-239
+    // per dungeon since the profiles were authored, and until now nothing
+    // read it - MythicDifficultyScaling loaded it into
+    // DungeonProfile::lootItemLevel and no code ever touched the field.
+    // It is the per-dungeon Heroic item level, clamped into the band the
+    // pool actually covers so the ladder stays monotonic: a dungeon
+    // tagged 239 must not out-reward its own Mythic tier, which starts at
+    // 226 (GetItemLevelForKeystoneLevel below).
+    constexpr uint32 HEROIC_ITEM_LEVEL_MIN = 200;
+    constexpr uint32 HEROIC_ITEM_LEVEL_MAX = 219;
+
+    inline uint32 GetHeroicItemLevel(uint32 profileLootItemLevel)
+    {
+        if (profileLootItemLevel == 0)
+            return HEROIC_ITEM_LEVEL_MIN;
+
+        return std::clamp(profileLootItemLevel, HEROIC_ITEM_LEVEL_MIN, HEROIC_ITEM_LEVEL_MAX);
+    }
+
     // Difficulty multiplier curve used for token payouts. Shared so the
     // keystone tooltip, the .mplus commands and the actual award all quote the
     // same number - they used to carry three different formulas.

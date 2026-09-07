@@ -1464,9 +1464,21 @@ namespace DCAddon
         }
     }
 
+    bool IsBotRecipient(Player* player)
+    {
+        return player && player->GetSession() && player->GetSession()->IsBot();
+    }
+
     void Message::Send(Player* player) const
     {
         if (!player || !player->GetSession())
+            return;
+
+        // Bots have no client, so nothing downstream of here can ever be
+        // observed: the JSON build, the chunker, the chat packet and the
+        // protocol-log INSERT would all run for a session that discards the
+        // frame. Bail before any of it.
+        if (IsBotRecipient(player))
             return;
 
         if (g_ValidateOutboundJson)
@@ -1547,6 +1559,9 @@ namespace DCAddon
 
     static void SendRaw(Player* player, std::string const& msg)
     {
+        if (IsBotRecipient(player))
+            return;
+
         // Build addon message using proper CHAT_MSG_WHISPER format
         // Format: "DC\t<payload>" - client parses prefix "DC" and message is the payload
         std::string fullMsg = std::string(DC_PREFIX) + "\t" + msg;
@@ -1598,6 +1613,7 @@ struct DCAddonProtocolConfig
     // Security settings
     bool EnableDebugLog;
     bool EnableProtocolLogging;  // Log to dc_addon_protocol_log table
+    uint32 LoggingRetentionDays; // Prune dc_addon_protocol_log/_errors older than this (0 = keep forever)
     bool ValidateOutboundJson;   // Log malformed JSON fields before they ship
     uint32 MaxMessagesPerSecond;
     uint32 RateLimitAction;
@@ -1906,6 +1922,7 @@ static void LoadAddonConfig()
 
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
+    s_AddonConfig.LoggingRetentionDays  = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Logging.RetentionDays", 7);
     s_AddonConfig.ValidateOutboundJson  = sConfigMgr->GetOption<bool>("DC.AddonProtocol.ValidateOutboundJson", false);
     s_AddonConfig.MaxMessagesPerSecond  = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Messages", 30);
     s_AddonConfig.RateLimitAction       = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Action", 0);
@@ -2048,6 +2065,7 @@ struct ProtocolLogContext
     uint32 guid = 0;
     uint32 accountId = 0;
     std::string characterName;
+    bool isBot = false;
 };
 
 static ProtocolLogContext BuildProtocolLogContext(Player* player)
@@ -2059,6 +2077,7 @@ static ProtocolLogContext BuildProtocolLogContext(Player* player)
     context.guid = player->GetGUID().GetCounter();
     context.accountId = player->GetSession()->GetAccountId();
     context.characterName = player->GetName();
+    context.isBot = player->GetSession()->IsBot();
     return context;
 }
 
@@ -2069,6 +2088,7 @@ static ProtocolLogContext BuildProtocolLogContext(WorldSession* session)
         return context;
 
     context.accountId = session->GetAccountId();
+    context.isBot = session->IsBot();
     if (Player* player = session->GetPlayer())
     {
         context.guid = player->GetGUID().GetCounter();
@@ -2128,6 +2148,12 @@ static void InsertProtocolErrorRow(ProtocolLogContext const& context,
     std::string const& eventType, std::string const& message,
     std::string const& payloadPreview)
 {
+    // Defence in depth: the send paths already drop bot traffic, but a module
+    // that hand-builds its own packet must not be able to reintroduce the
+    // flood behind their backs.
+    if (context.isBot)
+        return;
+
     if (context.accountId == 0 && context.guid == 0
         && context.characterName.empty())
         return;
@@ -2164,6 +2190,12 @@ static void InsertProtocolLogRow(ProtocolLogContext const& context,
     std::string const& payloadPreview, std::string const& status,
     std::string const& errorMessage, uint32 processingTimeMs)
 {
+    // Defence in depth: the send paths already drop bot traffic, but a module
+    // that hand-builds its own packet must not be able to reintroduce the
+    // flood behind their backs.
+    if (context.isBot)
+        return;
+
     if (context.accountId == 0 && context.guid == 0
         && context.characterName.empty())
         return;
@@ -2299,6 +2331,7 @@ static void FlushStats(uint32 guid = 0)
 static void UpdateProtocolStats(Player* player, std::string const& moduleCode, std::string const& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs)
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player) return;
+    if (DCAddon::IsBotRecipient(player)) return;
 
     // Sanitize module code
     std::string safeModule = moduleCode;
@@ -2780,6 +2813,12 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return false;
 
+        // No client, no envelope cache to invalidate. Reported as "not sent"
+        // so callers that fall back to the addon transport do not then try
+        // that either - IsBotRecipient gates SendRaw as well.
+        if (IsBotRecipient(player))
+            return false;
+
         // The client DLL reads the envelope payload into a fixed 16 KB buffer
         // (kDCNativeEnvelopePayloadMaxLength = 16384 in WotLKExtensions
         // CNetClient.cpp); an oversized payload would arrive truncated and
@@ -3204,6 +3243,12 @@ static void AppendEventDetails(DCAddon::JsonMessage& msg, DarkChaos::CrossSystem
 static void SendCrossEventToPlayer(Player* player, DarkChaos::CrossSystem::EventData const& event)
 {
     if (!player || !player->GetSession())
+        return;
+
+    // CreatureKill fires on every mob a bot downs, and this builds a ~280 byte
+    // JSON DOM before Message::Send would throw it away. Check first: this one
+    // event accounted for 942k of the 2M rows the protocol log had accumulated.
+    if (DCAddon::IsBotRecipient(player))
         return;
 
     DCAddon::JsonMessage msg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_CROSS_EVENT);
@@ -3820,6 +3865,33 @@ namespace DCAddon
     }
 }
 
+// Retention. The protocol log is a debugging aid, not a ledger: nothing reads
+// rows older than a few days, and with logging left on it grows without bound
+// (this table reached ~2M rows before the bot traffic was gated out). Deleting
+// in bounded batches keeps the statement off the long-query path and avoids a
+// multi-second row-lock storm on the characters DB.
+static void PruneProtocolLogs()
+{
+    uint32 const retentionDays = s_AddonConfig.LoggingRetentionDays;
+    if (!retentionDays)
+        return;
+
+    constexpr uint32 PRUNE_BATCH_ROWS = 5000;
+
+    CharacterDatabase.Execute(
+        "DELETE FROM dc_addon_protocol_log "
+        "WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL {} DAY) LIMIT {}",
+        retentionDays, PRUNE_BATCH_ROWS);
+
+    if (HasProtocolErrorTable())
+    {
+        CharacterDatabase.Execute(
+            "DELETE FROM dc_addon_protocol_errors "
+            "WHERE `timestamp` < DATE_SUB(NOW(), INTERVAL {} DAY) LIMIT {}",
+            retentionDays, PRUNE_BATCH_ROWS);
+    }
+}
+
 class DCAddonWorldScript : public WorldScript
 {
 public:
@@ -3844,6 +3916,11 @@ public:
 
         _statsFlushTimer = 0;
         FlushStats();
+
+        // One batch per stats flush (30s). A backlog drains over a few minutes
+        // instead of stalling the world thread on a single huge DELETE.
+        if (s_AddonConfig.EnableProtocolLogging)
+            PruneProtocolLogs();
     }
 
     void OnShutdown() override
@@ -3887,6 +3964,10 @@ public:
         LOG_INFO("dc.addon", "  World:       {}", s_AddonConfig.EnableWorld ? "Yes" : "No");
         LOG_INFO("dc.addon", "  QoS:         {}", s_AddonConfig.EnableQoS ? "Yes" : "No");
         LOG_INFO("dc.addon", "  DB Logging:  {}", s_AddonConfig.EnableProtocolLogging ? "Yes" : "No");
+        LOG_INFO("dc.addon", "  Log retention: {}", s_AddonConfig.LoggingRetentionDays
+            ? Acore::StringFormat("{} day(s)", s_AddonConfig.LoggingRetentionDays)
+            : std::string("unlimited"));
+        LOG_INFO("dc.addon", "  Bot traffic: not sent, not logged (playerbots have no addon)");
         LOG_INFO("dc.addon", "===========================================");
     }
 

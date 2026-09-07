@@ -7,6 +7,7 @@
 
 // Add all Mythic+ scripts
 void AddSC_mythic_plus_core_scripts();
+void AddSC_mythic_plus_heroic_loot();
 void AddSC_dungeon_portal_selector();
 void AddSC_go_mythic_plus_font_of_power();
 void AddSC_npc_great_vault();
@@ -17,6 +18,7 @@ void AddSC_item_mythic_keystone();
 void AddMythicPlusScripts()
 {
     AddSC_mythic_plus_core_scripts();
+    AddSC_mythic_plus_heroic_loot();
     AddSC_dungeon_portal_selector();
     AddSC_go_mythic_plus_font_of_power();
     AddSC_npc_great_vault();

@@ -38,6 +38,13 @@ local SCHOOL_COLORS = {
 
 local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 
+local function FormatNumber(value)
+    if addon.FormatNumber then
+        return addon.FormatNumber(value or 0)
+    end
+    return tostring(value or 0)
+end
+
 local RECAP_EVENT_STYLE = {
     damage = {
         bg = {0.12, 0.04, 0.04, 0.78},
@@ -105,7 +112,7 @@ function CombatLog.ShowEnhancedTooltip(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     
     -- Header
-    local classColor = RAID_CLASS_COLORS[data.class or "WARRIOR"] or {r=0.5, g=0.5, b=0.5}
+    local classColor = (data.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[data.class]) or {r=0.7, g=0.7, b=0.7}
     GameTooltip:AddLine(data.name, classColor.r, classColor.g, classColor.b)
     GameTooltip:AddLine(" ")
     
@@ -174,42 +181,48 @@ function CombatLog.ShowEnhancedTooltip(self)
             GameTooltip:AddLine("No spell data", 0.7, 0.7, 0.7)
         end
     
-    -- HEALING MODE - Show healing breakdown with overheal
-    elseif mode == "healing" then
-        if data.healingBySpell then
-            local sortedSpells = {}
-            for id, spell in pairs(data.healingBySpell) do
-                if spell.amount and spell.amount > 0 then
-                    table.insert(sortedSpells, {
-                        name = spell.name,
-                        amount = spell.amount,
-                        overheal = spell.overheal or 0,
-                        hits = spell.hits or 0,
-                        crits = spell.crits or 0,
-                    })
-                end
+    -- HEALING / ABSORB MODES - per-spell breakdown with overheal.
+    -- Read from data.spells: healing and absorbs are tracked there.
+    elseif mode == "healing" or mode == "absorbsHealing" or mode == "absorbs" then
+        local sortedSpells = {}
+        for _, spell in pairs(data.spells or {}) do
+            local amount = 0
+            if mode ~= "absorbs" then amount = amount + (spell.healing or 0) end
+            if mode ~= "healing" then amount = amount + (spell.absorbAmount or 0) end
+            if amount > 0 then
+                table.insert(sortedSpells, {
+                    name = spell.name,
+                    amount = amount,
+                    overheal = spell.overheal or 0,
+                    hits = spell.hits or 0,
+                    crits = spell.crits or 0,
+                    isAbsorb = (spell.absorbAmount or 0) > 0 and (spell.healing or 0) == 0,
+                })
             end
-            table.sort(sortedSpells, function(a, b) return a.amount > b.amount end)
-            
-            for i = 1, math.min(10, #sortedSpells) do
-                local spell = sortedSpells[i]
-                local overhealPct = (spell.amount + spell.overheal) > 0 and 
-                    (spell.overheal / (spell.amount + spell.overheal) * 100) or 0
-                local critRate = spell.hits > 0 and (spell.crits / spell.hits * 100) or 0
-                
-                GameTooltip:AddDoubleLine(
-                    spell.name,
-                    string.format("%s (%.0f%% OH)", 
-                        addon.FormatNumber and addon.FormatNumber(spell.amount) or tostring(spell.amount),
-                        overhealPct),
-                    0.2, 1, 0.2,
-                    1, 1, 1
-                )
-            end
-        else
+        end
+        table.sort(sortedSpells, function(a, b) return a.amount > b.amount end)
+
+        if #sortedSpells == 0 then
             GameTooltip:AddLine("No healing data", 0.7, 0.7, 0.7)
         end
-    
+        for i = 1, math.min(10, #sortedSpells) do
+            local spell = sortedSpells[i]
+            local right
+            if spell.isAbsorb then
+                right = string.format("%s (absorb)", FormatNumber(spell.amount))
+            else
+                local overhealPct = (spell.amount + spell.overheal) > 0
+                    and (spell.overheal / (spell.amount + spell.overheal) * 100) or 0
+                right = string.format("%s (%.0f%% OH)", FormatNumber(spell.amount), overhealPct)
+            end
+            GameTooltip:AddDoubleLine(spell.name, right, spell.isAbsorb and 0.7 or 0.2, spell.isAbsorb and 0.7 or 1, spell.isAbsorb and 1 or 0.2, 1, 1, 1)
+        end
+        if (data.overhealing or 0) > 0 and (data.totalHealing or 0) > 0 then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddDoubleLine("Overhealing:", string.format("%s (%.0f%%)", FormatNumber(data.overhealing),
+                data.overhealing / data.totalHealing * 100), 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+
     -- DAMAGE TAKEN - Show sources and mitigation
     elseif mode == "damageTaken" then
         GameTooltip:AddDoubleLine("Total Damage Taken:", addon.FormatNumber and addon.FormatNumber(data.damageTaken) or tostring(data.damageTaken), 1, 0.5, 0.5, 1, 1, 1)
@@ -242,11 +255,32 @@ function CombatLog.ShowEnhancedTooltip(self)
                 GameTooltip:AddDoubleLine("  Misses:", data.misses, 0.7, 0.7, 0.7, 1, 1, 1)
             end
         end
+
+        if data.damageTakenFrom then
+            local sources = {}
+            for guid, amount in pairs(data.damageTakenFrom) do
+                if amount > 0 then
+                    sources[#sources + 1] = {
+                        name = (CombatLog.GetNameForGUID and CombatLog.GetNameForGUID(guid)) or "Unknown",
+                        amount = amount,
+                    }
+                end
+            end
+            table.sort(sources, function(a, b) return a.amount > b.amount end)
+            if #sources > 0 then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Top sources", 1, 0.82, 0)
+                for i = 1, math.min(5, #sources) do
+                    GameTooltip:AddDoubleLine(sources[i].name, FormatNumber(sources[i].amount), 1, 1, 1, 0.8, 0.8, 0.8)
+                end
+            end
+        end
     end
     
     -- Add summary stats
     GameTooltip:AddLine(" ")
-    local combatTime = CombatLog.GetCombatTime and CombatLog.GetCombatTime() or 0
+    local combatTime = (CombatLog.GetActiveDuration and CombatLog.GetActiveDuration())
+        or (CombatLog.GetCombatTime and CombatLog.GetCombatTime()) or 0
     if combatTime > 0 then
         if data.damage > 0 then
             local dps = data.damage / combatTime
@@ -258,6 +292,8 @@ function CombatLog.ShowEnhancedTooltip(self)
         end
     end
     
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Left-click: breakdown  |  Right-click: menu", 0.5, 0.5, 0.5)
     GameTooltip:Show()
     return true
 end
@@ -393,11 +429,6 @@ function CombatLog.ShowDeathRecap(playerData)
         deathRecapFrame.hintText = hintText
     end
     
-    -- Clear old entries
-    for _, child in ipairs({deathRecapFrame.scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
     
     -- Calculate survivability
     local totalDamage = 0
@@ -437,7 +468,67 @@ function CombatLog.ShowDeathRecap(playerData)
         ))
     end
     
-    -- Display events (most recent first)
+    -- Display events (most recent first). Rows are pooled and re-filled so a
+    -- recap does not leak a frame tree per entry per death.
+    deathRecapFrame.rows = deathRecapFrame.rows or {}
+    local rows = deathRecapFrame.rows
+
+    local function AcquireRow(index)
+        local row = rows[index]
+        if row then return row end
+        row = CreateFrame("Frame", nil, deathRecapFrame.scrollChild)
+        row:SetSize(430, 46)
+        row:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 10,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        })
+
+        row.accent = row:CreateTexture(nil, "ARTWORK")
+        row.accent:SetTexture("Interface\\Buttons\\WHITE8x8")
+        row.accent:SetPoint("TOPLEFT", 3, -3)
+        row.accent:SetPoint("BOTTOMLEFT", 3, 3)
+        row.accent:SetWidth(4)
+
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(18, 18)
+        row.icon:SetPoint("TOPLEFT", 12, -11)
+
+        row.timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.timeText:SetPoint("TOPLEFT", 35, -7)
+        row.timeText:SetTextColor(0.75, 0.75, 0.75)
+
+        row.descText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.descText:SetPoint("TOPLEFT", 35, -20)
+        row.descText:SetWidth(245)
+        row.descText:SetJustifyH("LEFT")
+
+        row.detailText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.detailText:SetPoint("TOPLEFT", row.descText, "BOTTOMLEFT", 0, -1)
+        row.detailText:SetWidth(245)
+        row.detailText:SetJustifyH("LEFT")
+        row.detailText:SetTextColor(0.75, 0.75, 0.75)
+
+        row.amountText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.amountText:SetPoint("TOPRIGHT", -10, -10)
+
+        row.healthBar = CreateFrame("StatusBar", nil, row)
+        row.healthBar:SetSize(125, 8)
+        row.healthBar:SetPoint("BOTTOMRIGHT", -10, 8)
+        row.healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+
+        row.healthBg = row:CreateTexture(nil, "BACKGROUND")
+        row.healthBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+        row.healthBg:SetAllPoints(row.healthBar)
+        row.healthBg:SetVertexColor(0, 0, 0, 0.45)
+
+        rows[index] = row
+        return row
+    end
+
     local yOffset = 0
     local shown = 0
     for i = 1, #entries do
@@ -445,139 +536,96 @@ function CombatLog.ShowDeathRecap(playerData)
             break
         end
         local entry = entries[i]
-        if not showBuffs and (entry.eventType == "buff" or entry.eventType == "debuff") then
-            -- Skip buff/debuff rows when disabled
-        else
+        if showBuffs or (entry.eventType ~= "buff" and entry.eventType ~= "debuff") then
             shown = shown + 1
-        
-            local eventFrame = CreateFrame("Frame", nil, deathRecapFrame.scrollChild)
-            eventFrame:SetSize(430, 46)
-            eventFrame:SetPoint("TOPLEFT", 0, yOffset)
+            local row = AcquireRow(shown)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, yOffset)
 
             local style = GetRecapEventStyle(entry.eventType)
-            eventFrame:SetBackdrop({
-                bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                tile = true,
-                tileSize = 16,
-                edgeSize = 10,
-                insets = { left = 2, right = 2, top = 2, bottom = 2 },
-            })
-            eventFrame:SetBackdropColor(style.bg[1], style.bg[2], style.bg[3], style.bg[4])
-            eventFrame:SetBackdropBorderColor(style.border[1], style.border[2], style.border[3], style.border[4])
+            row:SetBackdropColor(style.bg[1], style.bg[2], style.bg[3], style.bg[4])
+            row:SetBackdropBorderColor(style.border[1], style.border[2], style.border[3], style.border[4])
+            row.accent:SetVertexColor(style.accent[1], style.accent[2], style.accent[3], style.accent[4])
+            row.icon:SetTexture(GetRecapEventIcon(entry))
+            row.timeText:SetText(string.format("%.1fs", entry.timestamp or 0))
 
-            local accent = eventFrame:CreateTexture(nil, "ARTWORK")
-            accent:SetTexture("Interface\\Buttons\\WHITE8x8")
-            accent:SetPoint("TOPLEFT", 3, -3)
-            accent:SetPoint("BOTTOMLEFT", 3, 3)
-            accent:SetWidth(4)
-            accent:SetVertexColor(style.accent[1], style.accent[2], style.accent[3], style.accent[4])
+            local hp = string.format("HP: %.0f%%", entry.healthPct or 0)
+            if entry.eventType == "damage" then
+                if entry.critical then
+                    row.descText:SetTextColor(1, 0.3, 0.3)
+                else
+                    row.descText:SetTextColor(1, 0.5, 0.5)
+                end
+                row.descText:SetText(string.format("%s's %s%s",
+                    entry.sourceName or "Unknown",
+                    entry.spellName or "Attack",
+                    entry.critical and " (Crit!)" or ""
+                ))
+                local detail = hp
+                if entry.absorbed and entry.absorbed > 0 then
+                    detail = detail .. "  Abs: " .. FormatAmount(entry.absorbed)
+                end
+                if entry.resisted and entry.resisted > 0 then
+                    detail = detail .. "  Res: " .. FormatAmount(entry.resisted)
+                end
+                if entry.blocked and entry.blocked > 0 then
+                    detail = detail .. "  Block: " .. FormatAmount(entry.blocked)
+                end
+                if entry.overkill and entry.overkill > 0 then
+                    detail = detail .. "  Overkill: " .. FormatAmount(entry.overkill)
+                end
+                row.detailText:SetText(detail)
+                row.amountText:SetText(FormatAmount(math.abs(entry.amount or 0)))
+                row.amountText:SetTextColor(1, 0.3, 0.3)
+            elseif entry.eventType == "heal" then
+                row.descText:SetTextColor(0.2, 1, 0.2)
+                row.descText:SetText(string.format("%s's %s", entry.sourceName or "Unknown", entry.spellName or "Heal"))
+                row.detailText:SetText(hp)
+                row.amountText:SetText("+" .. FormatAmount(entry.amount or 0))
+                row.amountText:SetTextColor(0.2, 1, 0.2)
+            elseif entry.eventType == "buff" then
+                row.descText:SetTextColor(0.5, 0.5, 1)
+                row.descText:SetText(string.format("Buff: %s", entry.spellName or "Unknown"))
+                row.detailText:SetText(hp)
+                row.amountText:SetText("")
+            elseif entry.eventType == "debuff" then
+                row.descText:SetTextColor(1, 0.5, 1)
+                row.descText:SetText(string.format("Debuff: %s", entry.spellName or "Unknown"))
+                row.detailText:SetText(hp)
+                row.amountText:SetText("")
+            else
+                row.descText:SetTextColor(0.85, 0.85, 0.85)
+                row.descText:SetText(tostring(entry.spellName or entry.eventType or "Event"))
+                row.detailText:SetText(hp)
+                row.amountText:SetText("")
+            end
 
-            local icon = eventFrame:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(18, 18)
-            icon:SetPoint("TOPLEFT", 12, -11)
-            icon:SetTexture(GetRecapEventIcon(entry))
-        
-            -- Time
-            local timeText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            timeText:SetPoint("TOPLEFT", 35, -7)
-            timeText:SetText(string.format("%.1fs", entry.timestamp or 0))
-            timeText:SetTextColor(0.75, 0.75, 0.75)
-        
-            -- Event description
-            local descText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            descText:SetPoint("TOPLEFT", 35, -20)
-            descText:SetWidth(245)
-            descText:SetJustifyH("LEFT")
-
-            local detailText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            detailText:SetPoint("TOPLEFT", descText, "BOTTOMLEFT", 0, -1)
-            detailText:SetWidth(245)
-            detailText:SetJustifyH("LEFT")
-            detailText:SetTextColor(0.75, 0.75, 0.75)
-        
-        if entry.eventType == "damage" then
-            local color = entry.critical and {r=1, g=0.3, b=0.3} or {r=1, g=0.5, b=0.5}
-            descText:SetTextColor(color.r, color.g, color.b)
-            descText:SetText(string.format("%s's %s%s", 
-                entry.sourceName or "Unknown",
-                entry.spellName or "Attack",
-                entry.critical and " (Crit!)" or ""
-            ))
-            local detail = string.format("HP: %.0f%%", entry.healthPct or 0)
-            if entry.absorbed and entry.absorbed > 0 then
-                detail = detail .. "  Abs: " .. FormatAmount(entry.absorbed)
-            end
-            if entry.resisted and entry.resisted > 0 then
-                detail = detail .. "  Res: " .. FormatAmount(entry.resisted)
-            end
-            if entry.blocked and entry.blocked > 0 then
-                detail = detail .. "  Block: " .. FormatAmount(entry.blocked)
-            end
-            detailText:SetText(detail)
-        elseif entry.eventType == "heal" then
-            descText:SetTextColor(0.2, 1, 0.2)
-            descText:SetText(string.format("%s's %s", 
-                entry.sourceName or "Unknown",
-                entry.spellName or "Heal"
-            ))
-            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
-        elseif entry.eventType == "buff" then
-            descText:SetTextColor(0.5, 0.5, 1)
-            descText:SetText(string.format("Buff: %s", entry.spellName or "Unknown"))
-            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
-        elseif entry.eventType == "debuff" then
-            descText:SetTextColor(1, 0.5, 1)
-            descText:SetText(string.format("Debuff: %s", entry.spellName or "Unknown"))
-            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
-        else
-            descText:SetTextColor(0.85, 0.85, 0.85)
-            descText:SetText(string.format("%s", entry.spellName or entry.eventType or "Event"))
-            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
-        end
-        
-            -- Amount
-            local amountText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            amountText:SetPoint("TOPRIGHT", -10, -10)
-        
-        if entry.eventType == "damage" then
-            amountText:SetText(FormatAmount(math.abs(entry.amount or 0)))
-            amountText:SetTextColor(1, 0.3, 0.3)
-        elseif entry.eventType == "heal" then
-            amountText:SetText("+" .. FormatAmount(entry.amount or 0))
-            amountText:SetTextColor(0.2, 1, 0.2)
-        else
-            amountText:SetText("")
-        end
-        
-            -- Health bar
             if entry.healthMax and entry.healthMax > 0 then
-                local healthBar = CreateFrame("StatusBar", nil, eventFrame)
-                healthBar:SetSize(125, 8)
-                healthBar:SetPoint("BOTTOMRIGHT", -10, 8)
-                healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-                healthBar:SetMinMaxValues(0, entry.healthMax)
-                healthBar:SetValue(entry.health or 0)
-
-                local healthBg = eventFrame:CreateTexture(nil, "BACKGROUND")
-                healthBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-                healthBg:SetAllPoints(healthBar)
-                healthBg:SetVertexColor(0, 0, 0, 0.45)
-                
+                row.healthBar:SetMinMaxValues(0, entry.healthMax)
+                row.healthBar:SetValue(entry.health or 0)
                 local pct = entry.healthPct or 0
                 if pct > 50 then
-                    healthBar:SetStatusBarColor(0, 1, 0)
+                    row.healthBar:SetStatusBarColor(0, 1, 0)
                 elseif pct > 20 then
-                    healthBar:SetStatusBarColor(1, 1, 0)
+                    row.healthBar:SetStatusBarColor(1, 1, 0)
                 else
-                    healthBar:SetStatusBarColor(1, 0, 0)
+                    row.healthBar:SetStatusBarColor(1, 0, 0)
                 end
+                row.healthBar:Show()
+                row.healthBg:Show()
+            else
+                row.healthBar:Hide()
+                row.healthBg:Hide()
             end
-            
+
+            row:Show()
             yOffset = yOffset - 50
         end
     end
-    
+    for i = shown + 1, #rows do
+        rows[i]:Hide()
+    end
+
     deathRecapFrame.scrollChild:SetHeight(math.max(1, shown * 50))
     if deathRecapFrame.scrollFrame then
         local childHeight = deathRecapFrame.scrollChild:GetHeight() or 0

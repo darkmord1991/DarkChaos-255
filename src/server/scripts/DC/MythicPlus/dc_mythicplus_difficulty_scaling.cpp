@@ -73,23 +73,25 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
         profile.expansion = GetExpansionForMap(profile.mapId);
 
         // Set multipliers based on expansion and database values
-        if (profile.expansion == EXPANSION_VANILLA)
+        if (profile.expansion == EXPANSION_VANILLA || profile.expansion == EXPANSION_TBC)
         {
-            // Vanilla: Heroic at 60-62, Mythic at 80-82
+            // Classic and TBC now run Heroic and Mythic at WotLK heroic
+            // levels (80/81/82, set by dc_heroic_classic_tbc_scaling.sql),
+            // and the creature spawn path normalises them onto the WotLK
+            // stat curve first. So the multipliers here are the same
+            // modest step the WotLK maps use.
+            //
+            // The old fallbacks were 3.0x HP / 2.0x damage. Those existed
+            // to paper over the exp0/exp1 stat columns, and only half
+            // worked: at level 81 the columns read 5492 / 9474 / 13033 HP
+            // and 47.9 / 133.0 / 169.0 damage, so 3.0x roughly closed the
+            // HP gap while 2.0x left Classic bosses swinging for a
+            // quarter of a WotLK boss. Now that the curve itself is
+            // normalised, keeping them would overshoot instead.
             profile.heroicHealthMult = 1.15f;
             profile.heroicDamageMult = 1.10f;
-            // Use database multipliers for Mythic (base_health_mult/base_damage_mult)
-            profile.mythicHealthMult = profile.baseHealthMult > 1.0f ? profile.baseHealthMult : 3.0f;
-            profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 2.0f;
-        }
-        else if (profile.expansion == EXPANSION_TBC)
-        {
-            // TBC: Heroic at 70, Mythic at 80-82
-            profile.heroicHealthMult = 1.15f;
-            profile.heroicDamageMult = 1.10f;
-            // Use database multipliers for Mythic
-            profile.mythicHealthMult = profile.baseHealthMult > 1.0f ? profile.baseHealthMult : 3.0f;
-            profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 2.0f;
+            profile.mythicHealthMult = profile.baseHealthMult > 1.0f ? profile.baseHealthMult : 1.35f;
+            profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 1.20f;
         }
         else // EXPANSION_WOTLK
         {
@@ -110,6 +112,8 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
 
     LoadScalingMultipliers();
     LoadDungeonSetup();
+    LoadBossEntries();
+    LoadDifficultyVariantEntries();
 
     // Use unified season helper for consistent season ID across all systems
     _activeSeasonId = DarkChaos::GetActiveSeasonId();
@@ -229,6 +233,70 @@ bool MythicDifficultyScaling::IsDungeonFeatured(uint32 mapId, uint32 seasonId) c
     return entry.unlocked && entry.mythicPlusEnabled && seasonMatches;
 }
 
+void MythicDifficultyScaling::LoadBossEntries()
+{
+    _bossEntries.clear();
+
+    // creditType 0 is a creature kill credit, so creditEntry is a
+    // creature_template entry. creditType 1 is a spell/script credit and
+    // carries no creature to scale.
+    QueryResult result = WorldDatabase.Query(
+        "SELECT DISTINCT creditEntry FROM instance_encounters WHERE creditType = 0 AND creditEntry > 0");
+
+    if (!result)
+    {
+        LOG_WARN("server.loading",
+                 ">> No rows in instance_encounters; boss levels will fall back to creature_template.rank");
+        return;
+    }
+
+    do
+    {
+        _bossEntries.insert(result->Fetch()[0].Get<uint32>());
+    } while (result->NextRow());
+
+    LOG_INFO("server.loading", ">> Cached {} dungeon boss entries from instance_encounters", _bossEntries.size());
+}
+
+bool MythicDifficultyScaling::IsBossEntry(uint32 creatureEntry) const
+{
+    return _bossEntries.find(creatureEntry) != _bossEntries.end();
+}
+
+void MythicDifficultyScaling::LoadDifficultyVariantEntries()
+{
+    _difficultyVariantEntries.clear();
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT difficulty_entry_1 FROM creature_template WHERE difficulty_entry_1 > 0 "
+        "UNION SELECT difficulty_entry_2 FROM creature_template WHERE difficulty_entry_2 > 0 "
+        "UNION SELECT difficulty_entry_3 FROM creature_template WHERE difficulty_entry_3 > 0");
+
+    if (!result)
+    {
+        LOG_INFO("server.loading", ">> No difficulty templates found; every legacy dungeon creature gets the heroic stand-in");
+        return;
+    }
+
+    do
+    {
+        _difficultyVariantEntries.insert(result->Fetch()[0].Get<uint32>());
+    } while (result->NextRow());
+
+    LOG_INFO("server.loading", ">> Cached {} difficulty template entries", _difficultyVariantEntries.size());
+}
+
+bool MythicDifficultyScaling::IsDifficultyVariantEntry(uint32 creatureEntry) const
+{
+    return _difficultyVariantEntries.find(creatureEntry) != _difficultyVariantEntries.end();
+}
+
+bool MythicDifficultyScaling::UsesLegacyStatCurve(uint32 mapId) const
+{
+    uint8 expansion = GetExpansionForMap(mapId);
+    return expansion == EXPANSION_VANILLA || expansion == EXPANSION_TBC;
+}
+
 DungeonProfile* MythicDifficultyScaling::GetDungeonProfile(uint32 mapId)
 {
     auto itr = _dungeonProfiles.find(mapId);
@@ -280,6 +348,20 @@ uint8 MythicDifficultyScaling::GetExpansionForMap(uint32 mapId)
     // Vanilla: the classic instance block, which tops out at Dire Maul (429)
     // plus the level-60 raids that sit above it.
     if ((mapId >= 33 && mapId <= 429) || mapId == 469 || mapId == 509 || mapId == 531)
+        return EXPANSION_VANILLA;
+
+    // DarkChaos re-imports of Classic dungeons. They sit in the 8xx custom
+    // map range but their creatures carry creature_template.exp = 0 and
+    // Classic-era levels, so they need the same exp0 -> exp2 curve
+    // normalisation as the maps above. Without this they fall through to
+    // the WotLK default and get none of it.
+    //
+    // Only these two. The rest of the 8xx block is genuinely different
+    // content: 820 Blackfathom Deeps (Ashenvale) and 823 Crescent Grove are
+    // level-125/130 on the Ashenvale band, 819 and 824 are raids, and 825
+    // Shadowfang Keep (Cataclysm) is an 85-tier dungeon with its own access
+    // rows.
+    if (mapId == 821 || mapId == 822)
         return EXPANSION_VANILLA;
 
     return EXPANSION_WOTLK; // Northrend instances and anything unrecognised

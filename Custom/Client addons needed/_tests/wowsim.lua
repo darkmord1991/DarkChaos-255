@@ -99,8 +99,12 @@ function TextureMethods:SetVertexColor(...) self._vc = {...} end
 function TextureMethods:SetPoint() end
 function TextureMethods:SetText(t) self._text = t end
 function TextureMethods:SetTextColor() end
-function TextureMethods:Show() end
-function TextureMethods:Hide() end
+-- Textures track visibility like frames do: a texture is shown unless it was
+-- explicitly hidden, so a test can assert on a badge/overlay being toggled.
+function TextureMethods:Show() self._shown = true end
+function TextureMethods:Hide() self._shown = false end
+function TextureMethods:IsShown() return self._shown ~= false end
+function TextureMethods:IsVisible() return self._shown ~= false end
 function TextureMethods:SetJustifyH() end
 function TextureMethods:SetFontObject() end
 function TextureMethods:SetShadowOffset() end

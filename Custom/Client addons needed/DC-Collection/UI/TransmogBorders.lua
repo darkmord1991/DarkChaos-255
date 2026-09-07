@@ -76,7 +76,13 @@ local function EnsureInspectActionButtons()
 
     local preview = CreateFrame("Button", nil, InspectFrame, "UIPanelButtonTemplate")
     preview:SetSize(78, 22)
-    preview:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -42, -40)
+    -- Anchor into the top-right corner of the model view instead of the frame header,
+    -- so the name / level / race / class font strings stay readable.
+    if InspectModelFrame then
+        preview:SetPoint("TOPRIGHT", InspectModelFrame, "TOPRIGHT", -4, -4)
+    else
+        preview:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -42, -82)
+    end
     preview:SetText("Preview")
     preview:SetScript("OnClick", function()
         if DC and type(DC.PreviewLastInspectedAppearance) == "function" then

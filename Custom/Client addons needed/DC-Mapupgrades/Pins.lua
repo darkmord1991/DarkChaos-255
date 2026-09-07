@@ -493,7 +493,9 @@ local function EntityTexture(kind)
         return "Interface\\Minimap\\minimap_skull_normal"
     end
     if kind == "death" then
-        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_7" -- X
+        -- A fallen body, not a skull: the boss and rare pins above are both
+        -- skulls already, and a third skull would be unreadable at pin size.
+        return "Interface\\Icons\\Ability_Rogue_FeignDeath"
     end
     return "Interface\\Icons\\INV_Misc_Map_01"
 end

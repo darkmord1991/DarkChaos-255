@@ -358,6 +358,25 @@ DC.Addon.CapabilityDebug.Enable = 0
 DC.AddonProtocol.Logging.Enable = 1
 
 #
+#    DC.AddonProtocol.Logging.RetentionDays
+#        Description: Prune dc_addon_protocol_log and dc_addon_protocol_errors
+#                     rows older than this many days. The protocol log is a
+#                     debugging aid, not a ledger - nothing reads rows more
+#                     than a few days old, and with logging left on the table
+#                     grows without bound. Pruning runs in 5000-row batches
+#                     alongside the 30s stats flush, so a large backlog drains
+#                     over a few minutes rather than stalling the world thread
+#                     on one huge DELETE.
+#
+#                     Note: playerbot sessions are never sent addon protocol
+#                     traffic (they have no client and no addon), so they no
+#                     longer contribute rows at all.
+#        Default:     7
+#                     0 - keep forever
+#
+DC.AddonProtocol.Logging.RetentionDays = 7
+
+#
 #    DC.AddonProtocol.Graveyard.Enable
 #        Description: Enable the retail-style "Return to Graveyard" button
 #                     (GRVY module). When enabled, a player who has released
@@ -587,6 +606,20 @@ DC.AddonProtocol.Collection.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Forms.Enable = 1
+
+#
+#    DC.AddonProtocol.Forms.BotSkins
+#        Description: Give mod-playerbots bots a random skin per shapeshift form
+#                     (and per totem element) from dc_shapeshift_form_skins.
+#                     Bots have no addon and never send SET_FORM, so without
+#                     this every druid bot wears its race's stock cat and bear.
+#                     The pick is derived from the character GUID, so it is
+#                     stable for the life of the bot and nothing is persisted.
+#                     The rest of the bot cosmetics (mounts, companions, pet
+#                     skins) live in the module's own playerbots.conf.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Forms.BotSkins = 1
 
 #
 #    DC.AddonProtocol.Beastmaster.Enable
@@ -1675,6 +1708,20 @@ ItemUpgrade.Reward.PvpKill = 25
 #        Default:     10
 ItemUpgrade.Reward.MinCreatureLevel = 10
 
+#
+#    ItemUpgrade.Heirloom.StarterItemId
+#        Description: The heirloom handed out by the server-side upgrade facade
+#                     when a caller asks for a starter heirloom (mod-playerbots
+#                     uses this, since bots never run onboarding quest 820058
+#                     that normally grants it).
+#
+#                     Must be an item whose tier is is_artifact=1 in
+#                     dc_item_upgrade_tiers, i.e. pinned to tier 3 or 10 in
+#                     dc_item_upgrade_item_overrides. 0 disables the grant.
+#        Default:     300365 (Heirloom Adventurer's Shirt)
+#
+ItemUpgrade.Heirloom.StarterItemId = 300365
+
 
 ###############################################################################
 #
@@ -2276,6 +2323,115 @@ MythicPlus.FinalBossItems = 2
 #        Default:     1 (Enabled)
 #
 MythicPlus.SuppressTrashLoot = 1
+
+# -----------------------------------------------------------------------------
+# Legacy (Classic / TBC) dungeon scaling
+# -----------------------------------------------------------------------------
+# Classic and TBC creatures are built from the wrong column of
+# creature_classlevelstats (AzerothCore picks it by creature_template.exp), so
+# at Heroic and Mythic they are normalised onto the WotLK curve at spawn time.
+# Classic dungeons additionally get a stand-in for the heroic template Blizzard
+# never authored; TBC dungeons already have real heroic templates and are
+# skipped, per creature, so the boost is never applied twice.
+#
+# The settings below then hold the resulting DamageModifier inside a band, and
+# the band is chosen by rank. That split matters: Blizzard's own heroic
+# templates differ by an order of magnitude between elites and ordinary trash,
+# while the Classic templates use one undifferentiated value for both.
+# Averaged over the WotLK heroic dungeons against Gnomeregan:
+#
+#                    WotLK heroic    Gnomeregan
+#     rank 0 trash        1.0            1.70
+#     rank 1 elite       12.9            1.70
+#
+# so a single flat band is wrong in both directions at once. Bosses use the
+# elite band - WotLK heroic bosses are uniformly 13.
+#
+# This is a stopgap for the extremes, NOT a substitute for per-dungeon tuning
+# against dc_dungeon_mythic_profile. Set a floor to 0 to disable that half of
+# the clamp and take the raw converted values.
+
+#
+#    MythicPlus.LegacyScaling.DamageModifierFloor / .DamageModifierCeiling
+#        Description: Band for the synthesised heroic DamageModifier of
+#                     ELITES and BOSSES on Classic/TBC maps. The WotLK
+#                     heroic reference is 13. Floor 0 disables.
+#        Default:     11.0 / 16.0
+#
+MythicPlus.LegacyScaling.DamageModifierFloor = 11.0
+MythicPlus.LegacyScaling.DamageModifierCeiling = 16.0
+
+#
+#    MythicPlus.LegacyScaling.DamageModifierFloorTrash / .DamageModifierCeilingTrash
+#        Description: Same band for NON-ELITE trash, which Blizzard tunes an
+#                     order of magnitude lower (WotLK heroic reference 1.0).
+#                     Raising these makes ordinary trash packs far deadlier
+#                     than their WotLK equivalents - the previous single
+#                     flat floor of 8.0 made them hit eight times as hard.
+#        Default:     1.0 / 3.0
+#
+MythicPlus.LegacyScaling.DamageModifierFloorTrash = 1.0
+MythicPlus.LegacyScaling.DamageModifierCeilingTrash = 3.0
+
+# -----------------------------------------------------------------------------
+# Heroic / plain-Mythic dungeon loot (Classic and TBC maps)
+# -----------------------------------------------------------------------------
+# The settings above cover keyed Mythic+ runs only. Heroic and plain Mythic
+# have no InstanceState, so they run through dc_mythicplus_heroic_loot.cpp
+# instead, which replaces the stock loot table on the Classic/TBC maps.
+#
+# Those dungeons have no heroic creature templates of their own - 0 of ~700
+# Vanilla creature templates carry difficulty_entry_1 - so without this a
+# Heroic Deadmines run drops the same ilvl 15-25 greens as the level-17
+# Normal run. Gear comes from dc_heroic_loot_pool at the dungeon's own
+# dc_dungeon_mythic_profile.loot_ilvl. Quest drops and gold are untouched.
+#
+# WotLK dungeons are not affected: they already fork into real ilvl 200
+# heroic loot tables and keep them.
+
+#
+#    MythicPlus.HeroicLoot.Enabled
+#        Description: Replace stock Classic/TBC dungeon loot at Heroic and
+#                     plain Mythic with the shared ilvl 200-219 pool.
+#                     Disabling this restores the stock level-20 greens.
+#        Default:     1 (Enabled)
+#
+MythicPlus.HeroicLoot.Enabled = 1
+
+#
+#    MythicPlus.HeroicLoot.BossItems / .BossItemsMythic
+#        Description: Gear items rolled from dc_heroic_loot_pool per boss.
+#                     Each roll is steered at a different party member, so
+#                     a drop is always usable by someone present.
+#        Default:     2
+#
+MythicPlus.HeroicLoot.BossItems = 2
+MythicPlus.HeroicLoot.BossItemsMythic = 2
+
+#
+#    MythicPlus.HeroicLoot.BossEssence / .BossEssenceMythic
+#        Description: DC Artifact Essence (item 300312) paid per boss kill.
+#        Default:     2 Heroic / 3 Mythic
+#
+MythicPlus.HeroicLoot.BossEssence = 2
+MythicPlus.HeroicLoot.BossEssenceMythic = 3
+
+#
+#    MythicPlus.HeroicLoot.BossTokens / .BossTokensMythic
+#        Description: DC Item Upgrade Token (item 300311) paid per boss kill.
+#        Default:     1 Heroic / 2 Mythic
+#
+MythicPlus.HeroicLoot.BossTokens = 1
+MythicPlus.HeroicLoot.BossTokensMythic = 2
+
+#
+#    MythicPlus.HeroicLoot.TrashEssenceChance / .TrashEssenceChanceMythic
+#        Description: Percent chance for a trash kill to drop 1 essence.
+#                     Trash drops no gear at these difficulties.
+#        Default:     15 Heroic / 25 Mythic
+#
+MythicPlus.HeroicLoot.TrashEssenceChance = 15
+MythicPlus.HeroicLoot.TrashEssenceChanceMythic = 25
 
 #
 #    MythicPlus.RunSummary.UseAddonUI

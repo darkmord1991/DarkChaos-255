@@ -10,6 +10,8 @@
 #include "dc_challenge_mode_database.h"
 #include "DC/AddonExtension/dc_addon_death_markers.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DBCStores.h"
+#include "DBCStructure.h"
 #include "ObjectAccessor.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
@@ -50,11 +52,21 @@ void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& 
     ChallengeModeDatabase::RecordHardcoreDeath(victim->GetGUID(), victim, killerEntry, killerName, activeModes);
     ChallengeModeDatabase::LockCharacter(victim->GetGUID(), activeModes);
 
-    // Global announcement
+    // Global announcement. The zone is read from the same GetZoneId() the death
+    // marker below is built from, so the chat line and the map pin can never
+    // point at different places. A zone that does not resolve is left out
+    // entirely rather than announced as "Unknown".
+    std::string zoneName;
+    if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(victim->GetZoneId()))
+        if (area->area_name[0] && area->area_name[0][0])
+            zoneName = area->area_name[0];
+
     std::ostringstream ss;
     ss << "|cffFF0000[HARDCORE DEATH]|r " << victim->GetName()
-       << " has fallen at level " << (uint32)victim->GetLevel() << "! "
-       << "Killed by " << killerName << ". "
+       << " has fallen at level " << (uint32)victim->GetLevel();
+    if (!zoneName.empty())
+        ss << " in " << zoneName;
+    ss << "! Killed by " << killerName << ". "
        << "RIP - May they rest in peace.";
     sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
 

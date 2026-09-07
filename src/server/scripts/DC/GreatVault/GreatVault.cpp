@@ -281,16 +281,44 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
         return candidates;
     };
 
+    // Skips what the other vault slots already hold, and steers away from gear
+    // the player already owns - otherwise the vault happily offers back a piece
+    // that dropped in one of the very runs that filled it.
+    //
+    // Owned gear is a last resort rather than a hard exclusion: if the player
+    // holds everything their spec's pool can offer, an owned piece is still a
+    // better slot than falling through to a token.
+    //
+    // Unlike the run-loot roll this tests every candidate instead of drawing a
+    // few times. It can afford to: at most nine picks per player per week, off
+    // the map thread, next to the synchronous world query above.
+    //
+    // Reading the inventory beats persisting a run ledger - it catches gear
+    // from every source (drops, vendors, crafting, an earlier vault claim), not
+    // just this week's dungeons.
     auto pickWeighted = [&](std::vector<Candidate> const& candidates, std::unordered_set<uint32>& used) -> uint32
     {
         std::vector<Candidate> available;
+        std::vector<Candidate> owned;
+
         for (auto const& c : candidates)
-            if (used.find(c.itemId) == used.end())
+        {
+            if (used.find(c.itemId) != used.end())
+                continue;
+
+            // player is never null here: an offline player is forced into
+            // tokens-only mode above, and only the gear branches call this.
+            // inBankAlso = true - a copy sitting in the bank is still a duplicate.
+            if (player && player->GetItemCount(c.itemId, true) > 0)
+                owned.push_back(c);
+            else
                 available.push_back(c);
+        }
 
-        if (available.empty()) return 0;
+        std::vector<Candidate> const& pool = available.empty() ? owned : available;
+        if (pool.empty()) return 0;
 
-        return available[urand(0, static_cast<uint32>(available.size() - 1))].itemId;
+        return pool[urand(0, static_cast<uint32>(pool.size() - 1))].itemId;
     };
 
     std::unordered_set<uint32> usedItems;

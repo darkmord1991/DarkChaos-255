@@ -208,6 +208,8 @@ std::vector<ReadyMemberInfo> BuildReadyMembers(Player* activator, Group* group,
 
         ReadyMemberInfo info;
         info.name = member->GetName();
+        if (member->GetSession() && member->GetSession()->IsBot())
+            info.name = "BOT " + info.name;
         info.role = GetRoleForPlayer(member);
         info.guid = member->GetGUID().ToString();
         info.leader = group->IsLeader(member->GetGUID());
@@ -708,9 +710,13 @@ private:
             {
                 if (Player* member = ref->GetSource())
                 {
+                    // The activator is ready by definition. Bots have no
+                    // client to answer, so they are pre-marked ready too;
+                    // a bot-backfilled group otherwise timed out every time.
+                    bool autoReady = member->GetGUID() == player->GetGUID()
+                        || (member->GetSession() && member->GetSession()->IsBot());
                     pending.memberStates[member->GetGUID()] =
-                        member->GetGUID() == player->GetGUID() ?
-                        STATE_READY : STATE_PENDING;
+                        autoReady ? STATE_READY : STATE_PENDING;
                 }
             }
         }
@@ -733,6 +739,12 @@ private:
                 "Keystone activation opened for +{} {}.",
                 descriptor.level, dungeonName);
         }
+
+        // Every other member is a bot: nobody is left to answer, so run the
+        // all-ready path now instead of waiting for the timeout.
+        if (group && std::none_of(pending.memberStates.begin(), pending.memberStates.end(),
+                [](auto const& entry) { return entry.second == STATE_PENDING; }))
+            HandlePlayerResponse(player, true);
     }
 
     void SendKeystoneReadyCheck(Player* activator, Group* group,

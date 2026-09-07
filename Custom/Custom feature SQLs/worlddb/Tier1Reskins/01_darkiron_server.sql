@@ -28,7 +28,7 @@ INSERT INTO `chrraces_dbc` (`ID`, `Flags`, `FactionID`, `ExplorationSoundID`, `M
     `FacialHairCustomization_1`, `FacialHairCustomization_2`, `HairCustomization`,
     `Required_Expansion`)
 SELECT 27, `Flags`, `FactionID`, `ExplorationSoundID`, `MaleDisplayId`, `FemaleDisplayId`,
-    'Di', `BaseLanguage`, `CreatureType`, `ResSicknessSpellID`, `SplashSoundID`, 'Dwarf', 0,
+    'Dw', `BaseLanguage`, `CreatureType`, `ResSicknessSpellID`, `SplashSoundID`, 'Dwarf', 0,
     `Alliance`, 'Dark Iron Dwarf', `Name_Lang_Mask`, `Name_Female_Lang_Mask`, `Name_Male_Lang_Mask`,
     `FacialHairCustomization_1`, `FacialHairCustomization_2`, `HairCustomization`, `Required_Expansion`
 FROM (SELECT * FROM `chrraces_dbc` WHERE `ID` = 3) AS dwarf;

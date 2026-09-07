@@ -21,6 +21,9 @@ DeathPins.lua
 # Group Finder UI
 UI\GroupFinderFrame.lua
 UI\MatchmakingQueue.lua
+
+# Minimap queue eye (reads the queue state MatchmakingQueue.lua maintains)
+UI\MinimapQueue.lua
 UI\MythicTab.lua
 UI\RaidTab.lua
 UI\WorldTab.lua

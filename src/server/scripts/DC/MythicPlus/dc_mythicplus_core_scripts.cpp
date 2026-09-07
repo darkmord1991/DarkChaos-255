@@ -21,6 +21,8 @@
 #include "Chat.h"
 #include "StringFormat.h"
 #include "DatabaseEnv.h"
+#include "Config.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <mutex>
@@ -180,9 +182,20 @@ public:
         Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
         uint32 rank = creature->GetCreatureTemplate()->rank;
 
-        // Determine creature type
-        bool isBoss = (rank == CREATURE_ELITE_WORLDBOSS || rank == CREATURE_ELITE_RAREELITE);
-        bool isElite = (rank == CREATURE_ELITE_ELITE);
+        // Determine creature type.
+        //
+        // instance_encounters is authoritative for "is this a boss";
+        // rank is not, and used to be the only test here. Nearly every
+        // Classic and TBC dungeon boss is rank 1 (elite) - Deadmines,
+        // Shadowfang Keep and Blackfathom Deeps contain no rank 3
+        // creature at all - so heroic_level_boss / mythic_level_boss
+        // never fired on those maps and every boss silently took the
+        // elite level instead. rank is kept as the fallback for the
+        // handful of encounters with no instance_encounters row.
+        bool isBoss = sMythicScaling->IsBossEntry(creature->GetEntry())
+                      || rank == CREATURE_ELITE_WORLDBOSS
+                      || rank == CREATURE_ELITE_RAREELITE;
+        bool isElite = !isBoss && rank == CREATURE_ELITE_ELITE;
 
         uint8 newLevel = level; // Keep original by default
 
@@ -287,27 +300,170 @@ public:
                 break;
         }
 
+        // Classic and TBC creatures are built from the wrong column of
+        // creature_classlevelstats. AzerothCore picks the column by
+        // creature_template.exp, and at level 81 the three read:
+        //
+        //     HP      5492 (exp0)  9474 (exp1)  13033 (exp2)
+        //     damage  47.9 (exp0)  133.0 (exp1)  169.0 (exp2)
+        //
+        // so a Vanilla boss forced to level 81 still gets Vanilla-shaped
+        // stats and lands at a fraction of a WotLK boss - most visibly on
+        // damage, where the gap is 3.5x and the old 2.0x Mythic
+        // multiplier could not close it.
+        //
+        // This cannot be fixed by setting exp = 2 on the templates:
+        // basehp2 is unpopulated (= 1) below level 55 and again at levels
+        // 60-63, so Normal-mode Deadmines mobs would drop to 1 HP. It is
+        // corrected here instead, where the level has already been forced
+        // to 80-82 and basehp2 is valid. Normal mode never reaches this
+        // code.
+        //
+        // Expressed as a ratio rather than an absolute, so it composes
+        // with whatever SelectLevel already produced and with the
+        // difficulty and keystone multipliers below.
+        if (sMythicScaling->UsesLegacyStatCurve(map->GetId()))
+        {
+            CreatureTemplate const* cinfo = creature->GetCreatureTemplate();
+
+            // cinfo->expansion is uint32 and MAX_EXPANSIONS is a plain
+            // enum constant, so the bound is widened explicitly - the
+            // naive comparison is a -Wsign-compare, and CI builds -Werror.
+            uint8 nativeExpansion =
+                cinfo->expansion < static_cast<uint32>(MAX_EXPANSIONS)
+                    ? static_cast<uint8>(cinfo->expansion)
+                    : static_cast<uint8>(EXPANSION_WRATH_OF_THE_LICH_KING);
+
+            if (nativeExpansion != EXPANSION_WRATH_OF_THE_LICH_KING)
+            {
+                if (CreatureBaseStats const* stats =
+                        sObjectMgr->GetCreatureBaseStats(creature->GetLevel(), cinfo->unit_class))
+                {
+                    uint32 nativeHealth = stats->BaseHealth[nativeExpansion];
+                    uint32 wotlkHealth  = stats->BaseHealth[EXPANSION_WRATH_OF_THE_LICH_KING];
+                    float  nativeDamage = stats->BaseDamage[nativeExpansion];
+                    float  wotlkDamage  = stats->BaseDamage[EXPANSION_WRATH_OF_THE_LICH_KING];
+
+                    // Guard the unpopulated rows: creature_classlevelstats
+                    // stores 1 rather than NULL where a column has no data.
+                    if (nativeHealth > 1 && wotlkHealth > 1)
+                        hpMult *= float(wotlkHealth) / float(nativeHealth);
+
+                    if (nativeDamage > 1.0f && wotlkDamage > 1.0f)
+                        damageMult *= wotlkDamage / nativeDamage;
+                }
+
+                // Stand in for the heroic template Blizzard never
+                // authored - but ONLY when one is genuinely absent.
+                //
+                // Creature::UpdateEntry walks down from the map spawn
+                // mode and swaps in DifficultyEntry[diff - 1] when set,
+                // so on the TBC maps both Heroic and Mythic already spawn
+                // a real heroic template with the boost baked in
+                // (HealthModifier x1.35, DamageModifier x2.2-5.25).
+                // Applying the stand-in on top of one of those doubles
+                // it. Classic dungeons have no such template and fall
+                // back to the normal one, so they still need it.
+                float standInHealth = 1.0f;
+                float standInDamage = 1.0f;
+
+                if (!sMythicScaling->IsDifficultyVariantEntry(creature->GetEntry()))
+                {
+                    standInHealth = HEROIC_TEMPLATE_HEALTH_FACTOR;
+                    standInDamage = HEROIC_TEMPLATE_DAMAGE_FACTOR;
+                }
+
+                hpMult *= standInHealth;
+
+                // Hold the synthesised heroic DamageModifier inside a
+                // sane band before applying it - and pick the band by
+                // rank, because Blizzard's heroic templates differ by an
+                // order of magnitude between elites (12.9 average) and
+                // ordinary trash (1.0), while the Classic templates use
+                // one undifferentiated value for both (Gnomeregan: 1.70
+                // for rank 0 and rank 1 alike).
+                //
+                // Bosses take the elite band; WotLK heroic bosses are
+                // uniformly 13.
+                //
+                // This is a stopgap that only stops the extremes being
+                // trivial or lethal. Per-dungeon tuning still wants doing
+                // properly against dc_dungeon_mythic_profile.
+                uint32 rank = cinfo->rank;
+                bool eliteOrBoss = sMythicScaling->IsBossEntry(creature->GetEntry())
+                                   || rank == CREATURE_ELITE_ELITE
+                                   || rank == CREATURE_ELITE_RAREELITE
+                                   || rank == CREATURE_ELITE_WORLDBOSS;
+
+                float floorMod = eliteOrBoss
+                    ? sConfigMgr->GetOption<float>("MythicPlus.LegacyScaling.DamageModifierFloor",
+                                                   LEGACY_DAMAGE_MOD_FLOOR_DEFAULT)
+                    : sConfigMgr->GetOption<float>("MythicPlus.LegacyScaling.DamageModifierFloorTrash",
+                                                   LEGACY_DAMAGE_MOD_TRASH_FLOOR_DEFAULT);
+                float ceilingMod = eliteOrBoss
+                    ? sConfigMgr->GetOption<float>("MythicPlus.LegacyScaling.DamageModifierCeiling",
+                                                   LEGACY_DAMAGE_MOD_CEILING_DEFAULT)
+                    : sConfigMgr->GetOption<float>("MythicPlus.LegacyScaling.DamageModifierCeilingTrash",
+                                                   LEGACY_DAMAGE_MOD_TRASH_CEILING_DEFAULT);
+
+                float synthesisedMod = cinfo->DamageModifier * standInDamage;
+
+                if (floorMod > 0.0f && ceilingMod >= floorMod && synthesisedMod > 0.0f)
+                {
+                    float clampedMod = std::clamp(synthesisedMod, floorMod, ceilingMod);
+                    damageMult *= clampedMod / cinfo->DamageModifier;
+                }
+                else
+                {
+                    damageMult *= standInDamage;
+                }
+            }
+        }
+
         // Apply multipliers to already-set stats
         if (hpMult > 1.0f || damageMult > 1.0f)
         {
-            // Multiply HP
+            // Multiply HP.
+            //
+            // UNIT_MOD_HEALTH has to be written as well, not just
+            // MaxHealth. Creature::SelectLevel stores the UNSCALED health
+            // in that modifier and only afterwards fires this hook, and
+            // Creature::UpdateEntry then calls UpdateAllStats() a few
+            // lines further on. Creature::UpdateMaxHealth recomputes
+            // MaxHealth from GetTotalAuraModValue(UNIT_MOD_HEALTH), so a
+            // bare SetMaxHealth is reverted before the creature is ever
+            // seen. That is why a Gnomeregan boss sat at roughly
+            // basehp0 x HealthModifier (~16k) with none of the heroic
+            // scaling applied - and it silently defeated the Mythic+ HP
+            // multipliers too, on every dungeon, since long before the
+            // heroic tier existed.
             uint32 baseHealth = creature->GetMaxHealth();
             uint32 newHealth = uint32(baseHealth * hpMult);
             creature->SetCreateHealth(newHealth);
+            creature->SetStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, float(newHealth));
             creature->SetMaxHealth(newHealth);
             creature->SetHealth(newHealth);
 
-            // Multiply damage
-            float baseMinDamage = creature->GetFloatValue(UNIT_FIELD_MINDAMAGE);
-            float baseMaxDamage = creature->GetFloatValue(UNIT_FIELD_MAXDAMAGE);
+            // Multiply damage.
+            //
+            // Read the BASE WEAPON damage, not UNIT_FIELD_MINDAMAGE. The
+            // UNIT_FIELD_* damage fields are outputs of
+            // Unit::UpdateDamagePhysical, which has not run yet at this
+            // point - UpdateAllStats calls it after this hook returns. On
+            // a freshly created creature those fields are still 0, so the
+            // old code was computing 0 * damageMult and storing that as
+            // the creature's base weapon damage, leaving it with only its
+            // attack-power contribution to hit with.
+            float baseMinDamage = creature->GetWeaponDamageRange(BASE_ATTACK, MINDAMAGE);
+            float baseMaxDamage = creature->GetWeaponDamageRange(BASE_ATTACK, MAXDAMAGE);
             creature->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, baseMinDamage * damageMult);
             creature->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, baseMaxDamage * damageMult);
 
             // Also scale off-hand if exists
-            float baseOffhandMin = creature->GetFloatValue(UNIT_FIELD_MINOFFHANDDAMAGE);
+            float baseOffhandMin = creature->GetWeaponDamageRange(OFF_ATTACK, MINDAMAGE);
             if (baseOffhandMin > 0.0f)
             {
-                float baseOffhandMax = creature->GetFloatValue(UNIT_FIELD_MAXOFFHANDDAMAGE);
+                float baseOffhandMax = creature->GetWeaponDamageRange(OFF_ATTACK, MAXDAMAGE);
                 creature->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, baseOffhandMin * damageMult);
                 creature->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, baseOffhandMax * damageMult);
             }
