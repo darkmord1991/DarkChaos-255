@@ -3024,6 +3024,13 @@ function DC:PopulateMountList()
             btn:SetScript("OnClick", function(selfBtn, button)
                 local data = selfBtn.itemData
                 if not data then return end
+                -- Shift-click links the entry into chat, the same way an item
+                -- link does; fall through to the normal click if it cannot.
+                if button == "LeftButton" and IsModifiedClick("CHATLINK") and
+                    type(DC.LinkCollectionEntryToChat) == "function" and
+                    DC:LinkCollectionEntryToChat(data.type, data.id, data.definition) then
+                    return
+                end
                 if button == "LeftButton" then
                     DC.selectedItem = data
                     DC:UpdateMountPreview(data)
@@ -3662,6 +3669,14 @@ end
 -- ============================================================================
 
 function DC:OnItemLeftClick(item)
+    -- Shift-click links the entry into chat, the same way an item link does.
+    if (item.type == "mounts" or item.type == "pets") and IsModifiedClick("CHATLINK") and
+        type(self.LinkCollectionEntryToChat) == "function" then
+        if self:LinkCollectionEntryToChat(item.type, item.id, item.definition) then
+            return
+        end
+    end
+
     if item.type == "shop" then
         -- Default action in shop: preview if supported
         if item.collectionTypeName == "transmog" then
@@ -3845,6 +3860,14 @@ function DC:OnItemRightClick(item)
         table.insert(menu, { text = " ", isTitle = true, notCheckable = true })
     end
     
+    if (item.type == "mounts" or item.type == "pets") and type(DC.LinkCollectionEntryToChat) == "function" then
+        table.insert(menu, {
+            text = (L and L["LINK_TO_CHAT"]) or "Link to Chat",
+            notCheckable = true,
+            func = function() DC:LinkCollectionEntryToChat(item.type, item.id, item.definition) end,
+        })
+    end
+
     if item.collected then
         if item.is_favorite then
             table.insert(menu, {

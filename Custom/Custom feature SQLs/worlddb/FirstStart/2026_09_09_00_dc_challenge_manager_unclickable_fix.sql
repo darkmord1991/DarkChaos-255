@@ -1,0 +1,33 @@
+-- ====================================================================================
+-- FIX: the Challenge Mode Manager (gameobject 700010) became unclickable
+-- ====================================================================================
+-- Database: acore_world
+--
+-- SYMPTOM
+-- The shrine renders normally but takes no mouse-over and no click, so its gossip
+-- (hardcore / semi-hardcore / self-crafted / iron man / XP modes / prestige) is
+-- unreachable. Nothing is wrong with gobject_challenge_modes - OnGossipHello is never
+-- reached, because the client never sends CMSG_GAMEOBJ_USE.
+--
+-- CAUSE
+-- 2026_08_29_00_dc_challenge_manager_quest.sql set Data1 (goober.questId) = 820059 to
+-- get a quest sparkle. Any GOOBER with questId > 0 is flagged IsForQuests by
+-- ObjectMgr::LoadGameObjectForQuests, and GameObject::BuildValuesUpdate then only sets
+-- GO_DYNFLAG_LO_ACTIVATE on GAMEOBJECT_DYNAMIC when GameObject::ActivateToQuest()
+-- passes - i.e. only while quest 820059 is INCOMPLETE in that player's log. Without
+-- that dynamic flag the 3.3.5 client will not let a quest-flagged goober be clicked.
+-- Everyone who had finished "A Harder Road", or never picked it up, saw a dead object.
+-- GMs were exempt (ActivateToQuest failing still grants ACTIVATE for a GM account),
+-- which is why it can look fine while testing.
+--
+-- The sparkle was never worth the template change: ActivateToQuest() checks
+-- HasQuestForGO(700010) BEFORE the IsForQuests gate, and quest 820059 already has
+-- RequiredNpcOrGo1 = -700010, so players holding the quest keep the sparkle either way.
+--
+-- No worldserver rebuild needed - reload the template or restart the world.
+-- ====================================================================================
+
+UPDATE `gameobject_template` SET `Data1` = 0 WHERE `entry` = 700010;
+
+-- Verification (expect Data1 = 0):
+--   SELECT entry, type, Data1, ScriptName FROM gameobject_template WHERE entry = 700010;

@@ -386,15 +386,12 @@ bool ItemTemplate::HasSpellPowerStat() const
 }
 
 // Only _static_ data send in this packet !!!
-void WorldSession::HandleItemQuerySingleOpcode(WorldPacket& recvData)
+// Builds and sends SMSG_ITEM_QUERY_SINGLE_RESPONSE for one item entry. Split out of the
+// CMSG_ITEM_QUERY_SINGLE handler so the server can also push responses the client has
+// not asked for yet (see WorldSession::SendListInventory).
+void WorldSession::SendItemQueryResponse(uint32 entry)
 {
-    //LOG_DEBUG("network.opcode", "WORLD: CMSG_ITEM_QUERY_SINGLE");
-    uint32 item;
-    recvData >> item;
-
-    LOG_DEBUG("network.opcode", "STORAGE: Item Query = {}", item);
-
-    ItemTemplate const* pProto = sObjectMgr->GetItemTemplate(item);
+    ItemTemplate const* pProto = sObjectMgr->GetItemTemplate(entry);
     if (pProto)
     {
         std::string Name = pProto->Name1;
@@ -538,11 +535,22 @@ void WorldSession::HandleItemQuerySingleOpcode(WorldPacket& recvData)
     }
     else
     {
-        LOG_DEBUG("network", "WORLD: CMSG_ITEM_QUERY_SINGLE - NO item INFO! (ENTRY: {})", item);
+        LOG_DEBUG("network", "WORLD: CMSG_ITEM_QUERY_SINGLE - NO item INFO! (ENTRY: {})", entry);
         WorldPacket queryData(SMSG_ITEM_QUERY_SINGLE_RESPONSE, 4);
-        queryData << uint32(item | 0x80000000);
+        queryData << uint32(entry | 0x80000000);
         SendPacket(&queryData);
     }
+}
+
+void WorldSession::HandleItemQuerySingleOpcode(WorldPacket& recvData)
+{
+    //LOG_DEBUG("network.opcode", "WORLD: CMSG_ITEM_QUERY_SINGLE");
+    uint32 item;
+    recvData >> item;
+
+    LOG_DEBUG("network.opcode", "STORAGE: Item Query = {}", item);
+
+    SendItemQueryResponse(item);
 }
 
 void WorldSession::HandleReadItem(WorldPackets::Item::ReadItem& packet)

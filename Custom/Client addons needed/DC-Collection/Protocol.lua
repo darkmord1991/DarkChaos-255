@@ -4506,9 +4506,16 @@ end
 
 -- Apply multiple equipment-slot changes at once (preferred for outfits).
 -- entries: { { slot = 0..18, appearanceId = displayId, clear = bool }, ... }
-function DC:ApplyTransmogBatchByEquipmentSlot(entries)
+--
+-- atomic: refuse the whole batch if any slot fails validation instead of
+-- applying the rest. The wardrobe's Apply button sets it, because the player
+-- approved one complete look and a half-applied outfit would no longer match
+-- the preview. Outfit loading deliberately leaves it off: dressing every slot
+-- an outfit can fill is the useful behaviour when a weapon is missing.
+function DC:ApplyTransmogBatchByEquipmentSlot(entries, atomic)
     return self:SendMessage(self.Opcodes.CMSG_APPLY_TRANSMOG_PREVIEW, {
         byEquipSlot = true,
+        atomic = atomic and true or false,
         entries = entries or {},
     })
 end
@@ -6409,6 +6416,16 @@ function DC:HandleError(data)
         self:Print("|cffff0000Error:|r " .. errorMsg)
     end
 
+    -- An atomic batch was refused: the server changed nothing, so the staged
+    -- slots stay staged and the player can fix the offending one instead of
+    -- rebuilding the whole look.
+    if data.atomic and self.Wardrobe then
+        self.Wardrobe._applyRefused = true
+        if type(self.Wardrobe.UpdatePendingBar) == "function" then
+            pcall(function() self.Wardrobe:UpdatePendingBar() end)
+        end
+    end
+
     -- Title apply diagnostics: surface recent title request context.
     local titleReq = self._lastTitleRequest
     if type(titleReq) == "table" then
@@ -6708,6 +6725,23 @@ function DC:HandleTransmogState(data)
                 needsDelayedRefresh = true
             end
         end
+    end
+
+    -- A state push is the server's confirmation that an Apply landed, so the
+    -- staged set has served its purpose. An atomic refusal keeps its staging:
+    -- the error handler clears _applyInFlight without clearing pending, and the
+    -- state push that follows it is the unchanged state.
+    if self.Wardrobe and self.Wardrobe._applyInFlight then
+        self.Wardrobe._applyInFlight = nil
+        if not self.Wardrobe._applyRefused then
+            if type(self.Wardrobe.DiscardPendingChanges) == "function" then
+                pcall(function() self.Wardrobe:DiscardPendingChanges() end)
+            end
+            if type(self.Wardrobe.ClearUnsavedChanges) == "function" then
+                self.Wardrobe:ClearUnsavedChanges()
+            end
+        end
+        self.Wardrobe._applyRefused = nil
     end
 
     -- Refresh UI if open
@@ -7480,6 +7514,11 @@ function DC:HandleStats(data)
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("stats", "stats")
     end
+
+    -- Staff flag. The server only sets it for security >= SEC_GAMEMASTER; an
+    -- older server omits it entirely, which reads as "not a GM". Consumed by
+    -- the collection chat links (Modules/CollectionLinks.lua).
+    self.isGM = (data.gm == true)
 
     -- Store raw stats for legacy compatibility
     local sawServerTitleStats = false

@@ -151,11 +151,26 @@ GraveyardStruct const* Graveyard::GetClosestGraveyard(uint32 mapId, float x, flo
     }
     else // Found a graveyard linked to the area, check if it's a valid one.
     {
-        GraveyardData const& graveyardLink = range.first->second;
-
-        if (!graveyardLink.IsNeutralOrFriendlyToTeam(teamId))
+        // An area normally carries one graveyard per faction. Only testing the
+        // first entry of the bucket meant whichever faction happened to be
+        // ordered second was thrown back to the zone search even though its own
+        // graveyard was sitting right there. For a battleground whose area
+        // hangs off a world zone (DC's Hinterland BG is area 6738 under zone 47)
+        // that zone search resolves to graveyards on the world map, and
+        // repopping there drops the player out of the battleground entirely.
+        bool anyFriendly = false;
+        for (auto itr = range.first; itr != range.second; ++itr)
         {
-            // Not a friendly or neutral graveyard, search zone.
+            if (itr->second.IsNeutralOrFriendlyToTeam(teamId))
+            {
+                anyFriendly = true;
+                break;
+            }
+        }
+
+        if (!anyFriendly)
+        {
+            // Nothing in the area is usable by this team, search zone.
             range = GraveyardStore.equal_range(zoneId);
         }
     }

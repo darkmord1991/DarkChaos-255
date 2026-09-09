@@ -69,25 +69,36 @@ MapPOIData.TYPES = {
         borderColor = { 0.58, 0.58, 0.64, 0.62 },
         iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
+    -- Portal types. There is NO borderless portal art in 3.3.5 -- do not go
+    -- looking for it again. The complete Interface\Minimap\Tracking set in
+    -- locale-enGB.MPQ is Ammunition, Auctioneer, Banker, BattleMaster, Class,
+    -- FlightMaster, Food, Innkeeper, Mailbox, None, Poisons, Profession,
+    -- Reagents, Repair, StableMaster -- and nothing else. Portal, Teleport,
+    -- Dungeon, Raid, MeetingStone, Vendor, Trainer, Target, SpiritHealer and
+    -- Objects are all absent, and the world map's own instance entrances use
+    -- POIIcons index 7, the same generic landmark cell as 253 towns. Nor is
+    -- Spell_Arcane_Teleport* a substitute: those are landscape paintings of the
+    -- destination city, not a portal.
+    --
+    -- So these three stay on Interface\Icons art, whose border is trimmed by
+    -- texCoord to sit flush next to the borderless Tracking silhouettes.
+    --
+    -- What they DON'T do any more is tint one texture three ways. The portal
+    -- family ships five colours of the same swirl, all verified present, so each
+    -- type takes the one it wants at full strength and iconColor stays white:
+    -- tinting multiplies, so the old { 0.55, 0.75, 1.0 } dungeon tint was
+    -- darkening an already-blue icon rather than colouring a neutral one.
+    --   PortalDalaran purple / PortalStormwind blue / PortalIronForge pale blue
+    --   PortalShattrath green / PortalOrgrimmar orange (unused, spare)
     teleporter = {
         order = 4,
         label = "Teleporter",
-        -- No Minimap\Tracking equivalent exists for portals; this is a spell
-        -- icon, so its border is trimmed to match the others.
-        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
-        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalDalaran",
+        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalDalaran",
         texCoord = { 0.08, 0.92, 0.08, 0.92 },
         borderColor = { 0.55, 0.35, 0.85, 0.62 },
         iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
-    -- Instance entrances. 3.3.5 has no dungeon/raid portal art of its own --
-    -- Interface\Minimap\Dungeon and \Raid simply do not exist in this client, and
-    -- the world map's own instance entrances all use POIIcons index 7, the same
-    -- generic landmark icon as 253 towns. So the familiar blue/green pair is made
-    -- by tinting the portal icon the teleporter type already uses, which keeps the
-    -- silhouette consistent with the rest of the layer and, more importantly, uses
-    -- a texture path that is verified to exist: an unknown path draws NOTHING and
-    -- raises no error, so a guessed icon is a silently invisible pin.
     dungeon = {
         order = 5,
         label = "Dungeon Entrance",
@@ -95,16 +106,16 @@ MapPOIData.TYPES = {
         minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
         texCoord = { 0.08, 0.92, 0.08, 0.92 },
         borderColor = { 0.25, 0.55, 0.95, 0.70 },
-        iconColor = { 0.55, 0.75, 1.00, 1.0 },
+        iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
     raid = {
         order = 6,
         label = "Raid Entrance",
-        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
-        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalShattrath",
+        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalShattrath",
         texCoord = { 0.08, 0.92, 0.08, 0.92 },
         borderColor = { 0.20, 0.75, 0.35, 0.70 },
-        iconColor = { 0.55, 1.00, 0.65, 1.0 },
+        iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
 }
 

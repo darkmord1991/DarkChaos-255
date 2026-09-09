@@ -2,6 +2,7 @@
 
 #include "Config.h"
 #include "Creature.h"
+#include "GameGraveyard.h"
 #include "Chat.h"
 #include "Group.h"
 #include "Map.h"
@@ -31,6 +32,19 @@ using namespace HinterlandBGConstants;
 
 namespace
 {
+    // game_graveyard rows for the battleground, both linked to area 6738 in
+    // graveyard_zone. They double as the spirit guide spawn points.
+    constexpr uint32 HLBGGraveyardHorde = 1724;
+    constexpr uint32 HLBGGraveyardAlliance = 1725;
+
+    // Indices into Battleground::BgCreatures.
+    enum HLBGCreatureSlot : uint32
+    {
+        HLBG_SPIRIT_ALLIANCE = 0,
+        HLBG_SPIRIT_HORDE    = 1,
+        HLBG_CREATURES_MAX   = 2
+    };
+
     constexpr uint32 HLBGQuestCreditWin = 920102;
     constexpr uint32 HLBGQuestCreditParticipation = 920103;
     constexpr uint32 HLBGHudSyncIntervalMs = 1000;
@@ -264,6 +278,7 @@ namespace
 
 BattlegroundHLBG::BattlegroundHLBG()
 {
+    BgCreatures.resize(HLBG_CREATURES_MAX);
     InitAffixDefaults();
     _killHonorValues = { 17u, 11u, 19u, 22u };
     // Alliance_Healer/Squadleader and their Horde equivalents are deliberately
@@ -504,6 +519,32 @@ void BattlegroundHLBG::ResetMatchState()
 bool BattlegroundHLBG::SetupBattleground()
 {
     ResetMatchState();
+
+    // Without spirit guides the battleground has no resurrection at all.
+    // Battleground::_ProcessResurrect only revives players that a guide put into
+    // m_ReviveQueue (via CMSG_GOSSIP_HELLO / CMSG_AREA_SPIRIT_HEALER_QUEUE), so
+    // HLBG shipped with dead players releasing to a graveyard and staying ghosts
+    // for the rest of the match - there is no spirit healer spawned on map 1411.
+    // Every stock battleground adds these in its own SetupBattleground; this one
+    // never did.
+    GraveyardStruct const* allianceGraveyard = sGraveyard->GetGraveyard(HLBGGraveyardAlliance);
+    GraveyardStruct const* hordeGraveyard = sGraveyard->GetGraveyard(HLBGGraveyardHorde);
+    if (!allianceGraveyard || !hordeGraveyard)
+    {
+        LOG_ERROR("bg.battleground",
+            "BattlegroundHLBG: missing `game_graveyard` row {} or {}; battleground not created.",
+            HLBGGraveyardAlliance, HLBGGraveyardHorde);
+        return false;
+    }
+
+    if (!AddSpiritGuide(HLBG_SPIRIT_ALLIANCE, allianceGraveyard->x, allianceGraveyard->y, allianceGraveyard->z,
+            3.124139f, TEAM_ALLIANCE))
+        return false;
+
+    if (!AddSpiritGuide(HLBG_SPIRIT_HORDE, hordeGraveyard->x, hordeGraveyard->y, hordeGraveyard->z,
+            3.193953f, TEAM_HORDE))
+        return false;
+
     return true;
 }
 
@@ -1088,23 +1129,13 @@ void BattlegroundHLBG::RewardPlayerKill(Player* killer, Player* victim, uint32 s
         HLBGPlayerStats::OnResourceCapture(player, scorePoints);
     };
 
-    if (Group* group = killer->GetGroup())
-    {
-        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
-        {
-            Player* member = itr->GetSource();
-            if (!member || member->GetBattleground() != this)
-                continue;
-            if (!member->IsAtGroupRewardDistance(victim) && member != killer)
-                continue;
-
-            rewardMember(member);
-        }
-    }
-    else
-    {
-        rewardMember(killer);
-    }
+    // Killer only. This used to pay every group member within reward distance,
+    // which was harmless while HLBG had no groups at all - GetGroup() was always
+    // null and the else branch ran. Now that the battleground puts both sides in
+    // a raid (ShouldUseBattlegroundRaid), that loop would hand ~17 honor and an
+    // Emblem of Heroism to up to 39 other players on every one of the ~137 kills
+    // a match sees.
+    rewardMember(killer);
 }
 
 void BattlegroundHLBG::RewardNpcKill(Player* killer, Creature* unit, uint32 scorePoints, TeamId victimTeam, bool isBossKill)
@@ -1300,6 +1331,13 @@ void BattlegroundHLBG::TickAfk(uint32 diff)
         Player* player = playerItr->second;
         if (!player || !player->IsInWorld() || player->IsGameMaster())
             continue;
+
+        // The MovementHandlerScript hook only fires on client movement opcodes,
+        // so anything moving server-side (playerbots, charmed or scripted
+        // movement) never refreshed its idle timer and was kicked while it was
+        // still running around. Re-check the position here as well; the same
+        // displacement threshold applies either way.
+        NotePlayerMovement(player);
 
         uint32 lowGuid = guid.GetCounter();
         bool wasAfk = _afkFlagged.count(lowGuid) > 0;

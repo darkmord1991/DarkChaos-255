@@ -329,9 +329,12 @@ namespace
 
             if (HasActiveChallenge(player, CHALLENGE_IRON))
             {
-                // Emit a death marker for Iron Prestige (hardcore-style).
+                // Emit a death marker for Iron Prestige (hardcore-style). The marker and the
+                // failure notice describe the death the same way because both come from the one
+                // resolved context.
+                DCAddon::DeathMarkers::DeathContext ctx = DCAddon::DeathMarkers::ResolveDeathContext(player, killer);
                 DCAddon::DeathMarkers::RecordChallengeDeath(player, killer, "iron_prestige", "Iron Prestige");
-                FailChallenge(player, CHALLENGE_IRON, "You died");
+                FailChallenge(player, CHALLENGE_IRON, DCAddon::DeathMarkers::BuildFailureReason(ctx));
             }
         }
 

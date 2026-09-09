@@ -31,12 +31,24 @@ namespace
             return ctx.killerName.empty() ? "Unknown" : ctx.killerName;
         return "Unknown";
     }
+
+    // Hardcore is about the world killing you. A death in a battleground, an
+    // arena or a duel is consensual PvP, which every hardcore implementation
+    // treats as survivable - Classic HC included. Without this guard a single
+    // HLBG match permanently locked the character, and once that battleground
+    // started running matches it became the leading cause of hardcore deaths on
+    // the server. InBattleground() already covers arenas (an arena is a
+    // Battleground), so only the duel case needs adding.
+    bool IsConsensualPvPDeath(Player const* player)
+    {
+        return player && (player->InBattleground() || player->duel);
+    }
 } // namespace
 
 // ==============================================
 // DarkChaos-255: HARDCORE CHARACTER LOCKING
 // ==============================================
-void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& killerName)
+void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& killerName, std::string const& failureReason)
 {
     if (!victim)
         return;
@@ -66,8 +78,9 @@ void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& 
        << " has fallen at level " << (uint32)victim->GetLevel();
     if (!zoneName.empty())
         ss << " in " << zoneName;
-    ss << "! Killed by " << killerName << ". "
-       << "RIP - May they rest in peace.";
+    // The composed reason already names the killer ("Slain by Hogger (Level 11)."), so announcing
+    // it replaces the old bare "Killed by <name>." rather than adding to it.
+    ss << "! " << failureReason << " RIP - May they rest in peace.";
     sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
 
     // Show final stats to player
@@ -75,7 +88,7 @@ void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& 
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000   HARDCORE CHARACTER - DECEASED   |r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000========================================|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFFFF00Final Level: |cffFF0000{}", static_cast<uint32>(victim->GetLevel()));
-    ChatHandler(victim->GetSession()).PSendSysMessage("|cffFFFF00Killed by: |cffFF0000{}", killerName);
+    ChatHandler(victim->GetSession()).PSendSysMessage("|cffFFFF00Cause of death: |cffFF0000{}", failureReason);
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000This character is now PERMANENTLY LOCKED.|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000You will not be able to log in with this character anymore.|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000========================================|r");
@@ -98,12 +111,17 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player))
             return;
 
+        if (IsConsensualPvPDeath(player))
+            return;
+
         // If we already processed the death (e.g., creature/PvP callbacks), don't run twice.
         if (player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
             return;
 
+        // This hook carries no killer, but ResolveDeathContext() recovers one from the attacker
+        // noted at the killing blow - so the entry logged here is the real killer, not 0.
         DCAddon::DeathMarkers::DeathContext ctx = DCAddon::DeathMarkers::ResolveDeathContext(player, nullptr);
-        HandleHardcoreDeath(player, 0, DescribeKillerForChat(ctx));
+        HandleHardcoreDeath(player, ctx.killerEntry, DescribeKillerForChat(ctx), DCAddon::DeathMarkers::BuildFailureReason(ctx));
         DCAddon::DeathMarkers::RecordChallengeDeath(player, nullptr, "hardcore", "Hardcore");
         player->SetPvPDeath(true);
     }
@@ -113,11 +131,16 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
             return;
 
+        if (IsConsensualPvPDeath(victim))
+            return;
+
         // If we already processed the death (e.g., OnPlayerJustDied/PvP callbacks), don't run twice.
         if (victim->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
             return;
 
-        HandleHardcoreDeath(victim, killer ? killer->GetEntry() : 0, killer ? killer->GetName() : "Unknown");
+        DCAddon::DeathMarkers::DeathContext ctx = DCAddon::DeathMarkers::ResolveDeathContext(victim, killer);
+        HandleHardcoreDeath(victim, killer ? killer->GetEntry() : 0, DescribeKillerForChat(ctx),
+            DCAddon::DeathMarkers::BuildFailureReason(ctx));
         DCAddon::DeathMarkers::RecordChallengeDeath(victim, killer, "hardcore", "Hardcore");
 
         // Make player a permanent ghost (original functionality)
@@ -129,6 +152,9 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
             return;
 
+        if (IsConsensualPvPDeath(victim))
+            return;
+
         // If we already processed the death (e.g., OnPlayerJustDied/creature callbacks), don't run twice.
         if (victim->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
             return;
@@ -136,7 +162,7 @@ public:
         // A self-inflicted death (e.g. falling) also fires this hook with killer == victim;
         // ResolveDeathContext() recognizes that and reports the real environmental cause instead.
         DCAddon::DeathMarkers::DeathContext ctx = DCAddon::DeathMarkers::ResolveDeathContext(victim, killer);
-        HandleHardcoreDeath(victim, 0, DescribeKillerForChat(ctx));
+        HandleHardcoreDeath(victim, ctx.killerEntry, DescribeKillerForChat(ctx), DCAddon::DeathMarkers::BuildFailureReason(ctx));
         DCAddon::DeathMarkers::RecordChallengeDeath(victim, killer, "hardcore", "Hardcore");
 
         // Make player a permanent ghost (original functionality)

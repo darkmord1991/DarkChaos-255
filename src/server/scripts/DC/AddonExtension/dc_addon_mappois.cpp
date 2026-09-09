@@ -27,6 +27,10 @@
  *                 ScriptName (SmartAI gatekeepers) or a ScriptName shared with the
  *                 instance's exit trigger.
  *
+ * kPOIExclusions subtracts from all of that: a (map, type) pair listed there is
+ * detected as usual and then dropped before it is ever sent, for the places
+ * where a correctly identified service is still not worth a map marker.
+ *
  * The POI list is static world data: it is scanned once on first request and
  * cached. Requests are answered from memory (no DB round-trip); responses are
  * paged like the TELE list and faction-filtered per player.
@@ -165,6 +169,58 @@ namespace MapPOIs
     {
         { 361001, PoiType::RAID }, // Teleport To Naxxramas (Plaguewood runestone) map 751 -> 2921
     };
+
+    // A whole POI type suppressed on one map, for services that are detected
+    // correctly but do not earn a marker there.
+    //
+    // This is the blunt instrument on purpose. Excluding individual spawns by
+    // guid was the alternative and it rots: a spawn re-created under a new guid
+    // silently comes back as a pin, with nothing to point at the stale rule.
+    // A (map, type) rule keeps working across respawns and re-imports.
+    struct POIExclusion
+    {
+        uint32 map;         // ANY_MAP  => the type is suppressed everywhere
+        char const* type;   // ANY_TYPE => every POI on that map is suppressed
+    };
+
+    // Map 0 is Eastern Kingdoms, so it cannot double as the "any map" wildcard.
+    constexpr uint32 POI_EXCLUDE_ANY_MAP = 0xFFFFFFFF;
+    constexpr char const* POI_EXCLUDE_ANY_TYPE = nullptr;
+
+    // The table must keep at least one row -- an empty constexpr array does not
+    // compile. To turn the feature off, widen a rule rather than deleting the
+    // last one, or comment out the IsExcludedPOI calls in BuildPOIList.
+    static constexpr POIExclusion kPOIExclusions[] =
+    {
+        // Azshara Crater's start camp holds all four Teleporter (800002) spawns
+        // on the map, spread over ~230 yards -- two of them 38 yards apart, so
+        // the duplicate collapser (25y) merges none of them. Three are in view
+        // of each other and of the inn, mailbox and flight master, which is the
+        // one part of map 37 where a player needs no help finding a service.
+        //
+        // The Azshara Bruisers (800003, ScriptName AC_Guard_NPC, 76 spawns) also
+        // teleport on gossip, and they are NOT the pins anyone is looking at:
+        // AC_Guard_NPC is not in kTeleporterScripts and the template carries only
+        // UNIT_NPC_FLAG_GOSSIP, so ClassifyCreature has never returned a type for
+        // them. Adding them would put 76 portal pins on one map.
+        { 37, PoiType::TELEPORTER },
+    };
+
+    static bool IsExcludedPOI(uint32 mapId, char const* type)
+    {
+        for (POIExclusion const& exclusion : kPOIExclusions)
+        {
+            if (exclusion.map != POI_EXCLUDE_ANY_MAP && exclusion.map != mapId)
+                continue;
+
+            if (exclusion.type != POI_EXCLUDE_ANY_TYPE && std::strcmp(exclusion.type, type) != 0)
+                continue;
+
+            return true;
+        }
+
+        return false;
+    }
 
     struct MapPOI
     {
@@ -312,6 +368,7 @@ namespace MapPOIs
     static std::vector<MapPOI> BuildPOIList()
     {
         std::vector<MapPOI> pois;
+        uint32 excludedCount = 0;
 
         for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
         {
@@ -322,6 +379,14 @@ namespace MapPOIs
             char const* type = ClassifyCreature(proto, data);
             if (!type)
                 continue;
+
+            // Checked before the taxi-node scan below, so an excluded flight
+            // master does not pay for a lookup nothing will read.
+            if (IsExcludedPOI(data.mapid, type))
+            {
+                ++excludedCount;
+                continue;
+            }
 
             MapPOI poi;
             poi.name = proto->Name;
@@ -359,6 +424,12 @@ namespace MapPOIs
 
             if (!goType)
                 continue;
+
+            if (IsExcludedPOI(data.mapid, goType))
+            {
+                ++excludedCount;
+                continue;
+            }
 
             MapPOI poi;
             poi.name = proto->name;
@@ -404,12 +475,15 @@ namespace MapPOIs
 
         LOG_INFO("dc.addon",
             "MapPOI (MPOI): cached {} map markers ({} flight, {} inn, {} mail, {} teleporter, "
-            "{} dungeon, {} raid)",
+            "{} dungeon, {} raid); {} suppressed by kPOIExclusions",
             pois.size(), flightCount, innCount, mailCount, teleporterCount,
-            dungeonCount, raidCount);
+            dungeonCount, raidCount, excludedCount);
 
         // An entrance that is listed but never spawned would silently produce no pin,
-        // so say so rather than leaving it to be noticed in game.
+        // so say so rather than leaving it to be noticed in game. Excluding a map that
+        // holds an instance entrance would trip this too, which is the right noise to
+        // make: listing a door in kInstanceEntrances and then suppressing it is a
+        // contradiction worth seeing in the log.
         std::size_t const configuredEntrances = std::size(kInstanceEntrances) + std::size(kInstanceEntranceObjects);
         if (dungeonCount + raidCount < configuredEntrances)
             LOG_WARN("dc.addon",

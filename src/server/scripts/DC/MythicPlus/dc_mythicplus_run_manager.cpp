@@ -334,7 +334,7 @@ bool MythicPlusRunManager::IsBossCreature(Creature const* creature) const
 
 bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     GameObject* font, uint8 forcedKeystoneLevel,
-    uint8 lockedInventoryLevel)
+    uint8 lockedInventoryLevel, ObjectGuid lockedKeystoneOwner)
 {
     // Warm every read-through cache this activation will touch BEFORE taking
     // the run lock. Each of these is a blocking DB round-trip; performing one
@@ -384,6 +384,27 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     if (!profile)
         return false;
 
+    // A group needs one keystone between them, so the key is not necessarily the
+    // activator's (see LoadGroupKeystone). Resolve who actually carries it: they
+    // pay for the run, and they are the one the refund/upgrade must go back to.
+    // The ready-check path re-validates through the forced-level branch, which
+    // overwrites descriptor.ownerGuid, so the reserved owner is passed in.
+    ObjectGuid keyOwnerGuid = lockedKeystoneOwner ? lockedKeystoneOwner : descriptor.ownerGuid;
+    Player* keyOwner = player;
+    if (!forcedKeystoneLevel && keyOwnerGuid && keyOwnerGuid != player->GetGUID())
+    {
+        Player* owner = ObjectAccessor::FindPlayer(keyOwnerGuid);
+        if (!owner || owner->GetMapId() != map->GetId() ||
+            owner->GetInstanceId() != map->GetInstanceId())
+        {
+            SendGenericError(player,
+                "The group member carrying the keystone is no longer in this instance.");
+            return false;
+        }
+
+        keyOwner = owner;
+    }
+
     InstanceState* state = GetOrCreateState(map);
     if (!state)
     {
@@ -396,7 +417,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
     state->keystoneLevel = descriptor.level;
     state->seasonId = descriptor.seasonId ? descriptor.seasonId : GetCurrentSeasonId();
-    state->ownerGuid = player->GetGUID();
+    state->ownerGuid = keyOwner->GetGUID();
     state->startedAt = 0; // Will be set after countdown
     state->deaths = 0;
     state->wipes = 0;
@@ -474,29 +495,33 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
                 MythicPlusConstants::GetItemIdFromKeystoneLevel(lockedInventoryLevel);
 
             if (!lockedItemId ||
-                !player->HasItemCount(lockedItemId, 1, false))
+                !keyOwner->HasItemCount(lockedItemId, 1, false))
             {
+                std::string const ownerLabel = keyOwner == player
+                    ? std::string("your inventory")
+                    : Acore::StringFormat("{}'s inventory", keyOwner->GetName());
+
                 SendGenericError(player,
                     Acore::StringFormat(
-                        "Ready-check keystone +{} is no longer in your inventory.",
-                        uint32(lockedInventoryLevel)));
+                        "Ready-check keystone +{} is no longer in {}.",
+                        uint32(lockedInventoryLevel), ownerLabel));
                 ClearHudSnapshot(state);
                 _instanceStates.erase(state->instanceKey);
                 return false;
             }
 
-            player->DestroyItemCount(lockedItemId, 1, true);
+            keyOwner->DestroyItemCount(lockedItemId, 1, true);
             consumedKeystoneItemId = lockedItemId;
             effectiveKeystoneLevel = lockedInventoryLevel;
 
             LOG_INFO("mythic.run",
                 "Consumed locked ready-check keystone +{} (item {}) from player {}",
                 uint32(lockedInventoryLevel), consumedKeystoneItemId,
-                player->GetGUID().GetCounter());
+                keyOwner->GetGUID().GetCounter());
         }
         else
         {
-            ConsumePlayerKeystone(player, &consumedKeystoneItemId, &effectiveKeystoneLevel);
+            ConsumePlayerKeystone(keyOwner, &consumedKeystoneItemId, &effectiveKeystoneLevel);
             if (effectiveKeystoneLevel == 0)
                 effectiveKeystoneLevel = descriptor.level;
         }
@@ -1066,6 +1091,57 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     outDescriptor.expiresOn = 0; // No expiration for inventory keystones
     outDescriptor.ownerGuid = player->GetGUID();
 
+    return true;
+}
+
+bool MythicPlusRunManager::LoadGroupKeystone(Player* activator, uint32 expectedMap,
+    KeystoneDescriptor& outDescriptor)
+{
+    if (!activator)
+        return false;
+
+    // The activator's own key always wins, so a leader who brought one never
+    // silently spends a member's (possibly much higher) keystone instead.
+    if (LoadPlayerKeystone(activator, expectedMap, outDescriptor))
+        return true;
+
+    Group* group = activator->GetGroup();
+    if (!group)
+        return false;
+
+    // A run only ever consumes ONE keystone, so requiring it to be the clicker's
+    // left a group holding a single key unable to start at all: the holder was
+    // refused for not being leader, and the leader was refused for not holding a
+    // key. Fall back to the best key carried by a member standing in this very
+    // instance - anyone outside it cannot have it consumed.
+    Player* bestHolder = nullptr;
+    KeystoneDescriptor best;
+
+    for (GroupReference* ref = group->GetFirstMember(); ref != nullptr; ref = ref->next())
+    {
+        Player* member = ref->GetSource();
+        if (!member || member == activator)
+            continue;
+
+        if (member->GetMapId() != activator->GetMapId() ||
+            member->GetInstanceId() != activator->GetInstanceId())
+            continue;
+
+        KeystoneDescriptor candidate;
+        if (!LoadPlayerKeystone(member, expectedMap, candidate))
+            continue;
+
+        if (!bestHolder || candidate.level > best.level)
+        {
+            bestHolder = member;
+            best = candidate;
+        }
+    }
+
+    if (!bestHolder)
+        return false;
+
+    outDescriptor = best;
     return true;
 }
 

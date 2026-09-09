@@ -127,6 +127,7 @@ void AddSC_dc_aoeloot_unified();              // QOL/dc_aoeloot_unified.cpp
 void AddSC_dc_questgiver_status_override_qol(); // QOL/dc_questgiver_status_override.cpp
 void AddSC_dc_looter_pet_qol();               // QOL/dc_looter_pet.cpp
 void AddSC_dc_breaking_news_qol();           // QOL/dc_breaking_news_qol.cpp
+void AddSC_dc_vendor_item_cache_prime_qol();   // QOL/dc_vendor_item_cache_prime.cpp
 
 // --- Rare respawn announcer (maps 750 / 37) ---
 void AddSC_dc_rare_spawn_announce();          // RareSpawns/dc_rare_spawn_announce.cpp
@@ -416,6 +417,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_questgiver_status_override_qol);
     DC_LOAD(AddSC_dc_looter_pet_qol);
     DC_LOAD(AddSC_dc_breaking_news_qol);
+    DC_LOAD(AddSC_dc_vendor_item_cache_prime_qol);
 
     LogSection("Rare Respawn Announcer");
     DC_LOAD(AddSC_dc_rare_spawn_announce);

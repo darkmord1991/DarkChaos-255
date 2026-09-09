@@ -1352,7 +1352,7 @@ function GF:CreateMythicKeystonePanel(parent)
     local keystoneIcon = keystoneFrame:CreateTexture(nil, "ARTWORK")
     keystoneIcon:SetSize(54, 54)
     keystoneIcon:SetPoint("LEFT", 15, 0)
-    keystoneIcon:SetTexture("Interface\\Icons\\inv_staff_2h_plunderkey_c_02_gold")
+    keystoneIcon:SetTexture("Interface\\Icons\\inv_relics_hourglass")
     panel.keystoneIcon = keystoneIcon
     
     local keystoneName = keystoneFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

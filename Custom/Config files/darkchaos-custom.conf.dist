@@ -32,6 +32,7 @@
 # PART II - GAMEPLAY SYSTEMS
 #   Section 4:   AoE Loot System
 #   Section 4A:  Rare Respawn Announcer
+#   Section 4B:  Vendor Item Cache Priming
 #   Section 5:   Hotspots System
 #   Section 6:   Item Upgrade System
 #   Section 6A:  Random Enchants System
@@ -1116,6 +1117,50 @@ AoELoot.Extensions.Raid.MaxCorpses = 25
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.TrackDetailedStats = 1
+
+
+###############################################################################
+#
+#  SECTION 4B: VENDOR ITEM CACHE PRIMING
+#
+#  The client resolves a vendor row's name, icon and tooltip from its own item
+#  cache. A miss costs a CMSG_ITEM_QUERY_SINGLE round trip, and that opcode is
+#  answered inside Map::Update - so under a heavy bot population its latency is
+#  the map tick, and vendor rows sit nameless with empty tooltips for seconds.
+#  Most DC vendor stock is custom, so a first-time miss is guaranteed.
+#
+#  When enabled the server pushes the item responses for a vendor's stock just
+#  before SMSG_LIST_INVENTORY, so the merchant frame draws complete on its first
+#  update and the round trip never happens. Each entry is pushed at most once per
+#  session; bot sessions are skipped.
+#
+###############################################################################
+
+#
+#    DC.Vendor.PrimeItemCache.Enable
+#        Description: Push item query responses for vendor stock ahead of
+#                     SMSG_LIST_INVENTORY
+#        Default:     1 (Enabled)
+#
+DC.Vendor.PrimeItemCache.Enable = 1
+
+#
+#    DC.Vendor.PrimeItemCache.MaxPerOpen
+#        Description: Cap on responses pushed for a single vendor open, counting
+#                     both the stock itself (up to MAX_VENDOR_ITEMS = 150) and the
+#                     alternate-currency items its extended costs reference.
+#        Default:     250
+#
+DC.Vendor.PrimeItemCache.MaxPerOpen = 250
+
+#
+#    DC.Vendor.PrimeItemCache.MaxTrackedPerSession
+#        Description: Upper bound on the distinct entries remembered per session
+#                     for de-duplication. On overflow the set is dropped and the
+#                     client falls back to its own queries.
+#        Default:     8192
+#
+DC.Vendor.PrimeItemCache.MaxTrackedPerSession = 8192
 
 
 ###############################################################################
@@ -2924,9 +2969,9 @@ VerySlowXpGain.DisableLevel = 0
 #
 #    HinterlandBG.MatchDuration
 #        Description: Match window duration (seconds)
-#        Default:     3600 (1 hour)
+#        Default:     1800 (30 minutes)
 #
-HinterlandBG.MatchDuration = 3600
+HinterlandBG.MatchDuration = 1800
 
 #
 #    HinterlandBG.Season
@@ -2976,14 +3021,14 @@ HinterlandBG.AFK.TeleportSeconds = 180
 #        Description: Starting resources for Alliance team
 #        Default:     450
 #
-HinterlandBG.Resources.Alliance = 450
+HinterlandBG.Resources.Alliance = 2500
 
 #
 #    HinterlandBG.Resources.Horde
 #        Description: Starting resources for Horde team
 #        Default:     450
 #
-HinterlandBG.Resources.Horde = 450
+HinterlandBG.Resources.Horde = 2600
 
 # Resource Loss Values
 HinterlandBG.ResourcesLoss.PlayerKill = 5
@@ -3017,11 +3062,11 @@ HinterlandBG.Reward.KillHonorValues = "17,11,19,22"
 
 # NPC Token Rewards
 HinterlandBG.Reward.NPCTokenItemId = 300311
-HinterlandBG.Reward.NPCTokenItemCount = 100
+HinterlandBG.Reward.NPCTokenItemCount = 1
 HinterlandBG.Reward.NPCEntriesAlliance = 810001,810003,810009,810010,810011,810013,810015,810017,810021,810022,810023
 HinterlandBG.Reward.NPCEntriesHorde = 810000,810002,810006,810007,810008,810012,810014,810016,810018,810019,810020,810024,810025,810026,810027
 HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
-HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
+HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810002:3
 
 # -----------------------------------------------------------------------------
 # Persistent Stats

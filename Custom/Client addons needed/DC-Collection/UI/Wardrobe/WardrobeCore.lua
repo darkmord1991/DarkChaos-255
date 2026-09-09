@@ -173,6 +173,272 @@ Wardrobe.VISUAL_SLOTS = {
 }
 
 -- ============================================================================
+-- ARMOR / WEAPON TYPE FILTER
+-- ============================================================================
+-- Keyed on item_template.class and .subclass. Subclass numbering only means
+-- something inside one class (armor 1-4 are cloth/leather/mail/plate, weapon
+-- 0-20 are the weapon families), so every option carries both. The native
+-- catalog query takes them as optional args 10/11; the Lua fallback filters on
+-- the same two fields.
+
+Wardrobe.ITEM_CLASS_WEAPON = 2
+Wardrobe.ITEM_CLASS_ARMOR = 4
+
+Wardrobe.SUBTYPE_OPTIONS = {
+    cloth    = { text = "Cloth",            class = 4, subclasses = { 1 } },
+    leather  = { text = "Leather",          class = 4, subclasses = { 2 } },
+    mail     = { text = "Mail",             class = 4, subclasses = { 3 } },
+    plate    = { text = "Plate",            class = 4, subclasses = { 4 } },
+    misc     = { text = "Miscellaneous",    class = 4, subclasses = { 0 } },
+    shield   = { text = "Shield",           class = 4, subclasses = { 6 } },
+    holdable = { text = "Held In Off-hand", class = 4, subclasses = { 0 } },
+    relic    = { text = "Relic",            class = 4, subclasses = { 7, 8, 9, 10 } },
+    axe1h    = { text = "Axe (1H)",         class = 2, subclasses = { 0 } },
+    axe2h    = { text = "Axe (2H)",         class = 2, subclasses = { 1 } },
+    bow      = { text = "Bow",              class = 2, subclasses = { 2 } },
+    gun      = { text = "Gun",              class = 2, subclasses = { 3 } },
+    mace1h   = { text = "Mace (1H)",        class = 2, subclasses = { 4 } },
+    mace2h   = { text = "Mace (2H)",        class = 2, subclasses = { 5 } },
+    polearm  = { text = "Polearm",          class = 2, subclasses = { 6 } },
+    sword1h  = { text = "Sword (1H)",       class = 2, subclasses = { 7 } },
+    sword2h  = { text = "Sword (2H)",       class = 2, subclasses = { 8 } },
+    staff    = { text = "Staff",            class = 2, subclasses = { 10 } },
+    fist     = { text = "Fist Weapon",      class = 2, subclasses = { 13 } },
+    dagger   = { text = "Dagger",           class = 2, subclasses = { 15 } },
+    thrown   = { text = "Thrown",           class = 2, subclasses = { 16 } },
+    crossbow = { text = "Crossbow",         class = 2, subclasses = { 18 } },
+    wand     = { text = "Wand",             class = 2, subclasses = { 19 } },
+}
+
+-- Which options make sense for which slot. Anything not listed gets the armor
+-- set, which is the right answer for every wearable slot.
+Wardrobe.SUBTYPE_ARMOR_SET = { "cloth", "leather", "mail", "plate", "misc" }
+
+Wardrobe.SUBTYPE_SET_BY_SLOT = {
+    ["Main Hand"] = { "axe1h", "axe2h", "sword1h", "sword2h", "mace1h", "mace2h",
+                      "dagger", "fist", "polearm", "staff" },
+    ["Off Hand"]  = { "shield", "holdable", "axe1h", "sword1h", "mace1h",
+                      "dagger", "fist" },
+    ["Ranged"]    = { "bow", "gun", "crossbow", "thrown", "wand", "relic" },
+}
+
+-- True when the deployed client library honours the itemClass/subclass args and
+-- returns class/subclass/itemLevel on each row. Old libraries ignore extra
+-- arguments silently, so the alias is the only reliable probe.
+function Wardrobe:HasNativeSubtypeFilter()
+    return type(QueryDCCollectionTransmogEx2) == "function"
+end
+
+-- Option ids valid for the slot filter currently selected.
+function Wardrobe:GetSubtypeOptionIdsForCurrentSlot()
+    local label = self.selectedSlotFilter and self.selectedSlotFilter.label
+    return (label and self.SUBTYPE_SET_BY_SLOT[label]) or self.SUBTYPE_ARMOR_SET
+end
+
+-- Drop a subtype selection that does not apply to the newly selected slot
+-- (picking "Plate" then switching to Ranged would otherwise show nothing).
+-- Returns true when the selection was reset.
+function Wardrobe:ResetSubtypeFilterForSlot()
+    local current = self.selectedSubtypeFilter
+    if not current or current == "all" then
+        return false
+    end
+
+    for _, optId in ipairs(self:GetSubtypeOptionIdsForCurrentSlot()) do
+        if optId == current then
+            return false
+        end
+    end
+
+    self.selectedSubtypeFilter = "all"
+    local dropdown = self.frame and self.frame.subtypeDropdown
+    if dropdown and UIDropDownMenu_SetText then
+        UIDropDownMenu_SetText(dropdown, "All Types")
+    end
+    return true
+end
+
+-- Resolved (itemClass, subclassesCsv, subclassLookup) for the active subtype
+-- filter. Returns -1, "" and nil when the filter is off.
+function Wardrobe:GetSubtypeFilterArgs()
+    local id = self.selectedSubtypeFilter
+    if not id or id == "all" then
+        return -1, "", nil
+    end
+
+    local opt = self.SUBTYPE_OPTIONS[id]
+    if not opt then
+        return -1, "", nil
+    end
+
+    local lookup = {}
+    local parts = {}
+    for _, sub in ipairs(opt.subclasses or {}) do
+        lookup[sub] = true
+        parts[#parts + 1] = tostring(sub)
+    end
+
+    return opt.class or -1, table.concat(parts, ","), lookup
+end
+
+-- ============================================================================
+-- STAGED (PENDING) TRANSMOG CHANGES
+-- ============================================================================
+-- Picking an appearance stages it instead of sending it. The player then sees
+-- the whole outfit on the model and commits every slot in one request, which is
+-- both fewer round trips and the only way a preview can honestly show what
+-- Apply will produce.
+--
+-- pending[equipmentSlot] = { mode = "item"|"hide"|"clear", displayId, itemId }
+--   item  - show this appearance
+--   hide  - show nothing in the slot
+--   clear - drop the transmog and show the real equipped item again
+
+function Wardrobe:GetPending()
+    self.pending = self.pending or {}
+    return self.pending
+end
+
+function Wardrobe:CountPendingChanges()
+    local n = 0
+    for _ in pairs(self:GetPending()) do
+        n = n + 1
+    end
+    return n
+end
+
+function Wardrobe:HasPendingChanges()
+    return next(self:GetPending()) ~= nil
+end
+
+function Wardrobe:IsSlotStaged(equipmentSlot)
+    return self:GetPending()[equipmentSlot] ~= nil
+end
+
+function Wardrobe:StageAppearance(equipmentSlot, displayId, itemId)
+    if not equipmentSlot then return end
+    self:GetPending()[equipmentSlot] = {
+        mode = "item",
+        displayId = tonumber(displayId),
+        itemId = tonumber(itemId),
+    }
+    self:OnPendingChanged()
+end
+
+function Wardrobe:StageHide(equipmentSlot)
+    if not equipmentSlot then return end
+    self:GetPending()[equipmentSlot] = { mode = "hide" }
+    self:OnPendingChanged()
+end
+
+function Wardrobe:StageClear(equipmentSlot)
+    if not equipmentSlot then return end
+    self:GetPending()[equipmentSlot] = { mode = "clear" }
+    self:OnPendingChanged()
+end
+
+function Wardrobe:UnstageSlot(equipmentSlot)
+    if not equipmentSlot then return end
+    local pending = self:GetPending()
+    if pending[equipmentSlot] == nil then return end
+    pending[equipmentSlot] = nil
+    self:OnPendingChanged()
+end
+
+function Wardrobe:DiscardPendingChanges()
+    if not self:HasPendingChanges() then return end
+    self.pending = {}
+    self:OnPendingChanged()
+end
+
+-- Redraw everything that reflects staged state. Called after any staging edit.
+function Wardrobe:OnPendingChanged()
+    if self:HasPendingChanges() then
+        self:MarkUnsavedChanges()
+    end
+    if type(self.UpdateModel) == "function" then
+        self:UpdateModel()
+    end
+    if type(self.UpdateSlotButtons) == "function" then
+        self:UpdateSlotButtons()
+    end
+    if type(self.UpdatePendingBar) == "function" then
+        self:UpdatePendingBar()
+    end
+end
+
+-- The appearance a slot should render right now: staged change first, then the
+-- transmog the server has applied, then the real equipped item. Returns the
+-- itemId to try on, or nil when the slot should render empty (hidden, or no
+-- item equipped).
+function Wardrobe:GetEffectiveAppearanceItemId(equipmentSlot, unit)
+    unit = unit or self.previewUnit or "player"
+
+    -- Staged changes and DC.transmogState both describe the player. Previewing
+    -- on someone else's model must show their real gear, not our wardrobe.
+    if unit ~= "player" then
+        return GetInventoryItemID(unit, equipmentSlot + 1)
+    end
+
+    local staged = self:GetPending()[equipmentSlot]
+    if staged then
+        if staged.mode == "hide" then
+            return nil
+        end
+        if staged.mode == "item" then
+            local itemId = staged.itemId
+            if not itemId and staged.displayId then
+                itemId = self:GetRepresentativeItemIdForDisplayId(staged.displayId)
+                staged.itemId = itemId
+            end
+            if itemId and itemId > 0 then
+                return itemId
+            end
+        end
+        -- "clear", or an appearance we cannot resolve, falls through to the
+        -- real equipped item below.
+        return GetInventoryItemID(unit, equipmentSlot + 1)
+    end
+
+    -- No staged change: use whatever the server says is applied.
+    local state = DC.transmogState or {}
+    local slotKey = tostring(equipmentSlot)
+    local applied = tonumber(state[slotKey] or state[equipmentSlot])
+    if applied then
+        if applied == 0 then
+            -- Server stores fake_entry 0 for "hide this slot".
+            return nil
+        end
+        local itemIds = DC.transmogItemIds or {}
+        local fakeEntry = tonumber(itemIds[equipmentSlot] or itemIds[slotKey])
+        if fakeEntry and fakeEntry > 0 then
+            return fakeEntry
+        end
+    end
+
+    return GetInventoryItemID(unit, equipmentSlot + 1)
+end
+
+-- Build the batch payload for every staged slot.
+function Wardrobe:BuildPendingEntries()
+    local entries = {}
+    for equipmentSlot, change in pairs(self:GetPending()) do
+        if change.mode == "clear" then
+            entries[#entries + 1] = { slot = equipmentSlot, clear = true }
+        elseif change.mode == "hide" then
+            entries[#entries + 1] = { slot = equipmentSlot, appearanceId = 0, clear = false }
+        elseif change.displayId and change.displayId > 0 then
+            entries[#entries + 1] = {
+                slot = equipmentSlot,
+                appearanceId = change.displayId,
+                clear = false,
+            }
+        end
+    end
+    return entries
+end
+
+-- ============================================================================
 -- STATE DEFAULTS
 -- ============================================================================
 
@@ -180,6 +446,8 @@ Wardrobe.currentTab = Wardrobe.currentTab or "items" -- "items", "sets", "commun
 Wardrobe.selectedSlot = Wardrobe.selectedSlot or nil
 Wardrobe.selectedSlotFilter = Wardrobe.selectedSlotFilter or nil
 Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or -1  -- -1 = all qualities
+Wardrobe.selectedSubtypeFilter = Wardrobe.selectedSubtypeFilter or "all"
+Wardrobe.pending = Wardrobe.pending or {}
 Wardrobe.currentPage = Wardrobe.currentPage or 1
 Wardrobe.totalPages = Wardrobe.totalPages or 1
 Wardrobe.searchText = Wardrobe.searchText or ""

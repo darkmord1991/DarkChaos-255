@@ -523,9 +523,13 @@ public:
         // Check if player is in a group
         Group* group = player->GetGroup();
         bool hasGroup = group && group->GetMembersCount() > 1;
+        // The keystone holder counts as an initiator too. Otherwise the one
+        // person carrying the group's only key is refused for not being leader,
+        // while the leader is refused for not carrying a key.
         bool canLeadActivation = !hasGroup ||
             group->IsLeader(player->GetGUID()) ||
-            group->IsAssistant(player->GetGUID());
+            group->IsAssistant(player->GetGUID()) ||
+            (canActivate && descriptor.ownerGuid == player->GetGUID());
 
         // Default path: use the Mythic+ activation flow directly instead of
         // surfacing the legacy gossip menu. Keep the forced GM level gossip
@@ -534,8 +538,25 @@ public:
         {
             if (!canLeadActivation)
             {
-                ChatHandler(player->GetSession()).SendSysMessage(
-                    "Only the group leader or assistant can start a ready check.");
+                // Never leave the pedestal silent. Returning on a bare chat line
+                // reads in game as "the Font of Power does nothing", so show the
+                // state instead: which key is ready and who has to start it.
+                std::string holder = "a group member";
+                if (Player* owner = ObjectAccessor::FindPlayer(descriptor.ownerGuid))
+                    holder = owner->GetName();
+
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    Acore::StringFormat("|cff00ff00Keystone ready:|r +{} {} (held by {})",
+                        descriptor.level, dungeonName, holder),
+                    GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    Acore::StringFormat(
+                        "|cffff8000{}, an assistant, or the keystone holder must start it.|r",
+                        group->GetLeaderName()),
+                    GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close",
+                    GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
                 return true;
             }
 
@@ -566,7 +587,7 @@ public:
                 else
                 {
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                        "|cffff0000Only the group leader or assistant can start the keystone.|r",
+                        "|cffff0000Only the group leader, an assistant, or the keystone holder can start the keystone.|r",
                         GOSSIP_SENDER_MAIN, ACTION_CLOSE);
                 }
             }
@@ -664,20 +685,23 @@ private:
 
         Group* group = player->GetGroup();
 
-        // Check if leader or assistant
-        if (group && !group->IsLeader(player->GetGUID()) &&
-            !group->IsAssistant(player->GetGUID()))
-        {
-            ChatHandler(player->GetSession()).SendSysMessage("Only the group leader or assistant can start a ready check.");
-            return;
-        }
-
-        // Get keystone info
+        // Get keystone info first - the holder is allowed to start the run even
+        // when they are neither leader nor assistant, and that needs the
+        // descriptor, so the permission check cannot come before it.
         KeystoneDescriptor descriptor;
         std::string error;
         if (!sMythicRuns->CanActivateKeystone(player, go, descriptor, error))
         {
             ChatHandler(player->GetSession()).SendSysMessage(error.c_str());
+            return;
+        }
+
+        if (group && !group->IsLeader(player->GetGUID()) &&
+            !group->IsAssistant(player->GetGUID()) &&
+            descriptor.ownerGuid != player->GetGUID())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "Only the group leader, an assistant, or the keystone holder can start a ready check.");
             return;
         }
 
@@ -970,8 +994,12 @@ public:
 
         if (player && go)
         {
+            // The reserved key may belong to a group member rather than the
+            // activator, and the locked-level path cannot rediscover that on its
+            // own - hand the owner through so it is consumed from the right bags.
             if (pending.keystone.level >= MythicPlusConstants::MIN_KEYSTONE_LEVEL)
-                sMythicRuns->TryActivateKeystone(player, go, 0, pending.keystone.level);
+                sMythicRuns->TryActivateKeystone(player, go, 0, pending.keystone.level,
+                    pending.keystone.ownerGuid);
             else
                 sMythicRuns->TryActivateKeystone(player, go);
         }

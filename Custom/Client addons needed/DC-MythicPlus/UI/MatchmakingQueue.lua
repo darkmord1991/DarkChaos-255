@@ -358,6 +358,26 @@ function GF:GetQueueTargets(kind)
         end
 
         local dungeons = cat and cat.dungeons
+
+        -- Mythic is the keystone difficulty, and the server only forms Mythic
+        -- groups for dungeons in this season's Mythic+ rotation (it returns a
+        -- lock reason for the rest), so the picker must not offer the others:
+        -- a key slotted anywhere else is refused at the Font of Power.
+        -- `mplus` is absent from a catalog sent by an older core, in which case
+        -- list everything and let the server's lock text do the talking.
+        if type(dungeons) == "table" and queueDiff == DUNGEON_DIFFICULTY_MYTHIC then
+            local rotation, tagged = {}, false
+            for _, d in ipairs(dungeons) do
+                if d.mplus ~= nil then
+                    tagged = true
+                    if tonumber(d.mplus) == 1 then
+                        table.insert(rotation, d)
+                    end
+                end
+            end
+            if tagged then dungeons = rotation end
+        end
+
         local anyReqLevel = 0
         local anyOpen = true
         local anyLockReason = nil

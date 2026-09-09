@@ -52,3 +52,21 @@ VALUES
  'Complete this weeks weekly dungeon quest and return for your reward.',
  'Complete the weekly dungeon challenge and report back to the Quest Master.',
  'Weekly dungeon quest completed.');
+
+-- Mark daily quests repeatable (SpecialFlags bit 0) so the server does not
+-- warn "not marked as repeatable in SpecialFlags, added" on every startup.
+-- Flags=0x1000 alone is not enough; quest_template_addon.SpecialFlags must
+-- also carry bit 1 (repeatable). Value 3 = repeatable(1) + daily(2).
+DELETE FROM `quest_template_addon` WHERE `ID` IN (700101, 700102, 700103, 700104);
+INSERT INTO `quest_template_addon`
+    (`ID`, `MaxLevel`, `AllowableClasses`, `SourceSpellID`, `PrevQuestID`, `NextQuestID`,
+     `ExclusiveGroup`, `BreadcrumbForQuestId`, `RewardMailTemplateID`, `RewardMailDelay`,
+     `RequiredSkillID`, `RequiredSkillPoints`,
+     `RequiredMinRepFaction`, `RequiredMaxRepFaction`,
+     `RequiredMinRepValue`, `RequiredMaxRepValue`,
+     `ProvidedItemCount`, `SpecialFlags`)
+VALUES
+(700101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3),
+(700102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3),
+(700103, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3),
+(700104, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3);

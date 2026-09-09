@@ -12,6 +12,7 @@
 #include "dc_addon_namespace.h"
 #include "dc_addon_utils.h"
 #include "dc_addon_groupfinder_mgr.h"
+#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 
 #include "Common.h"
 #include "ScriptMgr.h"
@@ -483,6 +484,18 @@ namespace Matchmaking
     {
         if (!player)
             return "Player unavailable";
+
+        // Mythic is the keystone difficulty. A keystone can only be slotted at
+        // the Font of Power of a dungeon in this season's Mythic+ rotation
+        // (MythicPlusRunManager::IsMythicPlusDungeon -- the same predicate the
+        // pedestal itself uses, so the two can never disagree, and both relax
+        // together when MythicPlus.FeaturedOnly is turned off). The catalog is
+        // built from MapDifficulty.dbc, which carries an EPIC row for ~50
+        // dungeons against the 18 that are actually in rotation, so without
+        // this the queue happily formed a Mythic group for a dungeon where the
+        // party then could not use the key they queued with.
+        if (difficulty == DUNGEON_DIFFICULTY_EPIC && !sMythicRuns->IsMythicPlusDungeon(mapId))
+            return "Not in this season's Mythic+ rotation";
 
         if (player->HasAura(lfg::LFG_SPELL_DUNGEON_DESERTER))
             return "Dungeon Deserter";
@@ -2070,6 +2083,33 @@ namespace Matchmaking
         return it != _formedGroups.end() ? &it->second : nullptr;
     }
 
+    // Leaving a group inside a dungeon makes Group::_homebindIfInstance() clear
+    // m_InstanceValid, and the next Player::Update then raises the stock boot
+    // popup: "You are not in this instance's group. You will be teleported to
+    // the nearest graveyard in 60 Seconds." That warning is for someone who
+    // stayed behind uninvited - it is wrong (and alarming) for a finder run that
+    // is already sending the player out, e.g. right after a completed Mythic+.
+    //
+    // Priming m_HomebindTimer suppresses only the popup: UpdateHomebindTime()
+    // sees a timer already running and takes the silent decrement branch instead
+    // of the branch that sends INSTANCE_BOOT_START. m_InstanceValid is left
+    // alone on purpose, so HandleMoveWorldportAck() still drops the temporary
+    // instance bind on arrival, and if the teleport never lands the stock 60s
+    // graveyard safety net still fires.
+    //
+    // m_InstanceValid is not tested either: for a group of three or more this
+    // runs after _homebindIfInstance() (already false), but for the last two
+    // Group::RemoveMember calls this hook before Disband() gets there (still
+    // true). Priming unconditionally covers both orders, and costs nothing when
+    // the player is never invalidated - UpdateHomebindTime() just clears it.
+    static void SuppressInstanceBootPopup(Player* player)
+    {
+        if (!player || player->m_HomebindTimer)
+            return;
+
+        player->m_HomebindTimer = 60000;
+    }
+
     // Mirrors LFGGroupScript::OnRemoveMember: teleport the leaver back to
     // where they queued from, and hand out the deserter debuff for walking out
     // on an unfinished dungeon while the group could still have used them.
@@ -2135,8 +2175,10 @@ namespace Matchmaking
         // when no entry point was recorded.
         if (player->GetMapId() == snapshot.mapId && player->GetMap() && player->GetMap()->IsDungeon()
             && !player->IsBeingTeleportedFar())
+        {
+            SuppressInstanceBootPopup(player);
             player->TeleportToEntryPoint();
-
+        }
     }
 
     void MatchmakingQueue::ProcessPendingBotEvictions()
@@ -2671,6 +2713,12 @@ namespace Matchmaking
             o.Set("name", JsonValue(d.name));
             o.Set("expansion", JsonValue(static_cast<int32>(d.expansion)));
             o.Set("level", JsonValue(static_cast<int32>(d.level)));
+
+            // In this season's Mythic+ rotation? The Mythic tab lists only
+            // these, rather than showing the other ~30 EPIC-capable dungeons
+            // greyed out with a lock reason nobody can clear.
+            o.Set("mplus", JsonValue(static_cast<int32>(
+                sMythicRuns->IsMythicPlusDungeon(d.mapId) ? 1 : 0)));
 
             // Entry requirement per difficulty (0=Normal, 1=Heroic, 2=Mythic) so
             // the client picker can lock what the player cannot enter yet. Short

@@ -98,18 +98,9 @@ public:
         {
             Talk(SAY_DEATH);
 
+            // The instance script opens the dragon cages off DATA_DRAKOS == DONE.
             if (pInstance)
-            {
                 pInstance->SetData(DATA_DRAKOS, DONE);
-                for( uint8 i = 0; i < 3; ++i )
-                    if (ObjectGuid guid = pInstance->GetGuidData(DATA_DCD_1 + i))
-                        if (GameObject* pGo = ObjectAccessor::GetGameObject(*me, guid))
-                            if (pGo->GetGoState() != GO_STATE_ACTIVE )
-                            {
-                                pGo->SetLootState(GO_READY);
-                                pGo->UseDoorOrButton(0, false);
-                            }
-            }
         }
 
         void KilledUnit(Unit* /*victim*/) override

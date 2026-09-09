@@ -149,6 +149,30 @@ function Wardrobe:GetRepresentativeItemIdForDisplayId(displayId)
         return nil
     end
 
+    if self._displayIdToItemId and self._displayIdToItemId[displayId] then
+        return self._displayIdToItemId[displayId]
+    end
+
+    -- Native catalog: resolve straight from the client library. Under the
+    -- native path DC.definitions.transmog is deliberately left empty (the
+    -- catalog lives in the DBC), so the definitions scan below would find
+    -- nothing and every caller would silently get nil.
+    if type(DC.HasNativeTransmogCatalog) == "function" and
+       DC:HasNativeTransmogCatalog() then
+        if type(GetDCCollectionTransmogByDisplayId) == "function" then
+            local ok, row = pcall(GetDCCollectionTransmogByDisplayId, displayId)
+            if ok and type(row) == "table" then
+                local itemId = tonumber(row.itemId or row.canonicalItemId)
+                if itemId and itemId > 0 then
+                    self._displayIdToItemId = self._displayIdToItemId or {}
+                    self._displayIdToItemId[displayId] = itemId
+                    return itemId
+                end
+            end
+        end
+        return nil
+    end
+
     if not self._displayIdToItemId then
         self._displayIdToItemId = {}
         local defs = DC.definitions and (DC.definitions.transmog or DC.definitions.wardrobe)

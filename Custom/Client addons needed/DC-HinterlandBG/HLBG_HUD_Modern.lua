@@ -382,10 +382,15 @@ function HLBG.UpdateModernHUD(data)
     local hordeRes = tonumber(data.hordeResources or data.H or 0) or 0
     DebugPrint("|cFFFFAA00[UpdateModernHUD]|r Input: A=%s H=%s allianceRes=%d hordeRes=%d",
             tostring(data.A), tostring(data.allianceResources), allianceRes, hordeRes)
-    -- Clamp resources to sane bounds to avoid occasional spikes from malformed input
+    -- Clamp resources to sane bounds to avoid occasional spikes from malformed input.
+    -- The bound is only a garbage filter and must NOT encode a balance number:
+    -- the starting pool is server config (HinterlandBG.Resources.*) and has
+    -- already been raised past the old hard limit of 500, which pinned the HUD
+    -- at "500" for the whole first half of every match.
+    local RESOURCE_DISPLAY_CAP = 1000000
     local function clamp(v, lo, hi) if v < lo then return lo elseif v > hi then return hi else return v end end
-    allianceRes = clamp(math.floor(allianceRes), 0, 500)
-    hordeRes = clamp(math.floor(hordeRes), 0, 500)
+    allianceRes = clamp(math.floor(allianceRes), 0, RESOURCE_DISPLAY_CAP)
+    hordeRes = clamp(math.floor(hordeRes), 0, RESOURCE_DISPLAY_CAP)
     -- Check HUD text elements exist; report only if devMode enabled
     if not HUD.allianceText or not HUD.hordeText then
         DebugPrint("|cFFFF0000[UpdateModernHUD ERROR]|r HUD elements missing! allianceText=%s hordeText=%s",

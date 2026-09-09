@@ -36,6 +36,7 @@ Modules\TitleModule.lua
 Modules\ToyModule.lua
 Modules\TransmogModule.lua
 Modules\FormModule.lua
+Modules\CollectionLinks.lua
 Shop\ShopModule.lua
 
 # UI Components

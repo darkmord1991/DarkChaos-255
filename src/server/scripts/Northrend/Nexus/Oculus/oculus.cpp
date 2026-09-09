@@ -102,6 +102,19 @@ public:
         bool resetPosition, moved;
         uint32 timer;
 
+        Position const& GetReleasePosition() const
+        {
+            switch (me->GetEntry())
+            {
+            case NPC_VERDISA:
+                return VerdisaPOS;
+            case NPC_ETERNOS:
+                return EternosPOS;
+            default:
+                return BelgaristraszPOS;
+            }
+        }
+
         void UpdateAI(uint32 diff) override
         {
             if (m_pInstance->GetData(DATA_DRAKOS) == DONE)
@@ -114,35 +127,24 @@ public:
                     {
                         moved = true;
                         me->SetWalk(true);
-                        switch (me->GetEntry())
-                        {
-                        case NPC_VERDISA:
-                            me->GetMotionMaster()->MovePoint(POINT_MOVE_DRAKES, VerdisaPOS);
-                            break;
-                        case NPC_BELGARISTRASZ:
-                            me->GetMotionMaster()->MovePoint(POINT_MOVE_DRAKES, BelgaristraszPOS);
-                            break;
-                        case NPC_ETERNOS:
-                            me->GetMotionMaster()->MovePoint(POINT_MOVE_DRAKES, EternosPOS);
-                            break;
-                        }
+                        Position releasePos = GetReleasePosition();
+                        me->SetHomePosition(releasePos);
+                        me->GetMotionMaster()->MovePoint(POINT_MOVE_DRAKES, releasePos);
+                        // Do not wait for MovementInform to make them usable: the walk out of the
+                        // cage can be interrupted (a player interacting pauses the movement, and the
+                        // pause deliberately suppresses MovementInform), which used to leave the drake
+                        // vendors without UNIT_NPC_FLAG_GOSSIP and the run unable to get a drake.
+                        me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
                     }
                 }
                 if (resetPosition)
                 {
                     me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
-                    switch (me->GetEntry())
-                    {
-                    case NPC_VERDISA:
-                        me->SetPosition(VerdisaPOS);
-                        break;
-                    case NPC_BELGARISTRASZ:
-                        me->SetPosition(BelgaristraszPOS);
-                        break;
-                    case NPC_ETERNOS:
-                        me->SetPosition(EternosPOS);
-                        break;
-                    }
+                    // Entering an instance that is already saved past Drakos: teleport rather than
+                    // relocate, so clients that already know the creature see it outside the cage.
+                    Position releasePos = GetReleasePosition();
+                    me->SetHomePosition(releasePos);
+                    me->NearTeleportTo(releasePos);
                     resetPosition = false;
                 }
             }

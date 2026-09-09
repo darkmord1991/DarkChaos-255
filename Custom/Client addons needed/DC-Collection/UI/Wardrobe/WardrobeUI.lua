@@ -1020,10 +1020,66 @@ function Wardrobe:CreateRightPanel(parent)
     UIDropDownMenu_SetText(expansionDropdown, "All Expansions")
     parent.expansionDropdown = expansionDropdown
 
+    -- Armor/weapon type filter. The options depend on the selected slot, so the
+    -- menu is rebuilt on open rather than baked once.
+    local subtypeDropdown = CreateFrame("Frame", "DCWardrobeSubtypeDropdown", right, "UIDropDownMenuTemplate")
+    subtypeDropdown:SetPoint("LEFT", expansionDropdown, "RIGHT", -24, 0)
+    UIDropDownMenu_SetWidth(subtypeDropdown, 95)
+
+    UIDropDownMenu_Initialize(subtypeDropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "All Types"
+        info.value = "all"
+        info.func = function(btn)
+            Wardrobe.selectedSubtypeFilter = "all"
+            UIDropDownMenu_SetText(subtypeDropdown, btn:GetText())
+            CloseDropDownMenus()
+            Wardrobe.currentPage = 1
+            Wardrobe:RefreshGrid()
+        end
+        info.checked = ((Wardrobe.selectedSubtypeFilter or "all") == "all")
+        UIDropDownMenu_AddButton(info, level)
+
+        for _, optId in ipairs(Wardrobe:GetSubtypeOptionIdsForCurrentSlot()) do
+            local opt = Wardrobe.SUBTYPE_OPTIONS[optId]
+            if opt then
+                local entry = UIDropDownMenu_CreateInfo()
+                entry.text = opt.text
+                entry.value = optId
+                entry.func = function(btn)
+                    Wardrobe.selectedSubtypeFilter = btn.value
+                    UIDropDownMenu_SetText(subtypeDropdown, btn:GetText())
+                    CloseDropDownMenus()
+                    Wardrobe.currentPage = 1
+                    Wardrobe:RefreshGrid()
+                end
+                entry.checked = (Wardrobe.selectedSubtypeFilter == optId)
+                UIDropDownMenu_AddButton(entry, level)
+            end
+        end
+    end)
+
+    subtypeDropdown:SetScript("OnEnter", function(selfFrame)
+        GameTooltip:SetOwner(selfFrame, "ANCHOR_TOP")
+        GameTooltip:SetText("Armor / Weapon Type", 1, 0.82, 0)
+        if Wardrobe:HasNativeSubtypeFilter() then
+            GameTooltip:AddLine("Options follow the selected slot.", 1, 1, 1)
+        else
+            GameTooltip:AddLine("Your client library is older than this filter.", 1, 0.5, 0.5)
+            GameTooltip:AddLine("Filtering still works but browsing is slower.", 0.7, 0.7, 0.7)
+        end
+        GameTooltip:Show()
+    end)
+    subtypeDropdown:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    Wardrobe.selectedSubtypeFilter = Wardrobe.selectedSubtypeFilter or "all"
+    UIDropDownMenu_SetText(subtypeDropdown, "All Types")
+    parent.subtypeDropdown = subtypeDropdown
+
     -- Universal search box (searches name, itemID, and displayID simultaneously)
     local searchBox = CreateFrame("EditBox", "DCWardrobeSearchBox", right, "InputBoxTemplate")
-    searchBox:SetSize(130, 20)
-    searchBox:SetPoint("LEFT", expansionDropdown, "RIGHT", -10, 2)
+    searchBox:SetSize(110, 20)
+    searchBox:SetPoint("LEFT", subtypeDropdown, "RIGHT", -10, 2)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
@@ -1104,6 +1160,8 @@ function Wardrobe:CreateRightPanel(parent)
                 Wardrobe.selectedSlotFilter = filter
                 btn.selected:Show()
             end
+            Wardrobe:ResetSubtypeFilterForSlot()
+            Wardrobe.currentPage = 1
             Wardrobe:RefreshGrid()
         end)
 
@@ -1773,7 +1831,79 @@ function Wardrobe:CreateBottomBar(parent)
     parent.previewModeFrame = previewModeFrame
     Wardrobe.previewMode = Wardrobe.previewMode or "full"
 
+    -- Staged-changes bar. Picking an appearance stages it; this is where the
+    -- player sees how many slots are waiting and commits or discards them.
+    local pendingBar = CreateFrame("Frame", nil, bottom)
+    pendingBar:SetPoint("BOTTOMLEFT", bottom, "BOTTOMLEFT", 0, 0)
+    pendingBar:SetSize(Wardrobe.MODEL_WIDTH, 26)
+
+    pendingBar.status = pendingBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pendingBar.status:SetPoint("LEFT", pendingBar, "LEFT", 0, 0)
+    pendingBar.status:SetText("")
+
+    local applyBtn = CreateFrame("Button", nil, pendingBar, "UIPanelButtonTemplate")
+    applyBtn:SetSize(64, 22)
+    applyBtn:SetPoint("RIGHT", pendingBar, "RIGHT", 0, 0)
+    applyBtn:SetText("Apply")
+    applyBtn:SetScript("OnClick", function()
+        Wardrobe:ApplyPendingChanges()
+    end)
+    applyBtn:SetScript("OnEnter", function(selfBtn)
+        GameTooltip:SetOwner(selfBtn, "ANCHOR_TOP")
+        GameTooltip:SetText("Apply Changes", 1, 0.82, 0)
+        GameTooltip:AddLine("Commits every staged slot in one request.", 1, 1, 1)
+        GameTooltip:AddLine("If any slot cannot be applied, nothing changes.", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    applyBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    pendingBar.applyBtn = applyBtn
+
+    local revertBtn = CreateFrame("Button", nil, pendingBar, "UIPanelButtonTemplate")
+    revertBtn:SetSize(64, 22)
+    revertBtn:SetPoint("RIGHT", applyBtn, "LEFT", -4, 0)
+    revertBtn:SetText("Discard")
+    revertBtn:SetScript("OnClick", function()
+        Wardrobe:DiscardPendingChanges()
+    end)
+    revertBtn:SetScript("OnEnter", function(selfBtn)
+        GameTooltip:SetOwner(selfBtn, "ANCHOR_TOP")
+        GameTooltip:SetText("Discard Changes", 1, 0.82, 0)
+        GameTooltip:AddLine("Drops every staged slot and returns the preview", 1, 1, 1)
+        GameTooltip:AddLine("to what you are currently wearing.", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    revertBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    pendingBar.revertBtn = revertBtn
+
+    parent.pendingBar = pendingBar
     parent.bottomBar = bottom
+
+    -- Nothing can be staged yet, and Wardrobe.frame is not assigned until after
+    -- this builder returns, so UpdatePendingBar cannot reach the bar here. Set
+    -- the resting state directly.
+    applyBtn:Disable()
+    revertBtn:Disable()
+end
+
+-- Reflect the staged set in the bottom bar. Buttons are disabled rather than
+-- hidden so the bar does not jump around as slots are staged and discarded.
+function Wardrobe:UpdatePendingBar()
+    local bar = self.frame and self.frame.pendingBar
+    if not bar then return end
+
+    local count = self:CountPendingChanges()
+
+    if count == 0 then
+        bar.status:SetText("")
+        bar.applyBtn:Disable()
+        bar.revertBtn:Disable()
+        return
+    end
+
+    bar.status:SetText(string.format("|cffFFCC00%d|r %s staged",
+        count, count == 1 and "slot" or "slots"))
+    bar.applyBtn:Enable()
+    bar.revertBtn:Enable()
 end
 
 -- ============================================================================
@@ -1915,10 +2045,22 @@ function Wardrobe:ShowSlotContextMenu(slotDef)
             text = "Reset Appearance",
             notCheckable = true,
             func = function()
-                -- Send reset command to server
-                if DC and DC.Protocol and DC.Protocol.RequestTransmogSlotReset then
-                    DC.Protocol:RequestTransmogSlotReset(eqSlot)
-                end
+                -- Stage the removal so it commits with everything else the
+                -- player has staged. This used to call
+                -- DC.Protocol:RequestTransmogSlotReset, which is not defined
+                -- anywhere; guarded by an existence check, the menu entry
+                -- silently did nothing.
+                Wardrobe:StageClear(eqSlot)
+            end,
+        })
+    end
+
+    if Wardrobe:IsSlotStaged(eqSlot) then
+        table.insert(menu, {
+            text = "Unstage This Slot",
+            notCheckable = true,
+            func = function()
+                Wardrobe:UnstageSlot(eqSlot)
             end,
         })
     end

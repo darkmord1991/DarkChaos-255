@@ -204,6 +204,10 @@ function Wardrobe:SelectSlot(slotDef)
         end
     end
 
+    -- The armor/weapon type options differ per slot, so a selection carried over
+    -- from another slot has to go.
+    self:ResetSubtypeFilterForSlot()
+
     -- Under the native source-paged path RefreshGrid queries the page itself;
     -- skip the redundant full-list build (which would defeat source-paging).
     if not (type(DC.HasNativeTransmogCatalog) == "function" and
@@ -467,13 +471,19 @@ function Wardrobe:RefreshGrid()
         end)
     end
 
-    -- "Hide Slot" pseudo-entry for hideable slots (Head/Shoulder/Back/Chest).
+    -- "Hide Slot" pseudo-entry for the slots a character may show empty.
     -- It occupies the first cell of page 1.
+    --
+    -- Named constants, not literals: this table previously carried a bare 4
+    -- commented "Chest", but 4 is SHIRT and chest is 5 (plus 20 for robes), so
+    -- Chest never offered Hide Slot and Shirt got it by accident. Head,
+    -- shoulder, shirt, cloak and tabard are the slots that may be hidden.
     local hideableSlots = {
-        [1] = true,   -- Head
-        [3] = true,   -- Shoulder
-        [16] = true,  -- Back/Cloak
-        [4] = true,   -- Chest
+        [DC.InventoryTypes.HEAD] = true,
+        [DC.InventoryTypes.SHOULDER] = true,
+        [DC.InventoryTypes.SHIRT] = true,
+        [DC.InventoryTypes.CLOAK] = true,
+        [DC.InventoryTypes.TABARD] = true,
     }
     local hideOption = nil
     if self.selectedSlotFilter and type(self.selectedSlotFilter.invTypes) == "table" then
@@ -505,10 +515,18 @@ function Wardrobe:RefreshGrid()
     local nativeHonorsExpansion = (not expansionActive) or
         (type(QueryDCCollectionTransmogEx) == "function")
 
+    -- Armor/weapon type filter: only the Ex2 library honours the class/subclass
+    -- args. Older libraries ignore trailing arguments silently, so without the
+    -- probe we would page a wrongly-filtered list; fall back to the Lua path,
+    -- which post-filters on the same two fields.
+    local subtypeClass, subtypeCsv, subtypeLookup = self:GetSubtypeFilterArgs()
+    local subtypeActive = (subtypeLookup ~= nil)
+    local nativeHonorsSubtype = (not subtypeActive) or self:HasNativeSubtypeFilter()
+
     if type(DC.HasNativeTransmogCatalog) == "function" and
        DC:HasNativeTransmogCatalog() and
        type(QueryDCCollectionTransmog) == "function" and
-       nativeHonorsExpansion then
+       nativeHonorsExpansion and nativeHonorsSubtype then
         -- Source-paged: ask the DLL for only the current page of appearances so
         -- the full (~54k) catalog never materialises as Lua tables. The DLL
         -- returns the page plus the full matched/collected totals for paging.
@@ -527,7 +545,8 @@ function Wardrobe:RefreshGrid()
             local need = perPage - (hideHere and 1 or 0)
             local ok, items, total, collected = pcall(QueryDCCollectionTransmog,
                 invCsv, quality, searchStr, showUncollected, sortMode,
-                matchedOffset, need, expMinItemId, expMaxItemId)
+                matchedOffset, need, expMinItemId, expMaxItemId,
+                subtypeClass, subtypeCsv)
             if not ok or type(items) ~= "table" then items = {} end
             return items, tonumber(total) or 0, tonumber(collected) or 0, hideHere
         end
@@ -841,6 +860,48 @@ function Wardrobe:_ApplyExpansionFilterToResults(results)
     return out
 end
 
+-- Post-filter for result lists produced by a client library that predates the
+-- armor/weapon type arguments. Recomputes the collected/total counters over the
+-- surviving entries, matching _ApplyExpansionFilterToResults.
+--
+-- Rows from such a library carry no class/subclass either, so nothing can be
+-- classified and the filter would empty the grid. Returning the list untouched
+-- keeps the old library usable; RefreshGrid has already routed the paged path
+-- away from native in this case.
+function Wardrobe:_ApplySubtypeFilterToResults(results, subtypeClass, subtypeLookup)
+    if not subtypeLookup or type(results) ~= "table" then
+        return results
+    end
+
+    local out = {}
+    local collected = 0
+    local classifiable = false
+
+    for i = 1, #results do
+        local entry = results[i]
+        local sub = entry and tonumber(entry.subclass)
+        if sub then
+            classifiable = true
+            local cls = tonumber(entry.class)
+            local classOk = (subtypeClass < 0) or (not cls) or (cls == subtypeClass)
+            if subtypeLookup[sub] and classOk then
+                out[#out + 1] = entry
+                if entry.collected then
+                    collected = collected + 1
+                end
+            end
+        end
+    end
+
+    if not classifiable then
+        return results
+    end
+
+    self.totalCount = #out
+    self.collectedCount = collected
+    return out
+end
+
 function Wardrobe:BuildAppearanceList()
     local defsRev = (type(DC.GetDefinitionsRevision) == "function") and
         (DC:GetDefinitionsRevision("transmog") or 0) or 0
@@ -870,12 +931,15 @@ function Wardrobe:BuildAppearanceList()
         search = ""
     end
 
+    local subtypeClass, subtypeCsv, subtypeLookup = self:GetSubtypeFilterArgs()
+
     local cacheKey = table.concat({
         tostring(defsRev),
         tostring(collRev),
         slotFilterKey,
         tostring(tonumber(self.selectedQualityFilter) or 0),
         tostring(self.selectedExpansionFilter or "all"),
+        tostring(self.selectedSubtypeFilter or "all"),
         tostring(self.showUncollected and 1 or 0),
         search,
         tostring(self.sortMode or "default"),
@@ -905,16 +969,20 @@ function Wardrobe:BuildAppearanceList()
         -- bounds natively; older ones ignore the extra args, so post-filter.
         local expMinItemId, expMaxItemId = self:_GetExpansionItemIdBounds()
         local nativeExpansion = type(QueryDCCollectionTransmogEx) == "function"
+        local nativeSubtype = self:HasNativeSubtypeFilter()
 
         local ok, qResults, qTotal, qCollected = pcall(QueryDCCollectionTransmog,
             invCsv, quality, searchStr, showUncollected, sortMode,
-            nil, nil, expMinItemId, expMaxItemId)
+            nil, nil, expMinItemId, expMaxItemId, subtypeClass, subtypeCsv)
 
         if ok and type(qResults) == "table" then
             self.totalCount = tonumber(qTotal) or 0
             self.collectedCount = tonumber(qCollected) or 0
             if not nativeExpansion then
                 qResults = self:_ApplyExpansionFilterToResults(qResults)
+            end
+            if not nativeSubtype then
+                qResults = self:_ApplySubtypeFilterToResults(qResults, subtypeClass, subtypeLookup)
             end
             self._appearanceListCache.transmog = {
                 key = cacheKey,
@@ -988,14 +1056,18 @@ function Wardrobe:BuildAppearanceList()
         local itemIds
         local itemIdsTotal
         local packedQuality
+        local itemClass
+        local itemSubClass
 
         if type(def) == "string" and type(DC.ParsePackedTransmogDefinition) == "function" then
-            local pName, pIcon, pQuality, pDisplayId, pInvType, _, _, _, pItemId, _, pItemIdsTotal, pItemIdsStr = DC:ParsePackedTransmogDefinition(def)
+            local pName, pIcon, pQuality, pDisplayId, pInvType, pClass, pSubclass, _, pItemId, _, pItemIdsTotal, pItemIdsStr = DC:ParsePackedTransmogDefinition(def)
             name = pName or ""
             iconTexture = pIcon or nil
             packedQuality = tonumber(pQuality) or 0
             displayId = tonumber(pDisplayId)
             invType = tonumber(pInvType) or 0
+            itemClass = tonumber(pClass)
+            itemSubClass = tonumber(pSubclass)
             itemId = tonumber(pItemId)
             itemIdsTotal = (pItemIdsTotal ~= "" and tonumber(pItemIdsTotal)) or nil
             itemIds = (pItemIdsStr and pItemIdsStr ~= "" and pItemIdsStr) or nil
@@ -1031,6 +1103,9 @@ function Wardrobe:BuildAppearanceList()
             end
             invType = invType or 0
 
+            itemClass = tonumber(def.class or def.itemClass or def.item_class)
+            itemSubClass = tonumber(def.subclass or def.subClass or def.itemSubClass or def.item_subclass)
+
             itemIds = def.itemIds or def.item_ids
             itemIdsTotal = def.itemIdsTotal or def.item_ids_total or def.itemIdsTotal or def.itemIds_count or def.itemIdsCount
             packedQuality = def.quality or def.Quality or def.rarity or def.Rarity or def.itemQuality or def.item_quality
@@ -1055,6 +1130,17 @@ function Wardrobe:BuildAppearanceList()
             -- Only include items that have a known inventory type matching the filter.
             -- Items with unknown invType (0) are excluded to prevent wrong-slot randomization.
             if invType == 0 or not self.selectedSlotFilter.invTypes[invType] then
+                valid = false
+            end
+        end
+
+        -- Armor/weapon type filter. An entry whose definition carries no class
+        -- or subclass cannot be classified, so it is dropped while the filter is
+        -- on rather than shown under a type it may not belong to.
+        if valid and subtypeLookup then
+            if not itemSubClass or not subtypeLookup[itemSubClass] then
+                valid = false
+            elseif subtypeClass >= 0 and itemClass and itemClass ~= subtypeClass then
                 valid = false
             end
         end
@@ -1273,27 +1359,13 @@ function Wardrobe:PreviewAppearance(itemId)
 
     -- Only preview the specific slot if one is selected
     if self.selectedSlot and model.Undress and model.TryOn then
-        -- Undress only the selected slot, keep everything else
-        model:Undress()
+        -- Dress from the effective state (staged change, else applied transmog,
+        -- else the real item) so the candidate piece is seen against the outfit
+        -- the player is actually wearing rather than their real gear.
+        local invSlotId = GetInventorySlotInfo(self.selectedSlot.key)
+        local previewSlot = invSlotId and (invSlotId - 1) or nil
 
-        -- Re-apply all equipped items (with error protection).
-        -- Read from the unit actually being previewed so "Target" previews use
-        -- the target's gear rather than the player's.
-        for slot = 1, 19 do
-            local itemID = GetInventoryItemID(previewUnit, slot)
-            if itemID then
-                pcall(function()
-                    local link = "item:" .. tostring(itemID) .. ":0:0:0:0:0:0:0"
-                    model:TryOn(link)
-                end)
-            end
-        end
-        
-        -- Now try on ONLY the selected slot's new appearance (with error protection)
-        pcall(function()
-            local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-            model:TryOn(link)
-        end)
+        self:DressModelFromEffectiveState(model, previewUnit, previewSlot, itemId)
     else
         -- Fallback: full character preview (with error protection)
         if model.TryOn then
@@ -1370,14 +1442,28 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
             end,
         })
     end
+    -- Staging, not applying: the change lands in the preview and is committed
+    -- with the Apply button, so the label has to say so.
+    table.insert(menu, {
+        text = "Stage Appearance",
+        notCheckable = true,
+        func = function()
+            Wardrobe:ApplyAppearance(appearance)
+        end,
+    })
+
+    local selectedSlot = Wardrobe.selectedSlot
+    local selectedInvSlotId = selectedSlot and GetInventorySlotInfo(selectedSlot.key)
+    local selectedEquipSlot = selectedInvSlotId and (selectedInvSlotId - 1)
+    if selectedEquipSlot and Wardrobe:IsSlotStaged(selectedEquipSlot) then
         table.insert(menu, {
-            text = "Apply",
+            text = "Unstage This Slot",
             notCheckable = true,
             func = function()
-                Wardrobe:ApplyAppearance(appearance)
+                Wardrobe:UnstageSlot(selectedEquipSlot)
             end,
         })
-
+    end
 
     table.insert(menu, { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true })
 
@@ -1385,6 +1471,9 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
     EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
 end
 
+-- Stage an appearance for the selected slot. Nothing is sent to the server here:
+-- the change lands in Wardrobe.pending, the model redraws to show it, and the
+-- player commits every staged slot together with Apply.
 function Wardrobe:ApplyAppearance(appearance)
     if not appearance then return end
 
@@ -1409,37 +1498,82 @@ function Wardrobe:ApplyAppearance(appearance)
         return
     end
 
-    -- Special handling for "Hide Slot" option
+    local equipmentSlot = invSlotId - 1
+
+    -- "Hide Slot" pseudo-entry.
     if appearance.isHideOption then
-        if DC and DC.RequestSetTransmog then
-            DC:RequestSetTransmog(invSlotId, 0)  -- Send 0 to hide the slot
-            
-            if type(self.MarkUnsavedChanges) == "function" then
-                self:MarkUnsavedChanges()
-            end
-        end
+        self:StageHide(equipmentSlot)
         return
     end
-    
+
     local appearanceId = appearance.displayId or appearance.appearanceId or appearance.appearance_id
     if type(appearanceId) == "string" then
         appearanceId = tonumber(appearanceId)
     end
 
     -- Most reliable: server expects displayId.
-    if not appearanceId or tonumber(appearanceId) <= 0 then
+    if not appearanceId or appearanceId <= 0 then
         if DC and DC.Print then
             DC:Print("Unable to apply: missing appearance displayId for this entry.")
         end
         return
     end
 
-    if DC and DC.RequestSetTransmog then
-        DC:RequestSetTransmog(invSlotId, appearanceId)
+    local itemId = tonumber(appearance.itemId or appearance.canonicalItemId)
+    self:StageAppearance(equipmentSlot, appearanceId, itemId)
+end
 
-        if type(self.MarkUnsavedChanges) == "function" then
-            self:MarkUnsavedChanges()
+-- Commit every staged slot in one request. Atomic: the server refuses the whole
+-- batch rather than leaving the character half-changed, so the preview the
+-- player just approved is exactly what they end up wearing.
+function Wardrobe:ApplyPendingChanges()
+    if not self:HasPendingChanges() then
+        return
+    end
+
+    local entries = self:BuildPendingEntries()
+    if #entries == 0 then
+        self:DiscardPendingChanges()
+        return
+    end
+
+    if not (DC and type(DC.ApplyTransmogBatchByEquipmentSlot) == "function") then
+        if DC and DC.Print then
+            DC:Print("Cannot apply: the collection protocol is unavailable.")
         end
+        return
+    end
+
+    self._applyInFlight = true
+    DC:ApplyTransmogBatchByEquipmentSlot(entries, true)
+
+    -- The staged set is kept until the server answers. HandleTransmogState
+    -- clears it on success; an atomic refusal leaves it in place so the player
+    -- can correct one slot instead of rebuilding the whole outfit.
+    if type(self.UpdatePendingBar) == "function" then
+        self:UpdatePendingBar()
+    end
+end
+
+-- Stage "remove the transmog" for every slot that currently has one.
+function Wardrobe:RevertAllTransmogs()
+    local state = DC.transmogState or {}
+    local staged = 0
+
+    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
+        local invSlotId = GetInventorySlotInfo(slotDef.key)
+        if invSlotId then
+            local equipmentSlot = invSlotId - 1
+            local applied = state[tostring(equipmentSlot)] or state[equipmentSlot]
+            if applied ~= nil then
+                self:StageClear(equipmentSlot)
+                staged = staged + 1
+            end
+        end
+    end
+
+    if staged == 0 and DC and DC.Print then
+        DC:Print("No transmogs to remove.")
     end
 end
 
@@ -1447,11 +1581,51 @@ end
 -- MODEL UPDATE
 -- ============================================================================
 
+-- Dress a model from the wardrobe's effective state: for every visible slot,
+-- the staged change if there is one, else the transmog the server has applied,
+-- else the real equipped item. A slot that resolves to nil renders empty, which
+-- is what "hidden" has to look like.
+--
+-- overrideSlot/overrideItemId let the caller substitute one slot (the appearance
+-- being previewed) without staging it.
+function Wardrobe:DressModelFromEffectiveState(model, unit, overrideSlot, overrideItemId)
+    if not model or not model.Undress or not model.TryOn then return end
+
+    unit = unit or self.previewUnit or "player"
+    model:Undress()
+
+    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
+        local invSlotId = GetInventorySlotInfo(slotDef.key)
+        if invSlotId then
+            local equipmentSlot = invSlotId - 1
+            local itemId
+
+            if overrideSlot and equipmentSlot == overrideSlot then
+                itemId = overrideItemId
+            else
+                itemId = self:GetEffectiveAppearanceItemId(equipmentSlot, unit)
+            end
+
+            itemId = tonumber(itemId)
+            if itemId and itemId > 0 then
+                pcall(function()
+                    model:TryOn("item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0")
+                end)
+            end
+        end
+    end
+
+    if type(self.StabilizePreviewModel) == "function" then
+        self:StabilizePreviewModel(model, model._dcPreviewSequence)
+    end
+end
+
 function Wardrobe:UpdateModel()
     if not self.frame or not self.frame.model then return end
 
     local model = self.frame.model
-    model:SetUnit(Wardrobe.previewUnit or "player")
+    local unit = Wardrobe.previewUnit or "player"
+    model:SetUnit(unit)
 
     if self.transmogDisabled then
         model:Undress()
@@ -1461,32 +1635,13 @@ function Wardrobe:UpdateModel()
         return
     end
 
-    -- Apply transmog items to the model using TryOn
-    -- This shows the transmogged appearance instead of the equipped item appearance
-    local transmogItemIds = DC.transmogItemIds or {}
-    local state = DC.transmogState or {}
-    
-    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
-        local invSlotId = GetInventorySlotInfo(slotDef.key)
-        if invSlotId then
-            local eqSlot = invSlotId - 1
-            local eqSlotStr = tostring(eqSlot)
-            local hasTransmog = state[eqSlotStr] and tonumber(state[eqSlotStr]) ~= 0
-            
-            if hasTransmog then
-                local transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[eqSlotStr]
-                if transmogItemId then
-                    transmogItemId = tonumber(transmogItemId)
-                    if transmogItemId and transmogItemId > 0 then
-                        pcall(function() model:TryOn(transmogItemId) end)
-                    end
-                end
-            end
-        end
-    end
+    self:DressModelFromEffectiveState(model, unit)
 
-    if type(self.StabilizePreviewModel) == "function" then
-        self:StabilizePreviewModel(model, model._dcPreviewSequence)
+    -- SetUnit above reset the model transform. This runs on every staging edit
+    -- now, so without restoring the camera the model would snap back to its
+    -- default framing each time the player picked an appearance.
+    if type(self._ApplyModelCamera) == "function" then
+        self:_ApplyModelCamera(model)
     end
 end
 
@@ -1505,30 +1660,45 @@ function Wardrobe:UpdateSlotButtons()
 
         local eqSlot = invSlotId and (invSlotId - 1)
         local state = DC.transmogState or {}
-        local transmogItemIds = DC.transmogItemIds or {}
         local applied = eqSlot and state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
+        local staged = eqSlot and self:IsSlotStaged(eqSlot)
 
+        -- Show what the slot will look like once Apply is pressed, so the
+        -- paperdoll icons agree with the model beside them.
         local iconTexture = nil
-        if applied and eqSlot ~= nil then
-            local transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[tostring(eqSlot)]
-            if transmogItemId then
-                transmogItemId = tonumber(transmogItemId)
-                if transmogItemId and transmogItemId > 0 then
-                    iconTexture = select(10, GetItemInfo(transmogItemId))
-                    if not iconTexture then
-                        -- Item not cached yet, trigger cache and mark for delayed refresh
-                        needsDelayedRefresh = true
-                    end
+        if eqSlot ~= nil and (applied or staged) then
+            local effectiveItemId = self:GetEffectiveAppearanceItemId(eqSlot)
+            if effectiveItemId and effectiveItemId > 0 then
+                iconTexture = select(10, GetItemInfo(effectiveItemId))
+                if not iconTexture then
+                    -- Item not cached yet, trigger cache and mark for delayed refresh
+                    needsDelayedRefresh = true
                 end
             end
         end
 
         btn.icon:SetTexture(iconTexture or self:GetSlotIcon(slotDef.key))
 
-        if applied then
+        if applied or staged then
             btn.transmogApplied:Show()
         else
             btn.transmogApplied:Hide()
+        end
+
+        -- Staged slots are outlined so it is obvious which changes are not yet
+        -- committed. The texture is created lazily to keep the button build
+        -- untouched for slots that are never staged.
+        if staged then
+            if not btn.stagedGlow then
+                btn.stagedGlow = btn:CreateTexture(nil, "OVERLAY")
+                btn.stagedGlow:SetAllPoints()
+                btn.stagedGlow:SetTexture("Interface\\Buttons\\CheckButtonHilight")
+                btn.stagedGlow:SetBlendMode("ADD")
+                btn.stagedGlow:SetVertexColor(1, 0.82, 0)
+            end
+            btn.stagedGlow:Show()
+        elseif btn.stagedGlow then
+            btn.stagedGlow:Hide()
         end
     end
 

@@ -4812,6 +4812,14 @@ namespace DCCollection
         payload.SetObject();
         payload.Set("stats", stats);
 
+        // Staff flag for client-side affordances that are useless to a player:
+        // the collection chat-link tooltip prints the entry id and a ready-made
+        // ".collection grant" line only when this is set. Gated at the rank
+        // ".collection check" needs; granting itself is SEC_ADMINISTRATOR and
+        // is still enforced by the command, not by this hint.
+        if (player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
+            payload.Set("gm", true);
+
         if (includeRecent)
         {
             constexpr uint32 RECENT_MAX_ITEMS = 12;

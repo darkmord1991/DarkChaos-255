@@ -133,6 +133,17 @@ public:
                 SetData(DATA_CC_COUNT, DONE);
         }
 
+        void OpenDragonCages()
+        {
+            for (uint8 i = 0; i < 3; ++i)
+                if (GameObject* pGo = instance->GetGameObject(DragonCageDoorGUID[i]))
+                    if (pGo->GetGoState() != GO_STATE_ACTIVE)
+                    {
+                        pGo->SetLootState(GO_READY);
+                        pGo->UseDoorOrButton(0, false);
+                    }
+        }
+
         void SetData(uint32 type, uint32 data) override
         {
             switch (type)
@@ -141,6 +152,10 @@ public:
                     m_auiEncounter[DATA_DRAKOS] = data;
                     if (data == DONE)
                     {
+                        // Driven from here rather than only from boss_drakos' JustDied, so the drake
+                        // givers are released on every path that completes the encounter.
+                        OpenDragonCages();
+
                         DoUpdateWorldState(WORLD_STATE_OCULUS_CENTRIFUGE_CONSTRUCT_SHOW, 1);
                         DoUpdateWorldState(WORLD_STATE_OCULUS_CENTRIFUGE_CONSTRUCT_AMOUNT, 10 - CentrifugeCount);
 

@@ -134,6 +134,12 @@ L.ERROR_ALREADY_OWNED = "You already own this item."
 L.ERROR_NOT_OWNED = "You don't own this item."
 L.ERROR_BAGS_FULL = "Your bags are full!"
 
+-- Chat links (mounts / pets)
+L.LINK_TO_CHAT = "Link to Chat"
+L.LINK_CLICK_TO_VIEW = "Click to view in your Collection"
+L.LINK_DATA_NOT_LOADED = "Collection data not loaded yet."
+L.LINK_NOT_FOUND = "%s is not in your collection list yet - open the %s tab once so its data loads, then click the link again."
+
 -- Heirlooms
 L.HEIRLOOM_UPGRADE_LEVEL = "Upgrade Level: %d / %d"
 L.HEIRLOOM_ALREADY_HAVE = "You already have this heirloom."
@@ -174,6 +180,11 @@ if GetLocale() == "deDE" then
     
     L.STATS_COLLECTED = "Gesammelt: %d / %d"
     L.STATS_PROGRESS = "%.1f%% Abgeschlossen"
+
+    L.LINK_TO_CHAT = "In den Chat verlinken"
+    L.LINK_CLICK_TO_VIEW = "Klicken, um es in deiner Sammlung anzuzeigen"
+    L.LINK_DATA_NOT_LOADED = "Sammlungsdaten noch nicht geladen."
+    L.LINK_NOT_FOUND = "%s ist noch nicht in deiner Sammlungsliste - öffne einmal den Reiter %s, damit die Daten geladen werden, und klicke den Link erneut."
 end
 
 L.ADD_TO_WISHLIST = L.ADD_TO_WISHLIST or L.ACTION_ADD_WISHLIST

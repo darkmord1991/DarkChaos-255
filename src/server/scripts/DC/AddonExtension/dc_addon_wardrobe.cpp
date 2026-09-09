@@ -1485,21 +1485,49 @@ namespace DCCollection
 
         if (byEquipSlot && hasEntries)
         {
-            uint32 accountId = GetAccountId(player);
+            uint32 const accountId = GetAccountId(player);
             auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
             auto const& idx = GetTransmogAppearanceIndexCached();
 
+            // Atomic mode. The wardrobe stages several slots and commits them in one
+            // request, so a single unusable slot must not leave half the outfit on the
+            // character: the client would then be showing a preview that no longer
+            // matches the server. When set, the batch is validated in full before
+            // anything is written and refused outright if any slot fails.
+            //
+            // The outfit loader deliberately does not set it: loading a saved outfit
+            // onto a character that is missing a weapon should still dress every other
+            // slot, which is the long-standing lenient behaviour.
+            bool const atomic = json.HasKey("atomic") ? json["atomic"].AsBool() : false;
+
             if (verbose)
-                LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}, skipUnlockCheck={}",
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}, atomic={}, skipUnlockCheck={}",
                     player->GetName(), accountId,
                     unlocked ? static_cast<uint32>(unlocked->size()) : 0u,
                     static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()),
-                    sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false));
+                    atomic, sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false));
 
-            uint32 guid = player->GetGUID().GetCounter();
+            uint32 const guid = player->GetGUID().GetCounter();
+
+            bool const skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
+            bool const skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
+
+            enum class PlannedAction : uint8
+            {
+                Clear,
+                Hide,
+                Set
+            };
+
+            struct PlannedSlot
+            {
+                uint8 equipmentSlot;
+                PlannedAction action;
+                uint32 fakeEntry;
+                uint32 realEntry;
+            };
 
             uint32 requested = 0;
-            uint32 applied = 0;
             uint32 skippedNoItem = 0;
             uint32 skippedNotUnlocked = 0;
             uint32 skippedNoVariant = 0;
@@ -1510,13 +1538,20 @@ namespace DCCollection
             DCAddon::JsonValue perSlot;
             perSlot.SetObject();
 
-            auto trans = CharacterDatabase.BeginTransaction();
+            // ---------------------------------------------------------------
+            // Phase 1 - resolve. Nothing is written to the database or to the
+            // visual cache here, so an early failure leaves the character
+            // exactly as it was.
+            // ---------------------------------------------------------------
+            std::vector<PlannedSlot> plan;
+            plan.reserve(json["entries"].AsArray().size());
+
             for (auto const& entry : json["entries"].AsArray())
             {
                 if (!entry.IsObject() || !entry.HasKey("slot"))
                     continue;
 
-                uint8 equipmentSlot = static_cast<uint8>(entry["slot"].AsUInt32());
+                uint8 const equipmentSlot = static_cast<uint8>(entry["slot"].AsUInt32());
                 if (equipmentSlot >= EQUIPMENT_SLOT_END)
                 {
                     skippedBadSlot++;
@@ -1534,14 +1569,12 @@ namespace DCCollection
                     continue;
                 }
 
-                bool clear = entry.HasKey("clear") ? entry["clear"].AsBool() : false;
+                bool const clear = entry.HasKey("clear") ? entry["clear"].AsBool() : false;
                 uint32 displayId = entry.HasKey("appearanceId") ? entry["appearanceId"].AsUInt32() : 0;
 
                 if (clear)
                 {
-                    trans->Append("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, (uint32)equipmentSlot);
-                    WardrobeVisuals::ClearSlot(player, equipmentSlot);
-                    applied++;
+                    plan.push_back({ equipmentSlot, PlannedAction::Clear, 0, equippedItem->GetEntry() });
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("cleared"));
                     continue;
                 }
@@ -1549,9 +1582,7 @@ namespace DCCollection
                 // Hide slot (displayId = 0)
                 if (displayId == 0)
                 {
-                    trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})", guid, (uint32)equipmentSlot, equippedItem->GetEntry());
-                    WardrobeVisuals::SetSlot(player, equipmentSlot, 0);
-                    applied++;
+                    plan.push_back({ equipmentSlot, PlannedAction::Hide, 0, equippedItem->GetEntry() });
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("hidden"));
                     continue;
                 }
@@ -1559,18 +1590,17 @@ namespace DCCollection
                 // Client may send either a transmog appearance displayId OR an item entry ID.
                 // To avoid displayId/item-entry collisions, only attempt entry->displayId derivation
                 // when the value is not unlocked as-is.
-                bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
                 if (!skipUnlockCheck && displayId && !HasTransmogAppearanceUnlocked(accountId, displayId))
                 {
-                    uint32 originalValue = displayId;
+                    uint32 const originalValue = displayId;
                     if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(originalValue))
                     {
-                        uint32 derived = proto->DisplayInfoID;
+                        uint32 const derived = proto->DisplayInfoID;
                         if (derived)
                         {
                             displayId = derived;
                             LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: derived displayId {} from item entry {}",
-                                (uint32)equipmentSlot, displayId, originalValue);
+                                static_cast<uint32>(equipmentSlot), displayId, originalValue);
                         }
                     }
                 }
@@ -1580,22 +1610,20 @@ namespace DCCollection
                 {
                     skippedNotUnlocked++;
                     LOG_INFO("module.dc", "[DCWardrobe] Batch slot {}: displayId {} NOT_UNLOCKED for account {} (skipCheck={})",
-                        (uint32)equipmentSlot, displayId, accountId, skipUnlockCheck);
+                        static_cast<uint32>(equipmentSlot), displayId, accountId, skipUnlockCheck);
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("not_unlocked"));
                     continue;
                 }
 
                 ItemTemplate const* equippedProto = equippedItem->GetTemplate();
-                bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
                 TransmogAppearanceVariant const* appearance = skipCompatCheck
                     ? FindAnyVariantForSlot(displayId, equipmentSlot)
                     : FindBestVariantForSlot(displayId, equipmentSlot, equippedProto);
                 if (!appearance)
                 {
                     skippedNoVariant++;
-                    auto const& idx = GetTransmogAppearanceIndexCached();
                     LOG_INFO("module.dc", "[DCWardrobe] Batch slot {}: displayId {} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={}, skipCompat={})",
-                        (uint32)equipmentSlot, displayId, (idx.find(displayId) != idx.end()),
+                        static_cast<uint32>(equipmentSlot), displayId, (idx.find(displayId) != idx.end()),
                         equippedProto ? equippedProto->Class : 0,
                         equippedProto ? equippedProto->SubClass : 0,
                         equippedProto ? equippedProto->InventoryType : 0,
@@ -1604,14 +1632,101 @@ namespace DCCollection
                     continue;
                 }
 
-                uint32 fakeEntry = appearance->canonicalItemId;
-                trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})", guid, (uint32)equipmentSlot, fakeEntry, equippedItem->GetEntry());
-                WardrobeVisuals::SetSlot(player, equipmentSlot, fakeEntry);
-                applied++;
+                plan.push_back({ equipmentSlot, PlannedAction::Set, appearance->canonicalItemId, equippedItem->GetEntry() });
                 perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("applied"));
             }
 
-            CharacterDatabase.CommitTransaction(trans);
+            uint32 const refused = skippedNoItem + skippedNotUnlocked + skippedNoVariant + skippedBadSlot;
+
+            // Atomic contract: all or nothing. Report why and change nothing.
+            if (atomic && refused)
+            {
+                std::ostringstream oss;
+                oss << "Transmog apply refused. ";
+                if (skippedNoItem)      oss << "No item equipped: " << skippedNoItem << ". ";
+                if (skippedNotUnlocked) oss << "Not unlocked: " << skippedNotUnlocked << ". ";
+                if (skippedNoVariant)   oss << "Incompatible/unknown appearance: " << skippedNoVariant << ". ";
+                if (skippedBadSlot)     oss << "Invalid slots: " << skippedBadSlot << ". ";
+                oss << "No changes were made. (Requested " << requested << ")";
+
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply REFUSED (atomic): player={}, {}",
+                    player->GetName(), oss.str());
+
+                DCAddon::JsonMessage err(MODULE, DCAddon::Opcode::Collection::SMSG_ERROR);
+                err.Set("error", oss.str());
+                err.Set("code", 1001);
+                err.Set("atomic", true);
+                err.Set("perSlot", perSlot);
+                err.Send(player);
+
+                SendTransmogState(player);
+                return;
+            }
+
+            // ---------------------------------------------------------------
+            // Phase 2 - commit. Every entry still in the plan has been resolved
+            // against live inventory, ownership and slot compatibility.
+            // ---------------------------------------------------------------
+            uint32 applied = 0;
+
+            if (!plan.empty())
+            {
+                auto trans = CharacterDatabase.BeginTransaction();
+                for (auto const& planned : plan)
+                {
+                    switch (planned.action)
+                    {
+                        case PlannedAction::Clear:
+                            trans->Append("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}",
+                                guid, static_cast<uint32>(planned.equipmentSlot));
+                            break;
+                        case PlannedAction::Hide:
+                            trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})",
+                                guid, static_cast<uint32>(planned.equipmentSlot), planned.realEntry);
+                            break;
+                        case PlannedAction::Set:
+                            trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})",
+                                guid, static_cast<uint32>(planned.equipmentSlot), planned.fakeEntry, planned.realEntry);
+                            break;
+                    }
+                }
+                CharacterDatabase.CommitTransaction(trans);
+
+                for (auto const& planned : plan)
+                {
+                    if (planned.action == PlannedAction::Clear)
+                        WardrobeVisuals::ClearSlot(player, planned.equipmentSlot);
+                    else
+                        WardrobeVisuals::SetSlot(player, planned.equipmentSlot, planned.fakeEntry);
+
+                    applied++;
+                }
+            }
+
+            // ---------------------------------------------------------------
+            // Phase 3 - verify. Read the visual cache back and confirm it holds
+            // what the plan asked for. A mismatch means an observer would be
+            // shown something the client does not think it applied, which is
+            // worth an error line rather than silent drift.
+            // ---------------------------------------------------------------
+            uint32 mismatched = 0;
+            for (auto const& planned : plan)
+            {
+                uint32 cached = 0;
+                bool const present = WardrobeVisuals::Lookup(player->GetGUID(), planned.equipmentSlot, cached);
+                bool const ok = planned.action == PlannedAction::Clear
+                    ? !present
+                    : (present && cached == planned.fakeEntry);
+
+                if (!ok)
+                {
+                    mismatched++;
+                    LOG_ERROR("module.dc", "[DCWardrobe] Batch apply VERIFY FAILED: player={}, slot={}, expected={}, cachePresent={}, cached={}",
+                        player->GetName(), static_cast<uint32>(planned.equipmentSlot),
+                        planned.action == PlannedAction::Clear ? "cleared" : std::to_string(planned.fakeEntry),
+                        present, cached);
+                }
+            }
 
             // Provide actionable feedback when nothing (or not everything) applied.
             if (requested > 0 && applied == 0)
@@ -1632,7 +1747,7 @@ namespace DCCollection
                 err.Set("perSlot", perSlot);
                 err.Send(player);
             }
-            else if (requested > 0 && (skippedNotUnlocked || skippedNoVariant || skippedNoItem || skippedBadSlot))
+            else if (requested > 0 && refused)
             {
                 std::ostringstream oss;
                 oss << "Transmog apply partial. Applied " << applied << "/" << requested << ". ";
@@ -1651,7 +1766,8 @@ namespace DCCollection
             }
             else if (applied > 0)
             {
-                LOG_INFO("module.dc", "[DCWardrobe] Batch apply SUCCESS: player={}, applied={}/{}", player->GetName(), applied, requested);
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply SUCCESS: player={}, applied={}/{}, atomic={}, verifyMismatch={}",
+                    player->GetName(), applied, requested, atomic, mismatched);
             }
 
             SendTransmogState(player);

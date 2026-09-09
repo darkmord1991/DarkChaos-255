@@ -32,7 +32,13 @@ public:
     BattlegroundHLBG();
     ~BattlegroundHLBG() override = default;
 
-    [[nodiscard]] bool ShouldUseBattlegroundRaid() const override { return false; }
+    // Inherited "false" from the OutdoorPvP conversion, which left HLBG the only
+    // battleground whose players are never grouped. Everything in the bot AI that
+    // helps a teammate resolves through PartyMemberValue::FindPartyMember, and
+    // that falls back to a party of one when the bot has no group - so buffs,
+    // heals, dispels and resurrects were all self-only here. See RewardPlayerKill
+    // for the payout change that had to go with this.
+    [[nodiscard]] bool ShouldUseBattlegroundRaid() const override { return true; }
     void AddPlayer(Player* player) override;
     void RemovePlayer(Player* player) override;
     void HandleKillPlayer(Player* player, Player* killer) override;
@@ -126,11 +132,15 @@ private:
     uint32 GetHudEndEpoch() const;
     uint64 ComputeHudSnapshotKey(HLBGHudMetrics const& metrics) const;
 
-    uint32 _matchDurationSeconds = 60u * 60u;
+    uint32 _matchDurationSeconds = 30u * 60u;
     uint32 _afkWarnSeconds = 120u;
     uint32 _afkTeleportSeconds = 180u;
-    uint32 _initialResourcesAlliance = 450u;
-    uint32 _initialResourcesHorde = 450u;
+    uint32 _initialResourcesAlliance = 2500u;
+    // Deliberately above the Alliance pool. The Horde camp fields 41 guards to
+    // the Alliance camp's 35, and a guard kill drains its OWN team's pool, so
+    // Horde bleeds 205 per respawn cycle against Alliance's 175 purely for being
+    // better defended. See HinterlandBG.Resources.* in the config for the sizing.
+    uint32 _initialResourcesHorde = 2600u;
     uint32 _rewardMatchHonorDepletion = 1500u;
     uint32 _rewardMatchHonorTiebreaker = 750u;
     uint32 _rewardMatchHonorLoser = 0u;

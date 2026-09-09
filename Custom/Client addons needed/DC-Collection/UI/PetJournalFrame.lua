@@ -611,6 +611,16 @@ function PetJournal:CreatePetButton(parent, index)
             { text = petData.name or "Pet", isTitle = true, notCheckable = true },
         }
 
+        if type(DC.LinkCollectionEntryToChat) == "function" then
+            table.insert(menu, {
+                text = (L and L["LINK_TO_CHAT"]) or "Link to Chat",
+                notCheckable = true,
+                func = function()
+                    DC:LinkCollectionEntryToChat("pets", id, petData.definition)
+                end,
+            })
+        end
+
         if petData.collected then
             if petData.is_favorite then
                 table.insert(menu, {
@@ -661,6 +671,13 @@ function PetJournal:CreatePetButton(parent, index)
     btn:SetScript("OnClick", function(self, button)
         if button == "RightButton" then
             ShowPetContextMenu(btn.petData)
+            return
+        end
+        -- Shift-click links the pet into chat, the same way an item link does;
+        -- fall through to selecting it if the link cannot be built.
+        if btn.petData and IsModifiedClick("CHATLINK") and
+            type(DC.LinkCollectionEntryToChat) == "function" and
+            DC:LinkCollectionEntryToChat("pets", btn.petData.id, btn.petData.definition) then
             return
         end
         PetJournal:SelectPet(btn.petData)

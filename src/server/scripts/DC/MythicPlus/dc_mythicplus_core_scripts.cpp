@@ -10,6 +10,7 @@
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
 #include "dc_mythicplus_affixes.h"
+#include "../DungeonQuests/DungeonQuestConstants.h"
 #include "UnitScript.h"
 #include "Unit.h"
 #include "Creature.h"
@@ -488,10 +489,23 @@ public:
 
         Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
 
-        // Despawn quest givers cleanly (remove from world immediately - no corpse)
-        if (difficulty == DUNGEON_DIFFICULTY_EPIC && creature->IsQuestGiver())
+        // Keep the DC dungeon-quest follower out of Mythic runs.
+        //
+        // This used to be a blanket `creature->IsQuestGiver()` test, which despawned every
+        // questgiver-flagged NPC on the map - including the stock NPCs the dungeons need to
+        // progress at all. It made Mythic uncompletable in at least eight dungeons: Verdisa,
+        // Belgaristrasz and Eternos hand out the Oculus drakes (npcflag 2), Chromie starts the
+        // Culling of Stratholme, Brann Bronzebeard drives Halls of Stone, Sylvanas runs Forge
+        // of Souls / Pit of Saron / Halls of Reflection, Thrall and Erozion are Old Hillsbrad,
+        // Medivh and Sa'at are the Black Morass. Only the DC quest masters (700000-700052 and
+        // the universal 700100) are ours to remove; DungeonQuest::IsQuestMasterBlockedDifficulty
+        // already refuses to summon them on Mythic, so this is only a safety net for a follower
+        // that survived a difficulty change.
+        if (difficulty == DUNGEON_DIFFICULTY_EPIC &&
+            (DungeonQuest::IsQuestMasterNPC(creature->GetEntry()) ||
+             creature->GetEntry() == DungeonQuest::NPC_UNIVERSAL_QUEST_MASTER))
         {
-            LOG_DEBUG("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode",
+            LOG_DEBUG("mythic.scaling", "Despawning dungeon quest master {} (entry {}) in Mythic mode",
                       creature->GetName(), creature->GetEntry());
             // DespawnOrUnsummon, not RemoveFromWorld: this hook fires from
             // inside Creature::AddToWorld(), so tearing the object out here

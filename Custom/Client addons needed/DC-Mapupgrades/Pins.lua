@@ -1177,21 +1177,35 @@ function Pins:AcquireEntityWorldPin(id, entity)
                 GameTooltip:AddLine(string.format("Victim: %s (%s)", tostring(victim), className), 1, 1, 1)
             end
 
+            -- The server composes this from the same killer/environment/spell data as the lines
+            -- below, so it reads as a sentence ("Slain by Hogger (Level 11 Elite).") rather than
+            -- the old placeholder "Died.".
             if ent.failureReason and ent.failureReason ~= "" then
-                GameTooltip:AddLine("Failure Reason: " .. tostring(ent.failureReason), 1, 0.3, 0.3)
+                GameTooltip:AddLine("Cause of Death: " .. tostring(ent.failureReason), 1, 0.3, 0.3, true)
             end
 
             local kt = tostring(ent.killerType or "unknown")
-            if kt == "creature" then
-                local kName = ent.killerName or "Creature"
-                if ent.killerEntry then
-                    GameTooltip:AddLine(string.format("Killer: %s (entry %s)", tostring(kName), tostring(ent.killerEntry)), 0.95, 0.95, 0.95)
-                else
-                    GameTooltip:AddLine("Killer: " .. tostring(kName), 0.95, 0.95, 0.95)
+            if kt == "creature" or kt == "player" then
+                local kName = ent.killerName or (kt == "player" and "Player") or "Creature"
+                local killerLevel = tonumber(ent.killerLevel)
+                local killerRank = (ent.killerRank and ent.killerRank ~= "") and tostring(ent.killerRank) or nil
+
+                local qualifier
+                if killerLevel and killerLevel > 0 and killerRank then
+                    qualifier = string.format("Level %d %s", killerLevel, killerRank)
+                elseif killerLevel and killerLevel > 0 then
+                    qualifier = string.format("Level %d", killerLevel)
                 end
-            elseif kt == "player" then
-                local kName = ent.killerName or "Player"
-                GameTooltip:AddLine("Killer: " .. tostring(kName), 0.95, 0.95, 0.95)
+
+                local line = "Killer: " .. tostring(kName)
+                if qualifier then
+                    line = line .. " (" .. qualifier .. ")"
+                end
+                GameTooltip:AddLine(line, 0.95, 0.95, 0.95)
+
+                if kt == "creature" and ent.killerEntry then
+                    GameTooltip:AddLine(string.format("Creature entry: %s", tostring(ent.killerEntry)), 0.6, 0.6, 0.6)
+                end
             elseif kt == "environment" then
                 local envType = ent.environmentType
                 if envType and envType ~= "" then
@@ -1203,9 +1217,17 @@ function Pins:AcquireEntityWorldPin(id, entity)
                 GameTooltip:AddLine("Killer: Unknown", 0.95, 0.95, 0.95)
             end
 
+            -- A melee killing blow carries no spell, so name one only when the server sent it.
             local killingBlowDamage = tonumber(ent.killingBlowDamage)
+            local spellName = (ent.spellName and ent.spellName ~= "") and tostring(ent.spellName) or nil
             if killingBlowDamage and killingBlowDamage > 0 then
-                GameTooltip:AddLine(string.format("Killing Blow: %d Damage", math.floor(killingBlowDamage)), 1, 1, 1)
+                if spellName then
+                    GameTooltip:AddLine(string.format("Killing Blow: %s for %d damage", spellName, math.floor(killingBlowDamage)), 1, 1, 1)
+                else
+                    GameTooltip:AddLine(string.format("Killing Blow: %d Damage", math.floor(killingBlowDamage)), 1, 1, 1)
+                end
+            elseif spellName then
+                GameTooltip:AddLine("Killing Blow: " .. spellName, 1, 1, 1)
             end
 
             local now = NowEpoch()

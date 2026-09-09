@@ -2617,9 +2617,120 @@ local function GetTopBarInset()
     return -22 -- DC-InfoBar default height
 end
 
+-- Horizontal clearance for the minimap button column. The Minimap module parks
+-- the tracking/mail/zoom buttons and every addon icon in a vertical stack down
+-- the LEFT edge of the map (Modules/Minimap.lua anchors them RIGHT -> Minimap
+-- LEFT), and the cluster is scaled by the user's minimap size setting, so how
+-- far left that stack reaches is not a constant we can bake into the default
+-- offset. Measure it instead and keep the aura columns clear of it -- stock
+-- anchors the debuff row off TemporaryEnchantFrame at -180, right underneath
+-- the icons, so a lone debuff (Deserter after a dungeon drop) lands behind
+-- them. Never nudges right of the configured offset, only further left.
+local BUFF_MINIMAP_GAP = 8
+
+-- Buttons on or beside the minimap all sit in this size window; anything
+-- outside it is cluster chrome (backdrop, zone text) that would drag the
+-- measurement far past the actual icons.
+local MINIMAP_ICON_MIN_SIZE = 16
+local MINIMAP_ICON_MAX_SIZE = 48
+
+-- The stock buttons Modules/Minimap.lua pulls into the column. They are nested
+-- under MinimapBackdrop rather than being direct children of the map, so the
+-- child scan below would miss them.
+local MINIMAP_COLUMN_BUTTONS = {
+    "MiniMapTracking",
+    "MiniMapBattlefieldFrame",
+    "MiniMapWorldMapButton",
+    "GameTimeFrame",
+    "MiniMapMailFrame",
+    "MinimapZoomIn",
+    "MinimapZoomOut",
+}
+
+local buffSettingHookRegistered = false
+
+local function GetLeftInUIParentUnits(frame)
+    if not frame or type(frame.GetLeft) ~= "function" then return nil end
+
+    local left = frame:GetLeft()
+    if not left then return nil end
+
+    local scale = (type(frame.GetEffectiveScale) == "function" and frame:GetEffectiveScale()) or 1
+    local uiScale = (UIParent and UIParent:GetEffectiveScale()) or 1
+    if not uiScale or uiScale <= 0 then return nil end
+
+    return left * scale / uiScale
+end
+
+local function IsMinimapIconLike(frame)
+    if not frame or type(frame.IsShown) ~= "function" or not frame:IsShown() then return false end
+    if frame == Minimap or frame == MinimapCluster then return false end
+
+    local w = (type(frame.GetWidth) == "function" and frame:GetWidth()) or 0
+    local h = (type(frame.GetHeight) == "function" and frame:GetHeight()) or 0
+
+    return w >= MINIMAP_ICON_MIN_SIZE and w <= MINIMAP_ICON_MAX_SIZE
+        and h >= MINIMAP_ICON_MIN_SIZE and h <= MINIMAP_ICON_MAX_SIZE
+end
+
+-- Left-most edge any minimap icon reaches, expressed the way the buff anchor
+-- wants it: an offset from UIParent's right edge. nil when nothing measurable
+-- is up yet (early login, minimap not laid out).
+local function GetMinimapClearanceOffsetX()
+    if not (UIParent and Minimap) then return nil end
+
+    local screenRight = UIParent:GetRight()
+    if not screenRight then return nil end
+
+    local leftMost
+
+    local function consider(frame)
+        if not IsMinimapIconLike(frame) then return end
+        local left = GetLeftInUIParentUnits(frame)
+        if left and (not leftMost or left < leftMost) then
+            leftMost = left
+        end
+    end
+
+    local function scan(parent)
+        if not parent or type(parent.GetChildren) ~= "function" then return end
+        local children = { parent:GetChildren() }
+        for i = 1, #children do
+            consider(children[i])
+        end
+    end
+
+    for i = 1, #MINIMAP_COLUMN_BUTTONS do
+        consider(_G[MINIMAP_COLUMN_BUTTONS[i]])
+    end
+    scan(Minimap)
+    scan(MinimapCluster)
+
+    if not leftMost then return nil end
+
+    -- Stay inside the option slider's floor so the auras can never be pushed
+    -- somewhere the user cannot drag them back from.
+    return math.max(-400, math.floor(leftMost - screenRight - BUFF_MINIMAP_GAP))
+end
+
+-- Cached because the SetPoint hook below runs every frame while a temporary
+-- weapon enchant is up; only the (event/timer driven) re-applies re-measure.
+local function ResolveBuffFrameOffsetX()
+    local offsetX = buffFrameState.offsetX or 0
+
+    local clearance = GetMinimapClearanceOffsetX()
+    if clearance and clearance < offsetX then
+        offsetX = clearance
+    end
+
+    buffFrameState.resolvedOffsetX = offsetX
+    return offsetX
+end
+
 local function ApplyBuffFramePosition()
     if InCombatLockdown() then return end
 
+    local offsetX = ResolveBuffFrameOffsetX()
     local offsetY = GetTopBarInset() + buffFrameState.offsetY
 
     if BuffFrame then
@@ -2631,7 +2742,7 @@ local function ApplyBuffFramePosition()
         BuffFrame:SetUserPlaced(true)
         BuffFrame._dcqosRepositioning = true
         BuffFrame:ClearAllPoints()
-        BuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", buffFrameState.offsetX, offsetY)
+        BuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
         BuffFrame._dcqosRepositioning = nil
 
         if not buffFrameState.hookInstalled then
@@ -2640,7 +2751,8 @@ local function ApplyBuffFramePosition()
                 if not buffFrameState.active or self._dcqosRepositioning then return end
                 self._dcqosRepositioning = true
                 self:ClearAllPoints()
-                self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", buffFrameState.offsetX, GetTopBarInset() + buffFrameState.offsetY)
+                local x = buffFrameState.resolvedOffsetX or buffFrameState.offsetX
+                self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", x, GetTopBarInset() + buffFrameState.offsetY)
                 self._dcqosRepositioning = nil
             end)
         end
@@ -2652,7 +2764,7 @@ local function ApplyBuffFramePosition()
         end
 
         TemporaryEnchantFrame:ClearAllPoints()
-        TemporaryEnchantFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", buffFrameState.offsetX, offsetY)
+        TemporaryEnchantFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
     end
 end
 
@@ -2724,6 +2836,7 @@ local function SetupBuffFramePosition()
     end
     buffFrameState.offsetX = settings.buffFrameOffsetX or 0
     buffFrameState.offsetY = settings.buffFrameOffsetY or 0
+    buffFrameState.resolvedOffsetX = nil
 
     -- Use a frame to handle positioning after combat/loading
     local positioner = GetManagedEventFrame("buffPositioner")
@@ -2737,10 +2850,31 @@ local function SetupBuffFramePosition()
         ApplyBuffFramePosition()
     end
     
-    -- Also try after a short delay for late-loading UI
+    -- Also try after a short delay for late-loading UI. The last pass is what
+    -- catches addon minimap icons that only register themselves once their own
+    -- addon has finished loading, so the clearance measurement sees them.
     addon:DelayedCall(0.5, ApplyBuffFramePosition)
     addon:DelayedCall(2.0, ApplyBuffFramePosition)
     addon:DelayedCall(5.0, ApplyBuffFramePosition)
+    addon:DelayedCall(12.0, ApplyBuffFramePosition)
+
+    -- Resizing/moving the minimap moves the button column with it, so the
+    -- clearance has to be re-measured when those settings change.
+    if not buffSettingHookRegistered then
+        buffSettingHookRegistered = true
+        addon:RegisterEvent("SETTING_CHANGED", function(path)
+            if path == "minimap.enabled" or path == "minimap.size"
+                or path == "minimap.x" or path == "minimap.buttonSpacing"
+                or path == "interface.buffFrameOffsetX" or path == "interface.buffFrameOffsetY" then
+                if path == "interface.buffFrameOffsetX" then
+                    buffFrameState.offsetX = addon.settings.interface.buffFrameOffsetX or 0
+                elseif path == "interface.buffFrameOffsetY" then
+                    buffFrameState.offsetY = addon.settings.interface.buffFrameOffsetY or 0
+                end
+                addon:DelayedCall(0.1, ApplyBuffFramePosition)
+            end
+        end)
+    end
 end
 
 -- ============================================================

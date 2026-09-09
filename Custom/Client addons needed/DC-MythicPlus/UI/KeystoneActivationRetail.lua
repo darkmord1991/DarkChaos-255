@@ -22,7 +22,7 @@ KUI.isLeader = false
 KUI.countdownValue = 0
 
 local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
-local KEYSTONE_ICON = "Interface\\Icons\\INV_Misc_Key_14"
+local KEYSTONE_ICON = "Interface\\Icons\\inv_relics_hourglass"
 -- (Teleporter art removed; icons come from patch MPQ via ResolveLFGIconCandidates.)
 local RETAIL_ATLAS_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\RetailAtlas\\"
 local BG_TINT_ALPHA = 0.60

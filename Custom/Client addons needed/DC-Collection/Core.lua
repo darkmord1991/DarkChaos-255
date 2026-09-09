@@ -2610,6 +2610,11 @@ function SetItemRef(link, text, button, chatFrame)
                 DC:PreviewOutfitFromLink(link)
             end
             return
+        elseif string.sub(link, 1, 8) == "dc:mount" or string.sub(link, 1, 6) == "dc:pet" then
+            if type(DC.HandleCollectionLinkClick) == "function" then
+                DC:HandleCollectionLinkClick(link, button)
+            end
+            return
         elseif string.sub(link, 1, 11) == "dc:wishlist" then
             if DC.RequestAddWishlist then
                 local _, _, itemID = string.find(link, "dc:wishlist:(%d+)")

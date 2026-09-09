@@ -565,6 +565,10 @@ public:
 
     void SendTrainerList(Creature* npc);
     void SendListInventory(ObjectGuid guid, uint32 vendorEntry = 0);
+    // Sends SMSG_ITEM_QUERY_SINGLE_RESPONSE for one entry. Normally driven by
+    // CMSG_ITEM_QUERY_SINGLE, but callable directly to pre-fill the client's item
+    // cache before it has to ask (vendor lists).
+    void SendItemQueryResponse(uint32 entry);
     void SendShowBank(ObjectGuid guid);
     bool CanOpenMailBox(ObjectGuid guid);
     void SendShowMailBox(ObjectGuid guid);

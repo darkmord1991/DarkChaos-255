@@ -141,9 +141,12 @@ public:
     void Reset();
 
     // Keystone lifecycle
+    // lockedKeystoneOwner names the group member the ready check reserved the key
+    // from; empty means the activator carries it themselves.
     bool TryActivateKeystone(Player* player, GameObject* font,
         uint8 forcedKeystoneLevel = 0,
-        uint8 lockedInventoryLevel = 0);
+        uint8 lockedInventoryLevel = 0,
+        ObjectGuid lockedKeystoneOwner = ObjectGuid::Empty);
     bool CanActivateKeystone(Player* player, GameObject* font,
         KeystoneDescriptor& outDescriptor, std::string& outErrorText,
         uint8 forcedKeystoneLevel = 0);
@@ -239,6 +242,10 @@ private:
     void RegisterGroupMembers(Player* activator, InstanceState* state);
     void AddParticipant(InstanceState* state, Player* player);
     bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
+    // A group only ever needs ONE keystone. Falls back to the activator's party
+    // when the activator is not carrying a key, so the leader can start a run on
+    // a member's keystone instead of the pedestal refusing everyone.
+    bool LoadGroupKeystone(Player* activator, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
     void ConsumePlayerKeystone(Player* player, uint32* consumedItemId = nullptr, uint8* consumedLevel = nullptr);
     void AnnounceToInstance(Map* map, std::string_view message) const;
     void ApplyEntryBarrier(Map* map) const;
@@ -407,9 +414,9 @@ inline bool MythicPlusRunManager::CanActivateKeystone(Player* player,
         outDescriptor.expiresOn = 0;
         outDescriptor.ownerGuid = player->GetGUID();
     }
-    else if (!LoadPlayerKeystone(player, map->GetId(), outDescriptor))
+    else if (!LoadGroupKeystone(player, map->GetId(), outDescriptor))
     {
-        outErrorText = "You do not possess a valid keystone for this dungeon.";
+        outErrorText = "Nobody in your group has a valid keystone for this dungeon.";
         return false;
     }
 

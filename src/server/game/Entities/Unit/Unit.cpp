@@ -1239,7 +1239,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
         //if (attacker && victim->IsPlayer() && victim != attacker)
         //victim->ToPlayer()->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_TOTAL_DAMAGE_RECEIVED, health); // pussywizard: optimization
         if (Player* victimPlayer = victim->ToPlayer())
-            DCAddon::DeathMarkers::NotePendingKillingBlow(victimPlayer, damage);
+            DCAddon::DeathMarkers::NotePendingKillingBlow(victimPlayer, attacker, damage, spellProto ? spellProto->Id : 0);
         Unit::Kill(attacker, victim, durabilityLoss, cleanDamage ? cleanDamage->attackType : BASE_ATTACK, spellProto, damageSpell);
     }
     else

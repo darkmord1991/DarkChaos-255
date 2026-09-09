@@ -172,28 +172,41 @@ local function ResolveRecentCollectionType(rawType)
     return collType
 end
 
-local function ResolveRecentDefinition(data)
+-- Returns definition, collection type, and the key the definition was found
+-- under (chat links need that key, not just the definition).
+local function ResolveRecentDefinitionKey(data)
     if not DC or type(DC.GetDefinition) ~= "function" or type(data) ~= "table" then
-        return nil, ResolveRecentCollectionType(data and data.type)
+        return nil, ResolveRecentCollectionType(data and data.type), nil
     end
 
     local collType = ResolveRecentCollectionType(data.type)
-    local candidates = {
-        ToPositiveNumber(data.id),
-        ToPositiveNumber(data.itemId),
-        ToPositiveNumber(data.spellId),
-    }
+
+    -- Appended one at a time: a nil dropped into the middle of a table
+    -- constructor cuts ipairs short and silently skips the later candidates.
+    local candidates = {}
+    local function AddCandidate(value)
+        local n = ToPositiveNumber(value)
+        if n then
+            candidates[#candidates + 1] = n
+        end
+    end
+    AddCandidate(data.id)
+    AddCandidate(data.itemId)
+    AddCandidate(data.spellId)
 
     for _, candidate in ipairs(candidates) do
-        if candidate then
-            local def = DC:GetDefinition(collType, candidate)
-            if def then
-                return def, collType
-            end
+        local def = DC:GetDefinition(collType, candidate)
+        if def then
+            return def, collType, candidate
         end
     end
 
-    return nil, collType
+    return nil, collType, candidates[1]
+end
+
+local function ResolveRecentDefinition(data)
+    local def, collType = ResolveRecentDefinitionKey(data)
+    return def, collType
 end
 
 local function ResolveRecentTooltipIds(data, def)
@@ -520,6 +533,12 @@ local function FocusRecentTransmog(data)
     end
 end
 
+-- Focus a collection entry (mount/pet/appearance/title/heirloom) in the main
+-- UI. Shared by the recent-additions strip below and by the mount/pet chat
+-- links in Modules/CollectionLinks.lua.
+--
+-- data: { type = "mounts"|"pets"|..., id = <definition key>, spellId/itemId =
+-- optional secondary keys, name = optional display name }
 local function OpenRecentItem(data)
     local collType = ResolveRecentCollectionType(data and data.type)
 
@@ -534,6 +553,10 @@ local function OpenRecentItem(data)
     elseif type(DC.SelectTab) == "function" and type(collType) == "string" and collType ~= "" then
         DC:SelectTab(collType)
     end
+end
+
+function DC:FocusCollectionEntry(data)
+    OpenRecentItem(data)
 end
 
 -- ============================================================================
@@ -847,6 +870,15 @@ function MyCollection:CreateRecentIcons(parent)
         btn:SetScript("OnClick", function(self)
             if not self.itemData then return end
             local data = self.itemData
+
+            -- Shift-click links the entry into chat, like an item link.
+            if IsModifiedClick("CHATLINK") and type(DC.LinkCollectionEntryToChat) == "function" then
+                local def, collType, key = ResolveRecentDefinitionKey(data)
+                if (collType == "mounts" or collType == "pets") and key
+                    and DC:LinkCollectionEntryToChat(collType, key, def) then
+                    return
+                end
+            end
 
             OpenRecentItem(data)
         end)

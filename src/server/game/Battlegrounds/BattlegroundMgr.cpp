@@ -160,6 +160,16 @@ void BattlegroundMgr::Update(uint32 diff)
         // for rated arenas
         for (uint32 qtype = BATTLEGROUND_QUEUE_2v2; qtype < MAX_BATTLEGROUND_QUEUE_TYPES; ++qtype)
         {
+            // This loop was written when MAX_BATTLEGROUND_QUEUE_TYPES was one
+            // past the last arena queue. Raising it to make room for custom
+            // battleground queues (HLBG on 14, Battle for Gilneas on 13) pulled
+            // those non-arena queues into the rated-arena pass, where a party
+            // sitting in a custom battleground queue lands in a premade slot and
+            // can be matched into an arena instance. Only queues that actually
+            // map to an arena type belong here.
+            if (!BattlegroundMgr::BGArenaType(BattlegroundQueueTypeId(qtype)))
+                continue;
+
             for (uint32 bracket = BG_BRACKET_ID_FIRST; bracket < MAX_BATTLEGROUND_BRACKETS; ++bracket)
             {
                 m_BattlegroundQueues[qtype].BattlegroundQueueUpdate(m_NextPeriodicQueueUpdateTime, BATTLEGROUND_AA, BattlegroundBracketId(bracket), BattlegroundMgr::BGArenaType(BattlegroundQueueTypeId(qtype)), true, 0);
@@ -917,6 +927,18 @@ BattlegroundTypeId BattlegroundMgr::GetRandomBG(BattlegroundTypeId bgTypeId, uin
 {
     if (BattlegroundTemplate const* bgTemplate = GetBattlegroundTemplateByTypeId(bgTypeId))
     {
+        // A single-map template is not a random battleground - the pool below
+        // could only ever pick the battleground itself. Skipping it also avoids
+        // the level filter, which is written for choosing among the random
+        // pool's candidates and rejects a battleground whose own MinLevel sits
+        // above its bracket's minimum. DC's Hinterland BG is exactly that
+        // (battleground_template MinLvl 80 against the 71-80 PvPDifficulty
+        // bracket for map 1411), which left the pool empty and dereferenced an
+        // empty container below - CreateNewBattleground then failed on a
+        // garbage type id and no HLBG match could ever start.
+        if (bgTemplate->BattlemasterEntry->mapid[1] == -1)
+            return bgTypeId;
+
         std::vector<BattlegroundTypeId> ids;
         ids.reserve(16);
         std::vector<double> weights;
@@ -936,6 +958,11 @@ BattlegroundTypeId BattlegroundMgr::GetRandomBG(BattlegroundTypeId bgTypeId, uin
                 }
             }
         }
+
+        // Nothing in the pool qualifies for this bracket. Dereferencing the
+        // iterator would read past the end of an empty vector.
+        if (ids.empty())
+            return BATTLEGROUND_TYPE_NONE;
 
         return *Acore::Containers::SelectRandomWeightedContainerElement(ids, weights);
     }

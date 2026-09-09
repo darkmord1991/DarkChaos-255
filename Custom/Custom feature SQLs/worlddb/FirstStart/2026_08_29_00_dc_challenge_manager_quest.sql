@@ -22,9 +22,17 @@
 -- (src/server/scripts/DC/Progression/ChallengeMode/dc_challenge_modes_customized.cpp).
 -- Without it the quest can be picked up but never completes.
 --
--- Data1 (goober.questId) on 700010 is set below so the object shows the quest sparkle
--- while 820059 is in the log. It is only ever read for players who hold that quest, so
--- the other three spawns of this object (maps 1 and 530) behave exactly as before.
+-- DO NOT set Data1 (goober.questId) on 700010. An earlier revision of this file did,
+-- believing it was only read for players holding 820059; it is not. Any goober with
+-- questId > 0 gets GameObjectTemplate::IsForQuests (ObjectMgr::LoadGameObjectForQuests),
+-- which makes GameObject::ActivateToQuest() the gate for GO_DYNFLAG_LO_ACTIVATE in
+-- GameObject::BuildValuesUpdate - and without that dynamic flag the client refuses to
+-- let a quest-flagged goober be clicked at all. The manager went dead for everyone who
+-- was not holding 820059 (GMs excepted, they get ACTIVATE unconditionally).
+--
+-- The sparkle needs no template change: ActivateToQuest() tests HasQuestForGO(700010)
+-- FIRST, before the IsForQuests gate, and RequiredNpcOrGo1 = -700010 above already
+-- satisfies that while the quest is in the log.
 -- ====================================================================================
 
 -- --------------------------------------------------------------------------------
@@ -61,9 +69,10 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (800009, 820059);
 
 -- --------------------------------------------------------------------------------
--- Quest sparkle on the Challenge Mode Manager (Data1 = goober.questId)
+-- The Challenge Mode Manager must NOT be quest-gated - see the header. Forced back to
+-- 0 here so re-running this file cannot resurrect the unclickable-manager bug.
 -- --------------------------------------------------------------------------------
-UPDATE `gameobject_template` SET `Data1` = 820059 WHERE `entry` = 700010;
+UPDATE `gameobject_template` SET `Data1` = 0 WHERE `entry` = 700010;
 
 -- --------------------------------------------------------------------------------
 -- Quest POI - objective box around the manager, turn-in box around Hervikus.
