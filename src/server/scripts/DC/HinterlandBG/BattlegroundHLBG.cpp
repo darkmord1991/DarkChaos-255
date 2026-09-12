@@ -47,6 +47,10 @@ namespace
 
     constexpr uint32 HLBGQuestCreditWin = 920102;
     constexpr uint32 HLBGQuestCreditParticipation = 920103;
+    // Hidden kill-credit entries for the in-match quests (quest_template RequiredNpcOrGo1).
+    constexpr uint32 HLBGQuestCreditPlayerKill = 920111;
+    constexpr uint32 HLBGQuestCreditGuardKill = 920112;
+    constexpr uint32 HLBGQuestCreditLeaderKill = 920113;
     constexpr uint32 HLBGHudSyncIntervalMs = 1000;
     constexpr uint32 HLBGHudHeartbeatIntervalMs = 30000;
     constexpr uint32 HLBGAfkTickIntervalMs = 2000;
@@ -558,6 +562,16 @@ void BattlegroundHLBG::StartingEventCloseDoors()
 
 void BattlegroundHLBG::StartingEventOpenDoors()
 {
+    // The warmup is a free-run window: StartMaxDist is 0 for this battleground
+    // (there are no starting doors to hold anyone in), so a team can spend the
+    // two minutes walking into the enemy camp and clearing its guards. Nothing
+    // is scored for it - both kill hooks require STATUS_IN_PROGRESS - but the
+    // corpses would stay down for a 300s respawn and the match would start with
+    // one side's defences already gone. Respawning the area here puts every
+    // creature and gameobject back at full health, on its spawn point, with no
+    // auras or threat, at the exact moment the match becomes live.
+    ResetMapActors();
+
     _matchStartEpoch = NowSec();
     _matchEndEpoch = _matchStartEpoch + _matchDurationSeconds;
     _endedByDepletion = false;
@@ -565,9 +579,17 @@ void BattlegroundHLBG::StartingEventOpenDoors()
     _matchResultRecorded = false;
     _hudSyncTimerMs = 0;
     SelectAffixForNewBattle();
-    UpdateWorldStatesForAll();
     SendAffixSnapshotToAll();
-    SendStatusSnapshotToAll();
+
+    // Deliberately no status broadcast here. The core calls this method BEFORE
+    // SetStatus(STATUS_IN_PROGRESS) (Battleground.cpp, _ProcessJoin), so at
+    // this point GetStatus() still reports STATUS_WAIT_JOIN - a snapshot sent
+    // now would announce STATUS_PREP with a start-delay countdown of zero, at
+    // the exact moment the match goes live. Marking the HUD dirty instead
+    // defers it to PostUpdateImpl, which Battleground::Update runs later in
+    // this same tick, after the status flip. _hudSyncTimerMs is zero above, so
+    // that happens immediately rather than on the next sync interval.
+    _hudDirty = true;
 }
 
 void BattlegroundHLBG::AddPlayer(Player* player)
@@ -1127,6 +1149,7 @@ void BattlegroundHLBG::RewardPlayerKill(Player* killer, Player* victim, uint32 s
 
         AddPlayerContributionScore(player->GetGUID(), scorePoints);
         HLBGPlayerStats::OnResourceCapture(player, scorePoints);
+        player->KilledMonsterCredit(HLBGQuestCreditPlayerKill);
     };
 
     // Killer only. This used to pay every group member within reward distance,
@@ -1155,8 +1178,25 @@ void BattlegroundHLBG::RewardNpcKill(Player* killer, Creature* unit, uint32 scor
     if (IsAffixActive(HLBG_AFFIX_SKIRMISH))
         return;
 
+    // A faction leader falls to the whole side rather than to whoever landed the
+    // last hit, so the leader quest credits every eligible player of the killing
+    // team. Below the Skirmish return on purpose: quest progress is a payout too.
+    if (isBossKill)
+    {
+        for (auto const& playerEntry : GetPlayers())
+        {
+            Player* member = playerEntry.second;
+            if (member && member->GetBgTeamId() == killer->GetBgTeamId()
+                && IsEligibleForRewards(member) && !IsPlayerAfkFlagged(member))
+                member->KilledMonsterCredit(HLBGQuestCreditLeaderKill);
+        }
+    }
+
     if (IsEligibleForRewards(killer) && !IsPlayerAfkFlagged(killer))
     {
+        if (!isBossKill)
+            killer->KilledMonsterCredit(HLBGQuestCreditGuardKill);
+
         RewardRandomKillHonor(killer);
         AddPlayerContributionScore(killer->GetGUID(), scorePoints);
         HLBGPlayerStats::OnResourceCapture(killer, scorePoints);
@@ -1294,7 +1334,15 @@ void BattlegroundHLBG::FlagPlayerAfk(Player* player)
 
     if (infractions > 1)
     {
-        // RemovePlayer clears the tracking state and hides the HUD.
+        // Hide the HUD before the teleport begins. RemovePlayer hides it too,
+        // but that only runs from BattlegroundMap::RemovePlayerFromMap - part
+        // way through the worldport, with the client between maps and least
+        // able to act on it. Sending it here reaches the client while it is
+        // still fully loaded on the battleground map. Both sends are the same
+        // zeroed state, so the duplicate is harmless.
+        SendHudHidden(player);
+
+        // RemovePlayer clears the tracking state.
         player->LeaveBattleground();
         return;
     }

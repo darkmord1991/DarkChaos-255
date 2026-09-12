@@ -21,6 +21,10 @@ namespace
     constexpr uint32 HLBG_BATTLEMASTER_ENTRY = 900001;
     constexpr uint32 HLBG_QUEST_DAILY = 920100;
     constexpr uint32 HLBG_QUEST_WEEKLY = 920101;
+    constexpr uint32 HLBG_QUEST_DAILY_PLAYER_KILLS = 920104;
+    constexpr uint32 HLBG_QUEST_DAILY_GUARD_KILLS = 920105;
+    constexpr uint32 HLBG_QUEST_DAILY_LEADER = 920106;
+    constexpr uint32 HLBG_QUEST_WEEKLY_WINS = 920107;
     constexpr uint32 HLBG_GOSSIP_SENDER_QUEST_MANUAL = 50001;
     constexpr uint32 HLBG_GOSSIP_SENDER_QUEST_REWARD = 50002;
 
@@ -105,7 +109,11 @@ public:
             GOSSIP_SENDER_MAIN, ACTION_QUEUE_JOIN);
 
         AddQuestOption(player, HLBG_QUEST_DAILY, "Daily Quest: Claim Victory");
+        AddQuestOption(player, HLBG_QUEST_DAILY_PLAYER_KILLS, "Daily Quest: Blood on the Coast");
+        AddQuestOption(player, HLBG_QUEST_DAILY_GUARD_KILLS, "Daily Quest: Break Their Line");
+        AddQuestOption(player, HLBG_QUEST_DAILY_LEADER, "Daily Quest: Topple the Warlord");
         AddQuestOption(player, HLBG_QUEST_WEEKLY, "Weekly Quest: Frontline Duty");
+        AddQuestOption(player, HLBG_QUEST_WEEKLY_WINS, "Weekly Quest: Hinterland Conqueror");
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "What is Hinterlands BG?"),

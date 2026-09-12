@@ -109,6 +109,7 @@ private:
 };
 
 void SignalHandler(boost::system::error_code const& error, int signalNumber);
+void WaitForCharacterSaves();
 void ClearOnlineAccounts();
 bool StartDB();
 void StopDB();
@@ -373,7 +374,10 @@ int main(int argc, char** argv)
 
         ///- Clean database before leaving
         if (!sToCloud9Sidecar->ClusterModeEnabled())
+        {
+            WaitForCharacterSaves();
             ClearOnlineAccounts();
+        }
     });
 
     // Set server online (allow connecting now)
@@ -502,6 +506,35 @@ void StopDB()
     sScriptMgr->OnDatabasesClosing();
 
     MySQL::Library_End();
+}
+
+/// Let the character saves queued by KickAll() finish before ClearOnlineAccounts() runs
+void WaitForCharacterSaves()
+{
+    std::size_t queued = CharacterDatabase.QueueSize();
+    if (!queued)
+        return;
+
+    // Every save already sets online = 0 itself. Running the blanket reset while they are still being
+    // written deadlocks with them: the reset locks idx_online before the row, a save locks the row before
+    // idx_online, and InnoDB rolls the save back to be retried. Once the queue has drained the reset has
+    // nothing left to change. Bounded, so a stalled worker cannot hold the shutdown; the pool's Close()
+    // still waits for anything left over.
+    LOG_INFO("server.worldserver", "Waiting for {} queued character saves before clearing online flags...", queued);
+
+    auto const deadline = std::chrono::steady_clock::now() + Minutes(2);
+    while ((queued = CharacterDatabase.QueueSize()) && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(Milliseconds(100));
+
+    if (queued)
+    {
+        LOG_WARN("server.worldserver", "{} character saves still queued after 2 minutes, clearing online flags anyway",
+            queued);
+        return;
+    }
+
+    // QueueSize() does not count the save a worker is still executing; give it a moment to commit.
+    std::this_thread::sleep_for(Milliseconds(250));
 }
 
 /// Clear 'online' status for all accounts with characters in this realm

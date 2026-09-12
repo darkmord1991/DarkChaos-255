@@ -275,6 +275,20 @@ local function ApplyNameplateDistance(distance)
     return applied
 end
 
+-- Raise gxTextureCacheSize to a floor and never lower it, so a player who chose a bigger cache keeps it.
+-- 0 is left alone: its meaning is engine-defined, not "too small".
+local TEXTURE_CACHE_FLOOR_MB = 1024
+local function EnsureTextureCacheFloor()
+    if type(GetCVar) ~= "function" or type(SetCVar) ~= "function" then
+        return
+    end
+    local ok, value = pcall(GetCVar, "gxTextureCacheSize")
+    local current = ok and tonumber(value) or nil
+    if current and current > 0 and current < TEXTURE_CACHE_FLOOR_MB then
+        pcall(SetCVar, "gxTextureCacheSize", tostring(TEXTURE_CACHE_FLOOR_MB))
+    end
+end
+
 local function ApplyGraphicsSettings(reason, overrideSettings)
     local settings = overrideSettings or GetSettings()
     if not settings then
@@ -314,7 +328,13 @@ local function ApplyGraphicsSettings(reason, overrideSettings)
 
     if settings.applyQualityPreset then
         applied = CallNative(SetRenderFlags, true, true, true, false, 0) and applied
-        applied = CallNative(SetTextureQuality, 0, -0.5, 8, 256) and applied
+        -- Texture cache deliberately NOT passed. The preset used to force gxTextureCacheSize to 256 on
+        -- every login, zone change and server profile push, overwriting the player's own value. With
+        -- full-resolution textures (baseMip 0, texLodBias -0.5) and this client's HD art, 256 MB fills
+        -- during normal play and lazily loaded textures stop resolving -- minimap tiles went black in
+        -- the Hinterland BG. The native also clamps the size to 512, so it could never go higher here.
+        applied = CallNative(SetTextureQuality, 0, -0.5, 8) and applied
+        EnsureTextureCacheFloor()
     end
 
     if settings.fogOverride then

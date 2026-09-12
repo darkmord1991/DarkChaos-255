@@ -1,3 +1,12 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only -- it predates this fork's schema and does not stop
+-- on errors, so a re-run is destructive:
+-- its creature_template INSERTs name `scale` and the old immunity-mask columns,
+-- so the DELETEs succeed and the zones 4-8 quest givers (incl. Lunara and
+-- Haramad) are WIPED. It also resets quests 300400-300966 to January, undoing
+-- every later reward, level and lore pass in this folder. Same failure mode as
+-- the zones 1-3 file on 2026-09-11 (see 2026_09_11_01_dc_azshara_crater_zones_1_3_rerun_repair.sql).
+
 -- ============================================================================
 -- Azshara Crater Quest System - SQL Script
 -- Zones 4-8 & Mini-Dungeons: Quest Givers, Quests, Rewards
@@ -495,12 +504,17 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934), (300084, 300935), (300084, 300936);
 
 -- D5: Priestess Lunara (300085)
+-- 300940-300946 are intentionally NOT linked (2026-09-11): every one of them has a
+-- kill target with no spawn on map 37 (Delrissa, Kelris, Arcane Watchman, Arlokk,
+-- Highborne Summoner, Omen/Yauj Brood, Eldreth Sorcerer/Seether), so offering them
+-- would hand out quests that can never be finished. Re-add the two INSERTs below
+-- once those creatures are spawned on the crater.
 DELETE FROM `creature_queststarter` WHERE `id` = 300085 AND `quest` BETWEEN 300940 AND 300946;
 DELETE FROM `creature_questender` WHERE `id` = 300085 AND `quest` BETWEEN 300940 AND 300946;
-INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
-(300085, 300940), (300085, 300941), (300085, 300942), (300085, 300943), (300085, 300944), (300085, 300945), (300085, 300946);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES
-(300085, 300940), (300085, 300941), (300085, 300942), (300085, 300943), (300085, 300944), (300085, 300945), (300085, 300946);
+-- INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+-- (300085, 300940), (300085, 300941), (300085, 300942), (300085, 300943), (300085, 300944), (300085, 300945), (300085, 300946);
+-- INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+-- (300085, 300940), (300085, 300941), (300085, 300942), (300085, 300943), (300085, 300944), (300085, 300945), (300085, 300946);
 
 -- D6: Image of Arcanigos (300086)
 DELETE FROM `creature_queststarter` WHERE `id` = 300086 AND `quest` BETWEEN 300960 AND 300966;
@@ -526,10 +540,12 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 
 -- Kael'thos (Zone 6)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
-(300050, 300600), (300050, 300601), (300050, 300602), (300050, 300603), (300050, 300604), (300050, 300605), (300050, 300606);
+(300050, 300600), (300050, 300601), (300050, 300602), (300050, 300603), (300050, 300604), (300050, 300605), (300050, 300606),
+(300050, 300607), (300050, 300608), (300050, 300609), (300050, 300610); -- were never linked before 2026-09-11
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (300050, 300505), -- Arrive from Zone 5
-(300050, 300600), (300050, 300601), (300050, 300602), (300050, 300603), (300050, 300605), (300050, 300606);
+(300050, 300600), (300050, 300601), (300050, 300602), (300050, 300603), (300050, 300605), (300050, 300606),
+(300050, 300607), (300050, 300608), (300050, 300609), (300050, 300610);
 
 -- Seryth (Zone 7)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
@@ -691,8 +707,10 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- ----------------------------------------------------------------------------
 -- QUEST STARTERS / ENDERS
 -- ----------------------------------------------------------------------------
-DELETE FROM `creature_queststarter` WHERE `id` = 300085;
-DELETE FROM `creature_questender` WHERE `id` = 300085;
+-- Scoped to 300510-300514: an id-only DELETE here also wiped the 300955 turn-in
+-- (and the 300940-300946 links) this same file creates above (fixed 2026-09-11).
+DELETE FROM `creature_queststarter` WHERE `id` = 300085 AND `quest` BETWEEN 300510 AND 300514;
+DELETE FROM `creature_questender` WHERE `id` = 300085 AND `quest` BETWEEN 300510 AND 300514;
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
 (300085, 300510), -- Temple of Elune
 (300085, 300511), -- Purging the Darkness

@@ -1,3 +1,9 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only -- it predates this fork's schema and does not stop
+-- on errors, so a re-run is destructive:
+-- it joins on `creature.id1`, which this fork does not have, so its INSERTs fail.
+-- POI coverage is owned by 2026_07_14_01_dc_azshara_crater_quest_pois_areas.sql.
+
 -- Ensure full quest POI coverage for Azshara Crater quests.
 -- Scope: QuestSortID 268 plus explicit welcome quest 820056.
 -- Strategy:

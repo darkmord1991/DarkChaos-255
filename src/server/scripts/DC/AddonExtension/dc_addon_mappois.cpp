@@ -29,7 +29,9 @@
  *
  * kPOIExclusions subtracts from all of that: a (map, type) pair listed there is
  * detected as usual and then dropped before it is ever sent, for the places
- * where a correctly identified service is still not worth a map marker.
+ * where a correctly identified service is still not worth a map marker. The
+ * table is empty today; it exists so suppressing one is a one-line edit rather
+ * than a special case threaded through ClassifyCreature.
  *
  * The POI list is static world data: it is scanned once on first request and
  * cached. Requests are answered from memory (no DB round-trip); responses are
@@ -67,6 +69,7 @@
 #include "UnitDefines.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstring>
 #include <iterator>
@@ -187,24 +190,22 @@ namespace MapPOIs
     constexpr uint32 POI_EXCLUDE_ANY_MAP = 0xFFFFFFFF;
     constexpr char const* POI_EXCLUDE_ANY_TYPE = nullptr;
 
-    // The table must keep at least one row -- an empty constexpr array does not
-    // compile. To turn the feature off, widen a rule rather than deleting the
-    // last one, or comment out the IsExcludedPOI calls in BuildPOIList.
-    static constexpr POIExclusion kPOIExclusions[] =
-    {
-        // Azshara Crater's start camp holds all four Teleporter (800002) spawns
-        // on the map, spread over ~230 yards -- two of them 38 yards apart, so
-        // the duplicate collapser (25y) merges none of them. Three are in view
-        // of each other and of the inn, mailbox and flight master, which is the
-        // one part of map 37 where a player needs no help finding a service.
-        //
-        // The Azshara Bruisers (800003, ScriptName AC_Guard_NPC, 76 spawns) also
-        // teleport on gossip, and they are NOT the pins anyone is looking at:
-        // AC_Guard_NPC is not in kTeleporterScripts and the template carries only
-        // UNIT_NPC_FLAG_GOSSIP, so ClassifyCreature has never returned a type for
-        // them. Adding them would put 76 portal pins on one map.
-        { 37, PoiType::TELEPORTER },
-    };
+    // Currently empty: nothing is suppressed. std::array rather than a C array
+    // precisely so it CAN be empty -- a zero-length `POIExclusion kTable[]` does
+    // not compile, and a table that must always carry one row would mean leaving
+    // a rule in place that nobody wants. Add rows as `{ 37, PoiType::TELEPORTER },`
+    // and bump the size.
+    //
+    // Read this before adding a row for Azshara Crater (map 37). Its whole POI
+    // set is 5 flight masters, 1 innkeeper and 4 Teleporter (800002) spawns --
+    // verified against the spawn table, npcflag overrides and spawn-level
+    // ScriptName included. In particular the Azshara Bruisers (800003, ScriptName
+    // AC_Guard_NPC, 76 spawns) DO teleport on gossip but have never been POIs:
+    // AC_Guard_NPC is not in kTeleporterScripts and the template carries only
+    // UNIT_NPC_FLAG_GOSSIP, so ClassifyCreature returns nothing for them. The
+    // portal pins clustered in the start camp are all 800002, and suppressing
+    // the teleporter type on map 37 takes the hub's own teleporters with it.
+    static constexpr std::array<POIExclusion, 0> kPOIExclusions = {};
 
     static bool IsExcludedPOI(uint32 mapId, char const* type)
     {

@@ -2983,6 +2983,24 @@ local function SetFallbackActionTooltip(button)
         end
     end
 
+    -- Vehicle and bonus-bar actions (ToC jousting, Oculus drakes, quest
+    -- vehicles) are not described by GetActionInfo, so every branch above
+    -- misses them and the tooltip used to dead-end on ACTIONBAR_LABEL
+    -- ("Action Bars") instead of the ability. SetAction is the only path that
+    -- renders those slots. It is avoided earlier because it can throw
+    -- transient C-side nil errors right after a loading screen, so keep it
+    -- pcall-guarded and last, and only accept it if it actually wrote lines.
+    if not wroteText and type(GameTooltip.SetAction) == "function" then
+        local ok = pcall(function()
+            GameTooltip:SetAction(action)
+        end)
+        if ok and type(GameTooltip.NumLines) == "function"
+            and (tonumber(GameTooltip:NumLines()) or 0) > 0 then
+            MarkSpellTooltipSource(GameTooltip, "action")
+            wroteText = true
+        end
+    end
+
     -- Some stance/presence/form paths can present a spell-name tooltip without
     -- exposing a direct spell action id. Recover via tooltip header text.
     if wroteText then

@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
+#include "DC/CrossSystem/CrossSystemItemClassFilter.h"
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
 #include "dc_mythicplus_constants.h"
 
@@ -112,9 +113,42 @@ struct LootTableRow
     // item_template.MaxCount, cached at load: > 0 means unique-limited, and a
     // player already holding that many can never be given another copy.
     int32 maxCount = 0;
+    // Bit (classId - 1) set when the item belongs in that class's gear pool at
+    // all - see CrossSystemItemClassFilter.h. Resolved once at load from the
+    // item template rather than from the row's class_mask, which is "every
+    // class" on most of the pool and cannot be trusted.
+    uint16 classEligibility = 0;
     std::string specName;   // empty = all specs (NULL in the table)
     std::string armorType;  // "Misc" = universal
 };
+
+// Bit for classId in LootTableRow::classEligibility.
+constexpr uint16 ClassEligibilityBit(uint8 classId)
+{
+    return static_cast<uint16>(1u << (classId - 1));
+}
+
+uint16 BuildClassEligibility(uint32 itemId)
+{
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+    if (!proto)
+        return 0;
+
+    uint16 eligibility = 0;
+    for (uint8 classId = CLASS_WARRIOR; classId < MAX_CLASSES; ++classId)
+    {
+        // Only the ten playable classes get a bit. A class the filter has no
+        // profile for is handled at selection time by skipping the gate
+        // entirely, so it must not be encoded here as "fits everything".
+        if (!DarkChaos::CrossSystem::ItemClassFilter::GetClassGearProfile(classId))
+            continue;
+
+        if (DarkChaos::CrossSystem::ItemClassFilter::IsItemForClass(classId, proto))
+            eligibility |= ClassEligibilityBit(classId);
+    }
+
+    return eligibility;
+}
 
 // A MaxCount-limited item the player already owns can never be stored, and
 // mailing it is a dead end too - the attachment simply cannot be taken out.
@@ -213,6 +247,12 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
         { false, false, false, false }
     }};
 
+    // A class the filter has no gear profile for (a custom class) keeps the old
+    // behaviour rather than ending up with an empty pool.
+    bool const enforceClassGate =
+        DarkChaos::CrossSystem::ItemClassFilter::GetClassGearProfile(classId) != nullptr;
+    uint16 const classBit = ClassEligibilityBit(classId);
+
     std::vector<uint32> candidates;
     candidates.reserve(64);
 
@@ -223,6 +263,15 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
         for (LootTableRow const* rowPtr : levelRows)
         {
             LootTableRow const& row = *rowPtr;
+            // Hard gate, outside the stage filters on purpose: an item that is
+            // not this class's gear must not become reachable just because the
+            // spec/armor/role stages relaxed, and the last stage relaxes all of
+            // them. Without this a rogue reaches intellect leather, a warrior
+            // reaches a wand, and a mage reaches a shield - every one of those
+            // rows carries an "all classes" class_mask and an armor_type the
+            // filters happily accept.
+            if (enforceClassGate && !(row.classEligibility & classBit))
+                continue;
             if (stage.filterClass && !(row.classMask & classMask) && row.classMask != 1023)
                 continue;
             if (stage.filterSpec && !row.specName.empty() && row.specName != spec)
@@ -299,6 +348,7 @@ void MythicPlusRunManager::LoadLootTable()
         }
 
         uint32 loaded = 0;
+        uint32 unusable = 0;
         do
         {
             Field* fields = result->Fetch();
@@ -311,9 +361,23 @@ void MythicPlusRunManager::LoadLootTable()
             row.specName = fields[5].IsNull() ? std::string() : fields[5].Get<std::string>();
             row.armorType = fields[6].Get<std::string>();
             row.maxCount = fields[7].Get<int32>();
+            row.classEligibility = BuildClassEligibility(row.itemId);
+            if (!row.classEligibility)
+                ++unusable;
+
             s_lootTable.push_back(std::move(row));
             ++loaded;
         } while (result->NextRow());
+
+        // Kept in the table rather than dropped: a class the filter has no
+        // profile for bypasses the gate, and would lose these rows silently.
+        // Worth reporting though - a row no playable class can equip is pool
+        // data that will never pay out.
+        if (unusable)
+        {
+            LOG_INFO("server.loading", ">> Loot pool '{}': {} of {} row{} match no playable class",
+                     label, unusable, loaded, loaded == 1 ? "" : "s");
+        }
 
         return loaded;
     };

@@ -142,7 +142,6 @@ local minimapState = { active = false, mouseWheelEnabled = nil, onMouseWheel = n
 local cameraZoomState = { active = false, previousMaxFactor = nil }
 local buffFrameState = {
     active = false,
-    hookInstalled = false,
     pendingRestore = false,
     restoreFrame = nil,
     offsetX = 0,
@@ -2727,6 +2726,265 @@ local function ResolveBuffFrameOffsetX()
     return offsetX
 end
 
+-- BuffFrame and TemporaryEnchantFrame have to move as one unit. Stock
+-- BuffFrame.lua anchors only the FIRST buff row to BuffFrame; row two
+-- (BuffButton_UpdateAnchors, index == BUFFS_PER_ROW+1) and the entire debuff
+-- row (DebuffButton_UpdateAnchors, index == 1) hang off TempEnchant1, a child
+-- of TemporaryEnchantFrame. The two are independent top-level frames, so the
+-- instant one carries a different offset than the other, row two slides out of
+-- line with row one on screen. Never SetPoint one of them on its own.
+local function PinAuraFrames(offsetX, offsetY)
+    if BuffFrame then
+        BuffFrame._dcqosRepositioning = true
+        BuffFrame:ClearAllPoints()
+        BuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
+        BuffFrame._dcqosRepositioning = nil
+    end
+
+    if TemporaryEnchantFrame then
+        TemporaryEnchantFrame._dcqosRepositioning = true
+        TemporaryEnchantFrame:ClearAllPoints()
+        TemporaryEnchantFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
+        TemporaryEnchantFrame._dcqosRepositioning = nil
+    end
+end
+
+-- Offsets the anchor hooks re-apply. resolvedOffsetX is a measurement, so it
+-- must not be re-derived every frame -- but when it has been invalidated,
+-- measure once and cache instead of falling back to the raw setting: that
+-- fallback is what let BuffFrame snap to the configured offset while
+-- TemporaryEnchantFrame stayed on the (further left) measured one.
+local function CurrentAuraOffsets()
+    local offsetX = buffFrameState.resolvedOffsetX
+    if not offsetX then
+        offsetX = ResolveBuffFrameOffsetX()
+    end
+
+    return offsetX, GetTopBarInset() + buffFrameState.offsetY
+end
+
+-- Stock TemporaryEnchantFrame_OnUpdate re-anchors BuffFrame every frame while
+-- no weapon enchant is up (TemporaryEnchantFrame_Hide), so this hook is hot.
+-- It re-pins BOTH frames, which is what keeps the rows aligned when the
+-- InfoBar height or the minimap clearance changes between full re-applies.
+local function InstallAuraAnchorHook(frame)
+    if not frame or frame._dcqosAnchorHooked then return end
+
+    frame._dcqosAnchorHooked = true
+    hooksecurefunc(frame, "SetPoint", function(self)
+        if not buffFrameState.active or self._dcqosRepositioning then return end
+        PinAuraFrames(CurrentAuraOffsets())
+    end)
+end
+
+-- Pinning both frames is not enough on its own: stock only ever aligns them by
+-- accident. TempEnchant1 is the anchor for the second buff row AND for the
+-- whole debuff block, so those rows track the temporary-enchant slot rather
+-- than the buff block -- which is why they wander right, into the minimap
+-- button column that the buff block itself is measured to clear.
+--
+-- Re-anchor the two row-heads onto BuffFrame instead. Vertical geometry is
+-- reproduced exactly as stock computed it (TempEnchant1 sits one button height
+-- below BuffFrame's top, so every stock offset is restated with that height
+-- folded in); only the horizontal reference changes, so every row now
+-- right-aligns to the same edge as row one.
+-- Patching only the row heads still left rows 2+ chained through TempEnchant1,
+-- so every aura button is now placed directly on a grid hung off BuffFrame.
+-- Column and row come from the button's own index, so nothing depends on where
+-- a previous button, or the temporary-enchant frame, happens to sit.
+--
+-- The grid reproduces stock geometry exactly: 5px between columns
+-- (BuffButton_UpdateAnchors "RIGHT"/"LEFT" -5), BUFF_ROW_SPACING between rows,
+-- and one empty row between the last buff row and the first debuff row (stock
+-- leaves that gap so buff duration text has somewhere to go).
+local AURA_COLUMN_GAP = 5
+local auraGridHookInstalled = false
+local auraGridHooks = {}
+local auraGridPlacements = 0
+
+local function AuraButtonSize(button)
+    local w = button and button:GetWidth()
+    local h = button and button:GetHeight()
+    if not w or w <= 0 then w = 30 end
+    if not h or h <= 0 then h = 30 end
+    return w, h
+end
+
+local function PlaceAuraButton(button, column, row, spacing)
+    auraGridPlacements = auraGridPlacements + 1
+
+    local w, h = AuraButtonSize(button)
+    button:ClearAllPoints()
+    button:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT",
+        -(column * (w + AURA_COLUMN_GAP)),
+        -(row * (h + spacing)))
+end
+
+-- TemporaryEnchantFrame now shares BuffFrame's right edge (it has to, or the
+-- enchant icons sit in the minimap button column), which means the enchant
+-- buttons occupy the first grid slots of row one. Buffs are shifted right past
+-- them -- the same "slack" later clients apply -- so nothing overlaps.
+local function VisibleEnchantCount()
+    local count = 0
+    for i = 1, 2 do
+        local button = _G["TempEnchant" .. i]
+        if button and button:IsShown() then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function PlaceBuffButton(buttonName, index)
+    if not buffFrameState.active or not BuffFrame then return end
+    if buttonName ~= "BuffButton" then return end
+
+    local button = _G[buttonName .. index]
+    if not button then return end
+
+    local perRow = BUFFS_PER_ROW or 8
+    local slot = (index - 1) + VisibleEnchantCount()
+
+    PlaceAuraButton(button, slot % perRow, math.floor(slot / perRow), BUFF_ROW_SPACING or 0)
+end
+
+local function PlaceDebuffButton(buttonName, index)
+    if not buffFrameState.active or not BuffFrame then return end
+
+    local button = _G[buttonName .. index]
+    if not button then return end
+
+    local perRow = BUFFS_PER_ROW or 8
+    local buffRows = math.ceil(((BUFF_ACTUAL_DISPLAY or 0) + VisibleEnchantCount()) / perRow)
+    local row = math.max(1, buffRows) + 1 + math.floor((index - 1) / perRow)
+
+    PlaceAuraButton(button, (index - 1) % perRow, row, BUFF_ROW_SPACING or 0)
+end
+
+-- Sweep every visible aura button onto the grid. The per-button hooks above
+-- handle the normal path, but this pass owes nothing to them: it is what makes
+-- the layout hold even if stock re-anchors a button through a path we do not
+-- hook, and it also covers the enchant slack changing (applying or losing a
+-- weapon enchant never fires UNIT_AURA, so nothing else would re-run).
+local function RelayoutAllAuras()
+    if not buffFrameState.active or not BuffFrame then return end
+
+    local perRow = BUFFS_PER_ROW or 8
+    local spacing = BUFF_ROW_SPACING or 0
+    local enchants = VisibleEnchantCount()
+
+    local buffs = 0
+    for i = 1, (BUFF_MAX_DISPLAY or 32) do
+        local button = _G["BuffButton" .. i]
+        if button and button:IsShown() then
+            local slot = buffs + enchants
+            PlaceAuraButton(button, slot % perRow, math.floor(slot / perRow), spacing)
+            buffs = buffs + 1
+        end
+    end
+
+    local buffRows = math.max(1, math.ceil((buffs + enchants) / perRow))
+    local debuffs = 0
+    for i = 1, (DEBUFF_MAX_DISPLAY or 16) do
+        local button = _G["DebuffButton" .. i]
+        if button and button:IsShown() then
+            PlaceAuraButton(button, debuffs % perRow,
+                buffRows + 1 + math.floor(debuffs / perRow), spacing)
+            debuffs = debuffs + 1
+        end
+    end
+end
+
+local function StartAuraLayoutDriver()
+    local driver = GetManagedEventFrame("buffLayoutDriver")
+    if driver._dcqosDriving then return end
+
+    driver._dcqosDriving = true
+    driver._dcqosElapsed = 0
+    driver:SetScript("OnUpdate", function(self, elapsed)
+        if not buffFrameState.active then return end
+
+        self._dcqosElapsed = (self._dcqosElapsed or 0) + elapsed
+        if self._dcqosElapsed < 0.25 then return end
+        self._dcqosElapsed = 0
+
+        RelayoutAllAuras()
+    end)
+end
+
+-- Dumped by /dcqos auras. Every right edge below has to read the same number;
+-- if TempEnchant1 disagrees with BuffFrame the grid above is not being applied.
+function Interface.DumpAuraAnchors()
+    -- addon:Print stays silent unless forceShow is passed, so every line here
+    -- forces. Without it the whole dump printed nothing at all.
+    local function say(text)
+        addon:Print(text, true)
+    end
+
+    local function edge(frame, label)
+        if not frame then
+            say(label .. ": <missing>")
+            return
+        end
+        local right = frame:GetRight()
+        local point, relativeTo, relativePoint, x, y = nil, nil, nil, nil, nil
+        if frame.GetNumPoints and frame:GetNumPoints() > 0 then
+            point, relativeTo, relativePoint, x, y = frame:GetPoint(1)
+        end
+        say(string.format("%s: right=%s shown=%s point=%s->%s@%s,%s rel=%s",
+            label,
+            right and string.format("%.1f", right) or "nil",
+            tostring(frame:IsShown()),
+            tostring(point), tostring(relativePoint),
+            x and string.format("%.1f", x) or "nil",
+            y and string.format("%.1f", y) or "nil",
+            (relativeTo and relativeTo.GetName and relativeTo:GetName()) or "?"))
+    end
+
+    say(string.format("active=%s gridHook=%s placements=%d offsetX=%s resolvedX=%s enchants=%d",
+        tostring(buffFrameState.active), tostring(auraGridHookInstalled),
+        auraGridPlacements,
+        tostring(buffFrameState.offsetX), tostring(buffFrameState.resolvedOffsetX),
+        VisibleEnchantCount()))
+    for _, name in ipairs({ "BuffButton_UpdateAnchors", "DebuffButton_UpdateAnchors", "BuffFrame_Update" }) do
+        say(string.format("  %s: %s (type=%s)", name, auraGridHooks[name] or "not tried", type(_G[name])))
+    end
+    say(string.format("BUFFS_PER_ROW=%s BUFF_ROW_SPACING=%s BUFF_ACTUAL_DISPLAY=%s DEBUFF_ACTUAL_DISPLAY=%s",
+        tostring(BUFFS_PER_ROW), tostring(BUFF_ROW_SPACING),
+        tostring(BUFF_ACTUAL_DISPLAY), tostring(DEBUFF_ACTUAL_DISPLAY)))
+    edge(UIParent, "UIParent")
+    edge(Minimap, "Minimap")
+    edge(BuffFrame, "BuffFrame")
+    edge(TemporaryEnchantFrame, "TemporaryEnchantFrame")
+    edge(TempEnchant1, "TempEnchant1")
+    edge(_G["BuffButton1"], "BuffButton1")
+    edge(_G["BuffButton" .. ((BUFFS_PER_ROW or 8) + 1)], "BuffButton row2")
+    edge(_G["DebuffButton1"], "DebuffButton1")
+end
+
+-- Not every stock aura entry point is a hookable global in this client: an
+-- all-or-nothing install left gridHook false and every hook-based attempt at
+-- this bug silently did nothing. Install whatever exists, one at a time, and
+-- record it -- RelayoutAllAuras is the guarantee either way, the hooks only
+-- make placement immediate instead of up to one driver tick late.
+local function InstallAuraGridHook()
+    if auraGridHookInstalled then return end
+    auraGridHookInstalled = true
+
+    local function tryHook(name, handler)
+        if type(_G[name]) ~= "function" then
+            auraGridHooks[name] = "missing"
+            return
+        end
+        local ok = pcall(hooksecurefunc, name, handler)
+        auraGridHooks[name] = ok and "hooked" or "failed"
+    end
+
+    tryHook("BuffButton_UpdateAnchors", PlaceBuffButton)
+    tryHook("DebuffButton_UpdateAnchors", PlaceDebuffButton)
+    tryHook("BuffFrame_Update", RelayoutAllAuras)
+end
+
 local function ApplyBuffFramePosition()
     if InCombatLockdown() then return end
 
@@ -2740,31 +2998,23 @@ local function ApplyBuffFramePosition()
 
         BuffFrame:SetMovable(true)
         BuffFrame:SetUserPlaced(true)
-        BuffFrame._dcqosRepositioning = true
-        BuffFrame:ClearAllPoints()
-        BuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
-        BuffFrame._dcqosRepositioning = nil
-
-        if not buffFrameState.hookInstalled then
-            buffFrameState.hookInstalled = true
-            hooksecurefunc(BuffFrame, "SetPoint", function(self, ...)
-                if not buffFrameState.active or self._dcqosRepositioning then return end
-                self._dcqosRepositioning = true
-                self:ClearAllPoints()
-                local x = buffFrameState.resolvedOffsetX or buffFrameState.offsetX
-                self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", x, GetTopBarInset() + buffFrameState.offsetY)
-                self._dcqosRepositioning = nil
-            end)
-        end
     end
 
-    if TemporaryEnchantFrame then
-        if not buffFrameState.tempEnchantPoint then
-            buffFrameState.tempEnchantPoint = CapturePoint(TemporaryEnchantFrame)
-        end
+    if TemporaryEnchantFrame and not buffFrameState.tempEnchantPoint then
+        buffFrameState.tempEnchantPoint = CapturePoint(TemporaryEnchantFrame)
+    end
 
-        TemporaryEnchantFrame:ClearAllPoints()
-        TemporaryEnchantFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
+    PinAuraFrames(offsetX, offsetY)
+
+    InstallAuraAnchorHook(BuffFrame)
+    InstallAuraAnchorHook(TemporaryEnchantFrame)
+    InstallAuraGridHook()
+    StartAuraLayoutDriver()
+
+    -- Buttons that already exist keep the anchors stock gave them until the
+    -- next UNIT_AURA, so push one refresh through to re-run the hooks now.
+    if type(BuffFrame_Update) == "function" then
+        BuffFrame_Update()
     end
 end
 

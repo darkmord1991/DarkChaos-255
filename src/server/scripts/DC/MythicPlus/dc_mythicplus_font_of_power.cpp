@@ -734,11 +734,16 @@ private:
             {
                 if (Player* member = ref->GetSource())
                 {
-                    // The activator is ready by definition. Bots have no
-                    // client to answer, so they are pre-marked ready too;
-                    // a bot-backfilled group otherwise timed out every time.
-                    bool autoReady = member->GetGUID() == player->GetGUID()
-                        || (member->GetSession() && member->GetSession()->IsBot());
+                    // The activator stays PENDING like everyone else: clicking
+                    // the pedestal only opens the keystone frame, it does not
+                    // answer for them. They arm the run with the frame's
+                    // Activate button, matching retail.
+                    //
+                    // Bots have no client to answer, so they are pre-marked
+                    // ready; a bot-backfilled group otherwise timed out every
+                    // time.
+                    bool autoReady = member->GetSession()
+                        && member->GetSession()->IsBot();
                     pending.memberStates[member->GetGUID()] =
                         autoReady ? STATE_READY : STATE_PENDING;
                 }
@@ -754,7 +759,7 @@ private:
         if (group)
         {
             ChatHandler(player->GetSession()).PSendSysMessage(
-                "Keystone ready check initiated for +{} {}. Waiting for group response...",
+                "Keystone activation opened for +{} {}. Confirm with Activate to start the run.",
                 descriptor.level, dungeonName);
         }
         else
@@ -764,11 +769,9 @@ private:
                 descriptor.level, dungeonName);
         }
 
-        // Every other member is a bot: nobody is left to answer, so run the
-        // all-ready path now instead of waiting for the timeout.
-        if (group && std::none_of(pending.memberStates.begin(), pending.memberStates.end(),
-                [](auto const& entry) { return entry.second == STATE_PENDING; }))
-            HandlePlayerResponse(player, true);
+        // No all-ready shortcut here on purpose. The activator is PENDING until
+        // they press Activate, so a bot-only group still waits for that one
+        // click instead of starting the run straight off the pedestal.
     }
 
     void SendKeystoneReadyCheck(Player* activator, Group* group,

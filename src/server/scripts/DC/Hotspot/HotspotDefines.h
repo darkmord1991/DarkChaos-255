@@ -14,15 +14,15 @@ struct HotspotsConfig
     bool enabled = true;
     uint32 duration = 60;                    // minutes
     uint32 experienceBonus = 100;            // percentage
-    float radius = 150.0f;                   // yards
-    float minDistance = 300.0f;              // yards (minimum distance between hotspot centers; 0 = disabled)
+    float radius = 300.0f;                   // yards
+    float minDistance = 600.0f;              // yards (minimum distance between hotspot centers; 0 = disabled)
     uint32 maxActive = 5;
     uint32 minActive = 1;                    // minimum hotspots to maintain (crash persistence)
     uint32 maxPerZone = 2;                   // max hotspots allowed in same zone (0 = unlimited)
     uint32 respawnDelay = 30;                // minutes
     uint32 auraSpell = 800001;               // Primary hotspot aura shown to players
     uint32 buffSpell = 800001;               // Legacy fallback spell if auraSpell is unset
-    float announceRadius = 500.0f;           // yards
+    float announceRadius = 1000.0f;          // yards
     std::vector<uint32> enabledMaps;
     std::vector<uint32> enabledZones;
     std::vector<uint32> excludedZones;

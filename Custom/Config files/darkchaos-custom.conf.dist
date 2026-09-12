@@ -1286,18 +1286,19 @@ Hotspots.ExperienceBonus = 100
 
 #
 #    Hotspots.Radius
-#        Description: Radius of each hotspot in yards
-#        Default:     150.0
+#        Description: Radius of each hotspot in yards (3D distance from the center)
+#        Default:     300.0
 #
-Hotspots.Radius = 150.0
+Hotspots.Radius = 300.0
 
 #
 #    Hotspots.MinDistance
 #        Description: Minimum distance between hotspot centers (prevents clustering)
+#                     Keep at >= 2x Radius or hotspots can overlap.
 #                     Set to 0 to disable spacing enforcement
-#        Default:     300.0 (2x Radius)
+#        Default:     600.0 (2x Radius)
 #
-Hotspots.MinDistance = 300.0
+Hotspots.MinDistance = 600.0
 
 # -----------------------------------------------------------------------------
 # Hotspot Population
@@ -1371,9 +1372,9 @@ Hotspots.MarkerGameObjectEntry = 179976
 #
 #    Hotspots.AnnounceRadius
 #        Description: Distance (yards) at which players see minimap markers
-#        Default:     500.0
+#        Default:     1000.0
 #
-Hotspots.AnnounceRadius = 500.0
+Hotspots.AnnounceRadius = 1000.0
 
 # -----------------------------------------------------------------------------
 # Zone Configuration
@@ -1519,18 +1520,88 @@ ItemUpgrade.BlockInCombat = 1
 ItemUpgrade.Perf.AchievementClaimCacheMs = 5000
 
 #
+#    ItemUpgrade.Perf.<Reward>.SamplePct
+#    ItemUpgrade.Perf.<Reward>.MinIntervalMs
+#        Description: Throttle the scripts.dc log line written when a player earns upgrade
+#                     currency. Rewards are always granted; only the logging is sampled.
+#                     SamplePct:     chance (0-100) that a reward is logged. 0 = never.
+#                     MinIntervalMs: minimum time between two log lines of that kind,
+#                                    shared by all players. 0 = no throttle.
+#                     CreatureRewardChat is the exception: it gates the "+N Tokens" chat
+#                     message the player sees after a creature kill, not a log line.
+#
+
+#
 #    ItemUpgrade.Perf.AchievementReward.MinIntervalMs
-#        Description: Minimum interval (ms) between achievement reward checks
+#        Description: Minimum time (ms) between achievement essence reward log lines.
 #        Default:     3000
 #
 ItemUpgrade.Perf.AchievementReward.MinIntervalMs = 3000
 
 #
 #    ItemUpgrade.Perf.AchievementReward.SamplePct
-#        Description: Sample percentage for achievement reward performance events
+#        Description: Chance (0-100) that an achievement essence reward is logged.
 #        Default:     30
 #
 ItemUpgrade.Perf.AchievementReward.SamplePct = 30
+
+#
+#    ItemUpgrade.Perf.CreatureReward.MinIntervalMs
+#        Description: Minimum time (ms) between creature kill reward log lines.
+#        Default:     750
+#
+ItemUpgrade.Perf.CreatureReward.MinIntervalMs = 750
+
+#
+#    ItemUpgrade.Perf.CreatureReward.SamplePct
+#        Description: Chance (0-100) that a creature kill reward is logged.
+#        Default:     10
+#
+ItemUpgrade.Perf.CreatureReward.SamplePct = 10
+
+#
+#    ItemUpgrade.Perf.CreatureRewardChat.MinIntervalMs
+#        Description: Minimum time (ms) between two "+N Tokens / +N Essence" chat messages
+#                     after creature kills, shared by all players. 0 = every kill.
+#        Default:     0
+#
+ItemUpgrade.Perf.CreatureRewardChat.MinIntervalMs = 0
+
+#
+#    ItemUpgrade.Perf.CreatureRewardChat.SamplePct
+#        Description: Chance (0-100) that the player is shown the "+N Tokens / +N Essence"
+#                     chat message after a creature kill. 0 = never show it.
+#        Default:     100
+#
+ItemUpgrade.Perf.CreatureRewardChat.SamplePct = 100
+
+#
+#    ItemUpgrade.Perf.PvpReward.MinIntervalMs
+#        Description: Minimum time (ms) between PvP kill token reward log lines.
+#        Default:     1500
+#
+ItemUpgrade.Perf.PvpReward.MinIntervalMs = 1500
+
+#
+#    ItemUpgrade.Perf.PvpReward.SamplePct
+#        Description: Chance (0-100) that a PvP kill token reward is logged.
+#        Default:     20
+#
+ItemUpgrade.Perf.PvpReward.SamplePct = 20
+
+#
+#    ItemUpgrade.Perf.QuestReward.MinIntervalMs
+#        Description: Minimum time (ms) between quest token reward log lines.
+#        Default:     1500
+#
+ItemUpgrade.Perf.QuestReward.MinIntervalMs = 1500
+
+#
+#    ItemUpgrade.Perf.QuestReward.SamplePct
+#        Description: Chance (0-100) that a quest token reward is logged.
+#        Default:     20
+#
+ItemUpgrade.Perf.QuestReward.SamplePct = 20
 
 # -----------------------------------------------------------------------------
 # Tier Stat Scaling

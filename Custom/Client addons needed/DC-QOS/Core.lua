@@ -1675,17 +1675,42 @@ do
         timerFrame = CreateFrame("Frame")
         timerFrame:Hide()
         timerFrame:SetScript("OnUpdate", function(self, delta)
-            for i = #timers, 1, -1 do
+            -- Collect first, then run, and walk FORWARDS: callbacks must fire in the order they
+            -- were queued. The old loop ran `for i = #timers, 1, -1`, which only matched queue
+            -- order while at most one timer came due per frame. The first frame after a loading
+            -- screen carries a delta big enough to mature several at once, and then the reverse
+            -- walk ran the newest first -- that is how the settings panel (queued at
+            -- PLAYER_LOGIN + 1 s) came to be built before addon:Initialize() (queued at
+            -- ADDON_LOADED + 0.5 s) had loaded the saved variables, leaving every module's
+            -- CreateSettings to read the empty placeholder table from `addon.settings = {}`.
+            -- Running them from a separate list also keeps a callback that queues new work from
+            -- having its own timer decremented in the same frame.
+            local due
+            local i = 1
+            while i <= #timers do
                 local t = timers[i]
                 t.remaining = t.remaining - delta
                 if t.remaining <= 0 then
                     table.remove(timers, i)
-                    local ok, err = pcall(t.callback)
+                    due = due or {}
+                    table.insert(due, t.callback)
+                else
+                    i = i + 1
+                end
+            end
+
+            if due then
+                for index = 1, #due do
+                    local ok, err = pcall(due[index])
                     if not ok then
-                        addon:Debug("DelayedCall callback error: " .. tostring(err))
+                        -- forceShow: this pcall used to report only through addon:Debug, which is
+                        -- off by default, so anything that threw in here failed completely
+                        -- silently -- no chat line, nothing for BugGrabber to catch.
+                        addon:Print("DelayedCall error: " .. tostring(err), true)
                     end
                 end
             end
+
             if #timers == 0 then
                 self:Hide()
             end
@@ -2832,6 +2857,16 @@ SlashCmdList["DCQOS"] = function(msg)
             SlashCmdList["DCQOSPING"](pingMsg)
         else
             addon:Print("Ping System module is not loaded.", true)
+        end
+    elseif msg == "auras" or msg == "auradebug" then
+        -- Dump the aura anchor geometry. Every right edge printed should match;
+        -- a TempEnchant1 that disagrees with BuffFrame means the buff rows are
+        -- being laid out against the temporary-enchant frame again.
+        local interfaceModule = addon.modules and addon.modules["Interface"]
+        if interfaceModule and interfaceModule.DumpAuraAnchors then
+            interfaceModule.DumpAuraAnchors()
+        else
+            addon:Print("Interface module is not loaded.", true)
         end
     elseif msg == "transport" or msg == "tooltiptransport" or msg == "tooltip" then
         local tooltipsModule = addon.modules and addon.modules["Tooltips"]

@@ -563,8 +563,22 @@ uint32 SpellMgr::GetSpellIdForDifficulty(uint32 spellId, Unit const* caster) con
 
     if (difficultyEntry->SpellID[mode] <= 0 && mode > DUNGEON_DIFFICULTY_HEROIC)
     {
-        LOG_DEBUG("spells.aura", "SpellMgr::GetSpellIdForDifficulty: spell {} mode {} spell is nullptr, using mode {}", spellId, mode, mode - 2);
-        mode -= 2;
+        // `mode -= 2` is the raid rule (10man heroic -> 10man normal, 25 -> 25).
+        // On a 5-man, mode 2 is DC's Mythic (DUNGEON_DIFFICULTY_EPIC) instead, and
+        // SpellDifficulty.dbc only fills [0] and [1] for dungeons - so the raid rule
+        // dropped every Mythic boss to its NORMAL-mode spell variant rather than its
+        // heroic one. Borrow heroic there, matching the DC "Mythic 5-mans borrow
+        // heroic" convention.
+        if (!caster->GetMap()->IsRaid())
+        {
+            LOG_DEBUG("spells.aura", "SpellMgr::GetSpellIdForDifficulty: spell {} mode {} spell is nullptr on a non-raid map, using heroic mode {}", spellId, mode, uint32(DUNGEON_DIFFICULTY_HEROIC));
+            mode = DUNGEON_DIFFICULTY_HEROIC;
+        }
+        else
+        {
+            LOG_DEBUG("spells.aura", "SpellMgr::GetSpellIdForDifficulty: spell {} mode {} spell is nullptr, using mode {}", spellId, mode, mode - 2);
+            mode -= 2;
+        }
     }
 
     if (difficultyEntry->SpellID[mode] <= 0)

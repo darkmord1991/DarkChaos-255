@@ -1,3 +1,13 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only -- it predates this fork's schema and does not stop
+-- on errors, so a re-run is destructive:
+-- its creature_template INSERTs name `scale`, `mechanic_immune_mask` and
+-- `spell_school_immune_mask`, which this fork's schema no longer has, so the
+-- DELETEs succeed and the six zone 1-3 quest givers are WIPED. It also resets
+-- quests 300100-300308 to January, undoing 2026_04_09_00/01/02, 2026_07_13_00,
+-- 2026_07_14_00 and 2026_08_29_00. This happened on 2026-09-11; the fix is
+-- 2026_09_11_01_dc_azshara_crater_zones_1_3_rerun_repair.sql.
+
 -- ============================================================================
 -- Azshara Crater Quest System - SQL Script (REVISED)
 -- Zones 1-3: Quest Givers, Existing Item Rewards, Loot Tables
@@ -336,9 +346,12 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 -- SECTION 7: NPC QUEST RELATIONS (creature_queststarter / creature_questender)
 -- ============================================================================
 
--- Cleanup existing relations for these NPCs
-DELETE FROM `creature_queststarter` WHERE `id` IN (300001, 300002, 300010, 300011, 300020, 300021);
-DELETE FROM `creature_questender` WHERE `id` IN (300001, 300002, 300010, 300011, 300020, 300021);
+-- Cleanup existing relations for these NPCs -- scoped to THIS file's quests.
+-- An id-only DELETE also wiped the dungeon breadcrumbs Melia (300950) and
+-- Gor'nash (300951) are given by zones_4_8.sql whenever this file was re-applied
+-- after it (fixed 2026-09-11, see 2026_09_11_00_dc_azshara_crater_quest_relation_restore.sql).
+DELETE FROM `creature_queststarter` WHERE `id` IN (300001, 300002, 300010, 300011, 300020, 300021) AND `quest` BETWEEN 300100 AND 300399;
+DELETE FROM `creature_questender` WHERE `id` IN (300001, 300002, 300010, 300011, 300020, 300021) AND `quest` BETWEEN 300100 AND 300399;
 
 -- ----------------------------------------------------------------------------
 -- ZONE 1: Scout Thalindra (300001)

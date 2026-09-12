@@ -121,6 +121,19 @@ function HLBG.safeGetRealZoneText()
     return tostring(res)
 end
 HLBG.MAP_ID = HLBG.MAP_ID or 1411
+-- The battleground also runs on the cloned map 1412. Every "are we on the HLBG
+-- map" decision has to accept both, or a match on the clone leaves the HUD
+-- permanently hidden.
+HLBG.MAP_IDS = HLBG.MAP_IDS or { [1411] = true, [1412] = true }
+
+function HLBG.IsHLBGMapId(mapId)
+    local num = tonumber(mapId)
+    if num == nil then
+        return false
+    end
+
+    return HLBG.MAP_IDS[num] == true
+end
 HLBG.STATUS_NONE = HLBG.STATUS_NONE or 0
 HLBG.STATUS_QUEUED = HLBG.STATUS_QUEUED or 1
 HLBG.STATUS_WARMUP = HLBG.STATUS_WARMUP or 2
@@ -136,7 +149,37 @@ function HLBG.TrackStatusSignal(statusValue, mapId)
     local mapNum = tonumber(mapId)
     if mapNum ~= nil then
         HLBG._lastStatusMapId = mapNum
+        -- Remember the zone string the client reported while the server had us
+        -- on the battleground map. Presence otherwise only expires on a 60
+        -- second timer, so a single dropped status packet - exactly what a
+        -- mid-worldport removal risks, since RemovePlayerAtLeave fires while
+        -- the client is between maps - left the HUD up for a full minute after
+        -- the player was already gone. Comparing the client's own zone string
+        -- against itself keeps this locale-independent.
+        if HLBG.IsHLBGMapId(mapNum) then
+            HLBG._presenceZone = HLBG.safeGetRealZoneText()
+        else
+            HLBG._presenceZone = nil
+        end
     end
+end
+
+-- True while the client still reports the zone it was in when the server last
+-- confirmed us on the battleground map. Having left that zone is proof we are
+-- off the map, whatever the cached status says. An unknown zone on either side
+-- means "cannot tell", which keeps the server's word authoritative.
+local function StillInPresenceZone()
+    local zone = HLBG._presenceZone
+    if zone == nil or zone == "" then
+        return true
+    end
+
+    local current = HLBG.safeGetRealZoneText()
+    if current == "" then
+        return true
+    end
+
+    return current == zone
 end
 
 function HLBG.HasRecentMapPresence(maxAgeSeconds)
@@ -155,7 +198,11 @@ function HLBG.HasRecentMapPresence(maxAgeSeconds)
         mapId = tonumber(HLBG._lastStatus.mapId)
     end
 
-    return mapId == HLBG.MAP_ID
+    if not HLBG.IsHLBGMapId(mapId) then
+        return false
+    end
+
+    return StillInPresenceZone()
 end
 
 function HLBG.HasRecentPresenceStatus(maxAgeSeconds)
@@ -170,13 +217,13 @@ function HLBG.HasRecentPresenceStatus(maxAgeSeconds)
     end
 
     local mapId = tonumber(HLBG._lastStatusMapId)
-    if mapId ~= nil and mapId ~= HLBG.MAP_ID then
+    if mapId ~= nil and not HLBG.IsHLBGMapId(mapId) then
         return false
     end
 
     local statusNum = tonumber(HLBG._lastStatusCode)
     if statusNum == nil then
-        return mapId == HLBG.MAP_ID
+        return HLBG.IsHLBGMapId(mapId)
     end
 
     return statusNum == HLBG.STATUS_WARMUP or

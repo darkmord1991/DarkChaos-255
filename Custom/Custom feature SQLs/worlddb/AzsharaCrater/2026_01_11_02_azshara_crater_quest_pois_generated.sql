@@ -1,3 +1,10 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only -- it predates this fork's schema and does not stop
+-- on errors, so a re-run is destructive:
+-- it DELETEs every crater quest_poi / quest_poi_points row, then every INSERT
+-- fails on `creature.id1` (this fork has a single `id`). All crater POIs,
+-- including the 2026_07_14_01 area polygons, would be lost.
+
 -- ============================================================================
 -- Azshara Crater Quest POI Generator - COMPLETE
 -- ============================================================================

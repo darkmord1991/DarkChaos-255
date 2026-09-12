@@ -747,9 +747,31 @@ HLBG.UpdateHUD = function()
     local timeSinceLastUpdate = now - HLBG._lastHUDUpdate
     if timeSinceLastUpdate < 1.0 then
         if dev then
-            DebugPrint("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate)
+            DebugPrint("|cFFFFAA00[UpdateHUD THROTTLED]|r Deferred (%.1fs since last update, need 1.0s)", timeSinceLastUpdate)
         end
-        return -- Skip update to prevent blinking
+
+        -- Trailing edge, not a plain drop. The server can push two status
+        -- packets in a single world tick, and the SECOND one carries the newer
+        -- state - at the warmup/battle transition it is the one holding the
+        -- real match timer. Dropping it outright froze the countdown until the
+        -- next server heartbeat 30 seconds later. Re-running once the window
+        -- closes keeps the anti-blink throttle and still lands the last value.
+        if not HLBG._hudUpdatePending then
+            local delay = 1.0 - timeSinceLastUpdate
+            if delay < 0.05 then
+                delay = 0.05
+            end
+
+            HLBG._hudUpdatePending = true
+            HLBG.After(delay, function()
+                HLBG._hudUpdatePending = false
+                if type(HLBG.UpdateHUD) == 'function' then
+                    HLBG.UpdateHUD()
+                end
+            end)
+        end
+
+        return -- Skip this pass to prevent blinking; the deferred run covers it
     end
     HLBG._lastHUDUpdate = now
     if dev then DebugPrint("|cFF00FFAA[UpdateHUD]|r Proceeding (throttle passed)") end

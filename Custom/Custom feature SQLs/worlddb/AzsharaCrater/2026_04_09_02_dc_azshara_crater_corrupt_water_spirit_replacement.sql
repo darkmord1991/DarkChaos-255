@@ -1,3 +1,10 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only -- it predates this fork's schema and does not stop
+-- on errors, so a re-run is destructive:
+-- it uses `creature.id1`, which this fork does not have. The spawn UPDATE and the
+-- POI INSERTs fail while the POI DELETEs succeed, so quest 300208 would lose its
+-- map markers. Its quest change is already replayed in 2026_09_11_01_dc_azshara_crater_zones_1_3_rerun_repair.sql.
+
 -- Replace Corrupt Water Spirit (5897) with Fouled Water Spirit (17358)
 -- for Azshara Crater map 37, update quest 300208, and rebuild its POI rows.
 

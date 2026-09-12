@@ -33,6 +33,20 @@
 #include "SpellMgr.h"
 #include "WorldState.h"
 
+// Bitmask of the spawn modes a difficulty condition treats as current. DC runs 5-man Mythic at
+// DUNGEON_DIFFICULTY_EPIC (2), a mode stock data never targets on a 5-man, so a heroic-only
+// condition silently failed there. Accept heroic as well on those maps - the same "Mythic 5-mans
+// borrow heroic" rule SmartScript, SpellMgr and ScriptedAI follow. Additive on purpose: a condition
+// written for difficulty 2 still matches.
+static uint32 GetConditionSpawnModeMask(Map const* map)
+{
+    uint32 mask = 1 << map->GetSpawnMode();
+    if (map->GetSpawnMode() == DUNGEON_DIFFICULTY_EPIC && map->IsNonRaidDungeon())
+        mask |= 1 << DUNGEON_DIFFICULTY_HEROIC;
+
+    return mask;
+}
+
 // Checks if object meets the condition
 // Can have CONDITION_SOURCE_TYPE_NONE && !mReferenceId if called from a special event (ie: eventAI)
 bool Condition::Meets(ConditionSourceInfo& sourceInfo)
@@ -433,7 +447,7 @@ bool Condition::Meets(ConditionSourceInfo& sourceInfo)
     }
     case CONDITION_SPAWNMASK:
     {
-        condMeets = ((1 << object->GetMap()->GetSpawnMode()) & ConditionValue1);
+        condMeets = (GetConditionSpawnModeMask(object->GetMap()) & ConditionValue1) != 0;
         break;
     }
     case CONDITION_UNIT_STATE:
@@ -540,7 +554,8 @@ bool Condition::Meets(ConditionSourceInfo& sourceInfo)
     }
     case CONDITION_DIFFICULTY_ID:
     {
-        condMeets = object->GetMap()->GetDifficulty() == ConditionValue1;
+        // ConditionValue1 < MAX_DIFFICULTY is enforced at load, so the shift is in range.
+        condMeets = (GetConditionSpawnModeMask(object->GetMap()) & (1 << ConditionValue1)) != 0;
         break;
     }
     case CONDITION_PLAYER_QUEUED_RANDOM_DUNGEON:

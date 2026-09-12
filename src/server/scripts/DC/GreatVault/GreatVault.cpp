@@ -1,4 +1,5 @@
 #include "GreatVault.h"
+#include "DC/CrossSystem/CrossSystemItemClassFilter.h"
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
 #include "DC/MythicPlus/dc_mythicplus_constants.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
@@ -269,11 +270,21 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
                 // dc_vault_loot_table is hand-maintained and holds entries that
                 // no longer exist in item_template. Dropping them here keeps a
                 // reward the player can never receive out of the pool.
-                if (!sObjectMgr->GetItemTemplate(candidateId))
+                ItemTemplate const* candidateTemplate = sObjectMgr->GetItemTemplate(candidateId);
+                if (!candidateTemplate)
                 {
                     LOG_ERROR("mythic.vault", "dc_vault_loot_table references unknown item {}; skipped", candidateId);
                     continue;
                 }
+
+                // The query above filters on class_mask and armor_type, and
+                // neither separates classes: most of the pool carries an "all
+                // classes" mask, and leather/cloth/mail/plate are each shared
+                // by two or three classes while 'Misc' (jewellery, cloaks,
+                // weapons) is shared by all of them. Decide from the item
+                // instead, or the vault offers a rogue intellect leather.
+                if (player && !DarkChaos::CrossSystem::ItemClassFilter::IsItemForPlayer(player, candidateTemplate))
+                    continue;
 
                 candidates.push_back({ candidateId, 100 });
             } while (result->NextRow());

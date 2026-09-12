@@ -437,7 +437,11 @@ function addon:CreateSettingsPanel()
     dashboard.emptyLabel = CreateEmptyDashboardLabel(dashboard)
     
     -- Populate Dashboard Buttons
-    -- Populate Dashboard Buttons
+    -- Every module below is built in isolation: one that throws is recorded and skipped
+    -- instead of aborting the panel. This whole function runs inside the pcall in
+    -- addon:DelayedCall, whose only report is addon:Debug (off by default), so an
+    -- unguarded failure here used to leave a blank dashboard and no message anywhere.
+    local buildFailures = {}
     local startX = 10
     local startY = -4
     local colWidth = 155
@@ -455,7 +459,12 @@ function addon:CreateSettingsPanel()
         section.header:SetTextColor(1, 0.82, 0)
 
         for _, modName in ipairs(category.modules) do
-            table.insert(section.buttons, CreateDashboardButton(dashboard, modName, startX, currentY))
+            local ok, button = pcall(CreateDashboardButton, dashboard, modName, startX, currentY)
+            if ok and button then
+                table.insert(section.buttons, button)
+            else
+                table.insert(buildFailures, modName .. " (dashboard button): " .. tostring(button))
+            end
         end
 
         table.insert(dashboard.sections, section)
@@ -550,22 +559,34 @@ function addon:CreateSettingsPanel()
     -- (We iterate category lists to find them all easily)
     for _, category in ipairs(moduleCategories) do
         for _, modName in ipairs(category.modules) do
-            local frame = CreateModuleFrame(panel, modName)
-            self.moduleFrames[modName] = frame
-            
-            local module = self.modules[modName]
-            -- Special case for Bags using BagEnhancements
-            if not module and modName == "Bags" then module = self.modules["BagEnhancements"] end
+            local frameOk, frame = pcall(CreateModuleFrame, panel, modName)
+            if not frameOk or not frame then
+                table.insert(buildFailures, modName .. " (frame): " .. tostring(frame))
+            else
+                self.moduleFrames[modName] = frame
 
-            if module and module.CreateSettings then
-                local y = module.CreateSettings(frame.content)
-                if type(y) == "number" then
-                    frame.content:SetHeight(math.max(1, -y + 30))
+                local module = self.modules[modName]
+                -- Special case for Bags using BagEnhancements
+                if not module and modName == "Bags" then module = self.modules["BagEnhancements"] end
+
+                local builder
+                if module and module.CreateSettings then
+                    builder = module.CreateSettings
+                elseif modName == "Communication" then
+                    builder = CreateCommunicationSettings
                 end
-            elseif modName == "Communication" then
-                local y = CreateCommunicationSettings(frame.content)
-                if type(y) == "number" then
-                    frame.content:SetHeight(math.max(1, -y + 30))
+
+                if builder then
+                    -- A module whose settings page depends on data that is not ready one second
+                    -- after login (a server profile reply, another addon, a native API) throws
+                    -- here and only here; the frame it belongs to still exists, so the rest of
+                    -- the panel stays usable and the module can be opened again after a reload.
+                    local okSettings, y = pcall(builder, frame.content)
+                    if not okSettings then
+                        table.insert(buildFailures, modName .. " (settings): " .. tostring(y))
+                    elseif type(y) == "number" then
+                        frame.content:SetHeight(math.max(1, -y + 30))
+                    end
                 end
             end
         end
@@ -575,6 +596,16 @@ function addon:CreateSettingsPanel()
     
     -- 3. Show Dashboard initially
     self:ShowDashboard()
+
+    -- Say so, in chat, without needing debug mode: a silently half-built panel is the exact
+    -- failure this guard exists for. Kept on the addon for later inspection as well.
+    self.settingsBuildFailures = buildFailures
+    if #buildFailures > 0 then
+        self:Print("settings panel: " .. #buildFailures .. " module(s) failed to build:", true)
+        for _, line in ipairs(buildFailures) do
+            self:Print("  " .. line, true)
+        end
+    end
 end
 
 -- ============================================================
@@ -592,7 +623,20 @@ end
 -- Init
 -- ============================================================
 addon:RegisterEvent("PLAYER_LOGIN", function()
-    addon:DelayedCall(1, function()
+    -- Build only once addon:Initialize() has run: every module's CreateSettings reads
+    -- addon.settings, which stays the empty placeholder table until LoadSettings() populates it.
+    -- Both used to be plain timers whose relative order decided whether the panel had any
+    -- settings to show, and the panel is built once per session, so losing that race blanked
+    -- every page until the next reload.
+    local attempts = 0
+    local function build()
+        attempts = attempts + 1
+        if not addon.initialized and attempts < 40 then
+            addon:DelayedCall(0.25, build)
+            return
+        end
         addon:CreateSettingsPanel()
-    end)
+    end
+
+    addon:DelayedCall(1, build)
 end)

@@ -5323,7 +5323,20 @@ void SmartScript::FillScript(SmartAIEventList e, WorldObject* obj, AreaTrigger c
         {
             if (obj && obj->GetMap()->IsDungeon())
             {
-                if ((1 << (obj->GetMap()->GetSpawnMode() + 1)) & (*i).event.event_flags)
+                uint32 modeMask = 1 << (obj->GetMap()->GetSpawnMode() + 1);
+
+                // DC runs 5-man Mythic at DUNGEON_DIFFICULTY_EPIC (2), a spawn mode
+                // stock WotLK data never uses on a 5-man: every dungeon SmartAI row
+                // is flagged difficulty 0/1 only, so the difficulty-2 bit matched
+                // nothing and the event was dropped from mEvents outright - boss and
+                // trash abilities simply never fired on Mythic. Accept heroic-flagged
+                // events there too, the same "Mythic 5-mans borrow heroic" convention
+                // the rest of the DC tree uses. Additive on purpose: a DC-authored
+                // row flagged difficulty 2 keeps working.
+                if (obj->GetMap()->GetSpawnMode() == DUNGEON_DIFFICULTY_EPIC && !obj->GetMap()->IsRaid())
+                    modeMask |= 1 << (DUNGEON_DIFFICULTY_HEROIC + 1);
+
+                if (modeMask & (*i).event.event_flags)
                 {
                     mEvents.push_back((*i));
                 }
