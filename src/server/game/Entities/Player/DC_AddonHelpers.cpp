@@ -13,7 +13,7 @@
 // context: small tag that classifies the payload sender/context (e.g. "XP").
 // This is included in the dedupe key so different payload-types under the
 // same addon prefix can be deduped independently.
-static void SendXPAddonToPlayerInternal(Player* player, const char* context, uint32 xp, uint32 xpMax, uint32 level, bool bypassDedupe = false)
+static void SendXPAddonToPlayerInternal(Player* player, char const* context, uint32 xp, uint32 xpMax, uint32 level, bool bypassDedupe = false)
 {
     if (!player)
         return;
@@ -51,7 +51,7 @@ static void SendXPAddonToPlayerInternal(Player* player, const char* context, uin
 // Public helper: only send addon snapshots for players at or above the configured threshold
 // to avoid spamming low-level clients that don't need the fallback UI.
 // Public helper: context defaults to "XP" for the current use-case.
-void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context /*= "XP"*/)
+void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, char const* context /*= "XP"*/)
 {
     if (!player)
         return;
@@ -71,7 +71,7 @@ void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, 
 
 // Force-send variant: bypasses the level threshold and sends unconditionally.
 // Intended for admin/GM commands that explicitly request a snapshot.
-void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context /*= "XP"*/)
+void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, char const* context /*= "XP"*/)
 {
     // Force-send must bypass dedupe and any level checks; use bypass flag
     SendXPAddonToPlayerInternal(player, context ? context : "XP", xp, xpMax, level, true);

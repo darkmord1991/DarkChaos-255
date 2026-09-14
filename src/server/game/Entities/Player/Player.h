@@ -1099,7 +1099,7 @@ public:
     ~Player() override;
 
         // DCRXP dedupe helpers: compare last sent payload and update last payload/time
-    bool IsDuplicateDCRXPPayload(const std::string& payload, uint32 windowSec = 2) const
+    bool IsDuplicateDCRXPPayload(std::string const& payload, uint32 windowSec = 2) const
     {
         if (m_lastDCRXPPayload.empty())
             return false;
@@ -1109,7 +1109,7 @@ public:
         return false;
     }
 
-    void UpdateLastDCRXPPayload(const std::string& payload)
+    void UpdateLastDCRXPPayload(std::string const& payload)
     {
         m_lastDCRXPPayload = payload;
         m_lastDCRXPPayloadTime = uint32(time(nullptr));

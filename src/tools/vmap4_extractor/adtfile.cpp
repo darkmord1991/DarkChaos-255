@@ -28,8 +28,8 @@ char const* GetPlainName(char const* FileName)
     // Strip the directory, handling BOTH '\' (stock Blizzard data) and '/'
     // (modern / downported ADTs) separators. strrchr on '\' alone left
     // forward-slash paths un-stripped -> nested ./Buildings/ paths that fail.
-    const char* szTemp = strrchr(FileName, '\\');
-    const char* szFwd = strrchr(FileName, '/');
+    char const* szTemp = strrchr(FileName, '\\');
+    char const* szFwd = strrchr(FileName, '/');
     if (szFwd && (!szTemp || szFwd > szTemp))
         szTemp = szFwd;
     if (szTemp != nullptr)
