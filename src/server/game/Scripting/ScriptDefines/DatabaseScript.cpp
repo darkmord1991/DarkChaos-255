@@ -34,6 +34,11 @@ bool ScriptMgr::OnDatabasesLoading()
     return true;
 }
 
+bool ScriptMgr::OnModuleDatabasesLoading()
+{
+    CALL_ENABLED_BOOLEAN_HOOKS(DatabaseScript, DATABASEHOOK_ON_MODULE_DATABASES_LOADING, !script->OnModuleDatabasesLoading());
+}
+
 void ScriptMgr::OnAfterDatabasesLoaded(uint32 updateFlags)
 {
     CALL_ENABLED_HOOKS(DatabaseScript, DATABASEHOOK_ON_AFTER_DATABASES_LOADED, script->OnAfterDatabasesLoaded(updateFlags));
@@ -60,12 +65,19 @@ void ScriptMgr::OnDatabasesClosing()
     });
 }
 
+void ScriptMgr::OnModuleDatabasesKeepAlive()
+{
+    CALL_ENABLED_HOOKS(DatabaseScript, DATABASEHOOK_ON_MODULE_DATABASES_KEEPALIVE, script->OnModuleDatabasesKeepAlive());
+}
+
+void ScriptMgr::OnModuleDatabasesClosing()
+{
+    CALL_ENABLED_HOOKS(DatabaseScript, DATABASEHOOK_ON_MODULE_DATABASES_CLOSING, script->OnModuleDatabasesClosing());
+}
+
 void ScriptMgr::OnDatabaseWarnAboutSyncQueries(bool apply)
 {
-    ExecuteScript<DatabaseScript>([&](DatabaseScript* script)
-    {
-        script->OnDatabaseWarnAboutSyncQueries(apply);
-    });
+    CALL_ENABLED_HOOKS(DatabaseScript, DATABASEHOOK_ON_DATABASE_WARN_ABOUT_SYNC_QUERIES, script->OnDatabaseWarnAboutSyncQueries(apply));
 }
 
 void ScriptMgr::OnDatabaseSelectIndexLogout(Player* player, uint32& statementIndex, uint32& statementParam)
@@ -82,6 +94,11 @@ void ScriptMgr::OnDatabaseGetDBRevision(std::string& revision)
     {
         script->OnDatabaseGetDBRevision(revision);
     });
+}
+
+void ScriptMgr::OnDatabaseGetDBRevision(std::map<std::string, std::string>& revisions)
+{
+    CALL_ENABLED_HOOKS(DatabaseScript, DATABASEHOOK_ON_DATABASE_GET_DB_REVISION, script->OnDatabaseGetDBRevision(revisions));
 }
 
 DatabaseScript::DatabaseScript(char const* name, std::vector<uint16> enabledHooks)

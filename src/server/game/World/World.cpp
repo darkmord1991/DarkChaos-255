@@ -190,9 +190,8 @@ void World::LoadConfigSettings(bool reload)
     // load update time related configs
     sWorldUpdateTime.LoadFromConfig();
 
-    ///- Read the player limit and the Message of the day from the config file
-    if (!reload)
-        sWorldSessionMgr->SetPlayerAmountLimit(sConfigMgr->GetOption<int32>("PlayerLimit", 1000));
+    ///- Read the player limit from the config file
+    sWorldSessionMgr->SetPlayerAmountLimit(sConfigMgr->GetOption<int32>("PlayerLimit", 1000));
 
     _worldConfig.Initialize(reload);
 
@@ -1396,6 +1395,7 @@ void World::Update(uint32 diff)
         LoginDatabase.KeepAlive();
         WorldDatabase.KeepAlive();
         sScriptMgr->OnDatabasesKeepAlive();
+        sScriptMgr->OnModuleDatabasesKeepAlive();
     }
 
     {

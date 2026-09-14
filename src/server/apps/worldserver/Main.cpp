@@ -455,6 +455,9 @@ bool StartDB()
         return false;
     }
 
+    if (!sScriptMgr->OnModuleDatabasesLoading())
+        return false;
+
     ///- Get the realm Id from the configuration file
     realm.Id.Realm = sConfigMgr->GetOption<uint32>("RealmID", 1);
     if (!realm.Id.Realm)
@@ -504,6 +507,7 @@ void StopDB()
     LoginDatabase.Close();
 
     sScriptMgr->OnDatabasesClosing();
+    sScriptMgr->OnModuleDatabasesClosing();
 
     MySQL::Library_End();
 }
