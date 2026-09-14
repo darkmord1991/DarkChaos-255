@@ -530,6 +530,9 @@ public:
 
     /// Is the user engaged in a log out process?
     bool IsLoggingOut() const { return _logoutTime || m_playerLogout; }
+    // Pre-rename spelling, kept as an alias: mod-playerbots (untracked here, /modules/* is
+    // gitignored) still calls isLogingOut() in 14 places. Drop this once the module catches up.
+    bool isLogingOut() const { return IsLoggingOut(); }
 
     /// Engage the logout process for the user
     void SetLogoutStartTime(time_t requestTime)
