@@ -5,133 +5,131 @@ _G.DCMythicPlusHUD = namespace
 local GV = {}
 namespace.GreatVault = GV
 
+-- The retail Great Vault (Blizzard_WeeklyRewards, "evergreen" art) rebuilt for
+-- 3.3.5. The art is repacked into two 1024px sheets by
+-- tools/build_greatvault_retail_atlas.py; VAULT_ATLAS mirrors the rect table
+-- that script prints. Offsets below are the retail XML's, so the panel lines up
+-- with its art at 1:1.
+
 local frame
-local itemPrefetchTooltip
-local itemRetryCounts = {}
-local pendingRefresh = {}
+local scanTooltip
+local primedItems = {}
 
 local POPUP_KEY = "DCMPLUS_CONFIRM_VAULT_CLAIM"
+local FRAME_NAME = "DCMythicPlusGreatVaultFrame"
 
--- Match DC-Leaderboards UI style across DC addons
-local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
-local BG_TINT_ALPHA = 0.60
+local ATLAS_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\RetailAtlas\\"
+local SHEET_SIZE = 1024
+local QUESTION_MARK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local CHECKMARK_TEXTURE = "Interface\\RAIDFRAME\\ReadyCheck-Ready"
+local FANCY_FONT = "Fonts\\MORPHEUS.TTF"
 
-local function ApplyLeaderboardsStyle(frame)
-    if not frame or frame.__dcLeaderboardsStyle then return end
-    frame.__dcLeaderboardsStyle = true
+-- name -> { sheet, x, y, packed width, packed height, retail width, retail height }
+-- The retail size differs from the packed one only where a member was scaled
+-- down to fit its sheet.
+local VAULT_ATLAS = {
+    ["frame-back"] = { "GreatVaultFrame", 0, 0, 1024, 643, 1134, 712 },
+    ["category-raids"] = { "GreatVaultFrame", 0, 646, 405, 172, 405, 172 },
+    ["category-dungeons"] = { "GreatVaultFrame", 408, 646, 422, 177, 422, 177 },
+    ["category-pvp"] = { "GreatVaultFrame", 0, 826, 421, 152, 421, 152 },
+    ["frame-topdecor"] = { "GreatVaultFrame", 424, 826, 229, 103, 229, 103 },
+    ["frame-selectbutton"] = { "GreatVaultFrame", 656, 826, 209, 31, 209, 31 },
+    ["frame"] = { "GreatVaultCards", 0, 0, 1024, 577, 1175, 662 },
+    ["reward-locked"] = { "GreatVaultCards", 0, 580, 218, 125, 218, 125 },
+    ["reward-unlocked"] = { "GreatVaultCards", 221, 580, 218, 125, 218, 125 },
+    ["reward-selected"] = { "GreatVaultCards", 442, 580, 214, 121, 214, 121 },
+    ["reward-unselected"] = { "GreatVaultCards", 659, 580, 215, 122, 215, 122 },
+    ["reward-selected-sideglow"] = { "GreatVaultCards", 0, 708, 260, 163, 260, 163 },
+    ["reward-selected-outerglow"] = { "GreatVaultCards", 263, 708, 234, 141, 234, 141 },
+    ["reward-fx-backglow"] = { "GreatVaultCards", 500, 708, 168, 115, 168, 115 },
+    ["reward-itemframe"] = { "GreatVaultCards", 671, 708, 156, 51, 156, 51 },
+    ["header"] = { "GreatVaultCards", 0, 874, 735, 15, 735, 15 },
+    ["divider"] = { "GreatVaultCards", 0, 892, 1020, 7, 1057, 7 },
+}
 
-    if frame.SetBackdropColor then
-        frame:SetBackdropColor(0, 0, 0, 0)
-    end
+local FRAME_WIDTH = 1165
+-- Retail is 657 tall; the extra strip at the bottom holds the view tabs.
+local FRAME_HEIGHT = 717
+local FRAME_LEVEL = 10
 
-    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
-    bg:SetAllPoints()
-    bg:SetTexture(BG_FELLEATHER)
-    if bg.SetHorizTile then bg:SetHorizTile(false) end
-    if bg.SetVertTile then bg:SetVertTile(false) end
+local ROW_Y = { -149, -307, -470 }
+local DIVIDER_Y = { -291, -446 }
+local CARDS_PER_ROW = 3
 
-    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    tint:SetAllPoints()
-    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+local TRACK_STYLE = {
+    raid = { atlas = "category-raids", name = "Raids" },
+    mplus = { atlas = "category-dungeons", name = "Mythic+" },
+    pvp = { atlas = "category-pvp", name = "PvP" },
+    history = { atlas = "category-dungeons", name = "Latest Runs" },
+}
 
-    frame.__dcBg = bg
-    frame.__dcTint = tint
-end
-
-local function EnsureTooltip()
-    if itemPrefetchTooltip then return end
-    itemPrefetchTooltip = CreateFrame("GameTooltip", "DCMythicPlusVaultScanTooltip", UIParent, "GameTooltipTemplate")
-    itemPrefetchTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-end
+local VIEW_TABS = {
+    { view = "claim", label = "Rewards" },
+    { view = "progress", label = "This Week" },
+    { view = "history", label = "Run History" },
+}
+local TAB_WIDTH = 150
+local TAB_HEIGHT = 26
+local TAB_GAP = 12
 
 local QUALITY_HEX = {
     [0] = "9d9d9d", [1] = "ffffff", [2] = "1eff00", [3] = "0070dd",
     [4] = "a335ee", [5] = "ff8000", [6] = "e6cc80", [7] = "00ccff",
 }
 
--- Name a reward without depending on the client item cache. Custom entries are
--- never in it, so GetItemInfo() stays nil forever and the slot would otherwise
--- read as a bare item level. The server ships itemName/quality for that case.
-local function DescribeReward(reward, itemId)
-    local name = select(1, GetItemInfo(itemId)) or reward.itemName
-    if not name or name == "" then
-        return nil
-    end
-
-    local hex = QUALITY_HEX[tonumber(reward.quality or -1) or -1]
-    if hex then
-        return "|cff" .. hex .. name .. "|r"
-    end
-    return name
-end
-
-local function PrefetchItem(itemId)
-    if not itemId then return end
-    EnsureTooltip()
-    itemPrefetchTooltip:SetHyperlink("item:" .. itemId)
-end
-
-local function QueueSlotRefresh(slotIndex)
-    if not slotIndex then return end
-    if pendingRefresh[slotIndex] then return end
-    pendingRefresh[slotIndex] = true
-    C_Timer.After(0.35, function()
-        pendingRefresh[slotIndex] = nil
-        if GV.RefreshSlot then
-            GV:RefreshSlot(slotIndex)
-        end
-    end)
-end
-
-local function EnsurePopupDefined()
-    if StaticPopupDialogs[POPUP_KEY] then
-        return
-    end
-    StaticPopupDialogs[POPUP_KEY] = {
-        text = "Claim %s? You only get one Great Vault reward per week.",
-        button1 = "Yes",
-        button2 = "No",
-        OnAccept = function()
-            if GV._pendingSlot and GV._pendingItemId then
-                if namespace.ClaimVaultReward then
-                    namespace.ClaimVaultReward(GV._pendingSlot, GV._pendingItemId)
-                end
-            end
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-        preferredIndex = 3,
-    }
-end
-
--- Constants
-local TRACK_COUNT = 3
-local SLOTS_PER_TRACK = 3
-local SLOT_WIDTH = 230
-local SLOT_HEIGHT = 120
-local PADDING_X = 5
-local PADDING_Y = 5
-local TRACK_INNER_X = 10
-local TRACK_INNER_TOP = -35
-local TRACK_WIDTH = 3 * SLOT_WIDTH + 2 * PADDING_X + 20
-local TRACK_HEIGHT = SLOT_HEIGHT + 45
-local TRACK_START_Y = -90
-local TRACK_GAP = 5
-local TRACK_EXPANDED_BOTTOM_MARGIN = 25
+local UNLOCK_ORDINAL = { "a", "a second", "a third" }
 
 local SECONDS_PER_WEEK = 7 * 24 * 60 * 60
+
+local function SetShown(region, shown)
+    if shown then
+        region:Show()
+    else
+        region:Hide()
+    end
+end
+
+local function SetEnabled(button, enabled)
+    if enabled then
+        button:Enable()
+    else
+        button:Disable()
+    end
+end
+
+local function PlaySoundSafe(sound)
+    if PlaySound then
+        PlaySound(sound)
+    end
+end
+
+local function IsTruthy(value)
+    return value == true or value == 1 or value == "1"
+end
+
+local function Plural(count, one, many)
+    if count == 1 then
+        return one
+    end
+    return many
+end
+
+local function SetAtlas(texture, name, useAtlasSize)
+    local entry = VAULT_ATLAS[name]
+    texture:SetTexture(ATLAS_ROOT .. entry[1] .. ".blp")
+    texture:SetTexCoord(entry[2] / SHEET_SIZE, (entry[2] + entry[4]) / SHEET_SIZE,
+        entry[3] / SHEET_SIZE, (entry[3] + entry[5]) / SHEET_SIZE)
+    if useAtlasSize then
+        texture:SetSize(entry[6], entry[7])
+    end
+end
 
 local function FormatWeekRange(weekStart)
     weekStart = tonumber(weekStart or 0) or 0
     if weekStart <= 0 then
         return "Unknown"
     end
-
-    local weekEnd = weekStart + SECONDS_PER_WEEK
-    local startStr = date("%Y-%m-%d", weekStart)
-    local endStr = date("%Y-%m-%d", weekEnd)
-    return startStr .. " → " .. endStr
+    return date("%Y-%m-%d", weekStart) .. " - " .. date("%Y-%m-%d", weekStart + SECONDS_PER_WEEK)
 end
 
 local function FormatDateTime(ts)
@@ -147,288 +145,822 @@ local function FormatRunDuration(seconds)
     if seconds <= 0 then
         return "--:--"
     end
+    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
 
-    local mins = math.floor(seconds / 60)
-    local secs = seconds % 60
-    return string.format("%d:%02d", mins, secs)
+-- ---------------------------------------------------------------------------
+-- Items
+-- ---------------------------------------------------------------------------
+
+-- GetItemInfo() is nil until the client has cached the item, and nothing here
+-- fetched it reliably, so the slot fell back to a question mark even for stock
+-- items. GetItemIcon() reads the client's Item.dbc and needs no cache; the
+-- server-shipped icon covers custom entries that Item.dbc does not know.
+local function ResolveRewardIcon(reward, itemId)
+    local icon = GetItemIcon and GetItemIcon(itemId)
+    if icon and icon ~= "" then
+        return icon
+    end
+
+    if type(reward.icon) == "string" and reward.icon ~= "" then
+        if reward.icon:find("\\", 1, true) then
+            return reward.icon
+        end
+        return "Interface\\Icons\\" .. reward.icon
+    end
+
+    return select(10, GetItemInfo(itemId)) or QUESTION_MARK_ICON
+end
+
+local function ResolveRewardName(reward, itemId)
+    local name, _, quality = GetItemInfo(itemId)
+    name = name or reward.itemName
+    if not name or name == "" then
+        name = "Item #" .. itemId
+    end
+    return name, quality or tonumber(reward.quality or -1)
+end
+
+local function QualityColor(quality)
+    local color = quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+    if color then
+        return color.r, color.g, color.b
+    end
+    return 1, 1, 1
+end
+
+local function ColoredName(reward)
+    local itemId = tonumber(reward.itemId)
+    local name, quality = ResolveRewardName(reward, itemId)
+    local hex = QUALITY_HEX[quality]
+    if hex then
+        return "|cff" .. hex .. name .. "|r"
+    end
+    return name
+end
+
+local function BuildItemLink(itemId, reward)
+    local link = select(2, GetItemInfo(itemId))
+    if link then
+        return link
+    end
+    local name, quality = ResolveRewardName(reward, itemId)
+    return string.format("|cff%s|Hitem:%d:0:0:0:0:0:0:0:0|h[%s]|h|r", QUALITY_HEX[quality] or "ffffff", itemId, name)
+end
+
+-- Ask the server for the item so tooltips and links resolve. SetHyperlink only
+-- sends the query while the tooltip has an owner, and hiding a tooltip clears
+-- it, so the owner is set on every call.
+local function PrimeItem(itemId)
+    if primedItems[itemId] or GetItemInfo(itemId) then
+        return
+    end
+    primedItems[itemId] = true
+
+    if not scanTooltip then
+        scanTooltip = CreateFrame("GameTooltip", "DCMythicPlusVaultScanTooltip", UIParent, "GameTooltipTemplate")
+    end
+    scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    scanTooltip:SetHyperlink("item:" .. itemId)
+    scanTooltip:Hide()
+end
+
+local ItemOnEnter
+
+-- An uncached item opens as "Retrieving item information", and the client does
+-- not redraw the tooltip when the query answer arrives. Poll while the tooltip
+-- is still ours and set it again once the item is in the cache.
+local function ItemTooltipOnUpdate(self, elapsed)
+    self.tooltipElapsed = (self.tooltipElapsed or 0) + elapsed
+    if self.tooltipElapsed < 0.2 then
+        return
+    end
+    self.tooltipElapsed = 0
+
+    if GameTooltip:GetOwner() ~= self or not self.itemId then
+        self:SetScript("OnUpdate", nil)
+    elseif GetItemInfo(self.itemId) then
+        ItemOnEnter(self)
+    end
+end
+
+function ItemOnEnter(self)
+    if not self.itemId then
+        return
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT", -3, -6)
+    GameTooltip:SetHyperlink("item:" .. self.itemId)
+    GameTooltip:Show()
+
+    if GetItemInfo(self.itemId) then
+        self:SetScript("OnUpdate", nil)
+    else
+        self.tooltipElapsed = 0
+        self:SetScript("OnUpdate", ItemTooltipOnUpdate)
+    end
+end
+
+local function ItemOnLeave(self)
+    self:SetScript("OnUpdate", nil)
+    GameTooltip:Hide()
+end
+
+local function ItemOnClick(self)
+    if self.itemId and IsModifiedClick and IsModifiedClick() and HandleModifiedItemClick then
+        HandleModifiedItemClick(BuildItemLink(self.itemId, self.reward))
+        return
+    end
+    GV:SelectCard(self:GetParent())
+end
+
+local function SetItem(itemFrame, reward)
+    local itemId = tonumber(reward.itemId)
+    PrimeItem(itemId)
+
+    itemFrame.itemId = itemId
+    itemFrame.reward = reward
+    itemFrame.Icon:SetTexture(ResolveRewardIcon(reward, itemId))
+
+    local name, quality = ResolveRewardName(reward, itemId)
+    itemFrame.Name:SetText(name)
+    itemFrame.Name:SetTextColor(QualityColor(quality))
+    itemFrame:Show()
+end
+
+-- ---------------------------------------------------------------------------
+-- Popup
+-- ---------------------------------------------------------------------------
+
+local function EnsurePopupDefined()
+    if StaticPopupDialogs[POPUP_KEY] then
+        return
+    end
+    StaticPopupDialogs[POPUP_KEY] = {
+        text = "You will be unable to change this reward once it is selected.\n\nAre you sure you wish to select %s?",
+        button1 = YES or "Yes",
+        button2 = CANCEL or "Cancel",
+        OnAccept = function()
+            if GV._pendingSlot and GV._pendingItemId and namespace.ClaimVaultReward then
+                PlaySoundSafe("LOOTWINDOWCOINSOUND")
+                namespace.ClaimVaultReward(GV._pendingSlot, GV._pendingItemId)
+            end
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        showAlert = true,
+        preferredIndex = 3,
+    }
+end
+
+-- ---------------------------------------------------------------------------
+-- Frame construction
+-- ---------------------------------------------------------------------------
+
+local function CreateCard(row, level)
+    local card = CreateFrame("Frame", nil, row)
+    card:SetSize(219, 126)
+    card:SetFrameLevel(level)
+    card:EnableMouse(true)
+
+    card.Background = card:CreateTexture(nil, "BACKGROUND")
+    card.Background:SetPoint("BOTTOMRIGHT")
+
+    card.UncollectedGlow = card:CreateTexture(nil, "BORDER")
+    SetAtlas(card.UncollectedGlow, "reward-fx-backglow", true)
+    card.UncollectedGlow:SetPoint("BOTTOMLEFT", 2, 2)
+    card.UncollectedGlow:SetBlendMode("ADD")
+    card.UncollectedGlow:Hide()
+
+    card.Threshold = card:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    card.Threshold:SetPoint("TOPLEFT", 36, -16)
+    card.Threshold:SetWidth(172)
+    card.Threshold:SetJustifyH("LEFT")
+
+    card.Detail = card:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    card.Detail:SetPoint("TOPLEFT", card.Threshold, "BOTTOMLEFT", 0, -6)
+    card.Detail:SetWidth(172)
+    card.Detail:SetJustifyH("LEFT")
+
+    card.Progress = card:CreateFontString(nil, "ARTWORK", "GameFontGreen")
+    card.Progress:SetPoint("BOTTOMRIGHT", -15, 15)
+
+    card.CompletedIcon = card:CreateTexture(nil, "ARTWORK")
+    card.CompletedIcon:SetSize(20, 20)
+    card.CompletedIcon:SetPoint("TOPLEFT", 10, -12)
+    card.CompletedIcon:SetTexture(CHECKMARK_TEXTURE)
+
+    card.SelectedTexture = card:CreateTexture(nil, "OVERLAY")
+    SetAtlas(card.SelectedTexture, "reward-selected", true)
+    card.SelectedTexture:SetPoint("CENTER")
+    card.SelectedTexture:Hide()
+
+    -- Retail spins a masked edge glow here; 3.3.5 has no mask textures, so the
+    -- outer and side glows just pulse.
+    local glow = CreateFrame("Frame", nil, row)
+    glow:SetSize(260, 163)
+    glow:SetPoint("CENTER", card)
+    glow:SetFrameLevel(level - 1)
+    local outerGlow = glow:CreateTexture(nil, "ARTWORK")
+    SetAtlas(outerGlow, "reward-selected-outerglow", true)
+    outerGlow:SetPoint("CENTER")
+    local sideGlow = glow:CreateTexture(nil, "ARTWORK", nil, 1)
+    SetAtlas(sideGlow, "reward-selected-sideglow", true)
+    sideGlow:SetPoint("CENTER")
+    glow:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        self:SetAlpha(0.875 + 0.125 * math.cos(self.elapsed * math.pi))
+    end)
+    glow:Hide()
+    card.SelectionGlow = glow
+
+    local item = CreateFrame("Button", nil, card)
+    item:SetSize(155, 49)
+    item:SetPoint("CENTER", 2, -7)
+    item:SetFrameLevel(level + 2)
+    item.Icon = item:CreateTexture(nil, "BACKGROUND")
+    item.Icon:SetSize(37, 37)
+    item.Icon:SetPoint("LEFT", 3, 2)
+    item.Border = item:CreateTexture(nil, "BORDER")
+    SetAtlas(item.Border, "reward-itemframe", true)
+    item.Border:SetPoint("CENTER")
+    item.Name = item:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    item.Name:SetPoint("LEFT", 51, 0)
+    item.Name:SetSize(92, 44)
+    item.Name:SetJustifyH("LEFT")
+    item.Name:SetJustifyV("MIDDLE")
+    item:SetScript("OnEnter", ItemOnEnter)
+    item:SetScript("OnLeave", ItemOnLeave)
+    item:SetScript("OnClick", ItemOnClick)
+    item:Hide()
+    card.ItemFrame = item
+
+    local dim = CreateFrame("Frame", nil, card)
+    dim:SetAllPoints()
+    dim:SetFrameLevel(level + 5)
+    local dimTexture = dim:CreateTexture(nil, "OVERLAY")
+    SetAtlas(dimTexture, "reward-unselected", true)
+    dimTexture:SetPoint("CENTER")
+    dim:Hide()
+    card.UnselectedFrame = dim
+
+    card:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then
+            GV:SelectCard(self)
+        end
+    end)
+    card:SetScript("OnEnter", function(self)
+        GV:ShowCardTooltip(self)
+    end)
+    card:SetScript("OnLeave", function(self)
+        -- The card shows its reward's tooltip, so stop that item's wait too.
+        ItemOnLeave(self.ItemFrame)
+    end)
+
+    return card
+end
+
+local function CreateTab(info, xOffset)
+    local tab = CreateFrame("Button", nil, frame)
+    tab:SetSize(TAB_WIDTH, TAB_HEIGHT)
+    tab:SetPoint("BOTTOM", frame, "BOTTOM", xOffset, 40)
+    tab:SetFrameLevel(FRAME_LEVEL + 25)
+    tab.view = info.view
+
+    tab.Background = tab:CreateTexture(nil, "BACKGROUND")
+    SetAtlas(tab.Background, "frame-selectbutton")
+    tab.Background:SetAllPoints()
+
+    tab.Text = tab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    tab.Text:SetPoint("CENTER", 0, 1)
+    tab.Text:SetText(info.label)
+
+    tab:SetScript("OnClick", function(self)
+        PlaySoundSafe("igMainMenuOptionCheckBoxOn")
+        GV:SetView(self.view)
+    end)
+    tab:SetScript("OnEnter", function(self)
+        self.Text:SetTextColor(1, 1, 1)
+    end)
+    tab:SetScript("OnLeave", function()
+        GV:UpdateTabs()
+    end)
+    return tab
+end
+
+local function FitToScreen(self)
+    local width = UIParent:GetWidth() or FRAME_WIDTH
+    local height = UIParent:GetHeight() or FRAME_HEIGHT
+    self:SetScale(math.min(1, (width - 40) / FRAME_WIDTH, (height - 40) / FRAME_HEIGHT))
 end
 
 function GV:CreateFrame()
-    if frame then return frame end
+    if frame then
+        return frame
+    end
 
-    frame = CreateFrame("Frame", "DCMythicPlusGreatVaultFrame", UIParent)
-    frame:SetSize(740, 600) -- Increased height to fit separators
+    frame = CreateFrame("Frame", FRAME_NAME, UIParent)
+    GV.frame = frame
+    frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
     frame:SetPoint("CENTER")
+    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameLevel(FRAME_LEVEL)
     frame:SetMovable(true)
+    frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    frame:SetFrameStrata("DIALOG")
-
-    -- Background (WotLK/Retail style)
-    frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
-    })
-    ApplyLeaderboardsStyle(frame)
-
-    -- Title
-    frame.TitleText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.TitleText:SetPoint("TOP", 0, -15)
-    frame.TitleText:SetText("The Great Vault")
-    frame.TitleText:SetTextColor(1, 0.82, 0, 1)
-
-    -- Close Button
-    frame.CloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    frame.CloseButton:SetPoint("TOPRIGHT", -5, -5)
-    frame.CloseButton:SetScript("OnClick", function() frame:Hide() end)
-
-    -- Subtitle
-    frame.subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    frame.subtitle:SetPoint("TOP", 0, -40)
-    frame.subtitle:SetText("Earn rewards from Raid, Mythic+, and PvP")
-    frame.subtitle:SetTextColor(1, 0.82, 0, 1)
-
-    -- View toggle (Retail-like: last week's rewards vs this week's progress)
-    frame.viewButtons = {}
-
-    frame.weekText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.weekText:SetPoint("TOP", 0, -58)
-    frame.weekText:SetText("")
-
-    frame.viewButtons.claim = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    frame.viewButtons.claim:SetSize(160, 22)
-    frame.viewButtons.claim:SetPoint("TOPLEFT", 18, -55)
-    frame.viewButtons.claim:SetText("Rewards (Last Week)")
-
-    frame.viewButtons.progress = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    frame.viewButtons.progress:SetSize(160, 22)
-    frame.viewButtons.progress:SetPoint("LEFT", frame.viewButtons.claim, "RIGHT", 8, 0)
-    frame.viewButtons.progress:SetText("Progress (This Week)")
-
-    frame.viewButtons.next = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    frame.viewButtons.next:SetSize(160, 22)
-    frame.viewButtons.next:SetPoint("LEFT", frame.viewButtons.progress, "RIGHT", 8, 0)
-    frame.viewButtons.next:SetText("Next Week (Forecast)")
-
-    frame.viewButtons.history = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    frame.viewButtons.history:SetSize(160, 22)
-    frame.viewButtons.history:SetPoint("LEFT", frame.viewButtons.next, "RIGHT", 8, 0)
-    frame.viewButtons.history:SetText("Run History")
-
-    frame.tracks = {}
-    frame.slotByGlobalId = {}
-
-    local trackTitles = { "Raid", "Mythic+", "PvP" }
-    for trackIndex = 1, TRACK_COUNT do
-        local track = CreateFrame("Frame", nil, frame)
-        track:SetSize(TRACK_WIDTH, TRACK_HEIGHT)
-        track:SetPoint(
-            "TOPLEFT",
-            10,
-            TRACK_START_Y - (trackIndex - 1) * (TRACK_HEIGHT + TRACK_GAP)
-        )
-
-        -- Track Background/Separator
-        track.bg = track:CreateTexture(nil, "BACKGROUND")
-        track.bg:SetAllPoints()
-        track.bg:SetColorTexture(0.25, 0.25, 0.25, 0.5)
-
-        track.border = {}
-        track.border.T = track:CreateTexture(nil, "BORDER"); track.border.T:SetPoint("TOPLEFT"); track.border.T:SetPoint("TOPRIGHT"); track.border.T:SetHeight(1); track.border.T:SetColorTexture(0.5, 0.5, 0.5, 1)
-        track.border.B = track:CreateTexture(nil, "BORDER"); track.border.B:SetPoint("BOTTOMLEFT"); track.border.B:SetPoint("BOTTOMRIGHT"); track.border.B:SetHeight(1); track.border.B:SetColorTexture(0.5, 0.5, 0.5, 1)
-        track.border.L = track:CreateTexture(nil, "BORDER"); track.border.L:SetPoint("TOPLEFT"); track.border.L:SetPoint("BOTTOMLEFT"); track.border.L:SetWidth(1); track.border.L:SetColorTexture(0.5, 0.5, 0.5, 1)
-        track.border.R = track:CreateTexture(nil, "BORDER"); track.border.R:SetPoint("TOPRIGHT"); track.border.R:SetPoint("BOTTOMRIGHT"); track.border.R:SetWidth(1); track.border.R:SetColorTexture(0.5, 0.5, 0.5, 1)
-
-        track.title = track:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        track.title:SetPoint("TOPLEFT", 10, -8)
-        track.title:SetText(trackTitles[trackIndex] or "Track")
-        track.title:SetTextColor(1, 0.82, 0, 1)
-
-        track.slots = {}
-        for row = 1, SLOTS_PER_TRACK do
-            local slot = CreateFrame("Frame", nil, track)
-            slot:SetSize(SLOT_WIDTH, SLOT_HEIGHT)
-            slot:SetPoint("TOPLEFT", TRACK_INNER_X + (row - 1) * (SLOT_WIDTH + PADDING_X), TRACK_INNER_TOP)
-
-            slot.bg = slot:CreateTexture(nil, "BACKGROUND")
-            slot.bg:SetAllPoints()
-            slot.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-
-            slot.border = {}
-            slot.border.T = slot:CreateTexture(nil, "BORDER"); slot.border.T:SetPoint("TOPLEFT"); slot.border.T:SetPoint("TOPRIGHT"); slot.border.T:SetHeight(1); slot.border.T:SetColorTexture(0.3, 0.3, 0.3, 1)
-            slot.border.B = slot:CreateTexture(nil, "BORDER"); slot.border.B:SetPoint("BOTTOMLEFT"); slot.border.B:SetPoint("BOTTOMRIGHT"); slot.border.B:SetHeight(1); slot.border.B:SetColorTexture(0.3, 0.3, 0.3, 1)
-            slot.border.L = slot:CreateTexture(nil, "BORDER"); slot.border.L:SetPoint("TOPLEFT"); slot.border.L:SetPoint("BOTTOMLEFT"); slot.border.L:SetWidth(1); slot.border.L:SetColorTexture(0.3, 0.3, 0.3, 1)
-            slot.border.R = slot:CreateTexture(nil, "BORDER"); slot.border.R:SetPoint("TOPRIGHT"); slot.border.R:SetPoint("BOTTOMRIGHT"); slot.border.R:SetWidth(1); slot.border.R:SetColorTexture(0.3, 0.3, 0.3, 1)
-            
-            -- slotInner removed as it's redundant with the border lines approach
-            -- local slotInner = slot:CreateTexture(nil, "BACKGROUND", nil, 1) ...
-
-            slot.title = slot:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            slot.title:SetPoint("TOPLEFT", 10, -10)
-            slot.title:SetText("Reward " .. row)
-            slot.title:SetTextColor(1, 0.82, 0, 1)
-
-            slot.req = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            slot.req:SetPoint("TOPLEFT", slot.title, "BOTTOMLEFT", 0, -4)
-            slot.req:SetText("Locked")
-
-            slot.iconFrame = CreateFrame("Frame", nil, slot)
-            slot.iconFrame:SetSize(40, 40)
-            slot.iconFrame:SetPoint("LEFT", 12, 0)
-            
-            slot.iconFrame.border = slot.iconFrame:CreateTexture(nil, "BACKGROUND")
-            slot.iconFrame.border:SetAllPoints()
-            slot.iconFrame.border:SetColorTexture(0.3, 0.3, 0.3, 1)
-
-            slot.icon = slot.iconFrame:CreateTexture(nil, "ARTWORK")
-            slot.icon:SetPoint("TOPLEFT", 1, -1)
-            slot.icon:SetPoint("BOTTOMRIGHT", -1, 1)
-            slot.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-
-            slot.status = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            slot.status:SetPoint("LEFT", slot.iconFrame, "RIGHT", 10, 0)
-            slot.status:SetJustifyH("LEFT")
-            slot.status:SetText("Locked")
-
-            slot.button = CreateFrame("Button", nil, slot)
-            slot.button:SetSize(120, 24)
-            slot.button:SetPoint("BOTTOM", 0, 10)
-            
-            slot.button.bg = slot.button:CreateTexture(nil, "BACKGROUND")
-            slot.button.bg:SetAllPoints()
-            slot.button.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
-            
-            slot.button.text = slot.button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            slot.button.text:SetPoint("CENTER")
-            slot.button.text:SetText("Select")
-            slot.button:SetFontString(slot.button.text)
-            
-            slot.button:SetScript("OnEnter", function(self)
-                if self:IsEnabled() then
-                    self.bg:SetColorTexture(0.3, 0.3, 0.3, 1)
-                end
-            end)
-            slot.button:SetScript("OnLeave", function(self)
-                if self:IsEnabled() then
-                    self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
-                else
-                    self.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
-                end
-            end)
-            slot.button:SetScript("OnEnable", function(self)
-                self.bg:SetColorTexture(0.2, 0.2, 0.2, 1)
-                self.text:SetTextColor(1, 1, 1, 1)
-            end)
-            slot.button:SetScript("OnDisable", function(self)
-                self.bg:SetColorTexture(0.1, 0.1, 0.1, 1)
-                self.text:SetTextColor(0.5, 0.5, 0.5, 1)
-            end)
-            
-            slot.button:Disable()
-
-            slot.iconFrame:SetScript("OnEnter", function(self)
-                if slot.itemLink then
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetHyperlink(slot.itemLink)
-                    GameTooltip:Show()
-                end
-            end)
-            slot.iconFrame:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-
-            track.slots[row] = slot
+    frame:SetScript("OnShow", function(self)
+        FitToScreen(self)
+        PlaySoundSafe("igCharacterInfoOpen")
+    end)
+    frame:SetScript("OnHide", function()
+        GV.selectedCard = nil
+        if StaticPopup_Hide then
+            StaticPopup_Hide(POPUP_KEY)
         end
-
-        frame.tracks[trackIndex] = track
+        PlaySoundSafe("igCharacterInfoClose")
+    end)
+    if UISpecialFrames then
+        table.insert(UISpecialFrames, FRAME_NAME)
     end
-    
+
+    local back = frame:CreateTexture(nil, "BACKGROUND")
+    SetAtlas(back, "frame-back")
+    back:SetPoint("TOPLEFT", 10, -8)
+    back:SetPoint("BOTTOMRIGHT", -10, 8)
+
+    frame.HeaderText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
+    frame.HeaderText:SetPoint("CENTER", frame, "TOP", 0, -92)
+    frame.HeaderText:SetWidth(1000)
+    frame.HeaderText:SetJustifyH("CENTER")
+    frame.HeaderText:SetSpacing(2)
+
+    local headerDivider = frame:CreateTexture(nil, "ARTWORK")
+    SetAtlas(headerDivider, "header", true)
+    headerDivider:SetPoint("TOP", frame.HeaderText, "BOTTOM", 0, -8)
+
+    frame.dividers = {}
+    for index, y in ipairs(DIVIDER_Y) do
+        local divider = frame:CreateTexture(nil, "BORDER")
+        SetAtlas(divider, "divider", true)
+        divider:SetPoint("TOP", 0, y)
+        frame.dividers[index] = divider
+    end
+
+    frame.rows = {}
+    for rowIndex, y in ipairs(ROW_Y) do
+        local row = CreateFrame("Frame", nil, frame)
+        row:SetSize(326, 131)
+        row:SetPoint("TOPLEFT", 68, y)
+        row:SetFrameLevel(FRAME_LEVEL + 1)
+
+        row.Background = row:CreateTexture(nil, "BACKGROUND")
+        row.Background:SetPoint("CENTER")
+
+        row.Name = row:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
+        row.Name:SetFont(FANCY_FONT, 24)
+        row.Name:SetTextColor(1, 0.82, 0)
+        row.Name:SetShadowOffset(1, -1)
+        row.Name:SetPoint("TOPLEFT", 28, -18)
+
+        row.cards = {}
+        local previous
+        for column = 1, CARDS_PER_ROW do
+            local card = CreateCard(row, FRAME_LEVEL + 5)
+            if previous then
+                card:SetPoint("LEFT", previous, "RIGHT", 9, 0)
+            else
+                card:SetPoint("LEFT", row, "RIGHT", 44, 3)
+            end
+            row.cards[column] = card
+            previous = card
+        end
+        frame.rows[rowIndex] = row
+    end
+
+    local borderFrame = CreateFrame("Frame", nil, frame)
+    borderFrame:SetAllPoints()
+    borderFrame:SetFrameLevel(FRAME_LEVEL + 20)
+    local border = borderFrame:CreateTexture(nil, "OVERLAY")
+    SetAtlas(border, "frame")
+    border:SetPoint("TOPLEFT", -2, 4)
+    border:SetPoint("BOTTOMRIGHT", 2, -4)
+    local topDecor = borderFrame:CreateTexture(nil, "OVERLAY", nil, 1)
+    SetAtlas(topDecor, "frame-topdecor", true)
+    topDecor:SetPoint("CENTER", frame, "TOP", 0, -16)
+
+    frame.CloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.CloseButton:SetPoint("CENTER", frame, "TOPRIGHT", -16, -21)
+    frame.CloseButton:SetFrameLevel(FRAME_LEVEL + 25)
+    frame.CloseButton:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+
+    frame.WeekText = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    frame.WeekText:SetPoint("BOTTOM", 0, 76)
+
+    frame.tabs = {}
+    local tabsWidth = #VIEW_TABS * TAB_WIDTH + (#VIEW_TABS - 1) * TAB_GAP
+    for index, info in ipairs(VIEW_TABS) do
+        local xOffset = -tabsWidth / 2 + TAB_WIDTH / 2 + (index - 1) * (TAB_WIDTH + TAB_GAP)
+        frame.tabs[index] = CreateTab(info, xOffset)
+    end
+
+    local selectButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    selectButton:SetSize(182, 23)
+    selectButton:SetPoint("BOTTOM", 0, 3)
+    selectButton:SetFrameLevel(FRAME_LEVEL + 25)
+    selectButton:SetText("Select Reward")
+    local selectBackground = selectButton:CreateTexture(nil, "BACKGROUND", nil, -1)
+    SetAtlas(selectBackground, "frame-selectbutton", true)
+    selectBackground:SetPoint("CENTER")
+    selectButton:SetScript("OnClick", function()
+        GV:ConfirmSelection()
+    end)
+    selectButton:Hide()
+    frame.SelectRewardButton = selectButton
+
     frame:Hide()
     return frame
 end
 
-function GV:SetView(view)
-    self._view = view
-    if self._lastPayload then
-        self:Update(self._lastPayload)
+-- ---------------------------------------------------------------------------
+-- Rendering
+-- ---------------------------------------------------------------------------
+
+local function HasClaimableReward(tracks)
+    if type(tracks) ~= "table" then
+        return false
+    end
+    for _, track in ipairs(tracks) do
+        for _, slot in ipairs(type(track.slots) == "table" and track.slots or {}) do
+            if slot.status == "unlocked" and type(slot.rewards) == "table" and slot.rewards[1] then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function IndexSlots(tracks)
+    local byId = {}
+    if type(tracks) ~= "table" then
+        return byId
+    end
+    for _, track in ipairs(tracks) do
+        for _, slot in ipairs(type(track.slots) == "table" and track.slots or {}) do
+            if slot.globalId then
+                byId[tonumber(slot.globalId)] = slot
+            end
+        end
+    end
+    return byId
+end
+
+local function ThresholdText(trackId, threshold)
+    if trackId == "raid" then
+        return string.format("Defeat %d Raid %s", threshold, Plural(threshold, "Boss", "Bosses"))
+    elseif trackId == "pvp" then
+        return string.format("Win %d PvP %s", threshold, Plural(threshold, "Match", "Matches"))
+    end
+    return string.format("Complete %d Mythic+ %s", threshold, Plural(threshold, "Dungeon", "Dungeons"))
+end
+
+local function HeaderText(view, data, claimAvailable)
+    if view == "history" then
+        return "Your latest Mythic+ runs"
+    elseif view == "progress" then
+        return "Add items to the Great Vault by completing activities each week.\n"
+            .. "Once per week you may select a single reward."
+    elseif IsTruthy(data.claimed) then
+        return "You have claimed your Great Vault reward.\nCome back after the weekly reset for the next one."
+    elseif claimAvailable then
+        return "You may only select ONE reward from the Great Vault."
+    end
+    return "The Great Vault earned nothing last week.\nComplete activities this week to fill it for next week."
+end
+
+local function WeekText(view, data)
+    local progressStart = tonumber(data.progressWeekStart or 0) or 0
+    local nextReset = progressStart > 0 and FormatDateTime(progressStart + SECONDS_PER_WEEK) or "Unknown"
+    if view == "history" then
+        return "Newest runs first"
+    elseif view == "progress" then
+        return "Progress week: " .. FormatWeekRange(data.progressWeekStart) .. "   |   Next reset: " .. nextReset
+    end
+    return "Reward week: " .. FormatWeekRange(data.claimWeekStart) .. "   |   Expires: " .. nextReset
+end
+
+local function ResetCard(card)
+    card.slot = nil
+    card.reward = nil
+    card.hasRewards = false
+    card.unlocked = false
+    card.forecastIlvl = nil
+    card.keyLevel = nil
+    card.ItemFrame:Hide()
+    card.ItemFrame.itemId = nil
+    card.UncollectedGlow:Hide()
+    card.Detail:SetText("")
+    card.Progress:SetText("")
+end
+
+local function RenderHistoryCard(card, slot)
+    if slot.status ~= "history" then
+        SetAtlas(card.Background, "reward-locked", true)
+        card.CompletedIcon:Hide()
+        card.Threshold:SetText("No run recorded")
+        card.Threshold:SetTextColor(0.5, 0.5, 0.5)
+        return
+    end
+
+    local success = IsTruthy(slot.success)
+    SetAtlas(card.Background, "reward-unlocked", true)
+    SetShown(card.CompletedIcon, success)
+    card.Threshold:SetText(tostring(slot.mapName or "Unknown"))
+    card.Threshold:SetTextColor(1, 0.82, 0)
+    card.Detail:SetText((success and "Completed" or "Failed") .. " in " .. FormatRunDuration(slot.completionTime)
+        .. "\n" .. FormatDateTime(slot.completedAt))
+    card.Progress:SetText("+" .. (tonumber(slot.keystoneLevel or 0) or 0))
+    if success then
+        card.Progress:SetTextColor(0.1, 1, 0.1)
+    else
+        card.Progress:SetTextColor(1, 0.35, 0.35)
     end
 end
 
-function GV:GetActiveTracks(payload)
-    if type(payload) ~= "table" then return nil end
+local function RenderCard(card, trackId, slot, view, forecast)
+    ResetCard(card)
+    card.slot = slot
+    card.trackId = trackId
+    card.globalId = tonumber(slot.globalId)
+    card.index = tonumber(slot.id) or 1
+
+    if view == "history" then
+        RenderHistoryCard(card, slot)
+        return
+    end
+
+    card.threshold = tonumber(slot.threshold or 0) or 0
+    card.progress = tonumber(slot.progress or 0) or 0
+    card.Threshold:SetText(ThresholdText(trackId, card.threshold))
+
+    local reward = type(slot.rewards) == "table" and slot.rewards[1] or nil
+    card.unlocked = slot.status == "unlocked" or slot.status == "claimed"
+
+    if not card.unlocked then
+        SetAtlas(card.Background, "reward-locked", true)
+        card.CompletedIcon:Hide()
+        card.Threshold:SetTextColor(0.5, 0.5, 0.5)
+        card.Progress:SetTextColor(0.5, 0.5, 0.5)
+        -- Retail hides progress on incomplete slots while rewards are up for grabs.
+        if view ~= "claim" then
+            card.Progress:SetText(string.format("%d/%d", math.min(card.progress, card.threshold), card.threshold))
+        end
+        return
+    end
+
+    SetAtlas(card.Background, "reward-unlocked", true)
+    card.CompletedIcon:Show()
+    card.Threshold:SetTextColor(1, 0.82, 0)
+    card.Progress:SetTextColor(0.1, 1, 0.1)
+
+    if reward and tonumber(reward.itemId) then
+        card.reward = reward
+        card.hasRewards = slot.status == "unlocked"
+        SetItem(card.ItemFrame, reward)
+        if slot.status == "claimed" then
+            card.Progress:SetText("Claimed")
+        else
+            card.Progress:SetText(string.format("Item Level %d", tonumber(reward.ilvl or 0) or 0))
+        end
+        return
+    end
+
+    if slot.status == "claimed" then
+        card.Progress:SetText("Claimed")
+        return
+    end
+
+    if view == "claim" then
+        card.Progress:SetText("Unavailable")
+        card.Progress:SetTextColor(1, 0.5, 0)
+        return
+    end
+
+    card.UncollectedGlow:Show()
+    local projected = forecast and forecast[card.globalId]
+    card.forecastIlvl = projected and tonumber(projected.forecastIlvl or 0) or 0
+    card.keyLevel = projected and tonumber(projected.sourceKeyLevel or 0) or 0
+    if trackId == "mplus" and card.keyLevel > 0 then
+        card.Progress:SetText(string.format("Mythic+ %d", card.keyLevel))
+    elseif card.forecastIlvl > 0 then
+        card.Progress:SetText(string.format("Item Level %d", card.forecastIlvl))
+    else
+        card.Progress:SetText("Unlocked")
+    end
+end
+
+function GV:ResolveTracks(data)
     local view = self._view
-
-    if view == "history" and type(payload.historyTracks) == "table" then
-        return payload.historyTracks, "history"
+    if view == "next" then
+        -- The forecast now lives on the progress view.
+        view = "progress"
     end
 
-    if view == "next" and type(payload.nextWeekTracks) == "table" then
-        return payload.nextWeekTracks, "next"
+    local byView = {
+        claim = data.tracks,
+        progress = data.progressTracks,
+        history = data.historyTracks,
+    }
+    if type(byView[view]) == "table" then
+        return byView[view], view
+    end
+    for _, info in ipairs(VIEW_TABS) do
+        if type(byView[info.view]) == "table" then
+            return byView[info.view], info.view
+        end
+    end
+    return nil, view
+end
+
+function GV:UpdateTabs()
+    if not frame then
+        return
+    end
+    for _, tab in ipairs(frame.tabs) do
+        if tab.view == self._activeView then
+            tab.Text:SetTextColor(1, 1, 1)
+            tab.Background:SetVertexColor(1, 1, 1)
+        else
+            tab.Text:SetTextColor(1, 0.82, 0)
+            tab.Background:SetVertexColor(0.6, 0.6, 0.6)
+        end
+    end
+end
+
+function GV:Render()
+    local data = self._lastPayload
+    if not frame or type(data) ~= "table" then
+        return
     end
 
-    if view == "progress" and type(payload.progressTracks) == "table" then
-        return payload.progressTracks, "progress"
+    local tracks, view = self:ResolveTracks(data)
+    self._activeView = view
+    self:UpdateTabs()
+
+    self.claimAvailable = view == "claim" and not IsTruthy(data.claimed) and HasClaimableReward(data.tracks)
+    frame.HeaderText:SetText(HeaderText(view, data, self.claimAvailable))
+    frame.WeekText:SetText(WeekText(view, data))
+
+    local forecast = view == "progress" and IndexSlots(data.nextWeekTracks) or nil
+    local selectedId = self.selectedCard and self.selectedCard.globalId
+    self.selectedCard = nil
+
+    for rowIndex, row in ipairs(frame.rows) do
+        local track = type(tracks) == "table" and tracks[rowIndex] or nil
+        SetShown(row, track ~= nil)
+        if track then
+            local style = TRACK_STYLE[track.id] or TRACK_STYLE.mplus
+            SetAtlas(row.Background, style.atlas, true)
+            row.Name:SetText(style.name or track.name)
+
+            local slots = type(track.slots) == "table" and track.slots or {}
+            for column, card in ipairs(row.cards) do
+                local slot = slots[column]
+                SetShown(card, slot ~= nil)
+                if slot then
+                    RenderCard(card, track.id, slot, view, forecast)
+                    if self.claimAvailable and card.hasRewards and card.globalId == selectedId then
+                        self.selectedCard = card
+                    end
+                end
+            end
+        end
     end
 
-    if type(payload.tracks) == "table" then
-        return payload.tracks, "claim"
+    for index, divider in ipairs(frame.dividers) do
+        SetShown(divider, type(tracks) == "table" and tracks[index + 1] ~= nil)
     end
 
-    if type(payload.progressTracks) == "table" then
-        return payload.progressTracks, "progress"
+    self:UpdateSelection()
+end
+
+function GV:UpdateSelection()
+    local selected = self.selectedCard
+    for _, row in ipairs(frame.rows) do
+        for _, card in ipairs(row.cards) do
+            local isSelected = card == selected
+            SetShown(card.SelectedTexture, isSelected)
+            SetShown(card.SelectionGlow, isSelected)
+            SetShown(card.UnselectedFrame, selected ~= nil and card.hasRewards and not isSelected)
+        end
+    end
+    SetShown(frame.SelectRewardButton, self.claimAvailable)
+    SetEnabled(frame.SelectRewardButton, selected ~= nil)
+end
+
+-- ---------------------------------------------------------------------------
+-- Tooltips
+-- ---------------------------------------------------------------------------
+
+local function IncompleteText(card)
+    local remaining = math.max(0, card.threshold - card.progress)
+    if card.trackId == "raid" then
+        return string.format("Defeat %d more raid %s this week to unlock this reward.",
+            remaining, Plural(remaining, "boss", "bosses"))
+    elseif card.trackId == "pvp" then
+        return string.format("Win %d more PvP %s this week to unlock this reward.",
+            remaining, Plural(remaining, "match", "matches"))
+    end
+    return string.format("Complete %d more Mythic+ %s this week to unlock %s Great Vault reward.\n\n"
+        .. "The item level of your reward will be based on your top runs this week.",
+        remaining, Plural(remaining, "dungeon", "dungeons"), UNLOCK_ORDINAL[card.index] or "another")
+end
+
+local function AddCurrentRewardLines(card)
+    local ilvl = card.forecastIlvl or 0
+    if ilvl > 0 then
+        local line
+        if card.trackId == "mplus" and (card.keyLevel or 0) > 0 then
+            line = string.format("Item Level %d - Mythic+ (Level %d)", ilvl, card.keyLevel)
+        elseif card.trackId == "pvp" then
+            line = string.format("Item Level %d - PvP", ilvl)
+        else
+            line = string.format("Item Level %d - Raid", ilvl)
+        end
+        GameTooltip:AddLine(line, 1, 0.82, 0)
+    end
+    if card.trackId == "mplus" and card.threshold > 1 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format("The reward is based on the lowest level of your top %d runs.",
+            card.threshold), 1, 1, 1, true)
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Your reward can be selected from the Great Vault after the weekly reset.", 0.1, 1, 0.1, true)
+end
+
+function GV:ShowCardTooltip(card)
+    local slot = card.slot
+    if not slot then
+        return
     end
 
-    if type(payload.nextWeekTracks) == "table" then
-        return payload.nextWeekTracks, "next"
+    if card.reward then
+        ItemOnEnter(card.ItemFrame)
+        return
     end
 
-    if type(payload.historyTracks) == "table" then
-        return payload.historyTracks, "history"
+    GameTooltip:SetOwner(card, "ANCHOR_RIGHT", -7, -11)
+    if slot.status == "history" then
+        GameTooltip:AddLine(tostring(slot.mapName or "Unknown"), 1, 1, 1)
+        GameTooltip:AddLine(string.format("Mythic+ %d", tonumber(slot.keystoneLevel or 0) or 0), 1, 0.82, 0)
+        GameTooltip:AddLine(FormatDateTime(slot.completedAt), 0.8, 0.8, 0.8)
+    elseif slot.status == "empty" then
+        GameTooltip:AddLine("No run recorded", 0.5, 0.5, 0.5)
+    elseif card.unlocked and self._activeView == "claim" then
+        GameTooltip:AddLine("Reward Unavailable", 1, 1, 1)
+        GameTooltip:AddLine("This slot was unlocked but no reward was generated for it.", 1, 0.82, 0, true)
+    elseif card.unlocked then
+        GameTooltip:AddLine("Current Reward", 1, 1, 1)
+        AddCurrentRewardLines(card)
+    elseif self._activeView == "claim" then
+        GameTooltip:AddLine("Reward Locked", 1, 1, 1)
+        GameTooltip:AddLine("This reward was not unlocked last week.", 1, 0.82, 0, true)
+    else
+        GameTooltip:AddLine("Unlock Reward", 1, 1, 1)
+        GameTooltip:AddLine(IncompleteText(card), 1, 0.82, 0, true)
     end
+    GameTooltip:Show()
+end
 
-    return nil
+-- ---------------------------------------------------------------------------
+-- Public API
+-- ---------------------------------------------------------------------------
+
+function GV:SetView(view)
+    self._view = view
+    self.selectedCard = nil
+    self:Render()
 end
 
 function GV:IsShown()
     return frame and frame:IsShown()
 end
 
-function GV:RefreshSlot(slotIndex)
-    if not frame then return end
-    local slotFrame = frame.slotByGlobalId and frame.slotByGlobalId[slotIndex]
-    if not slotFrame or not slotFrame.itemId then return end
-
-    local _, link, _, _, _, _, _, _, _, icon = GetItemInfo(slotFrame.itemId)
-    if icon then
-        slotFrame.icon:SetTexture(icon)
-        slotFrame.icon:SetDesaturated(false)
-        slotFrame.itemLink = link or slotFrame.itemLink
-        itemRetryCounts[slotFrame.itemId] = nil
-        return
-    end
-
-    local tries = (itemRetryCounts[slotFrame.itemId] or 0) + 1
-    itemRetryCounts[slotFrame.itemId] = tries
-    if tries <= 6 then
-        PrefetchItem(slotFrame.itemId)
-        QueueSlotRefresh(slotIndex)
-    end
-end
-
 function GV:Show()
-    local f = self:CreateFrame()
-    f:Show()
+    self:CreateFrame():Show()
     if namespace.RequestVaultInfo then
         namespace.RequestVaultInfo()
     end
 end
 
 function GV:Hide()
-    if frame then frame:Hide() end
+    if frame then
+        frame:Hide()
+    end
 end
 
 function GV:Toggle()
@@ -439,306 +971,63 @@ function GV:Toggle()
     end
 end
 
-function GV:ApplyTrackLayout(activeView, visibleTrackCount)
-    if not frame or not frame.tracks then return end
-
-    local expandSingleHistoryTrack = activeView == "history" and visibleTrackCount == 1
-    local expandedTrackHeight = TRACK_HEIGHT
-
-    if expandSingleHistoryTrack then
-        expandedTrackHeight = math.max(
-            TRACK_HEIGHT,
-            frame:GetHeight() + TRACK_START_Y - TRACK_EXPANDED_BOTTOM_MARGIN
-        )
-    end
-
-    for trackIndex = 1, TRACK_COUNT do
-        local trackFrame = frame.tracks[trackIndex]
-        if trackFrame then
-            local trackHeight = TRACK_HEIGHT
-            local trackY = TRACK_START_Y - (trackIndex - 1) * (TRACK_HEIGHT + TRACK_GAP)
-
-            if expandSingleHistoryTrack and trackIndex == 1 then
-                trackHeight = expandedTrackHeight
-                trackY = TRACK_START_Y
-            end
-
-            trackFrame:ClearAllPoints()
-            trackFrame:SetPoint("TOPLEFT", 10, trackY)
-            trackFrame:SetSize(TRACK_WIDTH, trackHeight)
-
-            local slotHeight = math.max(SLOT_HEIGHT, trackHeight - 45)
-            for row = 1, SLOTS_PER_TRACK do
-                local slot = trackFrame.slots and trackFrame.slots[row]
-                if slot then
-                    slot:ClearAllPoints()
-                    slot:SetPoint(
-                        "TOPLEFT",
-                        TRACK_INNER_X + (row - 1) * (SLOT_WIDTH + PADDING_X),
-                        TRACK_INNER_TOP
-                    )
-                    slot:SetSize(SLOT_WIDTH, slotHeight)
-                end
-            end
-        end
-    end
-end
-
 function GV:Update(data)
-    if not frame then
-        self:CreateFrame()
+    if type(data) ~= "table" then
+        return
     end
-
+    self:CreateFrame()
     self._lastPayload = data
-
-    if frame.viewButtons and frame.viewButtons.claim then
-        frame.viewButtons.claim:SetScript("OnClick", function() GV:SetView("claim") end)
-    end
-    if frame.viewButtons and frame.viewButtons.progress then
-        frame.viewButtons.progress:SetScript("OnClick", function() GV:SetView("progress") end)
-    end
-    if frame.viewButtons and frame.viewButtons.next then
-        frame.viewButtons.next:SetScript("OnClick", function() GV:SetView("next") end)
-    end
-    if frame.viewButtons and frame.viewButtons.history then
-        frame.viewButtons.history:SetScript("OnClick", function() GV:SetView("history") end)
-    end
-
-    if data.open then
-        frame:Show()
-    end
 
     if not self._view and type(data.defaultView) == "string" then
         self._view = data.defaultView
     end
-
-    local tracks, activeView = self:GetActiveTracks(data)
-    if type(tracks) ~= "table" then return end
-
-    local visibleTrackCount = #tracks
-    self:ApplyTrackLayout(activeView, visibleTrackCount)
-
-    for trackIndex = 1, TRACK_COUNT do
-        local trackFrame = frame.tracks and frame.tracks[trackIndex]
-        if trackFrame then
-            if trackIndex <= visibleTrackCount then
-                trackFrame:Show()
-            else
-                trackFrame:Hide()
-            end
-        end
+    if data.open then
+        frame:Show()
     end
 
-    if frame.weekText then
-        local resetTs = tonumber(data.progressWeekStart or 0) or 0
-        local nextResetTs = resetTs > 0 and (resetTs + SECONDS_PER_WEEK) or 0
-        local resetLabel = resetTs > 0 and (date("%A %H:%M", resetTs) .. " (your local time)") or "Unknown"
-
-        if activeView == "progress" then
-            local range = FormatWeekRange(data.progressWeekStart)
-            local nextReset = FormatDateTime(nextResetTs)
-            frame.weekText:SetText("Progress week: " .. range .. " | Weekly reset: " .. resetLabel .. " | Next reset: " .. nextReset)
-        elseif activeView == "next" then
-            local range = FormatWeekRange(data.nextWeekStart)
-            local sourceRange = FormatWeekRange(data.progressWeekStart)
-            frame.weekText:SetText("Forecast week: " .. range .. " | Based on progress from: " .. sourceRange)
-        elseif activeView == "history" then
-            frame.weekText:SetText("Run history: your latest Mythic+ runs (newest first)")
-        else
-            local range = FormatWeekRange(data.claimWeekStart)
-            local expiresAt = FormatDateTime(nextResetTs)
-            frame.weekText:SetText("Reward week: " .. range .. " | Weekly reset: " .. resetLabel .. " | Expires: " .. expiresAt)
-        end
-    end
-
-    if frame.viewButtons and frame.viewButtons.claim and frame.viewButtons.progress and frame.viewButtons.next and frame.viewButtons.history then
-        if activeView == "progress" then
-            frame.viewButtons.progress:Disable()
-            frame.viewButtons.claim:Enable()
-            frame.viewButtons.next:Enable()
-            frame.viewButtons.history:Enable()
-        elseif activeView == "next" then
-            frame.viewButtons.next:Disable()
-            frame.viewButtons.claim:Enable()
-            frame.viewButtons.progress:Enable()
-            frame.viewButtons.history:Enable()
-        elseif activeView == "history" then
-            frame.viewButtons.history:Disable()
-            frame.viewButtons.claim:Enable()
-            frame.viewButtons.progress:Enable()
-            frame.viewButtons.next:Enable()
-        else
-            frame.viewButtons.claim:Disable()
-            frame.viewButtons.progress:Enable()
-            frame.viewButtons.next:Enable()
-            frame.viewButtons.history:Enable()
-        end
-    end
-
-    -- Reset mapping each update
-    frame.slotByGlobalId = {}
-
-    for trackIndex, trackData in ipairs(tracks) do
-        local trackFrame = frame.tracks[trackIndex]
-        if trackFrame and trackData.name then
-            trackFrame:Show()
-            trackFrame.title:SetText(trackData.name)
-        end
-
-        local slots = trackData.slots or {}
-        for row, slotData in ipairs(slots) do
-            local slotFrame = trackFrame and trackFrame.slots and trackFrame.slots[row]
-            if slotFrame then
-                local globalId = slotData.globalId
-                slotFrame.globalId = globalId
-                if globalId then
-                    frame.slotByGlobalId[globalId] = slotFrame
-                end
-
-                slotFrame.itemLink = nil
-                slotFrame.itemId = nil
-
-                local status = slotData.status
-                local threshold = tonumber(slotData.threshold or 0) or 0
-                local progress = tonumber(slotData.progress or 0) or 0
-
-                local progressLabel = "Progress"
-                if trackData.id == "raid" then
-                    progressLabel = "Bosses"
-                elseif trackData.id == "mplus" then
-                    progressLabel = "Runs"
-                elseif trackData.id == "pvp" then
-                    progressLabel = "Wins"
-                end
-
-                slotFrame.title:SetText("Reward " .. row)
-
-                if status == "claimed" then
-                    slotFrame.status:SetText("Claimed")
-                    slotFrame.status:SetTextColor(0.5, 0.5, 0.5)
-                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Box_01")
-                    slotFrame.icon:SetDesaturated(true)
-                    slotFrame.button:SetText("Claimed")
-                    slotFrame.button:Disable()
-                    slotFrame.req:SetText("Reward Claimed")
-                elseif status == "history" then
-                    local runMapName = tostring(slotData.mapName or "Unknown")
-                    local runKeyLevel = tonumber(slotData.keystoneLevel or 0) or 0
-                    local runTime = FormatRunDuration(slotData.completionTime)
-                    local runSuccess = slotData.success == true or slotData.success == 1 or slotData.success == "1"
-                    local completedAt = FormatDateTime(slotData.completedAt)
-
-                    slotFrame.title:SetText(runMapName)
-                    slotFrame.status:SetText("+" .. tostring(runKeyLevel) .. " | " .. runTime)
-                    if runSuccess then
-                        slotFrame.status:SetTextColor(0.2, 1.0, 0.3)
-                    else
-                        slotFrame.status:SetTextColor(1.0, 0.35, 0.35)
-                    end
-
-                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
-                    slotFrame.icon:SetDesaturated(false)
-                    slotFrame.button:SetText("Logged")
-                    slotFrame.button:Disable()
-                    slotFrame.req:SetText((runSuccess and "Completed" or "Failed") .. " | " .. completedAt)
-                elseif status == "empty" then
-                    slotFrame.title:SetText("No Run")
-                    slotFrame.status:SetText("Empty")
-                    slotFrame.status:SetTextColor(0.7, 0.7, 0.7)
-                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                    slotFrame.icon:SetDesaturated(true)
-                    slotFrame.button:SetText("-")
-                    slotFrame.button:Disable()
-                    slotFrame.req:SetText("No data")
-                elseif status == "forecast" then
-                    local forecastIlvl = tonumber(slotData.forecastIlvl or 0) or 0
-                    local sourceKeyLevel = tonumber(slotData.sourceKeyLevel or 0) or 0
-
-                    if forecastIlvl > 0 then
-                        slotFrame.status:SetText("iLvl " .. tostring(forecastIlvl))
-                    else
-                        slotFrame.status:SetText("iLvl --")
-                    end
-                    slotFrame.status:SetTextColor(0.2, 0.85, 1.0)
-                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                    slotFrame.icon:SetDesaturated(false)
-                    slotFrame.button:SetText("Forecast")
-                    slotFrame.button:Disable()
-
-                    if trackData.id == "mplus" and sourceKeyLevel > 0 and forecastIlvl > 0 then
-                        slotFrame.req:SetText(string.format("Current best for slot: +%d", sourceKeyLevel))
-                    else
-                        slotFrame.req:SetText(string.format("Current progress: %s %d/%d", progressLabel, progress, threshold))
-                    end
-                elseif status == "unlocked" then
-                    local rewards = slotData.rewards
-                    if rewards and #rewards > 0 then
-                        local reward = rewards[1]
-                        local itemId = reward.itemId
-                        local ilvl = reward.ilvl
-
-                        slotFrame.itemId = itemId
-
-                        local _, link, _, _, _, _, _, _, _, icon = GetItemInfo(itemId)
-                        if icon then
-                            slotFrame.icon:SetTexture(icon)
-                        else
-                            slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                            PrefetchItem(itemId)
-                            if globalId then
-                                QueueSlotRefresh(globalId)
-                            end
-                        end
-
-                        slotFrame.icon:SetDesaturated(false)
-                        slotFrame.itemLink = link or ("item:" .. itemId)
-
-                        local rewardName = DescribeReward(reward, itemId)
-                        slotFrame.rewardName = rewardName
-                        if rewardName then
-                            slotFrame.status:SetText(rewardName .. "\n|cff00ff00iLvl " .. tostring(ilvl) .. "|r")
-                        else
-                            slotFrame.status:SetText("iLvl " .. tostring(ilvl))
-                        end
-                        slotFrame.status:SetTextColor(0, 1, 0)
-                        slotFrame.button:SetText("Select")
-                        slotFrame.button:Enable()
-                        slotFrame.req:SetText(string.format("Unlocked (%s %d/%d)", progressLabel, progress, threshold))
-
-                        slotFrame.button:SetScript("OnClick", function()
-                            if globalId then
-                                GV:SelectReward(globalId)
-                            end
-                        end)
-                    else
-                        slotFrame.status:SetText("Unavailable")
-                        slotFrame.status:SetTextColor(1, 0.5, 0)
-                        slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-                        slotFrame.icon:SetDesaturated(true)
-                        slotFrame.button:SetText("Select")
-                        slotFrame.button:Disable()
-                        slotFrame.req:SetText("Waiting for rewards")
-                    end
-                else
-                    slotFrame.status:SetText("Locked")
-                    slotFrame.status:SetTextColor(1, 0, 0)
-                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_Lock_01")
-                    slotFrame.icon:SetDesaturated(false)
-                    slotFrame.button:SetText("Locked")
-                    slotFrame.button:Disable()
-                    slotFrame.req:SetText(string.format("Complete %d %s (%d/%d)", threshold, progressLabel, progress, threshold))
-                end
-            end
-        end
-    end
+    self:Render()
 end
 
-function GV:SelectReward(slotIndex)
-    local slotFrame = frame.slotByGlobalId and frame.slotByGlobalId[slotIndex]
-    if not slotFrame or not slotFrame.itemId then return end
+function GV:SelectCard(card)
+    if not card or not card.hasRewards or not self.claimAvailable then
+        return
+    end
+    PlaySoundSafe("igMainMenuOptionCheckBoxOn")
+    if self.selectedCard == card then
+        self.selectedCard = nil
+    else
+        self.selectedCard = card
+    end
+    if StaticPopup_Hide then
+        StaticPopup_Hide(POPUP_KEY)
+    end
+    self:UpdateSelection()
+end
 
-    GV._pendingSlot = slotIndex
-    GV._pendingItemId = slotFrame.itemId
+function GV:ConfirmSelection()
+    local card = self.selectedCard
+    if not card or not card.reward then
+        return
+    end
+    self._pendingSlot = card.globalId
+    self._pendingItemId = tonumber(card.reward.itemId)
     EnsurePopupDefined()
-    StaticPopup_Show(POPUP_KEY, slotFrame.rewardName or "this reward")
+    StaticPopup_Show(POPUP_KEY, ColoredName(card.reward))
+end
+
+-- Select the reward in a global slot and open the confirmation.
+function GV:SelectReward(slotIndex)
+    if not frame then
+        return
+    end
+    for _, row in ipairs(frame.rows) do
+        for _, card in ipairs(row.cards) do
+            if card.hasRewards and card.globalId == tonumber(slotIndex) then
+                self.selectedCard = card
+                self:UpdateSelection()
+                self:ConfirmSelection()
+                return
+            end
+        end
+    end
 end

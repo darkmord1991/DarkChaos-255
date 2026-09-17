@@ -2749,50 +2749,53 @@ namespace DCQoS
         std::string modifiedValues;
     };
 
+    // Both caches load on first use through a function-local static, whose initialisation C++ runs exactly once
+    // even when several map threads reach it at the same time. The old `static bool loaded` flag let two threads
+    // fill the same map concurrently, or let one read it while another was still inserting.
     static std::unordered_map<uint32, CustomItemTooltipData> const& GetCustomItemTooltipCache()
     {
-        static std::unordered_map<uint32, CustomItemTooltipData> cache;
-        static bool loaded = false;
-        if (!loaded)
+        static std::unordered_map<uint32, CustomItemTooltipData> const cache = []()
         {
-            loaded = true;
+            std::unordered_map<uint32, CustomItemTooltipData> rows;
             if (QueryResult result = WorldDatabase.Query(
                 "SELECT item_id, custom_note, custom_source, is_custom FROM dc_item_custom_data"))
             {
                 do
                 {
                     Field* fields = result->Fetch();
-                    CustomItemTooltipData& entry = cache[fields[0].Get<uint32>()];
+                    CustomItemTooltipData& entry = rows[fields[0].Get<uint32>()];
                     entry.note = fields[1].Get<std::string>();
                     entry.source = fields[2].Get<std::string>();
                     entry.isCustom = fields[3].Get<bool>();
                 } while (result->NextRow());
             }
-            LOG_INFO("module.dc", "[DCQoS] Cached {} custom item tooltip rows", cache.size());
-        }
+            LOG_INFO("module.dc", "[DCQoS] Cached {} custom item tooltip rows", rows.size());
+            return rows;
+        }();
+
         return cache;
     }
 
     static std::unordered_map<uint32, CustomSpellTooltipData> const& GetCustomSpellTooltipCache()
     {
-        static std::unordered_map<uint32, CustomSpellTooltipData> cache;
-        static bool loaded = false;
-        if (!loaded)
+        static std::unordered_map<uint32, CustomSpellTooltipData> const cache = []()
         {
-            loaded = true;
+            std::unordered_map<uint32, CustomSpellTooltipData> rows;
             if (QueryResult result = WorldDatabase.Query(
                 "SELECT spell_id, custom_note, modified_values FROM dc_spell_custom_data"))
             {
                 do
                 {
                     Field* fields = result->Fetch();
-                    CustomSpellTooltipData& entry = cache[fields[0].Get<uint32>()];
+                    CustomSpellTooltipData& entry = rows[fields[0].Get<uint32>()];
                     entry.note = fields[1].Get<std::string>();
                     entry.modifiedValues = fields[2].Get<std::string>();
                 } while (result->NextRow());
             }
-            LOG_INFO("module.dc", "[DCQoS] Cached {} custom spell tooltip rows", cache.size());
-        }
+            LOG_INFO("module.dc", "[DCQoS] Cached {} custom spell tooltip rows", rows.size());
+            return rows;
+        }();
+
         return cache;
     }
 
@@ -3319,27 +3322,23 @@ namespace DCQoS
         return out.str();
     }
 
-    static std::unordered_map<uint32, std::string> sSpellTemplateCache;
-
+    // Read straight from the DBC. This used to go through a lock-free static cache that the tooltip push reaches
+    // from every map update thread at once; a concurrent insert corrupted it and the next lookup looped forever,
+    // freezing the world thread. The cache bought nothing: the string is returned by value either way and the DBC
+    // text is already in memory.
     static std::string GetSpellDescriptionTemplate(uint32 spellId)
     {
-        auto itr = sSpellTemplateCache.find(spellId);
-        if (itr != sSpellTemplateCache.end())
-            return itr->second;
-
-        std::string description;
         SpellEntry const* spellEntry = sSpellStore.LookupEntry(spellId);
-        if (spellEntry)
-        {
-            if (spellEntry->Description[0] && *spellEntry->Description[0])
-                description = spellEntry->Description[0];
+        if (!spellEntry)
+            return "";
 
-            if (description.empty() && spellEntry->ToolTip[0] && *spellEntry->ToolTip[0])
-                description = spellEntry->ToolTip[0];
-        }
+        if (spellEntry->Description[0] && *spellEntry->Description[0])
+            return spellEntry->Description[0];
 
-        sSpellTemplateCache[spellId] = description;
-        return description;
+        if (spellEntry->ToolTip[0] && *spellEntry->ToolTip[0])
+            return spellEntry->ToolTip[0];
+
+        return "";
     }
 
     struct TooltipAmountRange

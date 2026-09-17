@@ -59,6 +59,29 @@ inline bool IsGuildHouseQuestExcludedMap(uint32 mapId)
     return mapId == MAP_GUILD_HOUSE_INSTANCE || mapId == MAP_GUILD_HOUSE_INSTANCE_2;
 }
 
+// Instances that keep the Universal Quest Master follower (it still serves the daily and
+// weekly quests and the statistics page there) but have no stock quest to map, so an empty
+// dc_dungeon_quest_mapping is the expected state rather than a gap. The mapping audit logs
+// them at debug level so its warning count only covers maps that were actually missed.
+//   624 Vault of Archavon     - no quest_template row is tied to the instance at all.
+//   650 Trial of the Champion - only 14199 "Proof of Demise: The Black Knight", a heroic
+//                               daily with no quest giver; none of the WotLK heroic dailies
+//                               are mapped to their dungeons either.
+// An entry goes inert once quests are mapped for that map (the audit only sees unmapped maps).
+// Plain ids on purpose: MAP_VAULT_OF_ARCHAVON / MAP_TRIAL_OF_THE_CHAMPION already exist in
+// AreaDefines.h, and files that pull this namespace in with `using` would see both.
+inline bool IsQuestlessDungeonMap(uint32 mapId)
+{
+    switch (mapId)
+    {
+        case 624: // Vault of Archavon
+        case 650: // Trial of the Champion
+            return true;
+        default:
+            return false;
+    }
+}
+
 // =====================================================================
 // ACHIEVEMENT ID RANGES
 // =====================================================================

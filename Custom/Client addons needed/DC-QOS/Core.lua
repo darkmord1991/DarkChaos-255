@@ -219,13 +219,14 @@ addon.defaults = {
         useDcFrame = true,
         fillFrame = true,
         disableRotate = true,
-        hideZoom = false,
+        hideZoom = true,
         hideTracking = true,
         hideClock = false,
         hideCalendar = true,
         hideWorldMapButton = true,
         mouseWheelZoom = true,
-        buttonSpacing = 22,
+        -- Pixels kept clear between buttons on the minimap button ring.
+        buttonGap = 4,
     },
 
     -- Keybinds (hover-to-bind)

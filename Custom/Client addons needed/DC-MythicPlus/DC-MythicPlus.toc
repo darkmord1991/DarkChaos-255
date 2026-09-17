@@ -28,6 +28,10 @@ UI\MythicTab.lua
 UI\RaidTab.lua
 UI\WorldTab.lua
 UI\LiveRunsTab.lua
+
+# Run members on the minimap, the dungeon map and the spectator bar while
+# spectating (hooked from LiveRunsTab.lua's spectator bar)
+UI\SpectatorMap.lua
 UI\ScheduledTab.lua
 UI\KeystoneActivationRetail.lua
 UI\TokenVendorFrame.lua

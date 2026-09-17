@@ -1,39 +1,23 @@
 --[[
     DC-InfoBar Keystone Plugin
     Shows current Mythic+ keystone level and dungeon
-    
-    Data Source: 
-    1. Player inventory scan for keystone items
-    2. DCAddonProtocol GRPF or MPLUS module (for additional data)
+
+    Data Sources:
+    1. Bag scan: keystone items 300313-300331 are M+2..M+20, so the item id
+       alone gives the level (no tooltip parsing).
+    2. MPLUS SMSG_KEY_INFO (handled in Core.lua): dungeon, depleted flag,
+       weekly/season best. Requested by Core.lua RequestServerData.
 ]]
 
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
-local function GetDCProtocol()
-    return rawget(_G, "DCAddonProtocol")
-end
+-- Mirrors MythicPlusConstants::KEYSTONE_ITEM_IDS (dc_mythicplus_constants.h).
+local KEYSTONE_FIRST_ITEM = 300313
+local KEYSTONE_FIRST_LEVEL = 2
+local KEYSTONE_LAST_ITEM = 300331
 
-local function GetDCCentral()
-    return rawget(_G, "DCCentral")
-end
-
-local function GetKeystoneItemIds()
-    local central = GetDCCentral()
-    if central and type(central.KEYSTONE_ITEM_IDS) == "table" then
-        return central.KEYSTONE_ITEM_IDS
-    end
-
-    local proto = GetDCProtocol()
-    if proto and type(proto.KEYSTONE_ITEM_IDS) == "table" then
-        return proto.KEYSTONE_ITEM_IDS
-    end
-
-    return nil
-end
-
--- Use centralized dungeon abbreviations from Core.lua (single source of truth)
-local DUNGEON_ABBREVS = DCInfoBar.DUNGEON_ABBREVS or {}
+local MPLUS_CMSG_GET_KEY_INFO = 0x01
 
 local KeystonePlugin = {
     id = "DCInfoBar_Keystone",
@@ -44,326 +28,191 @@ local KeystonePlugin = {
     priority = 20,
     icon = "Interface\\Icons\\INV_Relics_IdolofHealth",
     updateInterval = 5.0,
-    
+
     leftClickHint = "Open Group Finder",
     rightClickHint = "Link keystone in chat",
-    
-    _inventoryKeystone = nil,  -- Cached keystone from inventory
+
+    _inventoryKeystone = nil,
 }
 
-local function ParseKeystoneName(itemName)
-    if type(itemName) ~= "string" or itemName == "" then
-        return nil, nil
+local function KeystoneLevelForItem(itemId)
+    if itemId >= KEYSTONE_FIRST_ITEM and itemId <= KEYSTONE_LAST_ITEM then
+        return KEYSTONE_FIRST_LEVEL + (itemId - KEYSTONE_FIRST_ITEM)
     end
-
-    local level = string.match(itemName, "%+(%d+)") or
-        string.match(itemName, "Level (%d+)")
-    local dungeonName = string.match(itemName, ":%s*(.+)%s*%+") or
-        string.match(itemName, "Keystone:%s*(.+)")
-
-    return level, dungeonName
+    return nil
 end
 
--- Scan inventory for keystone items
 function KeystonePlugin:ScanInventoryForKeystone()
-    local keystoneItemIds = GetKeystoneItemIds()
-
-    -- Check all bag slots for keystone items
     for bag = 0, 4 do
-        local numSlots = GetContainerNumSlots(bag)
-        for slot = 1, numSlots do
+        for slot = 1, GetContainerNumSlots(bag) do
             local itemId = GetContainerItemID(bag, slot)
-            if itemId then
-                -- Fast path: check known keystone item IDs
-                if keystoneItemIds and keystoneItemIds[itemId] then
-                    local itemName, itemLink = GetItemInfo(itemId)
-                    if not itemLink then
-                        itemLink = GetContainerItemLink(bag, slot)
-                    end
-                    -- Extract level and dungeon and continue below
-                    local level, dungeonName = ParseKeystoneName(itemName)
-                    -- Also check item tooltip for additional info
-                    local tooltipData = self:GetItemTooltipData(bag, slot)
-                    if tooltipData then
-                        level = level or tooltipData.level
-                        dungeonName = dungeonName or tooltipData.dungeon
-                    end
-                    if level then
-                        self._inventoryKeystone = {
-                            hasKey = true,
-                            level = tonumber(level) or 0,
-                            dungeonName = dungeonName or "Unknown",
-                            dungeonAbbrev = DUNGEON_ABBREVS[dungeonName] or self:GenerateAbbrev(dungeonName),
-                            itemLink = itemLink,
-                            bag = bag,
-                            slot = slot,
-                        }
-                        return self._inventoryKeystone
-                    end
-                else
-                    -- Check item name for "Keystone" text
-                    local itemName, itemLink = GetItemInfo(itemId)
-                    if not itemLink then
-                        itemLink = GetContainerItemLink(bag, slot)
-                    end
-                    if itemName and string.find(itemName, "Keystone") then
-                    -- Parse keystone level from item name or tooltip
-                    local level, dungeonName = ParseKeystoneName(itemName)
-                    
-                    -- Also check item tooltip for additional info
-                    local tooltipData = self:GetItemTooltipData(bag, slot)
-                    if tooltipData then
-                        level = level or tooltipData.level
-                        dungeonName = dungeonName or tooltipData.dungeon
-                    end
-                    
-                    if level then
-                        self._inventoryKeystone = {
-                            hasKey = true,
-                            level = tonumber(level) or 0,
-                            dungeonName = dungeonName or "Unknown",
-                            dungeonAbbrev = DUNGEON_ABBREVS[dungeonName] or self:GenerateAbbrev(dungeonName),
-                            itemLink = itemLink,
-                            bag = bag,
-                            slot = slot,
-                        }
-                        return self._inventoryKeystone
-                    end
-                    end
-                end
+            local level = itemId and KeystoneLevelForItem(itemId)
+            if level then
+                self._inventoryKeystone = {
+                    level = level,
+                    itemLink = GetContainerItemLink(bag, slot),
+                }
+                return self._inventoryKeystone
             end
         end
     end
-    
+
     self._inventoryKeystone = nil
     return nil
 end
 
-function KeystonePlugin:GetItemTooltipData(bag, slot)
-    -- Prefer shared scan tooltip provided by DC or DCCentral
-    local tooltip
-    local DCproto = GetDCProtocol()
-    local DCCentral = GetDCCentral()
-    if DCproto and type(DCproto.GetScanTooltip) == 'function' then
-        tooltip = DCproto:GetScanTooltip()
-    elseif DCCentral and DCCentral.scanTooltip then
-        tooltip = DCCentral.scanTooltip
-    else
-        tooltip = _G["DCInfoBarKeystoneScanTooltip"]
-        if not tooltip then
-            tooltip = CreateFrame("GameTooltip", "DCInfoBarKeystoneScanTooltip", nil, "GameTooltipTemplate")
-            tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
-        end
-    end
-    
-    tooltip:ClearLines()
-    tooltip:SetBagItem(bag, slot)
-    
-    -- Get the tooltip's actual name for looking up text regions
-    local tooltipName = tooltip:GetName() or "DCInfoBarKeystoneScanTooltip"
-    
-    local level, dungeon
-    for i = 1, tooltip:NumLines() do
-        local line = _G[tooltipName .. "TextLeft" .. i]
-        if line then
-            local text = line:GetText()
-            if text then
-                -- Look for level pattern
-                local lvl = string.match(text, "Level:?%s*(%d+)") or string.match(text, "%+(%d+)")
-                if lvl then level = tonumber(lvl) end
-                
-                -- Look for dungeon pattern
-                local dng = string.match(text, "Dungeon:?%s*(.+)") or string.match(text, "Instance:?%s*(.+)")
-                if dng then dungeon = dng end
-            end
-        end
-    end
-    
-    if level then
-        return { level = level, dungeon = dungeon }
-    end
-    return nil
-end
+-- Merged view: bag scan is authoritative for "do I hold a key / which level"
+-- (instant, no round-trip); the server adds dungeon and best runs.
+function KeystonePlugin:GetKeyInfo()
+    local inv = self._inventoryKeystone
+    local server = DCInfoBar.serverData.keystone
 
-function KeystonePlugin:GenerateAbbrev(name)
-    if not name or name == "" then return "" end
-    local abbrev = ""
-    for word in string.gmatch(name, "%S+") do
-        if word ~= "The" and word ~= "of" and word ~= "the" then
-            abbrev = abbrev .. string.sub(word, 1, 1)
-        end
+    local info = {
+        hasKey = (inv ~= nil) or server.hasKey,
+        level = (inv and inv.level) or server.level or 0,
+        dungeonName = server.hasKey and server.dungeonName or nil,
+        dungeonAbbrev = server.hasKey and server.dungeonAbbrev or "",
+        depleted = server.hasKey and server.depleted,
+        itemLink = inv and inv.itemLink,
+        weeklyBest = server.weeklyBest or 0,
+        seasonBest = server.seasonBest or 0,
+    }
+
+    -- Server info describes a different key (e.g. just upgraded): don't mix them.
+    if inv and server.hasKey and server.level ~= inv.level then
+        info.dungeonName = nil
+        info.dungeonAbbrev = ""
+        info.depleted = false
     end
-    return string.upper(abbrev)
+    return info
 end
 
 function KeystonePlugin:OnActivate()
-    -- Register for bag updates (one-time: re-activation must not stack another frame/handler)
-    if not DCInfoBar._keystoneBagFrame then
-        local frame = CreateFrame("Frame")
-        frame:RegisterEvent("BAG_UPDATE")
-        frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-        -- BAG_UPDATE fires in bursts (looting, vendoring, sorting); debounce
-        -- so the full bag scan with tooltip parsing runs once per burst.
-        -- Same pattern as DC-MythicPlus (C_Timer comes from DCCompat in
-        -- DC-AddonProtocol, a hard dependency).
-        local scanQueued = false
-        frame:SetScript("OnEvent", function()
-            if scanQueued then return end
-            if C_Timer and C_Timer.After then
-                scanQueued = true
-                C_Timer.After(0.2, function()
-                    scanQueued = false
-                    self:ScanInventoryForKeystone()
-                    self._elapsed = 999  -- Force update
-                end)
-            else
-                self:ScanInventoryForKeystone()
-                self._elapsed = 999  -- Force update
-            end
-        end)
-        DCInfoBar._keystoneBagFrame = frame
+    if self._bagFrame then
+        return
     end
 
-    -- Initial scan
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("BAG_UPDATE")
+    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    -- BAG_UPDATE fires in bursts; debounce to one scan per burst.
+    local scanQueued = false
+    frame:SetScript("OnEvent", function()
+        if scanQueued then return end
+        scanQueued = true
+        DCInfoBar:After(0.3, function()
+            scanQueued = false
+            local before = KeystonePlugin._inventoryKeystone and KeystonePlugin._inventoryKeystone.level
+            local after = KeystonePlugin:ScanInventoryForKeystone()
+            local afterLevel = after and after.level
+            KeystonePlugin._elapsed = 999
+            -- The key changed (new, upgraded, used): refresh dungeon/best from the server.
+            if before ~= afterLevel then
+                local proto = DCInfoBar:GetProtocol()
+                if proto and DCInfoBar.serverData.keystone.received then
+                    proto:Request("MPLUS", MPLUS_CMSG_GET_KEY_INFO, {})
+                end
+            end
+        end)
+    end)
+    self._bagFrame = frame
+
     self:ScanInventoryForKeystone()
-    
-    -- Also request from server for additional data (weekly/season best)
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        if DC.GroupFinderOpcodes then
-            DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
-        end
-        if DC.Opcode and DC.Opcode.MPlus then
-            DC:Request("MPLUS", DC.Opcode.MPlus.CMSG_GET_KEY_INFO, {})
-        end
+end
+
+function KeystonePlugin:OnDeactivate()
+    if self._bagFrame then
+        self._bagFrame:UnregisterAllEvents()
+        self._bagFrame = nil
     end
 end
 
 function KeystonePlugin:OnUpdate(elapsed)
-    -- First check inventory keystone
-    local invKey = self._inventoryKeystone
-    
-    -- Then check server data
-    local keyData = DCInfoBar.serverData.keystone
-    
-    -- Prefer inventory data if available, fall back to server data
-    local hasKey = (invKey and invKey.hasKey) or (keyData and keyData.hasKey)
-    local level = (invKey and invKey.level) or (keyData and keyData.level) or 0
-    local abbrev = (invKey and invKey.dungeonAbbrev) or (keyData and keyData.dungeonAbbrev) or ""
-    local depleted = keyData and keyData.depleted
-    
-    if hasKey and level > 0 then
-        local text = "+" .. level
-        if abbrev and abbrev ~= "" then
-            text = text .. " " .. abbrev
-        end
-        
-        -- Add depleted indicator
-        local showDepleted = DCInfoBar:GetPluginSetting(self.id, "showDepleted")
-        if showDepleted ~= false and depleted then
-            text = text .. " |cffff5050⚠|r"
-        end
-        
-        return "", text
-    else
+    local info = self:GetKeyInfo()
+    if not info.hasKey or info.level <= 0 then
         return "", "No Key"
     end
+
+    local text = "+" .. info.level
+    if info.dungeonAbbrev ~= "" then
+        text = text .. " " .. info.dungeonAbbrev
+    end
+    if info.depleted and DCInfoBar:GetPluginSetting(self.id, "showDepleted") ~= false then
+        text = text .. " |cffff5050(D)|r"
+    end
+    return "", text
 end
 
 function KeystonePlugin:OnServerData(data)
-    self._elapsed = 999  -- Force immediate update
+    self._elapsed = 999
 end
 
 function KeystonePlugin:OnTooltip(tooltip)
-    -- Get data from both sources
-    local invKey = self._inventoryKeystone
-    local keyData = DCInfoBar.serverData.keystone
-    
-    local hasKey = (invKey and invKey.hasKey) or (keyData and keyData.hasKey)
-    local level = (invKey and invKey.level) or (keyData and keyData.level) or 0
-    local dungeonName = (invKey and invKey.dungeonName) or (keyData and keyData.dungeonName) or "Unknown"
-    local depleted = keyData and keyData.depleted
-    
+    local info = self:GetKeyInfo()
+
     tooltip:AddLine("Mythic+ Keystone", 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
-    
-    if hasKey and level > 0 then
-        tooltip:AddDoubleLine("Current:", dungeonName .. " +" .. level,
+
+    if info.hasKey and info.level > 0 then
+        tooltip:AddDoubleLine("Current:", (info.dungeonName or "Keystone") .. " +" .. info.level,
             0.7, 0.7, 0.7, 1, 1, 1)
-        
-        if depleted then
+        if info.depleted then
             tooltip:AddLine("|cffff5050Keystone is depleted|r")
         end
-        
-        -- Affixes
-        local affixData = DCInfoBar.serverData.affixes
-        if affixData and affixData.names and #affixData.names > 0 then
+
+        local names = DCInfoBar.serverData.affixes.names
+        if names and #names > 0 then
             tooltip:AddLine(" ")
             tooltip:AddLine("|cff32c4ffAffixes:|r")
-            for i, name in ipairs(affixData.names) do
-                tooltip:AddLine("  • " .. name, 1, 1, 1)
+            for _, name in ipairs(names) do
+                tooltip:AddLine("  - " .. name, 1, 1, 1)
             end
-        end
-        
-        -- Best runs (from server data)
-        if keyData and (keyData.weeklyBest > 0 or keyData.seasonBest > 0) then
-            tooltip:AddLine(" ")
-            tooltip:AddLine("|cff32c4ffBest Runs:|r")
-            tooltip:AddDoubleLine("  Weekly Best:", "+" .. (keyData.weeklyBest or 0),
-                0.7, 0.7, 0.7, 0.5, 1, 0.5)
-            tooltip:AddDoubleLine("  Season Best:", "+" .. (keyData.seasonBest or 0),
-                0.7, 0.7, 0.7, 1, 0.82, 0)
         end
     else
         tooltip:AddLine("No keystone found", 0.7, 0.7, 0.7)
         tooltip:AddLine(" ")
-        tooltip:AddLine("Complete a Mythic+ dungeon to", 0.5, 0.5, 0.5)
-        tooltip:AddLine("receive a keystone.", 0.5, 0.5, 0.5)
+        tooltip:AddLine("Complete a Mythic+ dungeon to receive a keystone.", 0.5, 0.5, 0.5, true)
+    end
+
+    if info.weeklyBest > 0 or info.seasonBest > 0 then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cff32c4ffBest Runs:|r")
+        tooltip:AddDoubleLine("  Weekly Best:", info.weeklyBest > 0 and ("+" .. info.weeklyBest) or "-",
+            0.7, 0.7, 0.7, 0.5, 1, 0.5)
+        tooltip:AddDoubleLine("  Season Best:", info.seasonBest > 0 and ("+" .. info.seasonBest) or "-",
+            0.7, 0.7, 0.7, 1, 0.82, 0)
     end
 end
 
 function KeystonePlugin:OnClick(button)
     if button == "LeftButton" then
-        -- Open DC-MythicPlus Group Finder
-        if DCMythicPlusHUD and DCMythicPlusHUD.GroupFinder and DCMythicPlusHUD.GroupFinder.Toggle then
-            DCMythicPlusHUD.GroupFinder:Toggle()
-        elseif DCGroupFinder and DCGroupFinder.Toggle then
-            DCGroupFinder:Toggle()
-        elseif LFDParentFrame then
-            -- Fallback to default LFD frame
+        local hud = rawget(_G, "DCMythicPlusHUD")
+        if hud and hud.GroupFinder and hud.GroupFinder.Toggle then
+            hud.GroupFinder:Toggle()
+        elseif ToggleLFDParentFrame then
             ToggleLFDParentFrame()
         else
             DCInfoBar:Print("Group Finder not available")
         end
     elseif button == "RightButton" then
-        -- Link keystone in chat
-        local invKey = self._inventoryKeystone
-        local keyData = DCInfoBar.serverData.keystone
-        
-        local hasKey = (invKey and invKey.hasKey) or (keyData and keyData.hasKey)
-        local level = (invKey and invKey.level) or (keyData and keyData.level) or 0
-        local dungeonName = (invKey and invKey.dungeonName) or (keyData and keyData.dungeonName) or "Unknown"
-        
-        if hasKey and level > 0 then
-            -- If we have an item link, use it
-            if invKey and invKey.itemLink then
-                ChatFrame1EditBox:SetText(invKey.itemLink)
-            else
-                local msg = string.format("[Keystone: %s +%d]", dungeonName, level)
-                ChatFrame1EditBox:SetText(msg)
-            end
-            ChatFrame1EditBox:SetFocus()
+        local info = self:GetKeyInfo()
+        if not info.hasKey or info.level <= 0 then
+            return
+        end
+        local text = info.itemLink or string.format("[Keystone: %s +%d]", info.dungeonName or "Unknown", info.level)
+        -- Insert into the open edit box (or open one) without wiping typed text.
+        if not ChatEdit_InsertLink(text) then
+            ChatFrame_OpenChat(text)
         end
     end
 end
 
 function KeystonePlugin:OnCreateOptions(parent, yOffset)
-    local depletedCB = DCInfoBar:CreateCheckbox(parent, "Show depleted indicator", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Show depleted indicator", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showDepleted", checked)
     end, DCInfoBar:GetPluginSetting(self.id, "showDepleted") ~= false)
-    
+
     return yOffset - 30
 end
 
--- Register plugin
 DCInfoBar:RegisterPlugin(KeystonePlugin)

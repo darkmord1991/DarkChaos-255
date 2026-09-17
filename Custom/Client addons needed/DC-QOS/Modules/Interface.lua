@@ -2615,16 +2615,19 @@ local function GetTopBarInset()
     end
     return -22 -- DC-InfoBar default height
 end
+-- Modules/Minimap.lua hangs MinimapCluster off the same inset, so the minimap
+-- and the auras beside it stay level under the bar.
+addon.GetTopBarInset = GetTopBarInset
 
--- Horizontal clearance for the minimap button column. The Minimap module parks
--- the tracking/mail/zoom buttons and every addon icon in a vertical stack down
--- the LEFT edge of the map (Modules/Minimap.lua anchors them RIGHT -> Minimap
--- LEFT), and the cluster is scaled by the user's minimap size setting, so how
--- far left that stack reaches is not a constant we can bake into the default
--- offset. Measure it instead and keep the aura columns clear of it -- stock
--- anchors the debuff row off TemporaryEnchantFrame at -180, right underneath
--- the icons, so a lone debuff (Deserter after a dungeon drop) lands behind
--- them. Never nudges right of the configured offset, only further left.
+-- Horizontal clearance for the minimap button ring. The Minimap module lays the
+-- stock buttons and every addon icon out on a ring around the map that the
+-- player can drag them along (Modules/Minimap.lua, ButtonRing), and the cluster
+-- is scaled by the user's minimap size setting, so how far left those buttons
+-- reach is not a constant we can bake into the default offset. Measure it
+-- instead and keep the aura columns clear of it -- stock anchors the debuff row
+-- off TemporaryEnchantFrame at -180, right underneath the icons, so a lone
+-- debuff (Deserter after a dungeon drop) lands behind them. Never nudges right
+-- of the configured offset, only further left.
 local BUFF_MINIMAP_GAP = 8
 
 -- Buttons on or beside the minimap all sit in this size window; anything
@@ -2633,13 +2636,13 @@ local BUFF_MINIMAP_GAP = 8
 local MINIMAP_ICON_MIN_SIZE = 16
 local MINIMAP_ICON_MAX_SIZE = 48
 
--- The stock buttons Modules/Minimap.lua pulls into the column. They are nested
--- under MinimapBackdrop rather than being direct children of the map, so the
--- child scan below would miss them.
-local MINIMAP_COLUMN_BUTTONS = {
+-- Stock buttons on the ring that are nested under MinimapBackdrop rather than
+-- being direct children of the map, so the child scan below would miss them.
+local MINIMAP_RING_BUTTONS = {
     "MiniMapTracking",
     "MiniMapBattlefieldFrame",
     "MiniMapWorldMapButton",
+    "MiniMapLFGFrame",
     "GameTimeFrame",
     "MiniMapMailFrame",
     "MinimapZoomIn",
@@ -2662,7 +2665,11 @@ local function GetLeftInUIParentUnits(frame)
 end
 
 local function IsMinimapIconLike(frame)
-    if not frame or type(frame.IsShown) ~= "function" or not frame:IsShown() then return false end
+    -- IsVisible, not IsShown: a button under a hidden parent takes no space.
+    -- The alpha check drops the world map button, which the Minimap module
+    -- keeps shown but fully faded when "Hide world map button" is on.
+    if not frame or type(frame.IsVisible) ~= "function" or not frame:IsVisible() then return false end
+    if type(frame.GetAlpha) == "function" and frame:GetAlpha() <= 0 then return false end
     if frame == Minimap or frame == MinimapCluster then return false end
 
     local w = (type(frame.GetWidth) == "function" and frame:GetWidth()) or 0
@@ -2699,8 +2706,8 @@ local function GetMinimapClearanceOffsetX()
         end
     end
 
-    for i = 1, #MINIMAP_COLUMN_BUTTONS do
-        consider(_G[MINIMAP_COLUMN_BUTTONS[i]])
+    for i = 1, #MINIMAP_RING_BUTTONS do
+        consider(_G[MINIMAP_RING_BUTTONS[i]])
     end
     scan(Minimap)
     scan(MinimapCluster)
@@ -3108,13 +3115,20 @@ local function SetupBuffFramePosition()
     addon:DelayedCall(5.0, ApplyBuffFramePosition)
     addon:DelayedCall(12.0, ApplyBuffFramePosition)
 
-    -- Resizing/moving the minimap moves the button column with it, so the
-    -- clearance has to be re-measured when those settings change.
+    -- Resizing/moving the minimap moves the button ring with it, so the
+    -- clearance has to be re-measured when those settings change -- and
+    -- whenever the ring itself changes (a button dragged, a queue eye or mail
+    -- icon appearing), since any of those can be the new left-most icon.
     if not buffSettingHookRegistered then
         buffSettingHookRegistered = true
+        addon:RegisterEvent("MINIMAP_BUTTONS_LAYOUT", function()
+            if buffFrameState.active then
+                addon:DelayedCall(0.1, ApplyBuffFramePosition)
+            end
+        end)
         addon:RegisterEvent("SETTING_CHANGED", function(path)
             if path == "minimap.enabled" or path == "minimap.size"
-                or path == "minimap.x" or path == "minimap.buttonSpacing"
+                or path == "minimap.x" or path == "minimap.buttonGap"
                 or path == "interface.buffFrameOffsetX" or path == "interface.buffFrameOffsetY" then
                 if path == "interface.buffFrameOffsetX" then
                     buffFrameState.offsetX = addon.settings.interface.buffFrameOffsetX or 0

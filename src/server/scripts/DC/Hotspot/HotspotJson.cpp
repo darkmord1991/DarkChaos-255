@@ -57,16 +57,11 @@ DCAddon::JsonValue Verbose(Hotspot const& hotspot, uint32 xpBonus, time_t now)
     return h;
 }
 
-DCAddon::JsonValue SpawnEvent(Hotspot const& hotspot)
+// Same record as the snapshot entry plus action=spawn, so a pushed spawn carries
+// zoneName/timeRemaining/bonusPercent and clients can upsert it directly.
+DCAddon::JsonValue SpawnEvent(Hotspot const& hotspot, uint32 xpBonus, time_t now)
 {
-    DCAddon::JsonValue h;
-    h.SetObject();
-    h.Set("id", DCAddon::JsonValue(hotspot.id));
-    h.Set("mapId", DCAddon::JsonValue(hotspot.mapId));
-    h.Set("zoneId", DCAddon::JsonValue(hotspot.zoneId));
-    h.Set("x", DCAddon::JsonValue(hotspot.x));
-    h.Set("y", DCAddon::JsonValue(hotspot.y));
-    h.Set("z", DCAddon::JsonValue(hotspot.z));
+    DCAddon::JsonValue h = Verbose(hotspot, xpBonus, now);
     h.Set("action", DCAddon::JsonValue("spawn"));
     return h;
 }

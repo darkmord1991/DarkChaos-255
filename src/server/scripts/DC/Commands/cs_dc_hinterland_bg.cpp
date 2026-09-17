@@ -5,6 +5,7 @@
 #include <string>
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "StringConvert.h"
 #include "DC/HinterlandBG/BattlegroundHLBG.h"
 #include "DC/HinterlandBG/HLBGService.h"
 #include "DC/HinterlandBG/dc_hlbg_spectator.h"
@@ -219,8 +220,9 @@ public:
     }
     static bool HandleHLBGSpectateCommand(ChatHandler* handler, char const* args)
     {
-        // Usage: .hlbg spectate        -> join as spectator
-        //        .hlbg spectate leave  -> stop spectating
+        // Usage: .hlbg spectate              -> watch the running match
+        //        .hlbg spectate <instanceId> -> watch that match
+        //        .hlbg spectate leave        -> stop spectating
         Player* player = handler->GetSession()
             ? handler->GetSession()->GetPlayer() : nullptr;
         if (!player)
@@ -237,8 +239,22 @@ public:
             return true;
         }
 
+        uint32 instanceId = 0;
+        if (!arg.empty())
+        {
+            Optional<uint32> parsed = Acore::StringTo<uint32>(arg);
+            if (!parsed)
+            {
+                handler->SendSysMessage("|cffff0000[HLBG Spectator]|r Usage: "
+                    ".hlbg spectate [leave | <instance id>]");
+                return true;
+            }
+
+            instanceId = *parsed;
+        }
+
         std::string error;
-        if (!DCHLBGSpectator::StartSpectating(player, error))
+        if (!DCHLBGSpectator::StartSpectating(player, instanceId, error))
             handler->PSendSysMessage(
                 "|cffff0000[HLBG Spectator]|r {}", error);
         return true;

@@ -42,17 +42,37 @@ local function OpenOptionsCategory(categoryName)
     pcall(InterfaceOptionsFrame_OpenToCategory, categoryName)
 end
 
+-- Run "/cmd args" by calling its SlashCmdList handler directly. Going through
+-- the chat edit box overwrote whatever the player was typing and put the
+-- command into the chat history.
+local function FindSlashHandler(command)
+    command = string.lower(command)
+    for key, handler in pairs(SlashCmdList) do
+        local i = 1
+        local alias = _G["SLASH_" .. key .. i]
+        while alias do
+            if string.lower(alias) == command then
+                return handler
+            end
+            i = i + 1
+            alias = _G["SLASH_" .. key .. i]
+        end
+    end
+    return nil
+end
+
 local function RunSlashCommand(cmd)
     if type(cmd) ~= "string" or cmd == "" then return end
 
-    if ChatFrame1EditBox and ChatEdit_SendText then
-        ChatFrame1EditBox:SetText(cmd)
-        ChatEdit_SendText(ChatFrame1EditBox)
+    local command, args = cmd:match("^(/%S+)%s*(.-)$")
+    local handler = command and FindSlashHandler(command)
+    if handler then
+        handler(args or "")
         return
     end
 
-    -- Fallback: try to use DEFAULT_CHAT_FRAME editbox
-    local eb = DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox
+    -- Unknown command (addon not loaded / server command): fall back to chat.
+    local eb = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
     if eb and ChatEdit_SendText then
         eb:SetText(cmd)
         ChatEdit_SendText(eb)
@@ -275,27 +295,22 @@ local function BuildSettingsList()
 
         if e.key == "leaderboards" then
             entry.onClick = function()
-                OpenOptionsCategory("DC-Leaderboards")
                 RunSlashCommand("/lb settings")
             end
         elseif e.key == "itemupgrade" then
             entry.onClick = function()
-                OpenOptionsCategory("DC ItemUpgrade")
                 RunSlashCommand("/dcu settings")
             end
         elseif e.key == "collection" then
             entry.onClick = function()
-                OpenOptionsCategory("DC-Collection")
                 RunSlashCommand("/collection settings")
             end
         elseif e.key == "welcome" then
             entry.onClick = function()
-                OpenOptionsCategory("DC-Welcome")
                 RunSlashCommand("/welcomesettings")
             end
         elseif e.key == "hinterlandbg" then
             entry.onClick = function()
-                OpenOptionsCategory("DC HLBG Addon")
                 RunSlashCommand("/hlbgconfig")
             end
         elseif e.key == "groupfinder" then
@@ -815,7 +830,10 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
 end
 
 function LaunchersPlugin:OnClick(button)
-    -- Icon buttons handle clicks.
+    -- The gaps between icons open the settings menu too.
+    if button == "LeftButton" then
+        self:ToggleMenu()
+    end
 end
 
 -- Register plugin

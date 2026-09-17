@@ -85,6 +85,10 @@ public:
         // run writes (deaths, score, vault rows) but are flagged so the
         // leaderboards can label them.
         std::unordered_set<ObjectGuid::LowType> bots;
+        // Started by StartBotRun (a group made only of bots). Counts and pays
+        // out like any run; the live spectator list labels its leader "BOT"
+        // and no replay is recorded.
+        bool botRun = false;
         std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
         std::unordered_set<uint32> lootGrantedBosses; // Prevent duplicate loot generation per boss (spawnId fallback to entry)
@@ -218,6 +222,18 @@ public:
 
     // Spectator support - read-only state access
     InstanceState const* GetRunState(Map* map) const;
+
+    // Bot-only runs (driven from mod-playerbots through DCMythicPlusBots below).
+    // StartBotRun: the activator is a bot already inside a Mythic instance;
+    // starts a forced-level run (no keystone item, no ready check) and marks it
+    // botRun. Call without _stateMutex held (activation warms DB caches).
+    bool StartBotRun(Player* activator, uint8 keystoneLevel, std::string& outError);
+    // Fails the run like a group cancel vote (keystone depleted, dungeon reset).
+    bool AbortRun(Map* map, std::string_view reason);
+    // 0 = no run, 1 = countdown (or not started yet), 2 = running.
+    uint8 GetRunPhase(Map* map) const;
+    // Tracked boss entries not yet killed, in pull order.
+    void GetRemainingBossEntries(Map* map, std::vector<uint32>& out) const;
 
     // Cache warmers. Each performs the synchronous DB read that the matching
     // getter used to do inline, and MUST be called while _stateMutex is NOT
@@ -446,5 +462,17 @@ inline bool MythicPlusRunManager::CanActivateKeystone(Player* player,
 }
 
 #define sMythicRuns MythicPlusRunManager::instance()
+
+// Exported for mod-playerbots, whose DCMythicPlusBots.cpp re-declares these:
+// scripts.lib does not export its include directory to modules.lib. Both
+// libraries link into worldserver, so the symbols resolve at the final link -
+// but only while the signatures stay byte-for-byte identical on both sides.
+namespace DCMythicPlusBots
+{
+    bool StartBotRun(Player* activator, uint8 keystoneLevel, std::string& outError);
+    bool AbortRun(Map* map, std::string const& reason);
+    uint8 GetRunPhase(Map* map);
+    void GetRemainingBossEntries(Map* map, std::vector<uint32>& out);
+}
 
 #endif // DC_MYTHICPLUS_RUN_MANAGER_H

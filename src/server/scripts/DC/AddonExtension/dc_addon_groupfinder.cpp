@@ -25,6 +25,7 @@
 #include "dc_addon_groupfinder.h"
 #include "dc_addon_matchmaking.h"
 #include "DC/MythicPlus/dc_mythicplus_spectator.h"
+#include "DC/Spectator/dc_spectator_core.h"
 
 #include <mutex>
 #include <sstream>
@@ -141,10 +142,13 @@ namespace GroupFinder
 
         void SendSpectateListEmpty(Player* player)
         {
+            // Mythic+ spectating can be disabled on its own; HLBG matches and
+            // duels in "sessions" stay watchable.
             JsonMessage(Module::GROUP_FINDER,
                 Opcode::GroupFinder::SMSG_SPECTATE_LIST)
                 .Set("runs", "[]")
                 .Set("count", 0)
+                .Set("sessions", sSpectatorRegistry.BuildListings(player).Encode())
                 .Send(player);
         }
 
@@ -1160,7 +1164,13 @@ namespace GroupFinder
                 ? std::string("Unknown")
                 : liveRun.leaderName));
             run.Set("timerRemaining", JsonValue(static_cast<int32>(liveRun.timerRemaining)));
-            run.Set("timer", JsonValue(FormatSpectateTimer(liveRun.timerRemaining)));
+            // A dungeon run without a keystone (level 0) has no countdown: it
+            // lists its difficulty and the time since it started instead.
+            uint64 const now = GameTime::GetGameTime().count();
+            uint32 const elapsed = now > liveRun.startedAt ? static_cast<uint32>(now - liveRun.startedAt) : 0;
+            run.Set("difficulty", JsonValue(static_cast<int32>(liveRun.difficulty)));
+            run.Set("elapsed", JsonValue(static_cast<int32>(elapsed)));
+            run.Set("timer", JsonValue(FormatSpectateTimer(liveRun.keystoneLevel ? liveRun.timerRemaining : elapsed)));
             run.Set("bossesKilled", JsonValue(static_cast<int32>(liveRun.bossesKilled)));
             run.Set("bossesTotal", JsonValue(static_cast<int32>(liveRun.bossesTotal)));
             run.Set("progress", JsonValue(Acore::StringFormat("{}/{} bosses",
@@ -1173,9 +1183,12 @@ namespace GroupFinder
             ++count;
         }
 
+        // "runs" stays the Mythic+ list older clients read; "sessions" adds
+        // every other spectatable system (HLBG matches, phased duels).
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_LIST)
             .Set("runs", runsArray.Encode())
             .Set("count", static_cast<int32>(runsArray.Size()))
+            .Set("sessions", sSpectatorRegistry.BuildListings(player).Encode())
             .Send(player);
     }
 
@@ -1663,6 +1676,34 @@ namespace GroupFinder
         }
 
         auto json = GetJsonData(msg);
+
+        DCSpectator::SystemId systemId = DCSpectator::SystemId::MythicPlus;
+        if (!DCSpectator::ParseSystemName(JsonGetString(json, "system", "mplus"), systemId))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Unknown spectator system")
+                .Send(player);
+            return;
+        }
+
+        // HLBG matches and duels start through the unified registry; "id" is
+        // the value from the "sessions" list (0 = the running HLBG match).
+        if (systemId != DCSpectator::SystemId::MythicPlus)
+        {
+            std::string error;
+            uint32 const sessionId = static_cast<uint32>(JsonGetInt(json, "id", 0));
+            if (!sSpectatorRegistry.StartById(player, systemId, sessionId, error))
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", error)
+                    .Send(player);
+                return;
+            }
+
+            sSpectatorRegistry.SendLiveSnapshot(player);
+            return;
+        }
+
         uint32 runId = static_cast<uint32>(JsonGetInt(json, "runId", 0));
         if (runId == 0)
         {
@@ -1684,7 +1725,6 @@ namespace GroupFinder
         }
 
         uint32 instanceId = liveRun.instanceId;
-        uint32 publicRunId = GetPublicSpectateRunId(liveRun);
 
         if (instanceId == 0)
         {
@@ -1702,23 +1742,15 @@ namespace GroupFinder
             return;
         }
 
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_STARTED)
-            .Set("success", true)
-            .Set("runId", static_cast<int32>(publicRunId))
-            .Set("message", "Now spectating the run")
-            .Send(player);
-
+        // StartSpectating sends SMSG_SPECTATE_STARTED itself, so the .spectate
+        // chat commands open the spectator bar too.
         spectatorMgr.SendRunSnapshot(player, instanceId);
     }
 
-    // Stop spectating a run
-    static void HandleStopSpectate(Player* player, ParsedMessage const& msg)
+    // Stop spectating, whichever system the session belongs to
+    static void HandleStopSpectate(Player* player, ParsedMessage const& /*msg*/)
     {
-        uint32 runId = 0;
-        uint32 instanceId = 0;
-
-        auto& spectatorMgr = DCMythicSpectator::MythicSpectatorManager::Get();
-        if (!spectatorMgr.IsSpectating(player))
+        if (!sSpectatorRegistry.IsSpectating(player->GetGUID()))
         {
             JsonMessage(Module::GROUP_FINDER,
                 Opcode::GroupFinder::SMSG_SPECTATE_ENDED)
@@ -1728,32 +1760,8 @@ namespace GroupFinder
             return;
         }
 
-        if (DCMythicSpectator::SpectatorState* state =
-                spectatorMgr.GetSpectatorState(player->GetGUID()))
-        {
-            instanceId = state->targetInstanceId;
-        }
-
-        if (IsJsonMessage(msg))
-        {
-            runId = static_cast<uint32>(JsonGetInt(GetJsonData(msg), "runId", 0));
-        }
-
-        if (runId == 0 && instanceId > 0)
-        {
-            if (DCMythicSpectator::SpectateableRun const* run = spectatorMgr.GetRun(instanceId))
-                runId = GetPublicSpectateRunId(*run);
-            else
-                runId = instanceId;
-        }
-
-        spectatorMgr.StopSpectating(player);
-
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_ENDED)
-            .Set("success", true)
-            .Set("runId", static_cast<int32>(runId))
-            .Set("message", "Stopped spectating")
-            .Send(player);
+        // Each system's StopSpectating sends SMSG_SPECTATE_ENDED.
+        sSpectatorRegistry.StopAll(player);
     }
 
     // ========================================================================

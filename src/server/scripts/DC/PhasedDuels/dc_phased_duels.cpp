@@ -242,7 +242,7 @@ namespace DCPhasedDuels
             return;
 
         if (!state.wasSpectator)
-            spectator->SetIsSpectator(false);
+            DCSpectator::ReleaseSpectatorFlag(spectator);
 
         spectator->SetPhaseMask(state.savedPhaseMask, false);
         spectator->UpdateObjectVisibility();
@@ -520,6 +520,13 @@ namespace DCPhasedDuels
             return false;
         }
 
+        // The spectator flag's attack check covers the player, not their pet.
+        if (!spectator->m_Controlled.empty())
+        {
+            error = "Dismiss your pet before spectating.";
+            return false;
+        }
+
         std::optional<ActiveDuel> duel = GetActiveDuelCopy(targetGuid, matchId);
         if (!duel)
         {
@@ -564,18 +571,35 @@ namespace DCPhasedDuels
             sDuelSpectators[spectator->GetGUID()] = state;
         }
 
-        if (!state.wasSpectator)
-            spectator->SetIsSpectator(true);
-
         spectator->SetPhaseMask(duel->phaseId, false);
         spectator->UpdateObjectVisibility();
-        spectator->TeleportTo(watchedPlayer->GetMapId(),
-            watchedPlayer->GetPositionX(), watchedPlayer->GetPositionY(),
-            watchedPlayer->GetPositionZ() + 0.25f,
-            watchedPlayer->GetOrientation());
+        if (!spectator->TeleportTo(watchedPlayer->GetMapId(),
+                watchedPlayer->GetPositionX(), watchedPlayer->GetPositionY(),
+                watchedPlayer->GetPositionZ() + 0.25f,
+                watchedPlayer->GetOrientation()))
+        {
+            {
+                std::lock_guard<std::mutex> lock(sDuelMutex);
+                sDuelSpectators.erase(spectator->GetGUID());
+            }
+
+            spectator->SetPhaseMask(state.savedPhaseMask, false);
+            spectator->UpdateObjectVisibility();
+            error = "Could not teleport you to the duel.";
+            return false;
+        }
+
+        // Only after the teleport was accepted: TeleportTo refuses to port a
+        // flagged player into an instanceable map (duels there are allowed
+        // with PhasedDuels.AllowInDungeons).
+        if (!state.wasSpectator)
+            DCSpectator::HoldSpectatorFlag(spectator);
 
         opponentName = otherPlayer->GetName();
         phaseId = duel->phaseId;
+
+        DCSpectator::NotifySessionStarted(spectator,
+            DCSpectator::SystemId::Duel, phaseId, "Now spectating the duel.");
         return true;
     }
 
@@ -604,6 +628,8 @@ namespace DCPhasedDuels
                 "|cffffd700[Phased Duels]|r {}", reason);
         }
 
+        DCSpectator::NotifySessionEnded(spectator, DCSpectator::SystemId::Duel,
+            reason.empty() ? std::string("Stopped spectating.") : reason);
         return true;
     }
 
@@ -748,6 +774,71 @@ namespace DCPhasedDuels
                 (void)state;
                 out.push_back(guid);
             }
+        }
+
+        void AppendListings(Player* /*viewer*/,
+            DCAddon::JsonValue& out) const override
+        {
+            std::vector<ActiveDuel> duels;
+            std::unordered_map<uint32, uint32> watchers;
+
+            {
+                std::lock_guard<std::mutex> lock(sDuelMutex);
+                std::unordered_set<uint32> seenPhases;
+                for (auto const& [guid, duel] : sActiveDuels)
+                {
+                    (void)guid;
+                    if (seenPhases.insert(duel.phaseId).second)
+                        duels.push_back(duel);
+                }
+
+                for (auto const& [guid, state] : sDuelSpectators)
+                {
+                    (void)guid;
+                    ++watchers[state.watchedPhaseId];
+                }
+            }
+
+            uint64 const now = GameTime::GetGameTime().count();
+            for (ActiveDuel const& duel : duels)
+            {
+                Player* player1 = ObjectAccessor::FindConnectedPlayer(duel.player1);
+                Player* player2 = ObjectAccessor::FindConnectedPlayer(duel.player2);
+                if (!player1 || !player2)
+                    continue;
+
+                auto const watched = watchers.find(duel.phaseId);
+
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("system", std::string(DCSpectator::SystemName(
+                    DCSpectator::SystemId::Duel)));
+                entry.Set("id", static_cast<int32>(duel.phaseId));
+                entry.Set("name", player1->GetName() + " vs " + player2->GetName());
+                entry.Set("player1Name", player1->GetName());
+                entry.Set("player2Name", player2->GetName());
+                entry.Set("player1Class", static_cast<int32>(player1->getClass()));
+                entry.Set("player2Class", static_cast<int32>(player2->getClass()));
+                entry.Set("duration", static_cast<int32>(
+                    now > duel.startTime ? now - duel.startTime : 0));
+                entry.Set("spectators", static_cast<int32>(
+                    watched != watchers.end() ? watched->second : 0));
+                out.Push(std::move(entry));
+            }
+        }
+
+        bool StartById(Player* player, uint32 id, std::string& error) override
+        {
+            if (!id)
+            {
+                error = "Pick a duel to watch.";
+                return false;
+            }
+
+            std::string opponentName;
+            uint32 phaseId = 0;
+            return DCPhasedDuels::StartSpectating(player, id, ObjectGuid::Empty,
+                error, opponentName, phaseId);
         }
     };
 

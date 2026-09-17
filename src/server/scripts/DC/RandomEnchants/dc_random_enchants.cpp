@@ -14,6 +14,7 @@
 #include "DBCStores.h"
 #include "Log.h"
 #include "Random.h"
+#include "SpellMgr.h"
 
 #include <algorithm>
 #include <array>
@@ -202,7 +203,31 @@ EnchantPools sPools;
 
 bool IsSpellEnchantStoreReady()
 {
-    return sSpellItemEnchantmentStore.GetNumRows() > 0;
+    return sSpellItemEnchantmentStore.GetNumRows() > 0 && sSpellMgr->GetSpellInfoStoreSize() > 0;
+}
+
+// Returns the first spell a proc/equip/use enchant effect references that the
+// server does not know, or 0. Such an enchant grants nothing and makes the
+// core log "unknown spell" on every equip or melee hit (e.g. the pre-3.0
+// weapon-skill enchants and "Feedback 1-5").
+uint32 GetMissingEnchantSpell(SpellItemEnchantmentEntry const* enchant)
+{
+    for (uint8 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+    {
+        switch (enchant->type[i])
+        {
+            case ITEM_ENCHANTMENT_TYPE_COMBAT_SPELL:
+            case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
+            case ITEM_ENCHANTMENT_TYPE_USE_SPELL:
+                if (enchant->spellid[i] && !sSpellMgr->GetSpellInfo(enchant->spellid[i]))
+                    return enchant->spellid[i];
+                break;
+            default:
+                break;
+        }
+    }
+
+    return 0;
 }
 
 void AppendCandidates(std::vector<uint32>& out, std::vector<uint32> const& in)
@@ -325,8 +350,21 @@ void LoadEnchantPools()
             continue;
         }
 
-        if (!sSpellItemEnchantmentStore.LookupEntry(enchantId))
+        SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(enchantId);
+        if (!enchant)
         {
+            ++sPools.skippedRows;
+            continue;
+        }
+
+        if (uint32 const missingSpell = GetMissingEnchantSpell(enchant))
+        {
+            LOG_WARN(
+                "scripts.dc",
+                "DC-RandomEnchants: skipping enchant {} (tier {}): it casts spell {}, which does not exist",
+                enchantId,
+                tier,
+                missingSpell);
             ++sPools.skippedRows;
             continue;
         }

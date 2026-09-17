@@ -22,6 +22,7 @@
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DC/Seasons/SeasonalRewardSystem.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 #include <algorithm>
 #include <limits>
 
@@ -207,6 +208,14 @@ namespace Seasons
         msg.Set("startTime", JsonValue(startTime));
         msg.Set("endTime", JsonValue(endTime));
         msg.Set("daysRemaining", JsonValue(daysRemaining));
+
+        // Relative countdowns so clients don't need a synced wall clock.
+        // weeklyReset uses the same week boundary as Great Vault / Mythic+.
+        uint32 const now = static_cast<uint32>(time(nullptr));
+        uint32 const nextWeekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp() +
+            DarkChaos::Seasons::SECONDS_PER_WEEK;
+        msg.Set("endsIn", JsonValue(endTime > now ? endTime - now : 0u));
+        msg.Set("weeklyReset", JsonValue(nextWeekStart > now ? nextWeekStart - now : 0u));
         msg.Set("tokenId", JsonValue(tokenItemId));
         msg.Set("essenceId", JsonValue(essenceItemId));
         msg.Set("tokenCap", JsonValue(GetWeeklyTokenCap()));

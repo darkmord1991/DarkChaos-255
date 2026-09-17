@@ -954,7 +954,7 @@ void HotspotMgr::RegisterHotspot(Hotspot& h)
 
     // Send WRLD packet
     DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
-    hotspotsArr.Push(DCHotspotJson::SpawnEvent(h));
+    hotspotsArr.Push(DCHotspotJson::SpawnEvent(h, sHotspotsConfig.experienceBonus, GameTime::GetGameTime().count()));
 
     DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
     wmsg.Set("hotspots", hotspotsArr);

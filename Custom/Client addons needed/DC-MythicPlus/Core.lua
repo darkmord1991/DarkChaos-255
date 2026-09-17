@@ -4188,13 +4188,14 @@ if DC then
         end
     end)
     
-    -- SMSG_SPECTATE_LIST (0x47) - Available runs to spectate
+    -- SMSG_SPECTATE_LIST (0x47) - Mythic+ runs ("runs") plus every other
+    -- spectatable session ("sessions": HLBG matches, phased duels)
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SPECTATE_LIST or 0x47, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
             if namespace.GroupFinder then
-                namespace.GroupFinder:PopulateLiveRuns(data.runs or {})
+                namespace.GroupFinder:PopulateLiveRuns(data.runs or {}, data.sessions)
             end
         end
     end)

@@ -459,7 +459,9 @@ local function AddDeathLogEntry(targetGUID, eventType, entry)
         healthMax = UnitHealthMax(unit) or 0
     end
 
-    entry.timestamp = GetTime() - combatStartTime
+    local now = GetTime()
+    entry.time = now  -- absolute, so the recap can show "seconds before death"
+    entry.timestamp = now - combatStartTime
     entry.eventType = eventType  -- "damage", "heal", "buff", "debuff"
     entry.health = health
     entry.healthMax = healthMax

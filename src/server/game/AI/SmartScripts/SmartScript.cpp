@@ -227,13 +227,28 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             {
                 if (IsCreature((target)) && !target->ToCreature()->IsPet()) // Prevented sending text to pets.
                 {
+                    Creature* targetCreature = target->ToCreature();
+
                     if (e.action.talk.useTalkTarget)
                     {
                         talker = me;
-                        talkTarget = target->ToCreature();
+                        talkTarget = targetCreature;
+                    }
+                    // A guardian, minion, companion or charmed unit of a player (Mirror Image, Army of the Dead,
+                    // a critter) that shows up as the invoker or victim has no lines of its own, so the lookup on it
+                    // could only fail. Treat it like its player: the script owner speaks, addressed to that player.
+                    else if (me && targetCreature != me && targetCreature->GetCharmerOrOwnerGUID().IsPlayer() &&
+                        !sCreatureTextMgr->TextExist(targetCreature->GetEntry(), uint8(e.action.talk.textGroupID)))
+                    {
+                        talker = me;
+
+                        if (Player* controller = targetCreature->GetCharmerOrOwnerPlayerOrPlayerItself())
+                            talkTarget = controller;
+                        else
+                            talkTarget = targetCreature;
                     }
                     else
-                        talker = target->ToCreature();
+                        talker = targetCreature;
                     break;
                 }
                 else if (IsPlayer((target)))

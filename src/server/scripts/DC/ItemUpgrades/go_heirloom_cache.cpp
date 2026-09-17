@@ -22,6 +22,7 @@
 #include "DC/AddonExtension/dc_addon_collection.h"
 
 #include <ctime>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 
@@ -30,9 +31,18 @@ namespace
     // Resolve the single heirloom item a cache grants, from its chest lootId (Data1).
     // Cached per lootId after the first lookup so CanBeSeen never queries the DB on a
     // visibility tick (only once per distinct cache type, ever).
+    //
+    // Both caches in this file are reached from CanBeSeen, i.e. from every map
+    // thread's visibility pass at once, so they are locked. An unlocked
+    // std::unordered_map written from two threads corrupts its bucket chain and
+    // the next find() on it never returns: that was the 2026-09-14 15:03 freeze
+    // dump (world thread parked in MapUpdater::wait, one worker spinning in
+    // std::_Hash inside AlreadyHasHeirloom). The DB query itself runs outside
+    // the lock so a first lookup does not stall the other workers.
     uint32 ResolveCacheHeirloomItem(GameObject* go)
     {
         static std::unordered_map<uint32, uint32> s_lootItemCache;
+        static std::mutex s_lootItemCacheLock;
 
         if (!go)
             return 0;
@@ -41,9 +51,12 @@ namespace
         if (!lootId)
             return 0;
 
-        auto const cached = s_lootItemCache.find(lootId);
-        if (cached != s_lootItemCache.end())
-            return cached->second;
+        {
+            std::lock_guard<std::mutex> guard(s_lootItemCacheLock);
+            auto const cached = s_lootItemCache.find(lootId);
+            if (cached != s_lootItemCache.end())
+                return cached->second;
+        }
 
         uint32 itemId = 0;
         if (QueryResult result = WorldDatabase.Query(
@@ -52,6 +65,7 @@ namespace
             itemId = (*result)[0].Get<uint32>();
         }
 
+        std::lock_guard<std::mutex> guard(s_lootItemCacheLock);
         s_lootItemCache[lootId] = itemId;
         return itemId;
     }
@@ -77,15 +91,21 @@ namespace
             return false;
 
         static std::unordered_map<uint64, std::pair<time_t, bool>> s_ownedCache;
+        static std::mutex s_ownedCacheLock;
         uint64 const key = (static_cast<uint64>(accountId) << 32) | itemId;
         time_t const now = time(nullptr);
 
-        auto const cached = s_ownedCache.find(key);
-        if (cached != s_ownedCache.end() && (now - cached->second.first) < 60)
-            return cached->second.second;
+        {
+            std::lock_guard<std::mutex> guard(s_ownedCacheLock);
+            auto const cached = s_ownedCache.find(key);
+            if (cached != s_ownedCache.end() && (now - cached->second.first) < 60)
+                return cached->second.second;
+        }
 
         bool const owned = DCCollection::HasCollectionItem(
             accountId, DCCollection::CollectionType::HEIRLOOM, itemId);
+
+        std::lock_guard<std::mutex> guard(s_ownedCacheLock);
         s_ownedCache[key] = { now, owned };
         return owned;
     }

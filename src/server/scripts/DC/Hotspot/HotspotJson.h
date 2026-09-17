@@ -27,7 +27,7 @@ namespace DCHotspotJson
     DCAddon::JsonValue Verbose(Hotspot const& hotspot, uint32 xpBonus, time_t now);
 
     // WORLD module push entries (SMSG_UPDATE "hotspots" array).
-    DCAddon::JsonValue SpawnEvent(Hotspot const& hotspot);
+    DCAddon::JsonValue SpawnEvent(Hotspot const& hotspot, uint32 xpBonus, time_t now);
     DCAddon::JsonValue ExpireEvent(uint32 hotspotId);
 }
 

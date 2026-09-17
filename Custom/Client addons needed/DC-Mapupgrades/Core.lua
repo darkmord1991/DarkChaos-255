@@ -1920,28 +1920,19 @@ function Core:RegisterProtocolHandlers()
     -- =================================================================
     -- WRLD: World content (bosses/hotspots/events)
     -- =================================================================
-    if DC.RegisterJSONHandler then
-        DC:RegisterJSONHandler("WRLD", 0x10, function(data)
-            Core:HandleWorldContent(data)
-        end)
-        DC:RegisterJSONHandler("WRLD", 0x11, function(data)
-            Core:HandleWorldUpdate(data)
-        end)
-        DC:RegisterJSONHandler("WRLD", 0x12, function(data)
-            Core:HandleWorldResolveResult(data)
-        end)
-    else
-        -- Fallback: JSON-by-default still tends to call RegisterHandler with a decoded table.
-        DC:RegisterHandler("WRLD", 0x10, function(data)
-            Core:HandleWorldContent(data)
-        end)
-        DC:RegisterHandler("WRLD", 0x11, function(data)
-            Core:HandleWorldUpdate(data)
-        end)
-        DC:RegisterHandler("WRLD", 0x12, function(data)
-            Core:HandleWorldResolveResult(data)
-        end)
-    end
+    -- Plain handlers on purpose: the dispatcher skips every plain handler for a
+    -- key once any JSON handler exists for it, which silently starved
+    -- DC-MythicPlus WorldTab (plain WRLD 0x10). Plain handlers still receive the
+    -- decoded JSON table.
+    DC:RegisterHandler("WRLD", 0x10, function(data)
+        Core:HandleWorldContent(data)
+    end)
+    DC:RegisterHandler("WRLD", 0x11, function(data)
+        Core:HandleWorldUpdate(data)
+    end)
+    DC:RegisterHandler("WRLD", 0x12, function(data)
+        Core:HandleWorldResolveResult(data)
+    end)
     
     DebugPrint("DCAddonProtocol handlers registered")
 end

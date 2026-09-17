@@ -164,7 +164,10 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
         }
     }
 
-    // pussywizard:
+    // pussywizard: spectators stay silent in say, yell, emote, afk and dnd.
+    // DarkChaos: enforced after command parsing below rather than returning here, so a spectator can still type
+    // commands (".spectate leave", ".hlbg spectate leave") into the default chat.
+    bool mutedSpectator = false;
     switch (type)
     {
         case CHAT_MSG_SAY:
@@ -173,11 +176,8 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
         case CHAT_MSG_TEXT_EMOTE:
         case CHAT_MSG_AFK:
         case CHAT_MSG_DND:
-        if (sender->IsSpectator())
-        {
-            recvData.rfinish();
-            return;
-        }
+            mutedSpectator = sender->IsSpectator();
+            break;
     }
 
     if (sender->HasAura(1852) && type != CHAT_MSG_WHISPER)
@@ -339,6 +339,9 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
             }
         }
     }
+
+    if (mutedSpectator)
+        return;
 
     // do message validity checks
     if (lang != LANG_ADDON)

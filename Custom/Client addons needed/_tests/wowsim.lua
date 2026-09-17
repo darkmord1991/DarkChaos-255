@@ -96,7 +96,8 @@ TextureMethods.__index = TextureMethods
 function TextureMethods:SetAllPoints() end
 function TextureMethods:SetTexture(...) self._tex = {...} end
 function TextureMethods:SetVertexColor(...) self._vc = {...} end
-function TextureMethods:SetPoint() end
+-- Geometry calls record their arguments so a layout test can assert on them.
+function TextureMethods:SetPoint(...) self._point = {...} end
 function TextureMethods:SetText(t) self._text = t end
 function TextureMethods:SetTextColor() end
 -- Textures track visibility like frames do: a texture is shown unless it was
@@ -114,14 +115,13 @@ function TextureMethods:SetWordWrap() end
 function TextureMethods:SetNonSpaceWrap() end
 function TextureMethods:GetStringWidth() return 100 end
 function TextureMethods:SetAlpha() end
-function TextureMethods:SetVertexColor() end
 function TextureMethods:ClearAllPoints() end
 function TextureMethods:SetBlendMode() end
 function TextureMethods:SetGradientAlpha() end
-function TextureMethods:SetSize() end
+function TextureMethods:SetSize(w, h) self._w, self._h = w, h end
 function TextureMethods:SetWidth() end
 function TextureMethods:SetHeight() end
-function TextureMethods:SetTexCoord() end
+function TextureMethods:SetTexCoord(...) self._texcoord = {...} end
 function TextureMethods:SetDrawLayer() end
 function TextureMethods:GetText() return self._text end
 

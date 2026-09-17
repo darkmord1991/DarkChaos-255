@@ -30,6 +30,7 @@
 #include "DatabaseEnv.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
+#include "DC/Spectator/dc_spectator_core.h"
 #include <mutex>
 #include <unordered_map>
 
@@ -345,6 +346,13 @@ public:
             return;
         }
 
+        // A spectator only watches someone else's run. The spectator core holds
+        // the flag from the moment the teleport in was accepted, so it is
+        // already set when this hook fires on arrival (IsSpectator itself is
+        // only re-applied a moment later, on the zone update).
+        if (DCSpectator::IsHoldingSpectatorFlag(player) || player->IsSpectator())
+            return;
+
         // Check if follower already exists
         if (GetQuestMasterFollower(player))
             return;
@@ -469,6 +477,12 @@ public:
         if (player->IsInCombat())
         {
             handler->PSendSysMessage("You cannot summon the Quest Master while in combat!");
+            return true;
+        }
+
+        if (DCSpectator::IsHoldingSpectatorFlag(player) || player->IsSpectator())
+        {
+            handler->PSendSysMessage("You cannot summon the Quest Master while spectating.");
             return true;
         }
 

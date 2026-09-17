@@ -407,6 +407,16 @@ inline QuestMappingAuditResult AuditQuestMappings(bool logDetails = true)
         do
         {
             uint32 mapId = (*missingDungeons)[0].Get<uint32>();
+
+            // Known to have no stock quest content (see IsQuestlessDungeonMap) -- expected, not a gap.
+            if (IsQuestlessDungeonMap(mapId))
+            {
+                if (logDetails)
+                    LOG_DEBUG("scripts.dc", "DungeonQuest Audit: Dungeon map_id={} has no quest content to map "
+                        "(follower offers daily/weekly quests only)", mapId);
+                continue;
+            }
+
             ++result.missingDungeons;
             if (logDetails)
                 LOG_WARN("scripts.dc", "DungeonQuest Audit: Dungeon map_id={} has no quest mappings", mapId);

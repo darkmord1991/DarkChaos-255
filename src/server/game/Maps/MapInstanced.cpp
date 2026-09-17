@@ -137,6 +137,14 @@ Map* MapInstanced::CreateInstanceForPlayer(const uint32 mapId, Player* player)
     }
     else
     {
+        // DarkChaos: a Mythic+ spectator goes into the run's instance, which their
+        // own binds know nothing about (and a lockout on another copy would win).
+        // The spectator system marks that instance with the pending spectator id
+        // before the teleport; the worldport ack clears it again.
+        for (auto const& [instanceId, instance] : m_InstancedMaps)
+            if (instance && player->HasPendingSpectatorForBG(instanceId))
+                return instance;
+
         Difficulty realdiff = player->GetDifficulty(IsRaid());
         uint32 destInstId = sInstanceSaveMgr->PlayerGetDestinationInstanceId(player, GetId(), realdiff);
 

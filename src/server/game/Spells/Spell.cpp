@@ -1707,6 +1707,18 @@ void Spell::SelectImplicitCasterDestTargets(SpellEffIndex effIndex, SpellImplici
                         // we have correct destz now
                     }
 
+                    // No height was found for the end point: terrain rising above the height search start
+                    // (a steep slope or a cliff face), a drop deeper than the search distance, or a hole in
+                    // the height data. The sentinel would reach NearTeleportTo as Z -200000, which TeleportTo
+                    // rejects with an error, and a guessed Z could put the caster inside the terrain, so the
+                    // blink keeps the caster where it is - the outcome the rejected teleport had as well.
+                    if (destz <= INVALID_HEIGHT)
+                    {
+                        destx = startx;
+                        desty = starty;
+                        destz = startz;
+                    }
+
                     lastpos.Relocate(destx, desty, destz, pos.GetOrientation());
                     dest = SpellDestination(lastpos);
                 }

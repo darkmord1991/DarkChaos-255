@@ -41,6 +41,18 @@ function HLBG.ShouldShowHUD()
         return true
     end
 
+    -- Never during a loading screen: the server adds us to the battleground on
+    -- the worldport ack, so its first status lands before the map has loaded.
+    if HLBG._inTransit then
+        return false
+    end
+
+    -- A spectator never joins the battleground, so neither the map presence
+    -- signal (until the first snapshot) nor GetBattlefieldStatus covers them.
+    if HLBG._spectating then
+        return true
+    end
+
     local inZone = IsInHLBGZone()
     local inBattleground = false
 

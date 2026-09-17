@@ -96,18 +96,153 @@ local function ResolveRunsPayload(runs)
     return runs
 end
 
+-- =====================================================================
+-- Unified live list (Mythic+ runs, Hinterland BG matches, phased duels)
+-- =====================================================================
+
+GF.LIVE_SYSTEM_LABELS = { mplus = "Mythic+", hlbg = "Hinterland BG", duel = "Duel" }
+
+-- A dungeon run without a keystone (the bots' Normal/Heroic runs) arrives in
+-- the Mythic+ list with key level 0 and its instance difficulty; it is watched
+-- through the same run-id start request.
+GF.LIVE_DIFFICULTY_LABELS = { [0] = "Normal", [1] = "Heroic", [2] = "Mythic" }
+
+function GF.IsKeylessLiveEntry(entry)
+    if type(entry) ~= "table" or (entry.system or "mplus") ~= "mplus" or entry.difficulty == nil then
+        return false
+    end
+    return math.floor(tonumber(entry.level or entry.keystoneLevel or entry.keyLevel) or 0) == 0
+end
+
+local function DifficultyLabel(difficulty)
+    return GF.LIVE_DIFFICULTY_LABELS[math.floor(tonumber(difficulty) or 0)] or "Normal"
+end
+
+local function FormatClock(seconds)
+    seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
+local function Percent(value, maximum)
+    value, maximum = tonumber(value) or 0, tonumber(maximum) or 0
+    if maximum <= 0 then
+        return 0
+    end
+    return math.floor(value * 100 / maximum + 0.5)
+end
+
+-- One list from the server's Mythic+ "runs" and the other systems' "sessions".
+-- Every entry carries `system` and `id`, the pair StartSpectateSession takes.
+function GF:MergeLiveEntries(runs, sessions)
+    local merged = {}
+
+    for _, run in ipairs(ResolveRunsPayload(runs)) do
+        if type(run) == "table" then
+            run.system = run.system or "mplus"
+            run.id = run.id or run.runId or run.instanceId
+            table.insert(merged, run)
+        end
+    end
+
+    for _, session in ipairs(ResolveRunsPayload(sessions)) do
+        if type(session) == "table" and session.system then
+            table.insert(merged, session)
+        end
+    end
+
+    return merged
+end
+
+-- Entries of one system ("mplus", "hlbg", "duel"); "all" or nil keeps every entry.
+function GF:FilterLiveEntries(entries, filter)
+    if type(entries) ~= "table" then
+        return {}
+    end
+    if not filter or filter == "all" then
+        return entries
+    end
+
+    local filtered = {}
+    for _, entry in ipairs(entries) do
+        if (entry.system or "mplus") == filter then
+            table.insert(filtered, entry)
+        end
+    end
+    return filtered
+end
+
+-- Display text for a live-list entry: title, detail line, right-hand meta and
+-- watcher count.
+function GF.DescribeLiveEntry(entry)
+    entry = type(entry) == "table" and entry or {}
+    local watchers = math.floor(tonumber(entry.spectators) or 0)
+    local watching = watchers > 0 and string.format("%d watching", watchers) or ""
+
+    if entry.system == "hlbg" then
+        local status = entry.status == "warmup" and "Warmup"
+            or (FormatClock(entry.timeRemaining) .. " left")
+        return entry.name or "Hinterland Battleground",
+            string.format("|cff3fa9ffAlliance %d|r - |cffff4040Horde %d|r",
+                math.floor(tonumber(entry.allianceResources) or 0),
+                math.floor(tonumber(entry.hordeResources) or 0)),
+            status, watching
+    end
+
+    if entry.system == "duel" then
+        return "Duel",
+            entry.name or string.format("%s vs %s", entry.player1Name or "?", entry.player2Name or "?"),
+            FormatClock(entry.duration), watching
+    end
+
+    local level = math.floor(tonumber(entry.level or entry.keystoneLevel or entry.keyLevel) or 0)
+    local timer = tostring(entry.timer or entry.elapsed or "")
+    local meta
+    if level > 0 then
+        meta = string.format("+%d  %s", level, timer)
+    elseif GF.IsKeylessLiveEntry(entry) then
+        -- No countdown: the timer is the time since the run started.
+        meta = string.format("%s  %s", DifficultyLabel(entry.difficulty), timer)
+    else
+        meta = timer ~= "" and timer or "Spectatable"
+    end
+    return entry.dungeon or entry.dungeonName or entry.name or "Live Run",
+        entry.leader or entry.leaderName or "", meta, watching
+end
+
 local function NormalizeRunEntry(run)
     if type(run) ~= "table" then
         return nil
+    end
+
+    local system = run.system or "mplus"
+    if system ~= "mplus" then
+        local title, detail, meta = GF.DescribeLiveEntry(run)
+        local id = tonumber(run.id) or 0
+        return {
+            system = system,
+            runId = id,
+            dungeon = title,
+            level = 0,
+            timer = meta,
+            timerRemaining = meta,
+            progress = detail,
+            deaths = 0,
+            leader = detail,
+            privacy = SPECTATOR_PRIVACY.PUBLIC,
+            spectators = tonumber(run.spectators) or 0,
+            maxSpectators = 0,
+        }
     end
 
     local runId = tonumber(run.runId or run.run_id or run.id)
     local keyLevel = tonumber(run.keyLevel or run.level) or 0
 
     return {
+        system = system,
         runId = runId,
         dungeon = run.dungeon or run.dungeonName or (run.mapId and ("Map " .. tostring(run.mapId))) or "Unknown",
         level = keyLevel,
+        difficulty = run.difficulty ~= nil and tonumber(run.difficulty) or nil,
         timer = tostring(run.timer or run.elapsed or "--:--"),
         timerRemaining = tostring(run.timerRemaining or run.remaining or "--:--"),
         progress = tostring(run.progress or run.enemyProgress or "0%"),
@@ -533,16 +668,22 @@ function GF:CreateLiveRunsTab()
     self:PopulateLiveRuns(mockLiveRuns)
 end
 
-function GF:PopulateLiveRuns(runs)
+function GF:PopulateLiveRuns(runs, sessions)
+    runs = self:MergeLiveEntries(runs, sessions)
+
+    -- The Group Finder's Spectate tab renders from this cache.
+    self.liveEntries = runs
+    if self.RefreshSpectatePanel then
+        self:RefreshSpectatePanel()
+    end
+
     if self.compactMode and self.CompactPopulateLiveRuns then
         self:CompactPopulateLiveRuns(runs)
-        if not self.LiveRunsTabContent then return end
     end
+    if not self.LiveRunsTabContent then return end
 
     local scrollChild = self.LiveRunsTabContent.scrollChild
     if not scrollChild then return end
-
-    runs = ResolveRunsPayload(runs)
 
     -- Clear existing (pooled rows: hide, don't destroy)
     self.liveRunsRowPool = self.liveRunsRowPool or {}
@@ -619,24 +760,36 @@ function GF:PopulateLiveRuns(runs)
         end
         row.bg:SetColorTexture(unpack(timerColor))
 
-        row.dungeonText:SetText(string.format("|cff32c4ff+%d|r %s", run.level, run.dungeon))
+        if run.system ~= "mplus" then
+            row.dungeonText:SetText(string.format("|cff32c4ff%s|r  %s",
+                GF.LIVE_SYSTEM_LABELS[run.system] or run.system, run.dungeon))
+            row.timerText:SetText(run.timer)
+            row.progressText:SetText(run.progress)
+            row.leaderText:SetText("")
+        else
+            row.dungeonText:SetText(string.format("|cff32c4ff+%d|r %s", run.level, run.dungeon))
 
-        row.timerText:SetText(string.format("Timer: %s  |  Remaining: |cff%s%s|r",
-            run.timer,
-            tostring(run.timerRemaining):match("^%-") and "ff4444" or "44ff44",
-            run.timerRemaining))
+            row.timerText:SetText(string.format("Timer: %s  |  Remaining: |cff%s%s|r",
+                run.timer,
+                tostring(run.timerRemaining):match("^%-") and "ff4444" or "44ff44",
+                run.timerRemaining))
 
-        row.progressText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Deaths: |cff%s%d|r",
-            run.progress,
-            run.deaths > 0 and "ffaa44" or "44ff44",
-            run.deaths))
+            row.progressText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Deaths: |cff%s%d|r",
+                run.progress,
+                run.deaths > 0 and "ffaa44" or "44ff44",
+                run.deaths))
 
-        local privacyStr = "Public"
-        if run.privacy == SPECTATOR_PRIVACY.FRIENDS then privacyStr = "|cff44aaff(Friends Only)|r" end
-        if run.privacy == SPECTATOR_PRIVACY.GUILD then privacyStr = "|cff44ff44(Guild Only)|r" end
-        row.leaderText:SetText(string.format("|cff888888Leader: %s  %s|r", run.leader, privacyStr))
+            local privacyStr = "Public"
+            if run.privacy == SPECTATOR_PRIVACY.FRIENDS then privacyStr = "|cff44aaff(Friends Only)|r" end
+            if run.privacy == SPECTATOR_PRIVACY.GUILD then privacyStr = "|cff44ff44(Guild Only)|r" end
+            row.leaderText:SetText(string.format("|cff888888Leader: %s  %s|r", run.leader, privacyStr))
+        end
 
-        row.specText:SetText(string.format("|cffaaaaaa%d/%d|r watchers", run.spectators, run.maxSpectators))
+        if run.maxSpectators > 0 then
+            row.specText:SetText(string.format("|cffaaaaaa%d/%d|r watchers", run.spectators, run.maxSpectators))
+        else
+            row.specText:SetText(string.format("|cffaaaaaa%d|r watching", run.spectators))
+        end
 
         if run.maxSpectators > 0 and run.spectators >= run.maxSpectators then
             row.watchBtn:SetText("Full")
@@ -647,8 +800,9 @@ function GF:PopulateLiveRuns(runs)
             row.watchBtn:Enable()
             row.watchBtn.runId = run.runId
             row.watchBtn.leader = run.leader
+            row.watchBtn.system = run.system
             row.watchBtn:SetScript("OnClick", function(self)
-                GF:RequestSpectate(self.runId, self.leader)
+                GF:RequestSpectate(self.runId, self.leader, self.system)
             end)
         end
 
@@ -676,8 +830,29 @@ function GF:RefreshLiveRuns()
     DC:Request("GRPF", gfOps.CMSG_GET_SPECTATE_LIST or 0x27, {})
 end
 
-function GF:RequestSpectate(runId, leader)
+function GF:RequestSpectate(runId, leader, system)
     runId = tonumber(runId) or 0
+    system = system or "mplus"
+
+    -- HLBG matches and duels go through the unified spectator start; an HLBG
+    -- id of 0 lets the server pick the running match.
+    if system ~= "mplus" then
+        GF.Print(string.format("Requesting to watch: %s...", GF.LIVE_SYSTEM_LABELS[system] or system))
+        local DC = rawget(_G, "DCAddonProtocol")
+        if not DC then
+            return
+        end
+
+        if DC.GroupFinder and type(DC.GroupFinder.StartSpectateSession) == "function" then
+            DC.GroupFinder.StartSpectateSession(system, runId)
+            return
+        end
+
+        local gfOps = DC.GroupFinderOpcodes or {}
+        DC:Request("GRPF", gfOps.CMSG_START_SPECTATE or 0x25, { system = system, id = runId, runId = runId })
+        return
+    end
+
     if runId <= 0 then
         GF.Print("|cffff4444Error:|r Invalid run id for spectate request.")
         return
@@ -735,6 +910,7 @@ function GF:CreateSpectatorHUD()
     local badge = hud:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     badge:SetPoint("TOP", 0, -5)
     badge:SetText("|cffff9900[SPECTATING]|r")
+    hud.badge = badge
     
     -- Run info
     hud.dungeonText = hud:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -762,65 +938,133 @@ function GF:CreateSpectatorHUD()
     return hud
 end
 
+-- Fill the spectator bar from a live snapshot. The payload shape depends on the
+-- system; a snapshot without "system" comes from a pre-unification server and
+-- is a Mythic+ run.
+function GF:ApplySpectatorHUDData(hud, data)
+    local system = data.system or self._spectatorSystem or "mplus"
+    hud.badge:SetText(string.format("|cffff9900[SPECTATING]|r %s", GF.LIVE_SYSTEM_LABELS[system] or ""))
+    -- What the session strip calls the session when the system label is wrong
+    -- for it (a run without a keystone is not "Mythic+").
+    self._spectatorLabel = nil
+
+    if system == "hlbg" then
+        hud.dungeonText:SetText("Hinterland Battleground")
+        -- HLBG status 2 = warmup (see HLBG_Handlers.lua's BattleState mapping).
+        if math.floor(tonumber(data.status) or 0) == 2 then
+            hud.timerText:SetText("Warmup")
+        else
+            hud.timerText:SetText("Time left: " .. FormatClock(data.timeRemaining))
+        end
+        hud.progressText:SetText(string.format("|cff3fa9ffAlliance %d|r (%d)  -  |cffff4040Horde %d|r (%d)",
+            math.floor(tonumber(data.A) or 0), math.floor(tonumber(data.APC) or 0),
+            math.floor(tonumber(data.H) or 0), math.floor(tonumber(data.HPC) or 0)))
+        return
+    end
+
+    if system == "duel" then
+        hud.dungeonText:SetText(string.format("%s vs %s", data.player1Name or "?", data.player2Name or "?"))
+        hud.timerText:SetText("Duration: " .. FormatClock(data.duration))
+        hud.progressText:SetText(string.format("Health: %d%%  -  %d%%",
+            Percent(data.player1Hp, data.player1MaxHp), Percent(data.player2Hp, data.player2MaxHp)))
+        return
+    end
+
+    local normalized = NormalizeRunEntry(data) or {}
+    if GF.IsKeylessLiveEntry(normalized) then
+        self._spectatorLabel = "Dungeon"
+        hud.badge:SetText("|cffff9900[SPECTATING]|r Dungeon")
+        hud.dungeonText:SetText(string.format("%s |cff32c4ff%s|r", normalized.dungeon or "Unknown",
+            DifficultyLabel(normalized.difficulty)))
+        hud.timerText:SetText("Time: " .. (normalized.timer or "00:00"))
+        hud.progressText:SetText("Progress: " .. (normalized.progress or "0%"))
+        return
+    end
+
+    hud.dungeonText:SetText(string.format("%s |cff32c4ff+%d|r", normalized.dungeon or "Unknown", normalized.level or 0))
+    hud.timerText:SetText("Timer: " .. (normalized.timer or "00:00"))
+    hud.progressText:SetText(string.format("Progress: %s  |  Deaths: %d",
+        normalized.progress or "0%", normalized.deaths or 0))
+end
+
 function GF:ShowSpectatorHUD(runData)
     self._spectatorSessionActive = true
 
-    local normalized = NormalizeRunEntry(runData) or runData or {}
     local hud = self:CreateSpectatorHUD()
-    
-    if normalized then
-        hud.dungeonText:SetText(string.format("%s |cff32c4ff+%d|r", normalized.dungeon or "Unknown", normalized.level or 0))
-        hud.timerText:SetText("Timer: " .. (normalized.timer or "00:00"))
-        hud.progressText:SetText(string.format("Progress: %s  |  Deaths: %d", normalized.progress or "0%", normalized.deaths or 0))
+    if type(runData) == "table" then
+        self:ApplySpectatorHUDData(hud, runData)
     end
-    
+
     hud:Show()
 end
 
 function GF:UpdateSpectatorHUD(runData)
-    local normalized = NormalizeRunEntry(runData)
-    if not normalized then
+    if type(runData) ~= "table" then
         return
     end
 
-    if not self.spectatorHUD or not self.spectatorHUD:IsShown() then
-        self:ShowSpectatorHUD(normalized)
-        return
+    self:ShowSpectatorHUD(runData)
+    if self.UpdateSpectateSession then
+        self:UpdateSpectateSession()
     end
-
-    self._spectatorSessionActive = true
-
-    if normalized.dungeon then
-        self.spectatorHUD.dungeonText:SetText(string.format("%s |cff32c4ff+%d|r", normalized.dungeon or "Unknown", normalized.level or 0))
-    end
-    if normalized.timer then
-        self.spectatorHUD.timerText:SetText("Timer: " .. normalized.timer)
-    end
-    if normalized.progress then
-        self.spectatorHUD.progressText:SetText(string.format("Progress: %s  |  Deaths: %d", normalized.progress, normalized.deaths or 0))
+    -- Member positions (UI/SpectatorMap.lua, loaded after this file).
+    if self.UpdateSpectatorMap then
+        self:UpdateSpectatorMap(runData)
     end
 end
 
 function GF:BeginSpectateSession(data)
+    data = type(data) == "table" and data or {}
     self._spectatorSessionActive = true
+    self._spectatorSystem = data.system or "mplus"
+    self._spectatorSessionId = tonumber(data.id or data.runId)
+
+    -- Show the bar straight away (with its Leave button); the first snapshot
+    -- fills it in.
+    local hud = self:CreateSpectatorHUD()
+    hud.badge:SetText(string.format("|cffff9900[SPECTATING]|r %s",
+        GF.LIVE_SYSTEM_LABELS[self._spectatorSystem] or ""))
+    if data.dungeon or data.dungeonName then
+        self:ApplySpectatorHUDData(hud, data)
+    else
+        hud.dungeonText:SetText(GF.LIVE_SYSTEM_LABELS[self._spectatorSystem] or "Spectating")
+        hud.timerText:SetText("Joining...")
+        hud.progressText:SetText("")
+    end
+    hud:Show()
 
     if ShouldUseNativeSpectatorBridge() then
         EnsureNativeSpectatorPollFrame()
         lastNativeSpectatorRevision = 0
         pcall(RequestNativeSpectatorLiveSnapshot, "spectate-start")
-        return
     end
 
-    if type(data) == "table" and (data.dungeon or data.dungeonName) then
-        self:ShowSpectatorHUD(data)
+    if self.UpdateHinterlandPanel then
+        self:UpdateHinterlandPanel()
+    end
+    if self.RefreshSpectatePanel then
+        self:RefreshSpectatePanel()
     end
 end
 
 function GF:EndSpectateSession()
     self._spectatorSessionActive = false
+    self._spectatorSystem = nil
+    self._spectatorSessionId = nil
+    self._spectatorLabel = nil
 
     if self.spectatorHUD then
         self.spectatorHUD:Hide()
+    end
+    if self.HideSpectatorMap then
+        self:HideSpectatorMap()
+    end
+
+    if self.UpdateHinterlandPanel then
+        self:UpdateHinterlandPanel()
+    end
+    if self.RefreshSpectatePanel then
+        self:RefreshSpectatePanel()
     end
 end
 

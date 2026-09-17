@@ -58,6 +58,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include <mutex>
 #include <cstdlib>
 #include <array>
+#include <memory>
 #include <atomic>
 #include <limits>
 
@@ -2240,28 +2241,26 @@ namespace DCCollection
         PetPrewarmedGuids().erase(guidLow);
     }
 
-    void PreWarmPetCreatureCache(Player* player)
+    // The creatures to pre-warm are a pure function of dc_pet_definitions and
+    // the spell/creature stores, so resolve the list once. The old code re-ran
+    // the full-table query plus the per-row spell resolution synchronously on
+    // the world thread for every session (inside the COLL definitions/collection
+    // handlers). Same rows, same order, same 400 cap as before.
+    std::vector<uint32> const& GetPetPrewarmCreatureIds()
     {
-        if (!player || !player->GetSession())
-            return;
-        if (!sConfigMgr->GetOption<bool>(Config::PET_PREWARM_CREATURE_CACHE, false))
-            return;
-        if (!WorldTableExists("dc_pet_definitions"))
-            return;
+        static std::vector<uint32> s_creatureIds;
+        static bool s_loaded = false;
 
-        // Fire at most once per client session (see PetPrewarmedGuids above).
-        uint32 const guidLow = player->GetGUID().GetCounter();
-        {
-            std::lock_guard<std::mutex> lock(PetPrewarmMutex());
-            if (!PetPrewarmedGuids().insert(guidLow).second)
-                return;
-        }
+        if (s_loaded || !WorldTableExists("dc_pet_definitions"))
+            return s_creatureIds;
+
+        s_loaded = true;
 
         std::string entryCol = WorldColumnExists("dc_pet_definitions", "pet_entry") ? "pet_entry" : "";
         if (entryCol.empty() && WorldColumnExists("dc_pet_definitions", "item_id"))
             entryCol = "item_id";
         if (entryCol.empty())
-            return;
+            return s_creatureIds;
 
         std::string spellCol;
         if (WorldColumnExists("dc_pet_definitions", "pet_spell_id"))
@@ -2277,9 +2276,8 @@ namespace DCCollection
         std::string const spellSel = spellCol.empty() ? std::string("0") : spellCol;
         QueryResult r = WorldDatabase.Query("SELECT {}, {} FROM dc_pet_definitions", entryCol, spellSel);
         if (!r)
-            return;
+            return s_creatureIds;
 
-        WorldSession* session = player->GetSession();
         std::unordered_set<uint32> sent;
         uint32 const maxSends = 400;
 
@@ -2319,18 +2317,49 @@ namespace DCCollection
             if (!creatureId || sent.count(creatureId))
                 continue;
 
-            if (CreatureTemplate const* ci = sObjectMgr->GetCreatureTemplate(creatureId))
+            if (sObjectMgr->GetCreatureTemplate(creatureId))
             {
-                SendCreatureQueryResponseTo(session, creatureId, ci);
+                s_creatureIds.push_back(creatureId);
                 sent.insert(creatureId);
                 if (sent.size() >= maxSends)
                     break;
             }
         } while (r->NextRow());
 
+        return s_creatureIds;
+    }
+
+    void PreWarmPetCreatureCache(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+        if (!sConfigMgr->GetOption<bool>(Config::PET_PREWARM_CREATURE_CACHE, false))
+            return;
+        if (!WorldTableExists("dc_pet_definitions"))
+            return;
+
+        // Fire at most once per client session (see PetPrewarmedGuids above).
+        uint32 const guidLow = player->GetGUID().GetCounter();
+        {
+            std::lock_guard<std::mutex> lock(PetPrewarmMutex());
+            if (!PetPrewarmedGuids().insert(guidLow).second)
+                return;
+        }
+
+        WorldSession* session = player->GetSession();
+        uint32 sent = 0;
+        for (uint32 creatureId : GetPetPrewarmCreatureIds())
+        {
+            if (CreatureTemplate const* ci = sObjectMgr->GetCreatureTemplate(creatureId))
+            {
+                SendCreatureQueryResponseTo(session, creatureId, ci);
+                ++sent;
+            }
+        }
+
         LOG_DEBUG("module.dc",
             "DC-Collection: pre-warmed {} pet creature(s) into the client cache for {}.",
-            uint32(sent.size()), player->GetName());
+            sent, player->GetName());
     }
 
     // Forward declarations used by early migration helpers.
@@ -3700,42 +3729,65 @@ namespace DCCollection
     // Database Queries
     // =======================================================================
 
+    // Owned entries of one type for an account (dc_collection_items). Empty when
+    // the table has no entry column. Split out so async callers can run it.
+    std::string BuildPlayerCollectionQuery(uint32 accountId, CollectionType type)
+    {
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return std::string();
+
+        std::string const typeFilter =
+            BuildItemsCollectionTypeWhereClause("collection_type", type);
+
+        return Acore::StringFormat(
+            "SELECT {} FROM dc_collection_items "
+            "WHERE account_id = {} AND {} AND unlocked = 1 "
+            "ORDER BY {} ASC",
+            itemsEntryCol, accountId, typeFilter, itemsEntryCol);
+    }
+
+    void AppendPlayerCollectionRows(QueryResult const& result, CollectionType type, std::vector<uint32>& items)
+    {
+        if (!result)
+            return;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 entryId = fields[0].Get<uint32>();
+            if (!entryId)
+                continue;
+
+            if (type == CollectionType::TITLE)
+            {
+                if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
+                    entryId = titleEntry->ID;
+            }
+
+            items.push_back(entryId);
+        } while (result->NextRow());
+    }
+
+    void SortUniqueCollectionItems(std::vector<uint32>& items)
+    {
+        if (items.empty())
+            return;
+
+        std::sort(items.begin(), items.end());
+        items.erase(std::unique(items.begin(), items.end()), items.end());
+    }
+
     // Load player's collection for a specific type
     std::vector<uint32> LoadPlayerCollection(uint32 accountId, CollectionType type)
     {
         std::vector<uint32> items;
 
-        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
+        std::string const sql = BuildPlayerCollectionQuery(accountId, type);
+        if (sql.empty())
             return items;
 
-        std::string const typeFilter =
-            BuildItemsCollectionTypeWhereClause("collection_type", type);
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT {} FROM dc_collection_items "
-            "WHERE account_id = {} AND {} AND unlocked = 1 "
-            "ORDER BY {} ASC",
-            itemsEntryCol, accountId, typeFilter, itemsEntryCol);
-
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                uint32 entryId = fields[0].Get<uint32>();
-                if (!entryId)
-                    continue;
-
-                if (type == CollectionType::TITLE)
-                {
-                    if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
-                        entryId = titleEntry->ID;
-                }
-
-                items.push_back(entryId);
-            } while (result->NextRow());
-        }
+        AppendPlayerCollectionRows(CharacterDatabase.Query(sql), type, items);
 
         if (type == CollectionType::TITLE)
         {
@@ -3751,12 +3803,7 @@ namespace DCCollection
 
         }
 
-        if (!items.empty())
-        {
-            std::sort(items.begin(), items.end());
-            items.erase(std::unique(items.begin(), items.end()), items.end());
-        }
-
+        SortUniqueCollectionItems(items);
         return items;
     }
 
@@ -4383,17 +4430,27 @@ namespace DCCollection
     // Mount/Pet/Heirloom/Title definitions are server-global and do not
     // depend on per-player state. Rebuilding them on every request is
     // expensive (large SQL queries + spell chain scans + correlated
-    // subqueries). Cache the built JsonValue and a monotonically increasing
-    // syncVersion so clients can short-circuit when they already have the
-    // latest copy.
+    // subqueries). Cache an immutable snapshot of the built JsonValue, its
+    // encoded form and a content-hash syncVersion, so clients can
+    // short-circuit when they already have the same catalogue -- including
+    // across TTL rebuilds and server restarts.
     //
     // TTL-based refresh; manual invalidation is exposed so other subsystems
     // can force a rebuild when underlying DBC/world data changes.
     // =======================================================================
+    struct CuratedDefinitionsSnapshot
+    {
+        DCAddon::JsonValue defs;          // object of id -> def (curated only; owned-fallback is per-player)
+        std::string encodedDefs;          // defs.Encode(), reused by every full reply
+        std::unordered_set<uint32> ids;   // numeric keys of defs, for the owned-fallback dedup
+        uint32 syncVersion = 0;           // hash of encodedDefs, never 0
+    };
+
     struct CuratedDefinitionsCache
     {
-        DCAddon::JsonValue defs;     // object of id -> def (curated only; owned-fallback is per-player)
-        uint32 syncVersion = 0;       // 0 == never built
+        // Shared so an async reply keeps the snapshot it started with alive
+        // across a TTL rebuild. nullptr == never built / invalidated.
+        std::shared_ptr<CuratedDefinitionsSnapshot const> snapshot;
         uint32 builtAtMs = 0;
         std::mutex mutex;
     };
@@ -4403,12 +4460,6 @@ namespace DCCollection
         // Indexed by CollectionType (MOUNT=1..ITEM_SET=7). TRANSMOG has its own cache.
         static std::array<CuratedDefinitionsCache, 8> cache;
         return cache;
-    }
-
-    static std::atomic<uint32>& GetCuratedDefinitionsVersionCounter()
-    {
-        static std::atomic<uint32> counter{0};
-        return counter;
     }
 
     static uint32 GetCuratedDefinitionsCacheTtlMs()
@@ -4428,7 +4479,7 @@ namespace DCCollection
             return 0;
         auto& entry = GetCuratedDefinitionsCacheArray()[idx];
         std::lock_guard<std::mutex> lk(entry.mutex);
-        return entry.syncVersion;
+        return entry.snapshot ? entry.snapshot->syncVersion : 0;
     }
 
     // Invalidate cache for a specific type (or all types when ct == 0).
@@ -4440,9 +4491,8 @@ namespace DCCollection
             for (auto& entry : arr)
             {
                 std::lock_guard<std::mutex> lk(entry.mutex);
-                entry.syncVersion = 0;
+                entry.snapshot.reset();
                 entry.builtAtMs = 0;
-                entry.defs = DCAddon::JsonValue();
             }
             return;
         }
@@ -4451,9 +4501,8 @@ namespace DCCollection
             return;
         auto& entry = arr[idx];
         std::lock_guard<std::mutex> lk(entry.mutex);
-        entry.syncVersion = 0;
+        entry.snapshot.reset();
         entry.builtAtMs = 0;
-        entry.defs = DCAddon::JsonValue();
     }
 
     // Client data revisions can be stamped into the world DB by the CDBC
@@ -6871,299 +6920,300 @@ namespace DCCollection
         msg.Send(player);
     }
 
-    void SendDefinitions(Player* player, uint8 type, uint32 offset = 0, uint32 limit = 0)
+    // -----------------------------------------------------------------------
+    // Curated (non-transmog) definitions: build once, cache, send.
+    //
+    // CMSG_GET_DEFINITIONS used to do all of this inline on the world thread
+    // for every request: rebuild (or deep-copy) the curated JsonValue tree,
+    // run a synchronous owned-collection query, copy the tree again into the
+    // message and re-encode 350-580 KB of JSON for mounts/pets. One login
+    // logged "SLOW handler COLL|0x06 took 212/629/336 ms" in a single tick,
+    // and because syncVersion was a per-process counter every restart or TTL
+    // rebuild made every client re-download the full catalogue.
+    //
+    // Now the curated set is built at startup (then at most once per
+    // DCCollection.Definitions.CacheTtlSeconds window), encoded once, and
+    // versioned by a hash of that encoding, so an unchanged catalogue keeps
+    // its syncVersion across rebuilds and restarts and clients that hold it
+    // get the upToDate ACK. The per-player owned-fallback read is async and
+    // the full reply is spliced from the cached JSON; it is only re-encoded
+    // when the owned fallback actually adds rows. The payload is unchanged.
+    // -----------------------------------------------------------------------
+
+    struct MountedModelInfo
     {
-        if (!player || !player->GetSession())
-            return;
+        uint32 displayId = 0;
+        uint32 creatureId = 0;
+    };
 
-        std::string typeName;
-        switch (static_cast<CollectionType>(type))
+    // Walks the learn/trigger chain from a mount spell to its SPELL_AURA_MOUNTED
+    // effect (was the resolveMountedModelInfo lambda inside SendDefinitions).
+    static MountedModelInfo ResolveMountedModelInfo(uint32 rootSpellId)
+    {
+        MountedModelInfo info;
+
+        if (!rootSpellId)
+            return info;
+
+        std::vector<uint32> toVisit;
+        toVisit.push_back(rootSpellId);
+
+        std::unordered_set<uint32> visited;
+        visited.reserve(16);
+
+        while (!toVisit.empty())
         {
-            case CollectionType::MOUNT: typeName = "mounts"; break;
-            case CollectionType::PET: typeName = "pets"; break;
-            case CollectionType::TOY: typeName = "toys"; break;
-            case CollectionType::HEIRLOOM: typeName = "heirlooms"; break;
-            case CollectionType::TITLE: typeName = "titles"; break;
-            case CollectionType::TRANSMOG: typeName = "transmog"; break;
-            default: typeName = "unknown"; break;
+            uint32 spellIdToCheck = toVisit.back();
+            toVisit.pop_back();
+
+            if (!spellIdToCheck || visited.find(spellIdToCheck) != visited.end())
+                continue;
+
+            visited.insert(spellIdToCheck);
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellIdToCheck);
+            if (!spellInfo)
+                continue;
+
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                SpellEffectInfo const& effect = spellInfo->Effects[i];
+
+                if (effect.ApplyAuraName == SPELL_AURA_MOUNTED && effect.MiscValue > 0)
+                {
+                    uint32 value = static_cast<uint32>(effect.MiscValue);
+
+                    // Keep raw mounted value as creature fallback for the addon.
+                    // In custom content this is often a creature entry ID.
+                    info.creatureId = value;
+
+                    // If this maps to a server creature template, derive its display ID.
+                    if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(value))
+                    {
+                        if (CreatureModel const* model = cInfo->GetFirstValidModel())
+                            info.displayId = model->CreatureDisplayID;
+                    }
+
+                    // If it wasn't a creature entry, it may already be a display ID.
+                    if (!info.displayId && sCreatureDisplayInfoStore.LookupEntry(value))
+                        info.displayId = value;
+
+                    return info;
+                }
+
+                if (effect.Effect == SPELL_EFFECT_LEARN_SPELL || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL)
+                {
+                    uint32 chainedSpellId = effect.TriggerSpell;
+                    if (!chainedSpellId && effect.MiscValue > 0)
+                        chainedSpellId = static_cast<uint32>(effect.MiscValue);
+
+                    if (chainedSpellId && visited.find(chainedSpellId) == visited.end())
+                        toVisit.push_back(chainedSpellId);
+                }
+            }
         }
 
-        DCAddon::JsonValue defs;
-        defs.SetObject();
+        return info;
+    }
 
-        if (static_cast<CollectionType>(type) == CollectionType::TRANSMOG)
-        {
-            SendTransmogDefinitions(player, offset, limit, typeName);
+    // Mount speed metadata for client tooltips (DC-QOS TT.AddMountInfo
+    // reads definitions.mounts[sid].groundSpeed/flySpeed/speed): best
+    // mounted-speed aura values from the mount spell. Curated rows may
+    // reference teaching/trigger spells, so walk the learn/trigger chain
+    // (mirrors ResolveMountedModelInfo) to reach the actual mount aura.
+    static void AppendMountSpeeds(CollectionType ct, DCAddon::JsonValue& d, uint32 rootSpellId)
+    {
+        if (ct != CollectionType::MOUNT || !rootSpellId)
             return;
+
+        int32 bestGround = 0;
+        int32 bestFlying = 0;
+
+        std::vector<uint32> toVisit;
+        toVisit.push_back(rootSpellId);
+        std::unordered_set<uint32> visited;
+        visited.reserve(8);
+
+        while (!toVisit.empty())
+        {
+            uint32 spellId = toVisit.back();
+            toVisit.pop_back();
+            if (!spellId || !visited.insert(spellId).second)
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                continue;
+
+            for (SpellEffectInfo const& effect : spellInfo->Effects)
+            {
+                if (effect.Effect == SPELL_EFFECT_LEARN_SPELL
+                    || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL)
+                {
+                    uint32 chained = effect.TriggerSpell;
+                    if (!chained && effect.MiscValue > 0)
+                        chained = static_cast<uint32>(effect.MiscValue);
+                    if (chained)
+                        toVisit.push_back(chained);
+                    continue;
+                }
+
+                if (!effect.IsEffect() || !effect.IsAura())
+                    continue;
+
+                int32 value = effect.CalcValue();
+                if (value < 0)
+                    value = -value;
+
+                switch (effect.ApplyAuraName)
+                {
+                    case SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED:
+                    case SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS:
+                    case SPELL_AURA_MOD_MOUNTED_SPEED_NOT_STACK:
+                        bestGround = std::max(bestGround, value);
+                        break;
+                    case SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED:
+                    case SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS:
+                        bestFlying = std::max(bestFlying, value);
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
 
-        // Non-transmog: try curated per-type tables first; fall back to the generic index; fall back to owned-only.
-        CollectionType ct = static_cast<CollectionType>(type);
+        if (bestGround > 0)
+            d.Set("groundSpeed", static_cast<uint32>(bestGround));
+        if (bestFlying > 0)
+            d.Set("flySpeed", static_cast<uint32>(bestFlying));
 
-        uint32 mountDisplayResolvedViaSpellScan = 0;
-        uint32 mountDisplayMissing = 0;
-        uint32 mountDisplayMissingCurated = 0;
-        uint32 mountDisplayMissingGeneric = 0;
-        uint32 mountDisplayMissingOwned = 0;
-        std::vector<uint32> mountDisplayMissingSamples;
-        mountDisplayMissingSamples.reserve(8);
+        // Single-mode display value (the client shows "X% speed" for
+        // ground-only or flying-only mounts).
+        int32 single = (bestGround > 0) ? bestGround : bestFlying;
+        if (single > 0)
+            d.Set("speed", static_cast<uint32>(single));
+    }
 
-        auto trackMountDisplay = [&](uint32 spellId, uint8 sourceBucket, bool resolvedViaSpellScan, uint32 finalDisplayId)
+    // Mount preview diagnostics gathered while definitions are assembled.
+    struct MountDisplayStats
+    {
+        uint32 resolvedViaSpellScan = 0;
+        uint32 missing = 0;
+        uint32 missingCurated = 0;
+        uint32 missingGeneric = 0;
+        uint32 missingOwned = 0;
+        std::vector<uint32> missingSamples;
+
+        void Track(CollectionType ct, uint32 spellId, uint8 sourceBucket, bool viaSpellScan,
+            uint32 finalDisplayId)
         {
             if (ct != CollectionType::MOUNT)
                 return;
 
-            if (resolvedViaSpellScan)
-                ++mountDisplayResolvedViaSpellScan;
+            if (viaSpellScan)
+                ++resolvedViaSpellScan;
 
             if (finalDisplayId)
                 return;
 
-            ++mountDisplayMissing;
+            ++missing;
             if (sourceBucket == 1)
-                ++mountDisplayMissingCurated;
+                ++missingCurated;
             else if (sourceBucket == 2)
-                ++mountDisplayMissingGeneric;
+                ++missingGeneric;
             else if (sourceBucket == 3)
-                ++mountDisplayMissingOwned;
+                ++missingOwned;
 
-            if (spellId && mountDisplayMissingSamples.size() < 8)
-                mountDisplayMissingSamples.push_back(spellId);
-        };
+            if (spellId && missingSamples.size() < 8)
+                missingSamples.push_back(spellId);
+        }
+    };
 
-        std::unordered_set<uint32> sentIds;
+    // One definition row (was the addDef lambda). Shared by the curated build
+    // and the per-player owned fallback.
+    static void AddDefinition(CollectionType ct, DCAddon::JsonValue& defs, std::unordered_set<uint32>& sentIds,
+        uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source,
+        int32 extraType, uint32 itemIdForSource, uint32 displayId, uint32 creatureId)
+    {
+        DCAddon::JsonValue d;
+        d.SetObject();
+        if (!name.empty())
+            d.Set("name", name);
+        if (!icon.empty())
+            d.Set("icon", icon);
+        if (rarity)
+            d.Set("rarity", rarity);
+        if (displayId > 0)
+            d.Set("displayId", displayId);
+        if (creatureId > 0)
+            d.Set("creatureId", creatureId);
 
-        // Mount speed metadata for client tooltips (DC-QOS TT.AddMountInfo
-        // reads definitions.mounts[sid].groundSpeed/flySpeed/speed): best
-        // mounted-speed aura values from the mount spell. Curated rows may
-        // reference teaching/trigger spells, so walk the learn/trigger chain
-        // (mirrors resolveMountedModelInfo) to reach the actual mount aura.
-        auto appendMountSpeeds = [&](DCAddon::JsonValue& d, uint32 rootSpellId)
+        if (!source.empty())
         {
-            if (ct != CollectionType::MOUNT || !rootSpellId)
-                return;
-
-            int32 bestGround = 0;
-            int32 bestFlying = 0;
-
-            std::vector<uint32> toVisit;
-            toVisit.push_back(rootSpellId);
-            std::unordered_set<uint32> visited;
-            visited.reserve(8);
-
-            while (!toVisit.empty())
-            {
-                uint32 spellId = toVisit.back();
-                toVisit.pop_back();
-                if (!spellId || !visited.insert(spellId).second)
-                    continue;
-
-                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-                if (!spellInfo)
-                    continue;
-
-                for (SpellEffectInfo const& effect : spellInfo->Effects)
-                {
-                    if (effect.Effect == SPELL_EFFECT_LEARN_SPELL
-                        || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL)
-                    {
-                        uint32 chained = effect.TriggerSpell;
-                        if (!chained && effect.MiscValue > 0)
-                            chained = static_cast<uint32>(effect.MiscValue);
-                        if (chained)
-                            toVisit.push_back(chained);
-                        continue;
-                    }
-
-                    if (!effect.IsEffect() || !effect.IsAura())
-                        continue;
-
-                    int32 value = effect.CalcValue();
-                    if (value < 0)
-                        value = -value;
-
-                    switch (effect.ApplyAuraName)
-                    {
-                        case SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED:
-                        case SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS:
-                        case SPELL_AURA_MOD_MOUNTED_SPEED_NOT_STACK:
-                            bestGround = std::max(bestGround, value);
-                            break;
-                        case SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED:
-                        case SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS:
-                            bestFlying = std::max(bestFlying, value);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-
-            if (bestGround > 0)
-                d.Set("groundSpeed", static_cast<uint32>(bestGround));
-            if (bestFlying > 0)
-                d.Set("flySpeed", static_cast<uint32>(bestFlying));
-
-            // Single-mode display value (the client shows "X% speed" for
-            // ground-only or flying-only mounts).
-            int32 single = (bestGround > 0) ? bestGround : bestFlying;
-            if (single > 0)
-                d.Set("speed", static_cast<uint32>(single));
-        };
-
-        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0, uint32 creatureId = 0)
+            DCAddon::JsonValue srcVal = parseSourceValue(source);
+            if (isUnknownSource(srcVal) && itemIdForSource)
+                srcVal = buildSourceForItemCached(itemIdForSource);
+            d.Set("source", srcVal);
+        }
+        else if (itemIdForSource)
         {
-            DCAddon::JsonValue d;
-            d.SetObject();
-            if (!name.empty())
-                d.Set("name", name);
-            if (!icon.empty())
-                d.Set("icon", icon);
-            if (rarity)
-                d.Set("rarity", rarity);
-            if (displayId > 0)
-                d.Set("displayId", displayId);
-            if (creatureId > 0)
-                d.Set("creatureId", creatureId);
-
-            if (!source.empty())
-            {
-                DCAddon::JsonValue srcVal = parseSourceValue(source);
-                if (isUnknownSource(srcVal) && itemIdForSource)
-                    srcVal = buildSourceForItemCached(itemIdForSource);
-                d.Set("source", srcVal);
-            }
-            else if (itemIdForSource)
-            {
-                d.Set("source", buildSourceForItemCached(itemIdForSource));
-            }
-
-            // Some client modules sort on mountType.
-            if (ct == CollectionType::MOUNT && extraType >= 0)
-                d.Set("mountType", static_cast<uint32>(extraType));
-
-            appendMountSpeeds(d, id);
-
-            defs.Set(std::to_string(id), d);
-            sentIds.insert(id);
-        };
-
-        bool loadedAny = false;
-
-        struct MountedModelInfo
-        {
-            uint32 displayId = 0;
-            uint32 creatureId = 0;
-        };
-
-        auto resolveMountedModelInfo = [&](uint32 rootSpellId) -> MountedModelInfo
-        {
-            MountedModelInfo info;
-
-            if (!rootSpellId)
-                return info;
-
-            std::vector<uint32> toVisit;
-            toVisit.push_back(rootSpellId);
-
-            std::unordered_set<uint32> visited;
-            visited.reserve(16);
-
-            while (!toVisit.empty())
-            {
-                uint32 spellIdToCheck = toVisit.back();
-                toVisit.pop_back();
-
-                if (!spellIdToCheck || visited.find(spellIdToCheck) != visited.end())
-                    continue;
-
-                visited.insert(spellIdToCheck);
-
-                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellIdToCheck);
-                if (!spellInfo)
-                    continue;
-
-                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-                {
-                    SpellEffectInfo const& effect = spellInfo->Effects[i];
-
-                    if (effect.ApplyAuraName == SPELL_AURA_MOUNTED && effect.MiscValue > 0)
-                    {
-                        uint32 value = static_cast<uint32>(effect.MiscValue);
-
-                        // Keep raw mounted value as creature fallback for the addon.
-                        // In custom content this is often a creature entry ID.
-                        info.creatureId = value;
-
-                        // If this maps to a server creature template, derive its display ID.
-                        if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(value))
-                        {
-                            if (CreatureModel const* model = cInfo->GetFirstValidModel())
-                                info.displayId = model->CreatureDisplayID;
-                        }
-
-                        // If it wasn't a creature entry, it may already be a display ID.
-                        if (!info.displayId && sCreatureDisplayInfoStore.LookupEntry(value))
-                            info.displayId = value;
-
-                        return info;
-                    }
-
-                    if (effect.Effect == SPELL_EFFECT_LEARN_SPELL || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL)
-                    {
-                        uint32 chainedSpellId = effect.TriggerSpell;
-                        if (!chainedSpellId && effect.MiscValue > 0)
-                            chainedSpellId = static_cast<uint32>(effect.MiscValue);
-
-                        if (chainedSpellId && visited.find(chainedSpellId) == visited.end())
-                            toVisit.push_back(chainedSpellId);
-                    }
-                }
-            }
-
-            return info;
-        };
-
-        // Try to serve curated definitions from the module cache. Rebuilding
-        // curated (non-transmog) definitions is expensive (correlated SQL +
-        // spell chain scans), and the result is identical for every player.
-        uint32 cachedSyncVersion = 0;
-        bool servedFromCuratedCache = false;
-        {
-            uint8 cacheIdx = static_cast<uint8>(ct);
-            auto& cacheArr = GetCuratedDefinitionsCacheArray();
-            if (cacheIdx != 0 && cacheIdx < cacheArr.size())
-            {
-                auto& entry = cacheArr[cacheIdx];
-                std::lock_guard<std::mutex> lk(entry.mutex);
-                uint32 nowMs = getMSTime();
-                uint32 ttlMs = GetCuratedDefinitionsCacheTtlMs();
-                if (entry.syncVersion != 0 && (nowMs - entry.builtAtMs) < ttlMs)
-                {
-                    // Copy cached definitions into local defs (JsonValue is deep-copyable).
-                    defs = entry.defs;
-                    cachedSyncVersion = entry.syncVersion;
-                    servedFromCuratedCache = true;
-
-                    // Reconstruct sentIds from the cached keys so owned-fallback
-                    // and downstream logic skip duplicates correctly.
-                    for (auto const& kv : defs.AsObject())
-                    {
-                        try
-                        {
-                            uint32 id = static_cast<uint32>(std::stoul(kv.first));
-                            if (id)
-                                sentIds.insert(id);
-                        }
-                        catch (...) { /* non-numeric key -- ignore */ }
-                    }
-                    loadedAny = !defs.AsObject().empty();
-                }
-            }
+            d.Set("source", buildSourceForItemCached(itemIdForSource));
         }
 
-        if (!servedFromCuratedCache)
+        // Some client modules sort on mountType.
+        if (ct == CollectionType::MOUNT && extraType >= 0)
+            d.Set("mountType", static_cast<uint32>(extraType));
+
+        AppendMountSpeeds(ct, d, id);
+
+        defs.Set(std::to_string(id), d);
+        sentIds.insert(id);
+    }
+
+    // FNV-1a over the encoded curated JSON. 0 means "never built" and 1 is
+    // the version an uncached reply has always carried, so both are avoided.
+    static uint32 HashCuratedDefinitionsJson(std::string const& json)
+    {
+        uint32 hash = 2166136261u;
+        for (unsigned char c : json)
         {
+            hash ^= c;
+            hash *= 16777619u;
+        }
+
+        return hash > 1 ? hash : hash + 2;
+    }
+
+    // Builds one type's curated definitions. Returns nullptr when the generic
+    // dc_collection_definitions table has no entry column (the request then
+    // gets no reply, as before). loadedAny reports whether any row was found.
+    static std::shared_ptr<CuratedDefinitionsSnapshot> BuildCuratedDefinitionsSnapshot(CollectionType ct,
+        MountDisplayStats& mountStats, bool& loadedAny)
+    {
+        auto snapshot = std::make_shared<CuratedDefinitionsSnapshot>();
+        DCAddon::JsonValue& defs = snapshot->defs;
+        defs.SetObject();
+        std::unordered_set<uint32>& sentIds = snapshot->ids;
+        loadedAny = false;
+
+        // Thin adapters so the build below reads as it did inside SendDefinitions.
+        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity,
+            std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0,
+            uint32 creatureId = 0)
+        {
+            AddDefinition(ct, defs, sentIds, id, name, icon, rarity, source, extraType, itemIdForSource,
+                displayId, creatureId);
+        };
+        auto trackMountDisplay = [&](uint32 spellId, uint8 sourceBucket, bool resolvedViaSpellScan,
+            uint32 finalDisplayId)
+        {
+            mountStats.Track(ct, spellId, sourceBucket, resolvedViaSpellScan, finalDisplayId);
+        };
+        auto appendMountSpeeds = [ct](DCAddon::JsonValue& d, uint32 rootSpellId)
+        {
+            AppendMountSpeeds(ct, d, rootSpellId);
+        };
+
         if (ct == CollectionType::MOUNT && WorldTableExists("dc_mount_definitions"))
         {
             // NOTE: the teaching item id is resolved via the preloaded
@@ -7193,7 +7243,7 @@ namespace DCCollection
                     uint32 creatureId = 0;
                     bool resolvedViaSpellScan = false;
 
-                    MountedModelInfo mountedModel = resolveMountedModelInfo(spellId);
+                    MountedModelInfo mountedModel = ResolveMountedModelInfo(spellId);
                     creatureId = mountedModel.creatureId;
 
                     // A stored display_id that isn't a real CreatureDisplayInfo
@@ -7551,7 +7601,7 @@ namespace DCCollection
         {
             std::string defEntryCol = GetWorldEntryColumn("dc_collection_definitions");
             if (defEntryCol.empty())
-                return;
+                return nullptr;
 
             std::string defTypeWhere = fmt::format(
                 "LOWER(CAST(collection_type AS CHAR)) = '{}'",
@@ -7592,7 +7642,7 @@ namespace DCCollection
 
                         if (ct == CollectionType::MOUNT)
                         {
-                            MountedModelInfo mountedModel = resolveMountedModelInfo(entryId);
+                            MountedModelInfo mountedModel = ResolveMountedModelInfo(entryId);
                             displayId = mountedModel.displayId;
                             creatureIdForPreview = mountedModel.creatureId;
                             itemIdForSource = FindMountItemIdForSpell(entryId);
@@ -7623,36 +7673,121 @@ namespace DCCollection
                 } while (r->NextRow());
             }
         }
-        } // end if (!servedFromCuratedCache)
 
-        // Persist freshly-built curated definitions into the module cache so
-        // subsequent requests from any player can short-circuit rebuilding.
-        // Only cache when we actually loaded data -- otherwise we'd pin an
-        // empty cache entry and prevent retries when the DB becomes ready.
-        if (!servedFromCuratedCache && loadedAny && ct != CollectionType::TRANSMOG)
+        snapshot->encodedDefs = defs.Encode();
+        snapshot->syncVersion = HashCuratedDefinitionsJson(snapshot->encodedDefs);
+        return snapshot;
+    }
+
+    // Serves the cached snapshot while it is fresh, otherwise rebuilds it. A
+    // build that loaded nothing is returned but not cached, so a DB that was
+    // not ready is retried on the next request. `cached` is true when the
+    // returned snapshot is (now) the cache entry.
+    static std::shared_ptr<CuratedDefinitionsSnapshot const> GetOrBuildCuratedDefinitions(CollectionType ct,
+        MountDisplayStats& mountStats, bool& cached)
+    {
+        cached = false;
+
+        uint8 const cacheIdx = static_cast<uint8>(ct);
+        auto& cacheArr = GetCuratedDefinitionsCacheArray();
+        bool const cacheable = cacheIdx != 0 && cacheIdx < cacheArr.size() && ct != CollectionType::TRANSMOG;
+        if (cacheable)
         {
-            uint8 cacheIdx = static_cast<uint8>(ct);
-            auto& cacheArr = GetCuratedDefinitionsCacheArray();
-            if (cacheIdx != 0 && cacheIdx < cacheArr.size())
+            auto& entry = cacheArr[cacheIdx];
+            std::lock_guard<std::mutex> lk(entry.mutex);
+            if (entry.snapshot && (getMSTime() - entry.builtAtMs) < GetCuratedDefinitionsCacheTtlMs())
             {
-                auto& entry = cacheArr[cacheIdx];
-                std::lock_guard<std::mutex> lk(entry.mutex);
-                entry.defs = defs;   // snapshot before per-player owned-fallback augments defs
-                entry.syncVersion = GetCuratedDefinitionsVersionCounter().fetch_add(1, std::memory_order_relaxed) + 1;
-                entry.builtAtMs = getMSTime();
-                cachedSyncVersion = entry.syncVersion;
+                cached = true;
+                return entry.snapshot;
             }
         }
 
+        bool loadedAny = false;
+        std::shared_ptr<CuratedDefinitionsSnapshot const> built =
+            BuildCuratedDefinitionsSnapshot(ct, mountStats, loadedAny);
+        if (!built)
+            return nullptr;
+
+        if (cacheable && loadedAny)
+        {
+            auto& entry = cacheArr[cacheIdx];
+            std::lock_guard<std::mutex> lk(entry.mutex);
+            entry.snapshot = built;
+            entry.builtAtMs = getMSTime();
+            cached = true;
+        }
+
+        return built;
+    }
+
+    // Startup warm-up: build the curated definition caches (and the static
+    // item-source / teaching-item / pet pre-warm lookups they pull in) while
+    // the server is loading, so the first players after a restart neither
+    // stall the world thread nor receive a not-yet-known syncVersion.
+    void WarmCuratedDefinitionsCaches()
+    {
+        uint32 const startMs = getMSTime();
+
+        for (CollectionType ct : { CollectionType::MOUNT, CollectionType::PET, CollectionType::HEIRLOOM,
+            CollectionType::TITLE })
+        {
+            MountDisplayStats mountStats;
+            bool cached = false;
+            std::shared_ptr<CuratedDefinitionsSnapshot const> snapshot =
+                GetOrBuildCuratedDefinitions(ct, mountStats, cached);
+            if (!snapshot)
+                continue;
+
+            LOG_INFO("module.dc", "DC-Collection: curated {} definitions warmed ({} entries, {} bytes, "
+                "syncVersion={}, cached={})", kCollectionTypeNames[GetCollectionTypeSlot(ct)],
+                static_cast<uint32>(snapshot->ids.size()), static_cast<uint32>(snapshot->encodedDefs.size()),
+                snapshot->syncVersion, cached);
+
+            if (mountStats.missing > 0)
+                LOG_WARN("module.dc", "[DCCollection] Mount definitions missing displayId: total={}, "
+                    "curated={}, generic={}, resolvedViaSpellScan={}", mountStats.missing,
+                    mountStats.missingCurated, mountStats.missingGeneric, mountStats.resolvedViaSpellScan);
+        }
+
+        if (sConfigMgr->GetOption<bool>(Config::PET_PREWARM_CREATURE_CACHE, false))
+            GetPetPrewarmCreatureIds();
+
+        LOG_INFO("module.dc", "DC-Collection: definition caches warmed in {} ms",
+            GetMSTimeDiffToNow(startMs));
+    }
+
+    // Owned-fallback + reply for a curated definitions request. Runs inline when
+    // no owned-collection read is needed, otherwise from the async callback.
+    static void FinishDefinitionsResponse(Player* player, CollectionType ct, std::string const& typeName,
+        std::shared_ptr<CuratedDefinitionsSnapshot const> const& snapshot, uint32 syncVersion,
+        std::vector<uint32> const& owned, MountDisplayStats mountStats, std::string const& requestId)
+    {
+        DCAddon::JsonValue additions;
+        additions.SetObject();
+        std::unordered_set<uint32> sentIds;
+
+        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity,
+            std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0,
+            uint32 creatureId = 0)
+        {
+            AddDefinition(ct, additions, sentIds, id, name, icon, rarity, source, extraType, itemIdForSource,
+                displayId, creatureId);
+        };
+        auto trackMountDisplay = [&](uint32 spellId, uint8 sourceBucket, bool resolvedViaSpellScan,
+            uint32 finalDisplayId)
+        {
+            mountStats.Track(ct, spellId, sourceBucket, resolvedViaSpellScan, finalDisplayId);
+        };
+
         // Always ensure owned items have definitions, even if the DB table was incomplete.
+        // Rows are collected in `additions`; the curated snapshot itself is never modified.
         {
             uint32 accountId = GetAccountId(player);
             if (accountId)
             {
-                auto owned = LoadPlayerCollection(accountId, ct);
                 for (uint32 entryId : owned)
                 {
-                    if (sentIds.count(entryId))
+                    if (snapshot->ids.count(entryId) || sentIds.count(entryId))
                         continue;
 
                     std::string name;
@@ -7672,7 +7807,7 @@ namespace DCCollection
                                 name = spellInfo->SpellName[0];
                         }
 
-                        MountedModelInfo mountedModel = resolveMountedModelInfo(entryId);
+                        MountedModelInfo mountedModel = ResolveMountedModelInfo(entryId);
                         displayId = mountedModel.displayId;
                         creatureIdForPreview = mountedModel.creatureId;
                         trackMountDisplay(entryId, 3, displayId > 0, displayId);
@@ -7817,7 +7952,7 @@ namespace DCCollection
                         if (displayId > 0)
                             d.Set("displayId", displayId);
 
-                        defs.Set(std::to_string(entryId), d);
+                        additions.Set(std::to_string(entryId), d);
                         sentIds.insert(entryId);
                         continue; // Skip the generic addDef call below
                     }
@@ -7847,7 +7982,7 @@ namespace DCCollection
             }
         }
 
-        if (ct == CollectionType::MOUNT && mountDisplayMissing > 0)
+        if (ct == CollectionType::MOUNT && mountStats.missing > 0)
         {
             static std::unordered_map<uint32, uint32> lastMountDisplayWarnAtMs;
 
@@ -7867,34 +8002,120 @@ namespace DCCollection
             if (shouldWarn)
             {
                 std::ostringstream sample;
-                for (size_t i = 0; i < mountDisplayMissingSamples.size(); ++i)
+                for (size_t i = 0; i < mountStats.missingSamples.size(); ++i)
                 {
                     if (i > 0)
                         sample << ",";
-                    sample << mountDisplayMissingSamples[i];
+                    sample << mountStats.missingSamples[i];
                 }
 
                 LOG_WARN("module.dc", "[DCCollection] Mount definitions missing displayId: total={}, curated={}, generic={}, owned={}, resolvedViaSpellScan={}, accountId={}, sampleSpellIds=[{}]",
-                    mountDisplayMissing,
-                    mountDisplayMissingCurated,
-                    mountDisplayMissingGeneric,
-                    mountDisplayMissingOwned,
-                    mountDisplayResolvedViaSpellScan,
+                    mountStats.missing,
+                    mountStats.missingCurated,
+                    mountStats.missingGeneric,
+                    mountStats.missingOwned,
+                    mountStats.resolvedViaSpellScan,
                     accountId,
                     sample.str());
             }
         }
 
+        // Owned-fallback keys are disjoint from the curated keys, so merging them
+        // into a copy yields exactly the map the old in-place build produced.
+        std::string mergedDefs;
+        std::string const* defsJson = &snapshot->encodedDefs;
+        if (!additions.AsObject().empty())
+        {
+            DCAddon::JsonValue merged = snapshot->defs;
+            for (auto const& [key, value] : additions.AsObject())
+                merged.Set(key, value);
+
+            mergedDefs = merged.Encode();
+            defsJson = &mergedDefs;
+        }
+
+        // Same bytes JsonMessage::Set("type"/"definitions"/"syncVersion") produced:
+        // object keys are emitted in std::map order.
+        std::string payload;
+        payload.reserve(defsJson->size() + typeName.size() + 48);
+        payload = "{\"definitions\":";
+        payload += *defsJson;
+        payload += ",\"syncVersion\":";
+        payload += DCAddon::JsonValue(syncVersion).Encode();
+        payload += ",\"type\":";
+        payload += DCAddon::JsonValue(typeName).Encode();
+        payload += "}";
+
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
-        msg.Set("type", typeName);
-        msg.Set("definitions", defs);
-        msg.Set("syncVersion", cachedSyncVersion ? cachedSyncVersion : 1);
+        msg.SetRequestId(requestId);
+        msg.SetPreEncodedJson(std::move(payload));
         msg.Send(player);
 
         // Best-effort: pre-warm the client creature cache so not-yet-collected pets
         // render textured in the preview (gated; no-op unless the config is enabled).
         if (ct == CollectionType::PET)
             PreWarmPetCreatureCache(player);
+    }
+
+    void SendDefinitions(Player* player, uint8 type, uint32 offset = 0, uint32 limit = 0)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        std::string typeName;
+        switch (static_cast<CollectionType>(type))
+        {
+            case CollectionType::MOUNT: typeName = "mounts"; break;
+            case CollectionType::PET: typeName = "pets"; break;
+            case CollectionType::TOY: typeName = "toys"; break;
+            case CollectionType::HEIRLOOM: typeName = "heirlooms"; break;
+            case CollectionType::TITLE: typeName = "titles"; break;
+            case CollectionType::TRANSMOG: typeName = "transmog"; break;
+            default: typeName = "unknown"; break;
+        }
+
+        if (static_cast<CollectionType>(type) == CollectionType::TRANSMOG)
+        {
+            SendTransmogDefinitions(player, offset, limit, typeName);
+            return;
+        }
+
+        // Non-transmog: try curated per-type tables first; fall back to the generic index; fall back to owned-only.
+        CollectionType ct = static_cast<CollectionType>(type);
+
+        MountDisplayStats mountStats;
+        bool cached = false;
+        std::shared_ptr<CuratedDefinitionsSnapshot const> snapshot =
+            GetOrBuildCuratedDefinitions(ct, mountStats, cached);
+        if (!snapshot)
+            return;
+
+        uint32 const syncVersion = cached ? snapshot->syncVersion : 1;
+        std::string const requestId = DCAddon::GetCurrentRequestId();
+
+        uint32 const accountId = GetAccountId(player);
+        std::string const ownedSql = accountId ? BuildPlayerCollectionQuery(accountId, ct) : std::string();
+        if (ownedSql.empty())
+        {
+            FinishDefinitionsResponse(player, ct, typeName, snapshot, syncVersion, {}, mountStats, requestId);
+            return;
+        }
+
+        // The owned-collection read was the handler's per-request synchronous
+        // query; resolve the player again when the result lands.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(ownedSql)
+            .WithCallback([playerGuid, ct, typeName, snapshot, syncVersion, mountStats, requestId](QueryResult result)
+        {
+            Player* target = ObjectAccessor::FindPlayer(playerGuid);
+            if (!target || !target->GetSession())
+                return;
+
+            std::vector<uint32> owned;
+            AppendPlayerCollectionRows(result, ct, owned);
+            SortUniqueCollectionItems(owned);
+            FinishDefinitionsResponse(target, ct, typeName, snapshot, syncVersion, owned, mountStats, requestId);
+        }));
     }
 
     // Send ItemSet definitions from ItemSet.dbc
@@ -8894,6 +9115,14 @@ namespace DCCollection
             {
                 BackfillPetDisplayIds();
             }
+        }
+
+        void OnStartup() override
+        {
+            // Item/creature templates, spells and DBC stores are all loaded by
+            // now; build the curated definition caches before players connect.
+            if (IsModuleEnabled())
+                WarmCuratedDefinitionsCaches();
         }
     };
 

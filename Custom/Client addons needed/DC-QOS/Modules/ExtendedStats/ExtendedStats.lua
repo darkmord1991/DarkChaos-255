@@ -1321,10 +1321,22 @@ function ExtendedStats.OnInitialize()
     addon:Debug("ExtendedStats module initializing")
 end
 
+-- DC-CharacterFrame ships the retail-style stats sidebar (same stats, inside
+-- the character panel). When it is loaded this side panel would only duplicate
+-- it next to a wider frame, so the module stays dormant.
+local function SupersededByCharacterFrame()
+    return rawget(_G, "DCCharacterFrame") ~= nil
+end
+ExtendedStats.IsSuperseded = SupersededByCharacterFrame
+
 function ExtendedStats.OnEnable()
     addon:Debug("ExtendedStats module enabling")
 
     addon:DelayedCall(0, function()
+        if SupersededByCharacterFrame() then
+            addon:Debug("ExtendedStats superseded by DC-CharacterFrame; panel not built")
+            return
+        end
         if TryBuildUI() then
             if ExtendedStats._frame.UpdateLayout then
                 ExtendedStats._frame:UpdateLayout()
@@ -1352,6 +1364,16 @@ end
 
 function ExtendedStats.CreateSettings(parent)
     local settings = addon.settings.extendedStats
+
+    if SupersededByCharacterFrame() then
+        local note = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        note:SetPoint("TOPLEFT", 16, -16)
+        note:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+        note:SetJustifyH("LEFT")
+        note:SetText("The stats side panel is replaced by the Character Stats sidebar of the DC Character Frame addon. "
+            .. "Open your character panel and use the first sidebar tab; categories collapse by clicking their header.")
+        return -60
+    end
 
     local controls = {}
 

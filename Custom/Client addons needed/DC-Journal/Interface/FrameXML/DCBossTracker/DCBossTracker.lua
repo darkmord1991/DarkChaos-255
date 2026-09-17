@@ -506,7 +506,36 @@ function T.ReleaseWatchFrame()
         return
     end
     if type(UIParent_ManageFramePositions) == "function" then
-        pcall(UIParent_ManageFramePositions)
+        local ok, err = pcall(UIParent_ManageFramePositions)
+        -- Kept for /dcbosses debug: an error here is otherwise invisible.
+        T.lastManagerError = (not ok) and tostring(err) or nil
+    end
+    T.EnsureColumnClaim()
+end
+
+-- The claim normally rides the manager's own WatchFrame:SetPoint (the hook
+-- above). Check the result as well: when a manager pass never reaches
+-- WatchFrame (it errors part-way - ReleaseWatchFrame pcalls it) or ran while
+-- the block was hidden, WatchFrame keeps its TOPRIGHT on MinimapCluster while
+-- the block already sits in the column, and the two blocks paint over each
+-- other ("Dungeon (0/3)" drawn across the quest list).
+function T.EnsureColumnClaim()
+    if T.anchoring or not (WatchFrame and T.frame and T.frame:IsShown()) or T.HasUserPosition() then
+        return
+    end
+    if WatchFrame.IsUserPlaced and WatchFrame:IsUserPlaced() then
+        return
+    end
+
+    local count = WatchFrame.GetNumPoints and WatchFrame:GetNumPoints() or 1
+    for index = 1, count do
+        local point, relTo, relPoint, x, y = WatchFrame:GetPoint(index)
+        if point == "TOPRIGHT" then
+            if relTo == MinimapCluster then
+                T.ClaimColumnTop(point, relTo, relPoint or point, x or 0, y or 0)
+            end
+            return
+        end
     end
 end
 
@@ -1286,6 +1315,38 @@ SlashCmdList["DCBOSSES"] = function(msg)
         return
     end
 
+    if msg == "debug" then
+        local function anchors(frame)
+            if not frame then
+                return "missing"
+            end
+            local parts = {}
+            local count = frame.GetNumPoints and frame:GetNumPoints() or 1
+            for index = 1, count do
+                local point, relTo, relPoint, x, y = frame:GetPoint(index)
+                if point then
+                    local relName = relTo == T.frame and "DCBossTracker"
+                        or (type(relTo) == "table" and relTo.GetName and relTo:GetName())
+                        or tostring(relTo)
+                    table.insert(parts, string.format("%s->%s:%s(%.0f,%.0f)", point, tostring(relName),
+                        tostring(relPoint), x or 0, y or 0))
+                end
+            end
+            return #parts > 0 and table.concat(parts, " ") or "none"
+        end
+
+        local out = DEFAULT_CHAT_FRAME
+        out:AddMessage(string.format("|cff00ff00[DC]|r Boss tracker: shown=%s savedPos=%s top=%s",
+            tostring(T.frame and T.frame:IsShown()), tostring(T.HasUserPosition()),
+            tostring(T.frame and T.frame:GetTop())))
+        out:AddMessage("  tracker anchors: " .. anchors(T.frame))
+        out:AddMessage(string.format("  WatchFrame: userPlaced=%s top=%s anchors: %s",
+            tostring(WatchFrame and WatchFrame.IsUserPlaced and WatchFrame:IsUserPlaced()),
+            tostring(WatchFrame and WatchFrame:GetTop()), anchors(WatchFrame)))
+        out:AddMessage("  last frame-manager error: " .. tostring(T.lastManagerError or "none"))
+        return
+    end
+
     if msg == "skin" then
         DCBossTrackerDB = DCBossTrackerDB or {}
         DCBossTrackerDB.skinWatchFrame = (DCBossTrackerDB.skinWatchFrame == false)
@@ -1299,6 +1360,7 @@ SlashCmdList["DCBOSSES"] = function(msg)
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses reset   - snap back to the objective-tracker column")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses refresh - ask the server for the list again")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses skin    - toggle the matching quest-tracker header skin")
+    DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses debug   - print the tracker and quest tracker anchors")
 end
 
 DCBossTracker = T

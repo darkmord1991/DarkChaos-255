@@ -45,63 +45,6 @@ local function FormatNumber(value)
     return tostring(value or 0)
 end
 
-local RECAP_EVENT_STYLE = {
-    damage = {
-        bg = {0.12, 0.04, 0.04, 0.78},
-        border = {0.48, 0.16, 0.16, 0.95},
-        accent = {1.0, 0.25, 0.25, 1.0},
-        icon = "Interface\\Icons\\Ability_Creature_Cursed_05",
-    },
-    heal = {
-        bg = {0.04, 0.12, 0.04, 0.78},
-        border = {0.16, 0.45, 0.16, 0.95},
-        accent = {0.25, 1.0, 0.25, 1.0},
-        icon = "Interface\\Icons\\Spell_Holy_HolyBolt",
-    },
-    buff = {
-        bg = {0.05, 0.07, 0.14, 0.78},
-        border = {0.20, 0.30, 0.56, 0.95},
-        accent = {0.45, 0.60, 1.0, 1.0},
-        icon = "Interface\\Icons\\Spell_Holy_MagicalSentry",
-    },
-    debuff = {
-        bg = {0.12, 0.05, 0.12, 0.78},
-        border = {0.45, 0.18, 0.45, 0.95},
-        accent = {1.0, 0.45, 1.0, 1.0},
-        icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges",
-    },
-    default = {
-        bg = {0.07, 0.07, 0.07, 0.78},
-        border = {0.34, 0.34, 0.34, 0.95},
-        accent = {0.75, 0.75, 0.75, 1.0},
-        icon = "Interface\\Icons\\INV_Misc_QuestionMark",
-    },
-}
-
-local function GetRecapEventStyle(eventType)
-    return RECAP_EVENT_STYLE[eventType] or RECAP_EVENT_STYLE.default
-end
-
-local function GetRecapEventIcon(entry)
-    if type(GetSpellTexture) == "function" then
-        if entry and entry.spellId then
-            local spellTexture = GetSpellTexture(entry.spellId)
-            if spellTexture then
-                return spellTexture
-            end
-        end
-
-        if entry and entry.spellName then
-            local spellTexture = GetSpellTexture(entry.spellName)
-            if spellTexture then
-                return spellTexture
-            end
-        end
-    end
-
-    return GetRecapEventStyle(entry and entry.eventType).icon
-end
-
 function CombatLog.ShowEnhancedTooltip(self)
     local data = self.playerData or self.data
     if not data then return false end
@@ -301,8 +244,558 @@ end
 -- ============================================================
 -- ENHANCED DEATH RECAP
 -- ============================================================
+-- Layout: header (title + killing blow) / column labels / scrolling event
+-- list (newest first) / footer totals. Rows keep one line of name and one
+-- line of source + tags; the full numbers live in the row tooltip.
+
+local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+
+local RECAP_PAD = 10
+local RECAP_HEADER_HEIGHT = 44
+local RECAP_COLUMNS_HEIGHT = 18
+local RECAP_FOOTER_HEIGHT = 28
+local RECAP_ROW_HEIGHT = 34
+local RECAP_ROW_GAP = 2
+local RECAP_ROW_STEP = RECAP_ROW_HEIGHT + RECAP_ROW_GAP
+local RECAP_VISIBLE_ROWS = 9
+local RECAP_SCROLLBAR_WIDTH = 6
+local RECAP_WIDTH = 500
+local RECAP_LIST_WIDTH = RECAP_WIDTH - 2 * RECAP_PAD - RECAP_SCROLLBAR_WIDTH - 6
+local RECAP_LIST_HEIGHT = RECAP_VISIBLE_ROWS * RECAP_ROW_STEP - RECAP_ROW_GAP
+local RECAP_LIST_TOP = RECAP_PAD + RECAP_HEADER_HEIGHT + RECAP_COLUMNS_HEIGHT
+local RECAP_HEIGHT = RECAP_LIST_TOP + RECAP_LIST_HEIGHT + 4 + RECAP_FOOTER_HEIGHT + RECAP_PAD
+
+-- Row columns, in pixels from the row's left / right edge.
+local COL_TIME_RIGHT = 44
+local COL_ICON_LEFT = 54
+local COL_TEXT_LEFT = 86
+local COL_HEALTH_RIGHT = 8
+local COL_HEALTH_WIDTH = 84
+local COL_AMOUNT_WIDTH = 64
+local COL_AMOUNT_RIGHT = COL_HEALTH_RIGHT + COL_HEALTH_WIDTH + 12
+local COL_TEXT_WIDTH = RECAP_LIST_WIDTH - COL_TEXT_LEFT - COL_AMOUNT_RIGHT - COL_AMOUNT_WIDTH - 8
+
+local RECAP_EVENT_STYLE = {
+    damage = {
+        tint = {0.60, 0.10, 0.10},
+        accent = {0.95, 0.30, 0.30},
+        name = {1.00, 0.88, 0.88},
+        amount = {1.00, 0.40, 0.40},
+        icon = "Interface\\Icons\\Ability_Creature_Cursed_05",
+    },
+    heal = {
+        tint = {0.10, 0.50, 0.10},
+        accent = {0.35, 0.90, 0.35},
+        name = {0.75, 1.00, 0.75},
+        amount = {0.40, 1.00, 0.40},
+        icon = "Interface\\Icons\\Spell_Holy_HolyBolt",
+    },
+    buff = {
+        tint = {0.12, 0.22, 0.55},
+        accent = {0.45, 0.62, 1.00},
+        name = {0.75, 0.84, 1.00},
+        amount = {0.50, 0.62, 0.90},
+        icon = "Interface\\Icons\\Spell_Holy_MagicalSentry",
+        label = "Buff",
+    },
+    debuff = {
+        tint = {0.45, 0.12, 0.50},
+        accent = {0.85, 0.45, 1.00},
+        name = {0.92, 0.78, 1.00},
+        amount = {0.78, 0.55, 0.90},
+        icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges",
+        label = "Debuff",
+    },
+    default = {
+        tint = {0.30, 0.30, 0.30},
+        accent = {0.70, 0.70, 0.70},
+        name = {0.90, 0.90, 0.90},
+        amount = {0.80, 0.80, 0.80},
+        icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+    },
+}
+
+local ENVIRONMENT_ICONS = {
+    FALLING = "Interface\\Icons\\Spell_Magic_FeatherFall",
+    DROWNING = "Interface\\Icons\\Spell_Shadow_DemonBreath",
+    FATIGUE = "Interface\\Icons\\Spell_Nature_Sleep",
+    FIRE = "Interface\\Icons\\Spell_Fire_Fire",
+    LAVA = "Interface\\Icons\\Spell_Fire_Volcano",
+    SLIME = "Interface\\Icons\\Spell_Nature_Acid_01",
+}
 
 local deathRecapFrame = nil
+
+local function GetRecapEventStyle(eventType)
+    return RECAP_EVENT_STYLE[eventType] or RECAP_EVENT_STYLE.default
+end
+
+-- The recorder stores melee swings with spellId 0 and environmental damage
+-- with spellId -1, where the environment type ("FALLING") is the spell name.
+local function IsEnvironmental(entry)
+    return entry.spellId == -1
+end
+
+local function GetRecapSpellName(entry)
+    if IsEnvironmental(entry) then
+        local env = tostring(entry.spellName or "Environment")
+        return env:sub(1, 1):upper() .. env:sub(2):lower()
+    end
+    if entry.spellName and entry.spellName ~= "" then
+        return entry.spellName
+    end
+    if entry.spellId == 0 then
+        return "Melee"
+    end
+    if entry.spellId and entry.spellId > 0 then
+        local name = GetSpellInfo(entry.spellId)
+        if name then
+            return name
+        end
+    end
+    return "Unknown"
+end
+
+local function GetRecapSourceName(entry)
+    if IsEnvironmental(entry) then
+        return "Environment"
+    end
+    return entry.sourceName or "Unknown"
+end
+
+-- GetSpellTexture() on 3.3.5 resolves spellbook slots and known spell names
+-- only, so NPC abilities fell through to the generic icon. GetSpellInfo()
+-- returns the icon for any spell id the client knows.
+local function GetRecapEventIcon(entry)
+    if entry.spellId == 0 then
+        return "Interface\\Icons\\INV_Sword_04"
+    end
+    if IsEnvironmental(entry) then
+        local icon = ENVIRONMENT_ICONS[tostring(entry.spellName or ""):upper()]
+        if icon then
+            return icon
+        end
+    elseif entry.spellId and entry.spellId > 0 then
+        local _, _, texture = GetSpellInfo(entry.spellId)
+        if texture then
+            return texture
+        end
+    end
+    return GetRecapEventStyle(entry.eventType).icon
+end
+
+local function GetHealthColor(pct)
+    if pct > 50 then
+        return 0.25, 0.78, 0.25
+    elseif pct > 20 then
+        return 0.90, 0.72, 0.10
+    end
+    return 0.85, 0.18, 0.18
+end
+
+-- `time` is absolute GetTime(); `timestamp` (combat-relative) is the fallback.
+local function GetEntryTime(entry)
+    return entry.time or entry.timestamp or 0
+end
+
+local function FormatRecapTime(seconds)
+    if seconds > -0.05 then
+        return "0.0s"
+    elseif seconds > -10 then
+        return string.format("%.1fs", seconds)
+    end
+    return string.format("%.0fs", seconds)
+end
+
+local function FormatExact(value)
+    return tostring(math.floor((value or 0) + 0.5))
+end
+
+local function SetSingleLine(fontString)
+    if fontString.SetWordWrap then fontString:SetWordWrap(false) end
+    if fontString.SetNonSpaceWrap then fontString:SetNonSpaceWrap(false) end
+end
+
+local function CreateLabel(parent, template, r, g, b)
+    local label = parent:CreateFontString(nil, "OVERLAY", template)
+    if r then
+        label:SetTextColor(r, g, b)
+    end
+    return label
+end
+
+local function CreateDivider(parent)
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetTexture(FLAT_TEXTURE)
+    line:SetVertexColor(1, 1, 1, 0.10)
+    line:SetHeight(1)
+    return line
+end
+
+local function ScrollRecap(_, delta)
+    local bar = deathRecapFrame and deathRecapFrame.scrollBar
+    if not bar then return end
+    local _, maxValue = bar:GetMinMaxValues()
+    local value = (bar:GetValue() or 0) - delta * RECAP_ROW_STEP
+    bar:SetValue(math.max(0, math.min(maxValue or 0, value)))
+end
+
+local function UpdateRecapScroll(resetToTop)
+    local frame = deathRecapFrame
+    local childHeight = frame.scrollChild:GetHeight() or 0
+    local maxScroll = math.max(0, childHeight - RECAP_LIST_HEIGHT)
+    local bar = frame.scrollBar
+
+    bar:SetMinMaxValues(0, maxScroll)
+    if maxScroll > 0 then
+        bar.thumb:SetHeight(math.max(24, RECAP_LIST_HEIGHT * RECAP_LIST_HEIGHT / childHeight))
+        bar:Show()
+    else
+        bar:Hide()
+    end
+
+    local value = resetToTop and 0 or math.min(bar:GetValue() or 0, maxScroll)
+    bar:SetValue(value)
+    frame.scrollFrame:SetVerticalScroll(value)
+end
+
+local function ShowRecapRowTooltip(row)
+    row.highlight:Show()
+    local entry = row.entry
+    if not entry then return end
+
+    local style = GetRecapEventStyle(entry.eventType)
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    if entry.spellId and entry.spellId > 0 and GetSpellInfo(entry.spellId) then
+        GameTooltip:SetHyperlink("spell:" .. entry.spellId)
+        GameTooltip:AddLine(" ")
+    else
+        GameTooltip:SetText(GetRecapSpellName(entry), style.name[1], style.name[2], style.name[3])
+    end
+
+    local lr, lg, lb = 0.65, 0.65, 0.65
+    GameTooltip:AddDoubleLine("Source", GetRecapSourceName(entry), lr, lg, lb, 1, 1, 1)
+
+    if entry.eventType == "damage" then
+        local hitType = entry.critical and " (critical)" or (entry.glancing and " (glancing)" or "")
+        GameTooltip:AddDoubleLine("Damage", FormatExact(math.abs(entry.amount or 0)) .. hitType,
+            lr, lg, lb, style.amount[1], style.amount[2], style.amount[3])
+        if (entry.overkill or 0) > 0 then
+            GameTooltip:AddDoubleLine("Overkill", FormatExact(entry.overkill), lr, lg, lb, 1, 0.38, 0.38)
+        end
+        if (entry.absorbed or 0) > 0 then
+            GameTooltip:AddDoubleLine("Absorbed", FormatExact(entry.absorbed), lr, lg, lb, 0.62, 0.77, 1)
+        end
+        if (entry.resisted or 0) > 0 then
+            GameTooltip:AddDoubleLine("Resisted", FormatExact(entry.resisted), lr, lg, lb, 1, 1, 1)
+        end
+        if (entry.blocked or 0) > 0 then
+            GameTooltip:AddDoubleLine("Blocked", FormatExact(entry.blocked), lr, lg, lb, 1, 1, 1)
+        end
+    elseif entry.eventType == "heal" then
+        GameTooltip:AddDoubleLine("Healing", FormatExact(entry.amount),
+            lr, lg, lb, style.amount[1], style.amount[2], style.amount[3])
+    elseif style.label then
+        GameTooltip:AddDoubleLine("Event", style.label .. " applied", lr, lg, lb, 1, 1, 1)
+    end
+
+    if (entry.healthMax or 0) > 0 then
+        local pct = entry.healthPct or ((entry.health or 0) / entry.healthMax * 100)
+        GameTooltip:AddDoubleLine("Health", string.format("%s / %s (%.0f%%)",
+            FormatExact(entry.health), FormatExact(entry.healthMax), pct), lr, lg, lb, GetHealthColor(pct))
+    end
+
+    local before = -(row.relativeTime or 0)
+    GameTooltip:AddDoubleLine("Time", before >= 0.05 and string.format("%.1f sec before death", before)
+        or "At time of death", lr, lg, lb, 1, 1, 1)
+    GameTooltip:Show()
+end
+
+local function HideRecapRowTooltip(row)
+    row.highlight:Hide()
+    GameTooltip:Hide()
+end
+
+local function CreateRecapRow(index)
+    local frame = deathRecapFrame
+    local row = CreateFrame("Frame", nil, frame.scrollChild)
+    local y = -(index - 1) * RECAP_ROW_STEP
+    row:SetSize(RECAP_LIST_WIDTH, RECAP_ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", frame.scrollChild, "TOPLEFT", 0, y)
+    row:EnableMouse(true)
+    row:EnableMouseWheel(true)
+    row:RegisterForDrag("LeftButton")
+    row:SetScript("OnDragStart", function() frame:StartMoving() end)
+    row:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    row:SetScript("OnMouseWheel", ScrollRecap)
+    row:SetScript("OnEnter", ShowRecapRowTooltip)
+    row:SetScript("OnLeave", HideRecapRowTooltip)
+
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetTexture(FLAT_TEXTURE)
+
+    row.highlight = row:CreateTexture(nil, "BORDER")
+    row.highlight:SetAllPoints()
+    row.highlight:SetTexture(FLAT_TEXTURE)
+    row.highlight:SetVertexColor(1, 1, 1, 0.06)
+    row.highlight:Hide()
+
+    row.accent = row:CreateTexture(nil, "ARTWORK")
+    row.accent:SetTexture(FLAT_TEXTURE)
+    row.accent:SetPoint("TOPLEFT")
+    row.accent:SetPoint("BOTTOMLEFT")
+    row.accent:SetWidth(2)
+
+    row.timeText = CreateLabel(row, "GameFontHighlightSmall", 0.60, 0.60, 0.60)
+    row.timeText:SetPoint("RIGHT", row, "LEFT", COL_TIME_RIGHT, 0)
+    row.timeText:SetJustifyH("RIGHT")
+
+    row.iconBorder = row:CreateTexture(nil, "ARTWORK")
+    row.iconBorder:SetTexture(FLAT_TEXTURE)
+    row.iconBorder:SetVertexColor(0, 0, 0, 0.9)
+    row.iconBorder:SetSize(26, 26)
+    row.iconBorder:SetPoint("LEFT", row, "LEFT", COL_ICON_LEFT, 0)
+
+    row.icon = row:CreateTexture(nil, "OVERLAY")
+    row.icon:SetSize(24, 24)
+    row.icon:SetPoint("CENTER", row.iconBorder)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    row.nameText = CreateLabel(row, "GameFontHighlight")
+    row.nameText:SetPoint("TOPLEFT", row, "TOPLEFT", COL_TEXT_LEFT, -4)
+    row.nameText:SetSize(COL_TEXT_WIDTH, 14)
+    row.nameText:SetJustifyH("LEFT")
+    SetSingleLine(row.nameText)
+
+    row.detailText = CreateLabel(row, "GameFontHighlightSmall", 0.62, 0.62, 0.62)
+    row.detailText:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", COL_TEXT_LEFT, 5)
+    row.detailText:SetSize(COL_TEXT_WIDTH, 12)
+    row.detailText:SetJustifyH("LEFT")
+    SetSingleLine(row.detailText)
+
+    row.amountText = CreateLabel(row, "GameFontHighlight")
+    row.amountText:SetPoint("RIGHT", row, "RIGHT", -COL_AMOUNT_RIGHT, 0)
+    row.amountText:SetWidth(COL_AMOUNT_WIDTH)
+    row.amountText:SetJustifyH("RIGHT")
+
+    row.healthBar = CreateFrame("StatusBar", nil, row)
+    row.healthBar:SetSize(COL_HEALTH_WIDTH, 14)
+    row.healthBar:SetPoint("RIGHT", row, "RIGHT", -COL_HEALTH_RIGHT, 0)
+    row.healthBar:SetStatusBarTexture(FLAT_TEXTURE)
+
+    local healthBg = row.healthBar:CreateTexture(nil, "BACKGROUND")
+    healthBg:SetAllPoints()
+    healthBg:SetTexture(FLAT_TEXTURE)
+    healthBg:SetVertexColor(0, 0, 0, 0.55)
+
+    row.healthText = CreateLabel(row.healthBar, "GameFontHighlightSmall")
+    row.healthText:SetPoint("CENTER", row.healthBar, "CENTER", 0, 0)
+
+    return row
+end
+
+local function FillRecapRow(row, entry, deathTime, isKillingBlow)
+    local style = GetRecapEventStyle(entry.eventType)
+    row.entry = entry
+    row.relativeTime = GetEntryTime(entry) - deathTime
+
+    row.bg:SetVertexColor(style.tint[1], style.tint[2], style.tint[3], isKillingBlow and 0.34 or 0.14)
+    row.accent:SetVertexColor(style.accent[1], style.accent[2], style.accent[3], 1)
+    row.icon:SetTexture(GetRecapEventIcon(entry))
+    row.timeText:SetText(FormatRecapTime(row.relativeTime))
+    row.nameText:SetText(GetRecapSpellName(entry))
+    row.nameText:SetTextColor(style.name[1], style.name[2], style.name[3])
+    row.amountText:SetTextColor(style.amount[1], style.amount[2], style.amount[3])
+
+    local tags = {}
+    if entry.eventType == "damage" then
+        row.amountText:SetText("-" .. FormatNumber(math.abs(entry.amount or 0)))
+        if entry.critical then
+            tags[#tags + 1] = "|cffffb040Critical|r"
+        elseif entry.glancing then
+            tags[#tags + 1] = "Glancing"
+        end
+        if (entry.overkill or 0) > 0 then
+            tags[#tags + 1] = "|cffff6060" .. FormatNumber(entry.overkill) .. " overkill|r"
+        end
+        if (entry.absorbed or 0) > 0 then
+            tags[#tags + 1] = "|cff9fc5ff" .. FormatNumber(entry.absorbed) .. " absorbed|r"
+        end
+        if (entry.resisted or 0) > 0 then
+            tags[#tags + 1] = FormatNumber(entry.resisted) .. " resisted"
+        end
+        if (entry.blocked or 0) > 0 then
+            tags[#tags + 1] = FormatNumber(entry.blocked) .. " blocked"
+        end
+    elseif entry.eventType == "heal" then
+        row.amountText:SetText("+" .. FormatNumber(entry.amount or 0))
+    else
+        row.amountText:SetText(style.label or "")
+    end
+
+    local detail = GetRecapSourceName(entry)
+    if #tags > 0 then
+        detail = detail .. "  |cff606060-|r  " .. table.concat(tags, ", ")
+    end
+    row.detailText:SetText(detail)
+
+    local healthMax = entry.healthMax or 0
+    if healthMax > 0 then
+        local pct = entry.healthPct or ((entry.health or 0) / healthMax * 100)
+        row.healthBar:SetMinMaxValues(0, healthMax)
+        row.healthBar:SetValue(entry.health or 0)
+        row.healthBar:SetStatusBarColor(GetHealthColor(pct))
+        row.healthText:SetText(string.format("%.0f%%", pct))
+        row.healthText:SetTextColor(1, 1, 1)
+    else
+        row.healthBar:SetMinMaxValues(0, 1)
+        row.healthBar:SetValue(0)
+        row.healthText:SetText("--")
+        row.healthText:SetTextColor(0.5, 0.5, 0.5)
+    end
+
+    row:Show()
+end
+
+local function CreateDeathRecapFrame()
+    local frame = CreateFrame("Frame", "DCQoS_DeathRecapFrame", UIParent)
+    deathRecapFrame = frame
+    frame:SetSize(RECAP_WIDTH, RECAP_HEIGHT)
+    frame:SetPoint("CENTER")
+    frame:SetFrameStrata("DIALOG")
+    frame:SetToplevel(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:EnableMouseWheel(true)
+    frame:SetClampedToScreen(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetScript("OnMouseWheel", ScrollRecap)
+    frame:SetScript("OnHide", function() GameTooltip:Hide() end)
+    tinsert(UISpecialFrames, frame:GetName())
+
+    -- Same flat panel as the meter window, over the shared DC leather.
+    frame:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    frame:SetBackdropBorderColor(0.45, 0.45, 0.45, 0.95)
+
+    local leather = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    leather:SetPoint("TOPLEFT", 3, -3)
+    leather:SetPoint("BOTTOMRIGHT", -3, 3)
+    leather:SetTexture(BG_FELLEATHER)
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints(leather)
+    tint:SetTexture(FLAT_TEXTURE)
+    tint:SetVertexColor(0.03, 0.03, 0.04, 0.86)
+
+    -- Header: faint red glow, accent strip, title, killing blow line.
+    local glow = frame:CreateTexture(nil, "BORDER")
+    glow:SetPoint("TOPLEFT", 3, -3)
+    glow:SetPoint("TOPRIGHT", -3, -3)
+    glow:SetHeight(RECAP_PAD + RECAP_HEADER_HEIGHT - 3)
+    glow:SetTexture(FLAT_TEXTURE)
+    glow:SetGradientAlpha("VERTICAL", 0.6, 0.08, 0.08, 0, 0.6, 0.08, 0.08, 0.28)
+
+    local accent = frame:CreateTexture(nil, "ARTWORK")
+    accent:SetTexture(FLAT_TEXTURE)
+    accent:SetVertexColor(0.95, 0.30, 0.30, 1)
+    accent:SetPoint("TOPLEFT", RECAP_PAD, -(RECAP_PAD + 4))
+    accent:SetSize(3, 32)
+
+    frame.title = CreateLabel(frame, "GameFontNormalLarge", 1, 0.32, 0.32)
+    frame.title:SetPoint("TOPLEFT", RECAP_PAD + 10, -(RECAP_PAD + 4))
+    frame.title:SetText("Death Recap")
+
+    frame.subtitle = CreateLabel(frame, "GameFontHighlightSmall", 0.72, 0.72, 0.72)
+    frame.subtitle:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -4)
+    frame.subtitle:SetSize(RECAP_WIDTH - 2 * RECAP_PAD - 40, 12)
+    frame.subtitle:SetJustifyH("LEFT")
+    SetSingleLine(frame.subtitle)
+
+    local closeBtn = CreateFrame("Button", frame:GetName() .. "CloseButton", frame, "UIPanelCloseButton")
+    closeBtn:SetSize(26, 26)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+
+    local headerLine = CreateDivider(frame)
+    headerLine:SetPoint("TOPLEFT", RECAP_PAD, -(RECAP_PAD + RECAP_HEADER_HEIGHT))
+    headerLine:SetPoint("TOPRIGHT", -RECAP_PAD, -(RECAP_PAD + RECAP_HEADER_HEIGHT))
+
+    -- Column labels, aligned to the row columns below.
+    local labelY = -(RECAP_PAD + RECAP_HEADER_HEIGHT + RECAP_COLUMNS_HEIGHT / 2)
+    local function ColumnLabel(text, point, x)
+        local label = CreateLabel(frame, "GameFontDisableSmall", 0.50, 0.50, 0.50)
+        label:SetPoint(point, frame, "TOPLEFT", RECAP_PAD + x, labelY)
+        label:SetText(text)
+    end
+    ColumnLabel("TIME", "RIGHT", COL_TIME_RIGHT)
+    ColumnLabel("EVENT", "LEFT", COL_ICON_LEFT)
+    ColumnLabel("AMOUNT", "RIGHT", RECAP_LIST_WIDTH - COL_AMOUNT_RIGHT)
+    ColumnLabel("HEALTH", "CENTER", RECAP_LIST_WIDTH - COL_HEALTH_RIGHT - COL_HEALTH_WIDTH / 2)
+
+    -- Plain ScrollFrame: the UIPanelScrollFrame templates need named
+    -- children laid out their way, and a thin custom bar reads cleaner here.
+    local scrollFrame = CreateFrame("ScrollFrame", frame:GetName() .. "ScrollFrame", frame)
+    scrollFrame:SetPoint("TOPLEFT", RECAP_PAD, -RECAP_LIST_TOP)
+    scrollFrame:SetSize(RECAP_LIST_WIDTH, RECAP_LIST_HEIGHT)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", ScrollRecap)
+    frame.scrollFrame = scrollFrame
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(RECAP_LIST_WIDTH, 1)
+    scrollFrame:SetScrollChild(scrollChild)
+    frame.scrollChild = scrollChild
+
+    local scrollBar = CreateFrame("Slider", nil, frame)
+    scrollBar:SetOrientation("VERTICAL")
+    scrollBar:SetSize(RECAP_SCROLLBAR_WIDTH, RECAP_LIST_HEIGHT)
+    scrollBar:SetPoint("TOPRIGHT", -RECAP_PAD, -RECAP_LIST_TOP)
+    scrollBar:EnableMouseWheel(true)
+    scrollBar:SetScript("OnMouseWheel", ScrollRecap)
+    scrollBar:SetValueStep(1)
+    scrollBar:SetMinMaxValues(0, 0)
+    scrollBar:SetValue(0)
+
+    local track = scrollBar:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    track:SetTexture(FLAT_TEXTURE)
+    track:SetVertexColor(1, 1, 1, 0.05)
+
+    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
+    thumb:SetTexture(FLAT_TEXTURE)
+    thumb:SetVertexColor(1, 1, 1, 0.30)
+    thumb:SetSize(RECAP_SCROLLBAR_WIDTH, 40)
+    scrollBar:SetThumbTexture(thumb)
+    scrollBar.thumb = thumb
+    scrollBar:SetScript("OnValueChanged", function(_, value)
+        scrollFrame:SetVerticalScroll(value)
+    end)
+    frame.scrollBar = scrollBar
+
+    -- Footer: totals on the left, rating on the right.
+    local footerLine = CreateDivider(frame)
+    footerLine:SetPoint("BOTTOMLEFT", RECAP_PAD, RECAP_PAD + RECAP_FOOTER_HEIGHT)
+    footerLine:SetPoint("BOTTOMRIGHT", -RECAP_PAD, RECAP_PAD + RECAP_FOOTER_HEIGHT)
+
+    local footerY = RECAP_PAD + RECAP_FOOTER_HEIGHT / 2
+    frame.summaryText = CreateLabel(frame, "GameFontHighlightSmall")
+    frame.summaryText:SetPoint("LEFT", frame, "BOTTOMLEFT", RECAP_PAD + 2, footerY)
+    frame.summaryText:SetJustifyH("LEFT")
+
+    frame.survText = CreateLabel(frame, "GameFontHighlightSmall")
+    frame.survText:SetPoint("RIGHT", frame, "BOTTOMRIGHT", -(RECAP_PAD + 2), footerY)
+    frame.survText:SetJustifyH("RIGHT")
+
+    frame.rows = {}
+    return frame
+end
 
 function CombatLog.ShowDeathRecap(playerData)
     local entries = CombatLog.GetDeathLogEntries and CombatLog.GetDeathLogEntries(playerData, true) or (playerData and playerData.deathLog) or {}
@@ -314,329 +807,75 @@ function CombatLog.ShowDeathRecap(playerData)
     local maxEntries = math.max(5, settings.deathRecapCount or 15)
     local showBuffs = settings.deathRecapShowBuffs ~= false
 
-    local function FormatAmount(value)
-        if addon.FormatNumber then
-            return addon.FormatNumber(value or 0)
-        end
-        return tostring(value or 0)
-    end
-    
-    -- Create frame if it doesn't exist
-    if not deathRecapFrame then
-        deathRecapFrame = CreateFrame("Frame", "DCQoS_DeathRecapFrame", UIParent)
-        deathRecapFrame:SetSize(520, 410)
-        deathRecapFrame:SetPoint("CENTER")
-        deathRecapFrame:SetFrameStrata("DIALOG")
-        deathRecapFrame:SetMovable(true)
-        deathRecapFrame:EnableMouse(true)
-        deathRecapFrame:SetClampedToScreen(true)
-        deathRecapFrame:RegisterForDrag("LeftButton")
-        deathRecapFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-        deathRecapFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-        
-        deathRecapFrame:SetBackdrop({
-            bgFile = BG_FELLEATHER,
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true,
-            tileSize = 256,
-            edgeSize = 32,
-            insets = { left = 8, right = 8, top = 8, bottom = 8 },
-        })
-        deathRecapFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
-        deathRecapFrame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+    local frame = deathRecapFrame or CreateDeathRecapFrame()
 
-        local headerBg = deathRecapFrame:CreateTexture(nil, "BACKGROUND")
-        headerBg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-        headerBg:SetPoint("TOPLEFT", 14, -14)
-        headerBg:SetPoint("TOPRIGHT", -14, -14)
-        headerBg:SetHeight(28)
-        headerBg:SetVertexColor(0.08, 0.08, 0.12, 0.72)
-        deathRecapFrame.headerBg = headerBg
-
-        local headerLine = deathRecapFrame:CreateTexture(nil, "BORDER")
-        headerLine:SetTexture("Interface\\Buttons\\WHITE8x8")
-        headerLine:SetPoint("TOPLEFT", headerBg, "BOTTOMLEFT", 0, -1)
-        headerLine:SetPoint("TOPRIGHT", headerBg, "BOTTOMRIGHT", 0, -1)
-        headerLine:SetHeight(1)
-        headerLine:SetVertexColor(0.95, 0.78, 0.22, 0.8)
-        deathRecapFrame.headerLine = headerLine
-        
-        -- Title
-        local title = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        title:SetPoint("TOP", 0, -22)
-        title:SetText("|cffff4040Death Recap|r")
-        deathRecapFrame.title = title
-
-        local subtitle = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
-        subtitle:SetText("|cffb8b8b8Recent events leading to your death|r")
-        deathRecapFrame.subtitle = subtitle
-        
-        -- Template-backed panels in 3.3.5 expect named frames.
-        local recapFrameName = deathRecapFrame:GetName() or "DCQoS_DeathRecapFrame"
-
-        -- Close button
-        local closeBtn = CreateFrame("Button", recapFrameName .. "CloseButton", deathRecapFrame, "UIPanelCloseButton")
-        closeBtn:SetPoint("TOPRIGHT", -5, -5)
-        closeBtn:SetScript("OnClick", function() deathRecapFrame:Hide() end)
-        
-        -- Use a plain ScrollFrame here to avoid template handlers that require
-        -- strict named-frame conventions in older clients.
-        local scrollFrame = CreateFrame("ScrollFrame", recapFrameName .. "ScrollFrame", deathRecapFrame)
-        scrollFrame:SetPoint("TOPLEFT", 22, -68)
-        scrollFrame:SetPoint("BOTTOMRIGHT", -42, 58)
-        scrollFrame:EnableMouseWheel(true)
-        
-        local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-        scrollChild:SetSize(440, 1)
-        scrollFrame:SetScrollChild(scrollChild)
-        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-            local child = self:GetScrollChild()
-            if not child then return end
-
-            local childHeight = child:GetHeight() or 0
-            local viewHeight = self:GetHeight() or 0
-            local maxScroll = math.max(0, childHeight - viewHeight)
-            local current = self:GetVerticalScroll() or 0
-            local nextValue = current - (delta * 24)
-            if nextValue < 0 then
-                nextValue = 0
-            elseif nextValue > maxScroll then
-                nextValue = maxScroll
-            end
-            self:SetVerticalScroll(nextValue)
-        end)
-        deathRecapFrame.scrollFrame = scrollFrame
-        deathRecapFrame.scrollChild = scrollChild
-
-        local summaryText = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        summaryText:SetPoint("BOTTOMLEFT", 24, 26)
-        summaryText:SetWidth(300)
-        summaryText:SetJustifyH("LEFT")
-        summaryText:SetText("")
-        deathRecapFrame.summaryText = summaryText
-        
-        -- Survivability rating
-        local survText = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        survText:SetPoint("BOTTOMRIGHT", -24, 26)
-        survText:SetJustifyH("RIGHT")
-        survText:SetText("")
-        deathRecapFrame.survText = survText
-
-        local hintText = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        hintText:SetPoint("BOTTOM", 0, 10)
-        hintText:SetText("Mouse Wheel: Scroll  -  Drag: Move")
-        deathRecapFrame.hintText = hintText
-    end
-    
-    
-    -- Calculate survivability
-    local totalDamage = 0
-    local totalHealing = 0
-    local mitigationEvents = 0
-    
+    -- Totals. The recorder stores 0 (not nil) for unmitigated hits, so a
+    -- truthiness test here would count every hit as mitigated.
+    local totalDamage, totalHealing, mitigated = 0, 0, 0
+    local killer = nil
     for _, entry in ipairs(entries) do
-        if entry.eventType == "damage" and entry.amount then
-            totalDamage = totalDamage + math.abs(entry.amount)
-        elseif entry.eventType == "heal" and entry.amount then
-            totalHealing = totalHealing + entry.amount
-        end
-        if entry.absorbed or entry.resisted or entry.blocked then
-            mitigationEvents = mitigationEvents + 1
+        if entry.eventType == "damage" then
+            totalDamage = totalDamage + math.abs(entry.amount or 0)
+            if (entry.absorbed or 0) > 0 or (entry.resisted or 0) > 0 or (entry.blocked or 0) > 0 then
+                mitigated = mitigated + 1
+            end
+            killer = killer or entry
+        elseif entry.eventType == "heal" then
+            totalHealing = totalHealing + (entry.amount or 0)
         end
     end
-    
-    local survivability = "Poor"
-    local survColor = {r=1, g=0, b=0}
+
+    -- Only an overkill hit is provably the killing blow; instakills and other
+    -- unlogged deaths leave the newest hit as merely the last one taken.
+    local killedBy = killer and (killer.overkill or 0) > 0
+    local verb = killedBy and "Killed by" or "Last hit by"
+    if killer and IsEnvironmental(killer) then
+        frame.subtitle:SetText(string.format("%s |cffffffff%s|r damage", verb, GetRecapSpellName(killer)))
+    elseif killer then
+        local extra = GetRecapSpellName(killer)
+        if killedBy then
+            extra = extra .. ", |cffff6060" .. FormatNumber(killer.overkill) .. " overkill|r"
+        end
+        frame.subtitle:SetText(string.format("%s |cffffffff%s|r  (%s)", verb, GetRecapSourceName(killer), extra))
+    else
+        frame.subtitle:SetText("Recent events leading to your death")
+    end
+
+    local survivability, survColor = "Poor", "ff4040"
     if totalHealing > totalDamage * 0.8 then
-        survivability = "Good"
-        survColor = {r=0, g=1, b=0}
-    elseif mitigationEvents >= 3 then
-        survivability = "Fair"
-        survColor = {r=1, g=1, b=0}
+        survivability, survColor = "Good", "40ff40"
+    elseif mitigated >= 3 then
+        survivability, survColor = "Fair", "ffd040"
     end
-    
-    deathRecapFrame.survText:SetText(string.format("Survivability: |cff%02x%02x%02x%s|r", 
-        survColor.r * 255, survColor.g * 255, survColor.b * 255, survivability))
+    frame.survText:SetText(string.format("|cff8a8a8aSurvivability|r  |cff%s%s|r", survColor, survivability))
+    frame.summaryText:SetText(string.format(
+        "|cff8a8a8aDamage taken|r  |cffff6666%s|r     |cff8a8a8aHealing|r  |cff66ff66%s|r     |cff8a8a8aMitigated hits|r  %d",
+        FormatNumber(totalDamage), FormatNumber(totalHealing), mitigated))
 
-    if deathRecapFrame.summaryText then
-        deathRecapFrame.summaryText:SetText(string.format(
-            "|cffd0d0d0Damage:|r %s   |cffd0d0d0Healing:|r %s   |cffd0d0d0Mitigations:|r %d",
-            FormatAmount(totalDamage),
-            FormatAmount(totalHealing),
-            mitigationEvents
-        ))
-    end
-    
-    -- Display events (most recent first). Rows are pooled and re-filled so a
-    -- recap does not leak a frame tree per entry per death.
-    deathRecapFrame.rows = deathRecapFrame.rows or {}
-    local rows = deathRecapFrame.rows
-
-    local function AcquireRow(index)
-        local row = rows[index]
-        if row then return row end
-        row = CreateFrame("Frame", nil, deathRecapFrame.scrollChild)
-        row:SetSize(430, 46)
-        row:SetBackdrop({
-            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true,
-            tileSize = 16,
-            edgeSize = 10,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 },
-        })
-
-        row.accent = row:CreateTexture(nil, "ARTWORK")
-        row.accent:SetTexture("Interface\\Buttons\\WHITE8x8")
-        row.accent:SetPoint("TOPLEFT", 3, -3)
-        row.accent:SetPoint("BOTTOMLEFT", 3, 3)
-        row.accent:SetWidth(4)
-
-        row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetSize(18, 18)
-        row.icon:SetPoint("TOPLEFT", 12, -11)
-
-        row.timeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        row.timeText:SetPoint("TOPLEFT", 35, -7)
-        row.timeText:SetTextColor(0.75, 0.75, 0.75)
-
-        row.descText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.descText:SetPoint("TOPLEFT", 35, -20)
-        row.descText:SetWidth(245)
-        row.descText:SetJustifyH("LEFT")
-
-        row.detailText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.detailText:SetPoint("TOPLEFT", row.descText, "BOTTOMLEFT", 0, -1)
-        row.detailText:SetWidth(245)
-        row.detailText:SetJustifyH("LEFT")
-        row.detailText:SetTextColor(0.75, 0.75, 0.75)
-
-        row.amountText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.amountText:SetPoint("TOPRIGHT", -10, -10)
-
-        row.healthBar = CreateFrame("StatusBar", nil, row)
-        row.healthBar:SetSize(125, 8)
-        row.healthBar:SetPoint("BOTTOMRIGHT", -10, 8)
-        row.healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-
-        row.healthBg = row:CreateTexture(nil, "BACKGROUND")
-        row.healthBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        row.healthBg:SetAllPoints(row.healthBar)
-        row.healthBg:SetVertexColor(0, 0, 0, 0.45)
-
-        rows[index] = row
-        return row
-    end
-
-    local yOffset = 0
+    -- Rows are pooled and re-filled so a recap does not leak a frame tree per
+    -- entry per death. Entries arrive newest first; times are shown relative to
+    -- the newest one.
+    local rows = frame.rows
+    local deathTime = GetEntryTime(entries[1])
     local shown = 0
-    for i = 1, #entries do
+    for _, entry in ipairs(entries) do
         if shown >= maxEntries then
             break
         end
-        local entry = entries[i]
         if showBuffs or (entry.eventType ~= "buff" and entry.eventType ~= "debuff") then
             shown = shown + 1
-            local row = AcquireRow(shown)
-            row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", 0, yOffset)
-
-            local style = GetRecapEventStyle(entry.eventType)
-            row:SetBackdropColor(style.bg[1], style.bg[2], style.bg[3], style.bg[4])
-            row:SetBackdropBorderColor(style.border[1], style.border[2], style.border[3], style.border[4])
-            row.accent:SetVertexColor(style.accent[1], style.accent[2], style.accent[3], style.accent[4])
-            row.icon:SetTexture(GetRecapEventIcon(entry))
-            row.timeText:SetText(string.format("%.1fs", entry.timestamp or 0))
-
-            local hp = string.format("HP: %.0f%%", entry.healthPct or 0)
-            if entry.eventType == "damage" then
-                if entry.critical then
-                    row.descText:SetTextColor(1, 0.3, 0.3)
-                else
-                    row.descText:SetTextColor(1, 0.5, 0.5)
-                end
-                row.descText:SetText(string.format("%s's %s%s",
-                    entry.sourceName or "Unknown",
-                    entry.spellName or "Attack",
-                    entry.critical and " (Crit!)" or ""
-                ))
-                local detail = hp
-                if entry.absorbed and entry.absorbed > 0 then
-                    detail = detail .. "  Abs: " .. FormatAmount(entry.absorbed)
-                end
-                if entry.resisted and entry.resisted > 0 then
-                    detail = detail .. "  Res: " .. FormatAmount(entry.resisted)
-                end
-                if entry.blocked and entry.blocked > 0 then
-                    detail = detail .. "  Block: " .. FormatAmount(entry.blocked)
-                end
-                if entry.overkill and entry.overkill > 0 then
-                    detail = detail .. "  Overkill: " .. FormatAmount(entry.overkill)
-                end
-                row.detailText:SetText(detail)
-                row.amountText:SetText(FormatAmount(math.abs(entry.amount or 0)))
-                row.amountText:SetTextColor(1, 0.3, 0.3)
-            elseif entry.eventType == "heal" then
-                row.descText:SetTextColor(0.2, 1, 0.2)
-                row.descText:SetText(string.format("%s's %s", entry.sourceName or "Unknown", entry.spellName or "Heal"))
-                row.detailText:SetText(hp)
-                row.amountText:SetText("+" .. FormatAmount(entry.amount or 0))
-                row.amountText:SetTextColor(0.2, 1, 0.2)
-            elseif entry.eventType == "buff" then
-                row.descText:SetTextColor(0.5, 0.5, 1)
-                row.descText:SetText(string.format("Buff: %s", entry.spellName or "Unknown"))
-                row.detailText:SetText(hp)
-                row.amountText:SetText("")
-            elseif entry.eventType == "debuff" then
-                row.descText:SetTextColor(1, 0.5, 1)
-                row.descText:SetText(string.format("Debuff: %s", entry.spellName or "Unknown"))
-                row.detailText:SetText(hp)
-                row.amountText:SetText("")
-            else
-                row.descText:SetTextColor(0.85, 0.85, 0.85)
-                row.descText:SetText(tostring(entry.spellName or entry.eventType or "Event"))
-                row.detailText:SetText(hp)
-                row.amountText:SetText("")
-            end
-
-            if entry.healthMax and entry.healthMax > 0 then
-                row.healthBar:SetMinMaxValues(0, entry.healthMax)
-                row.healthBar:SetValue(entry.health or 0)
-                local pct = entry.healthPct or 0
-                if pct > 50 then
-                    row.healthBar:SetStatusBarColor(0, 1, 0)
-                elseif pct > 20 then
-                    row.healthBar:SetStatusBarColor(1, 1, 0)
-                else
-                    row.healthBar:SetStatusBarColor(1, 0, 0)
-                end
-                row.healthBar:Show()
-                row.healthBg:Show()
-            else
-                row.healthBar:Hide()
-                row.healthBg:Hide()
-            end
-
-            row:Show()
-            yOffset = yOffset - 50
+            rows[shown] = rows[shown] or CreateRecapRow(shown)
+            FillRecapRow(rows[shown], entry, deathTime, killedBy and entry == killer)
         end
     end
     for i = shown + 1, #rows do
+        rows[i].entry = nil
         rows[i]:Hide()
     end
 
-    deathRecapFrame.scrollChild:SetHeight(math.max(1, shown * 50))
-    if deathRecapFrame.scrollFrame then
-        local childHeight = deathRecapFrame.scrollChild:GetHeight() or 0
-        local viewHeight = deathRecapFrame.scrollFrame:GetHeight() or 0
-        local maxScroll = math.max(0, childHeight - viewHeight)
-        local current = deathRecapFrame.scrollFrame:GetVerticalScroll() or 0
-        if current > maxScroll then
-            deathRecapFrame.scrollFrame:SetVerticalScroll(maxScroll)
-        end
-    end
-    deathRecapFrame:Show()
+    frame.scrollChild:SetHeight(math.max(1, shown * RECAP_ROW_STEP - RECAP_ROW_GAP))
+    frame:Show()
+    UpdateRecapScroll(true)
     return true
 end
 

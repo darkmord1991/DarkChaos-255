@@ -1,5 +1,5 @@
 <Ui>
-    <Button name="GOMove_UI_MapButton" text="G" parent="Minimap" toplevel="true" movable="true" frameStrata="LOW" enableMouse="true">
+    <Button name="GOMove_UI_MapButton" text="G" parent="Minimap" toplevel="true" frameStrata="LOW" enableMouse="true">
         <Size x="27" y="27" />
         <Anchors>
             <Anchor point="TOPLEFT" x="-25" y="-60" />
@@ -7,7 +7,7 @@
         <Scripts>
             <OnLoad>
                 this:RegisterForClicks("LeftButtonUp","RightButtonUp","MiddleButtonUp");
-                this:RegisterForDrag("RightButton");
+                this:RegisterForDrag("LeftButton", "RightButton");
             </OnLoad>
             <OnEnter>
                 GameTooltip:SetOwner(this, "ANCHOR_LEFT");
@@ -18,7 +18,7 @@
                 GameTooltip:AddLine(" ");
                 GameTooltip:AddLine("Left click to show/hide GO mover");
                 GameTooltip:AddLine("Right click to show/hide NPC mover");
-                GameTooltip:AddLine("Right click to drag this");
+                GameTooltip:AddLine("Drag to move around the minimap");
                 GameTooltip:Show();
             </OnEnter>
             <OnLeave>
@@ -36,10 +36,10 @@
                 end
             </OnClick>
             <OnDragStart>
-                this:StartMoving();
+                GOMove:MapButtonDragStart(this);
             </OnDragStart>
             <OnDragStop>
-                this:StopMovingOrSizing();
+                GOMove:MapButtonDragStop(this);
             </OnDragStop>
         </Scripts>
         <Layers>

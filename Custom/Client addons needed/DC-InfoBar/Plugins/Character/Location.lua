@@ -1,20 +1,26 @@
 --[[
     DC-InfoBar Location Plugin
     Shows current zone, subzone, coordinates, and hotspot info
-    
-    Data Source: WoW API (GetZoneText, GetSubZoneText, GetPlayerMapPosition)
-                 DCAddonProtocol SPOT module for hotspots
+
+    Position sources, best first:
+      1. DC-QOS map utils (WotLK-Extensions world position + WorldMapArea
+         rectangles): zone coords and world XYZ, never touches the world map.
+      2. WotLK-Extensions ResolveEntityPositionByGUID: world XYZ only.
+      3. Stock GetPlayerMapPosition. SetMapToCurrentZone() is only called when
+         the map state is known to be stale (zone change / world map closed),
+         never every tick: it fires WORLD_MAP_UPDATE for every map addon.
+
+    Hotspots: the store lives in Core (serverData.hotspots, fed by WRLD/SPOT).
+    "In a hotspot" is read from the server-applied hotspot aura.
 ]]
 
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
--- Hotspot opcodes
-local SPOT_CMSG_GET_LIST = 0x01
-local SPOT_SMSG_HOTSPOT_LIST = 0x10
-local SPOT_SMSG_HOTSPOT_INFO = 0x11
-local SPOT_SMSG_HOTSPOT_SPAWN = 0x12
-local SPOT_SMSG_HOTSPOT_EXPIRE = 0x13
+local SPOT_CMSG_TELEPORT = 0x03
+
+-- Hotspots.AuraSpell / Hotspots.BuffSpell default (HotspotMgr.cpp).
+local HOTSPOT_AURA_SPELL_ID = 800001
 
 local LocationPlugin = {
     id = "DCInfoBar_Location",
@@ -25,527 +31,274 @@ local LocationPlugin = {
     priority = 60,
     icon = "Interface\\Icons\\INV_Misc_Map01",
     updateInterval = 1.0,
-    
-    leftClickHint = "Get server GPS coordinates",
+
+    leftClickHint = "Print position to chat",
     rightClickHint = "Open world map",
-    middleClickHint = "Teleport to hotspot",
-    
+    middleClickHint = "Teleport to nearest hotspot (GM)",
+
     _zone = "",
     _subzone = "",
-    _x = 0,
-    _y = 0,
-    _mapId = 0,
-    _zoneId = 0,
-    _areaId = 0,
-    
-    -- Server coordinates (XYZ from .gps command)
-    _serverX = 0,
-    _serverY = 0,
-    _serverZ = 0,
-    _orientation = 0,
-    _hasServerCoords = false,
-    
-    -- Hotspot tracking
-    _hotspots = {},           -- All active hotspots
-    _inHotspot = false,       -- Currently in a hotspot zone
-    _currentHotspot = nil,    -- Current hotspot data if in one
-    _currentHotspots = nil,   -- All hotspots matching current zone/area
-    _hotspotBonus = 0,        -- Current bonus percentage
-    _hotspotsLoaded = false,
-    _lastHotspotListRequest = 0,  -- Timestamp of last full list request
-    _blinkTimer = 0,
+    _inHotspot = false,
     _blinkState = false,
+    _mapDirty = true,
 }
 
--- Cache TTL in seconds (avoid re-requesting full list within this window)
-local HOTSPOT_CACHE_TTL = 60
+-- ============================================================================
+-- Position
+-- ============================================================================
 
-local PlayerCanGainXP -- forward declaration
-
--- Normalize a hotspot record from server (handles abbreviated keys)
--- Server may send: i (id), m (mapId), z (zoneId), n (zoneName), b (bonus), t (timeRemaining), x, y, h (z coord)
-local function NormalizeHotspot(h)
-    if not h or type(h) ~= "table" then return nil end
-    
-    local id = tonumber(h.id or h.i or h.hotspotId)
-    if not id then return nil end
-    
-    return {
-        id = id,
-        name = h.name or h.n or "Hotspot",
-        mapId = tonumber(h.mapId or h.m or h.map) or 0,
-        zoneId = tonumber(h.zoneId or h.z or h.zone) or 0,
-        zoneName = h.zoneName or h.n or h.zone or "Unknown Zone",
-        areaId = tonumber(h.areaId) or 0,
-        x = tonumber(h.x) or 0,
-        y = tonumber(h.y) or 0,
-        z = tonumber(h.z or h.h) or 0, -- 'h' is used for height in server
-        bonusPercent = tonumber(h.bonusPercent or h.bonus or h.b) or 0,
-        bonus = tonumber(h.bonusPercent or h.bonus or h.b) or 0, -- alias
-        timeRemaining = tonumber(h.timeRemaining or h.timeLeft or h.dur or h.t) or 0,
-    }
+local function GetQoSMapUtils()
+    local qos = rawget(_G, "DCQOS")
+    if qos and type(qos.GetMapUtils) == "function" then
+        local ok, utils = pcall(qos.GetMapUtils, qos)
+        if ok and type(utils) == "table" and type(utils.GetPlayerPosition) == "function" then
+            return utils
+        end
+    end
+    return nil
 end
 
-PlayerCanGainXP = function()
+local function GetNativeWorldPosition()
+    local resolver = rawget(_G, "ResolveEntityPositionByGUID") or rawget(_G, "C_Ping_ResolveEntityPositionByGUID")
+    local guid = UnitGUID("player")
+    if type(resolver) ~= "function" or not guid then
+        return nil
+    end
+    -- guid, kind, gameMapId, mapX, mapY, worldX, worldY, worldZ
+    local ok, _, _, gameMapId, _, _, worldX, worldY, worldZ = pcall(resolver, guid)
+    if not ok or type(worldX) ~= "number" or type(worldY) ~= "number" then
+        return nil
+    end
+    return worldX, worldY, tonumber(worldZ), tonumber(gameMapId)
+end
+
+function LocationPlugin:ReadStockMapPosition()
+    local mapShown = WorldMapFrame and WorldMapFrame:IsShown()
+    if self._mapDirty and not mapShown then
+        SetMapToCurrentZone()
+        self._mapDirty = false
+    end
+    local x, y = GetPlayerMapPosition("player")
+    if (not x or x == 0) and (not y or y == 0) then
+        -- Player isn't on the map currently selected: re-sync next time the map is closed.
+        self._mapDirty = true
+        return nil
+    end
+    return x, y
+end
+
+-- Returns normX, normY (0-1, may be nil), worldX, worldY, worldZ, gameMapId (nil without WXL)
+function LocationPlugin:GetPosition()
+    local utils = GetQoSMapUtils()
+    if utils then
+        local ok, nx, ny, _, wx, wy, gameMapId, wz = pcall(utils.GetPlayerPosition)
+        if ok and (nx or wx) then
+            return nx, ny, wx, wy, wz, gameMapId
+        end
+    end
+
+    local wx, wy, wz, gameMapId = GetNativeWorldPosition()
+    local nx, ny = self:ReadStockMapPosition()
+    return nx, ny, wx, wy, wz, gameMapId
+end
+
+-- ============================================================================
+-- Hotspots
+-- ============================================================================
+
+local function PlayerCanGainXP()
     if IsXPUserDisabled and IsXPUserDisabled() then
         return false
     end
-    if not UnitXPMax then
-        return true
-    end
-    local xpMax = UnitXPMax("player")
-    return xpMax and xpMax > 0
+    return (UnitXPMax("player") or 0) > 0
 end
 
--- Check if player is in a hotspot zone
-local function IsInHotspotZone(hotspot, zone, subzone, mapId, areaId)
-    if not hotspot then return false end
-    
-    -- Check zone name match
-    if hotspot.zoneName then
-        if zone == hotspot.zoneName or subzone == hotspot.zoneName then
+local function HasHotspotAura()
+    for i = 1, 40 do
+        local name, _, _, _, _, _, _, _, _, _, spellId = UnitBuff("player", i)
+        if not name then
+            return false
+        end
+        if spellId == HOTSPOT_AURA_SPELL_ID or string.find(name, "Hotspot", 1, true) then
             return true
         end
     end
-    
-    -- Check map ID match
-    if hotspot.mapId and mapId == hotspot.mapId then
-        return true
-    end
-    
-    -- Check area ID match
-    if hotspot.areaId and areaId == hotspot.areaId then
-        return true
-    end
-    
     return false
 end
 
-function LocationPlugin:OnActivate()
-    -- Initialize serverData.hotspots if not exists
-    DCInfoBar.serverData = DCInfoBar.serverData or {}
-    DCInfoBar.serverData.hotspots = DCInfoBar.serverData.hotspots or {}
-    
-    -- Monitor chat for .gps command output to get server coordinates
-    -- (one-time hook: re-activation must not stack another wrapper around AddMessage)
-    if not DCInfoBar._locationChatHooked then
-        DCInfoBar._locationChatHooked = true
-        local originalAddMessage = ChatFrame1.AddMessage
-        ChatFrame1.AddMessage = function(self, msg, ...)
-            if msg and type(msg) == "string" then
-                -- Parse .gps output: "X: 5752.5776 Y: 1325.3961 Z: 24.627499 Orientation: 5.4110045"
-                local x, y, z, o = string.match(msg, "X:%s*([%d%.%-]+)%s*Y:%s*([%d%.%-]+)%s*Z:%s*([%d%.%-]+)%s*Orientation:%s*([%d%.%-]+)")
-                if x and y and z and o then
-                    LocationPlugin._serverX = tonumber(x) or 0
-                    LocationPlugin._serverY = tonumber(y) or 0
-                    LocationPlugin._serverZ = tonumber(z) or 0
-                    LocationPlugin._orientation = tonumber(o) or 0
-                    LocationPlugin._hasServerCoords = true
-                end
-
-                -- Also parse ZoneX/ZoneY from .gps output
-                local zoneX, zoneY = string.match(msg, "ZoneX:%s*([%d%.%-]+)%s*ZoneY:%s*([%d%.%-]+)")
-                if zoneX and zoneY then
-                    -- These match our calculated coordinates
-                    -- Just validate they're consistent
-                end
-            end
-            return originalAddMessage(self, msg, ...)
+-- Hotspots in the player's current zone (by name; zoneName comes from the
+-- server's AreaTable, same DBC language as the client).
+function LocationPlugin:GetZoneHotspots()
+    local out = {}
+    for _, hotspot in ipairs(DCInfoBar.serverData.hotspots) do
+        if hotspot.zoneName == self._zone then
+            table.insert(out, hotspot)
         end
     end
+    return out
+end
 
-    -- Register handlers for hotspot data (one-time: don't re-register on every re-activation)
-    if DCInfoBar._locationHandlersRegistered then
+function LocationPlugin:GetNearestHotspot()
+    local hotspots = DCInfoBar.serverData.hotspots
+    if #hotspots == 0 then
+        return nil
+    end
+
+    local _, _, wx, wy, _, gameMapId = self:GetPosition()
+    local best, bestDist
+    for _, hotspot in ipairs(hotspots) do
+        if wx and gameMapId and hotspot.mapId == gameMapId then
+            local dx, dy = hotspot.x - wx, hotspot.y - wy
+            local dist = dx * dx + dy * dy
+            if not bestDist or dist < bestDist then
+                best, bestDist = hotspot, dist
+            end
+        end
+    end
+    return best or self:GetZoneHotspots()[1] or hotspots[1]
+end
+
+-- ============================================================================
+-- Plugin
+-- ============================================================================
+
+function LocationPlugin:OnActivate()
+    if self._eventFrame then
         return
     end
-    DCInfoBar._locationHandlersRegistered = true
 
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        -- SMSG_HOTSPOT_LIST (0x10) - List of active hotspots
-        DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_LIST, function(data)
-            -- Version-gated reply for another addon's poll: the set we hold
-            -- is still current, so don't wipe it.
-            if data and data.unchanged then
-                return
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    f:RegisterEvent("ZONE_CHANGED")
+    f:RegisterEvent("ZONE_CHANGED_INDOORS")
+    f:RegisterEvent("PLAYER_ENTERING_WORLD")
+    f:RegisterEvent("UNIT_AURA")
+    f:SetScript("OnEvent", function(_, event, unit)
+        if event == "UNIT_AURA" then
+            if unit == "player" then
+                LocationPlugin._auraDirty = true
             end
-
-            local normalized = {}
-            local rawList = nil
-
-            if data and data.hotspots then
-                rawList = data.hotspots
-            elseif data and type(data) == "table" and #data > 0 then
-                -- Data might be the array directly
-                rawList = data
-            end
-            
-            if rawList then
-                for _, h in ipairs(rawList) do
-                    local rec = NormalizeHotspot(h)
-                    if rec then
-                        table.insert(normalized, rec)
-                    end
-                end
-            end
-
-            if data and data.v then
-                LocationPlugin._hotspotListVersion = tonumber(data.v) or 0
-            end
-            LocationPlugin._hotspots = normalized
-            LocationPlugin._hotspotsLoaded = true
-            DCInfoBar.serverData.hotspots = normalized
-        end)
-        
-        -- SMSG_HOTSPOT_INFO (0x11) - Single hotspot info
-        DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_INFO, function(data)
-            local rec = NormalizeHotspot(data)
-            if rec then
-                -- Update or add hotspot
-                local found = false
-                for i, hs in ipairs(LocationPlugin._hotspots) do
-                    if hs.id == rec.id then
-                        LocationPlugin._hotspots[i] = rec
-                        found = true
-                        break
-                    end
-                end
-                if not found then
-                    table.insert(LocationPlugin._hotspots, rec)
-                end
-            end
-        end)
-        
-        -- SMSG_HOTSPOT_SPAWN (0x12) - New hotspot spawned
-        DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_SPAWN, function(data)
-            local rec = NormalizeHotspot(data)
-            if rec then
-                table.insert(LocationPlugin._hotspots, rec)
-                -- Notify player
-                DCInfoBar:Print("|cff00ff00New Hotspot:|r " .. (rec.name or "Unknown") .. " in " .. (rec.zoneName or "Unknown Zone"))
-            end
-        end)
-        
-        -- SMSG_HOTSPOT_EXPIRE (0x13) - Hotspot expired
-        DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_EXPIRE, function(data)
-            -- For expire, we only need the ID
-            local id = tonumber(data and (data.id or data.i or data.hotspotId))
-            if id then
-                for i, hs in ipairs(LocationPlugin._hotspots) do
-                    if hs.id == id then
-                        table.remove(LocationPlugin._hotspots, i)
-                        break
-                    end
-                end
-            end
-        end)
-        
-        -- Request initial hotspot list (only if cache is stale)
-        local now = GetTime and GetTime() or 0
-        local cacheAge = now - LocationPlugin._lastHotspotListRequest
-        if cacheAge >= HOTSPOT_CACHE_TTL or not LocationPlugin._hotspotsLoaded then
-            LocationPlugin._lastHotspotListRequest = now
-            -- Echo the held list version so the server can answer with a
-            -- tiny "unchanged" reply instead of the full list.
-            DC:Request("SPOT", SPOT_CMSG_GET_LIST, { v = LocationPlugin._hotspotListVersion or 0 })
+            return
         end
-    else
-        -- Fallback: Try to request hotspots after a delay when DC loads
-        local frame = CreateFrame("Frame")
-        frame.elapsed = 0
-        frame:SetScript("OnUpdate", function(self, elapsed)
-            self.elapsed = self.elapsed + elapsed
-            if self.elapsed >= 2 then
-                self:SetScript("OnUpdate", nil)
-                local DC = rawget(_G, "DCAddonProtocol")
-                if DC then
-                    -- Only request if cache is stale
-                    local now = GetTime and GetTime() or 0
-                    local cacheAge = now - LocationPlugin._lastHotspotListRequest
-                    if cacheAge >= HOTSPOT_CACHE_TTL or not LocationPlugin._hotspotsLoaded then
-                        LocationPlugin._lastHotspotListRequest = now
-                        DC:Request("SPOT", 0x01, { v = LocationPlugin._hotspotListVersion or 0 })
-                    end
-                end
-            end
+        LocationPlugin._mapDirty = true
+        LocationPlugin._elapsed = 999
+    end)
+    self._eventFrame = f
+    self._auraDirty = true
+
+    -- Browsing another zone on the world map leaves the map state there.
+    if WorldMapFrame and not self._mapHooked then
+        self._mapHooked = true
+        WorldMapFrame:HookScript("OnHide", function()
+            LocationPlugin._mapDirty = true
         end)
+    end
+end
+
+function LocationPlugin:OnDeactivate()
+    if self._eventFrame then
+        self._eventFrame:UnregisterAllEvents()
+        self._eventFrame = nil
     end
 end
 
 function LocationPlugin:OnUpdate(elapsed)
-    -- Get zone info
-    self._zone = GetZoneText() or "Unknown"
+    self._zone = GetZoneText() or ""
     self._subzone = GetSubZoneText() or ""
-    
-    -- Get coordinates (3.3.5a method)
-    -- In WoW 3.3.5, GetPlayerMapPosition() often needs the internal map state
-    -- to be set to the player's current zone. HOWEVER, calling SetMapToCurrentZone()
-    -- while the world map is open will hijack the user's map browsing (zoom-out/planning).
-    -- So: only set the map when the world map is CLOSED, and restore afterwards.
-    local worldMapShown = WorldMapFrame and WorldMapFrame:IsShown()
-    local previousMapId
-    local didChangeMap = false
-    if not worldMapShown and SetMapToCurrentZone then
-        if GetCurrentMapAreaID then
-            previousMapId = GetCurrentMapAreaID()
-        end
-        SetMapToCurrentZone()
-        didChangeMap = true
+
+    if self._auraDirty then
+        self._auraDirty = false
+        self._inHotspot = PlayerCanGainXP() and HasHotspotAura()
     end
 
-    local x, y = GetPlayerMapPosition("player")
-
-    if didChangeMap and previousMapId and SetMapByID then
-        SetMapByID(previousMapId)
-    end
-    
-    -- Fallback: if coordinates are 0,0 and the world map is open, re-read once.
-    -- (We still don't change map state here.)
-    if (not x or x == 0) and (not y or y == 0) and worldMapShown then
-        x, y = GetPlayerMapPosition("player")
-    end
-    
-    self._x = x or 0
-    self._y = y or 0
-    
-    -- Get map and zone IDs
-    self._mapId = GetCurrentMapContinent() or 0
-    self._zoneId = GetCurrentMapZone() or 0
-    self._areaId = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
-
-    -- Check if in a hotspot zone
-    self._inHotspot = false
-    self._currentHotspot = nil
-    self._currentHotspots = nil
-    self._hotspotBonus = 0
-
-    if PlayerCanGainXP() then
-        for _, hotspot in ipairs(self._hotspots) do
-            if IsInHotspotZone(hotspot, self._zone, self._subzone, self._mapId, self._areaId) then
-                self._inHotspot = true
-                if not self._currentHotspots then
-                    self._currentHotspots = {}
-                end
-                table.insert(self._currentHotspots, hotspot)
-
-                -- Keep first match as the "current" hotspot for backward compatibility
-                if not self._currentHotspot then
-                    self._currentHotspot = hotspot
-                end
-
-                -- Track the highest bonus among matches (safe default)
-                local bonus = hotspot.bonusPercent or hotspot.bonus or 0
-                if bonus > self._hotspotBonus then
-                    self._hotspotBonus = bonus
-                end
-            end
-        end
-    end
-    
-    -- Blink timer for hotspot indicator
-    if self._inHotspot then
-        self._blinkTimer = self._blinkTimer + elapsed
-        if self._blinkTimer >= 0.7 then
-            self._blinkTimer = 0
-            self._blinkState = not self._blinkState
-        end
-    else
-        self._blinkTimer = 0
-        self._blinkState = false
-    end
-    
-    -- Build display text
-    local showCoords = DCInfoBar:GetPluginSetting(self.id, "showCoordinates")
-    local showSubzone = DCInfoBar:GetPluginSetting(self.id, "showSubzone")
-    
     local displayZone = self._zone
-    
-    -- Abbreviate long zone names
-    if #displayZone > 15 then
-        displayZone = string.sub(displayZone, 1, 12) .. "..."
-    end
-    
-    -- Add subzone if enabled and different from zone
-    if showSubzone and self._subzone ~= "" and self._subzone ~= self._zone then
+    if DCInfoBar:GetPluginSetting(self.id, "showSubzone") and self._subzone ~= "" and self._subzone ~= self._zone then
         displayZone = self._subzone
-        if #displayZone > 15 then
-            displayZone = string.sub(displayZone, 1, 12) .. "..."
-        end
     end
-    
-    -- Add hotspot indicator if in hotspot zone
+    displayZone = DCInfoBar:TruncateText(displayZone, 18)
+
     local prefix = ""
     if self._inHotspot then
-        if self._blinkState then
-            prefix = "|cffff8000!|r "  -- Orange indicator (ASCII)
-        else
-            prefix = "|cffffff00!|r "  -- Yellow indicator (ASCII)
-        end
+        self._blinkState = not self._blinkState
+        prefix = self._blinkState and "|cffff8000!|r " or "|cffffff00!|r "
     end
-    
-    -- Add coordinates if enabled (show even if 0 for custom zones)
-    if showCoords then
-        local coords = string.format("%.1f, %.1f", self._x * 100, self._y * 100)
+
+    if DCInfoBar:GetPluginSetting(self.id, "showCoordinates") then
+        local nx, ny = self:GetPosition()
+        local coords = nx and string.format("%.1f, %.1f", nx * 100, ny * 100) or "--, --"
         return "", prefix .. displayZone .. " |cff00ff00" .. coords .. "|r"
-    else
-        return "", prefix .. displayZone
     end
+    return "", prefix .. displayZone
 end
 
 function LocationPlugin:OnTooltip(tooltip)
     tooltip:AddLine("Location", 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
-    
+
     tooltip:AddDoubleLine("Zone:", self._zone, 0.7, 0.7, 0.7, 1, 1, 1)
-    
-    if self._subzone and self._subzone ~= "" and self._subzone ~= self._zone then
+    if self._subzone ~= "" and self._subzone ~= self._zone then
         tooltip:AddDoubleLine("Subzone:", self._subzone, 0.7, 0.7, 0.7, 1, 1, 1)
     end
-    
-    -- Always show coordinates (even if 0,0 for custom zones)
-    local coords = string.format("%.1f, %.1f", self._x * 100, self._y * 100)
-    tooltip:AddDoubleLine("Coordinates:", coords, 0.7, 0.7, 0.7, 0.5, 1, 0.5)
-    
-    -- Show server XYZ coordinates if available (for debugging)
-    if self._hasServerCoords then
-        tooltip:AddLine(" ")
-        tooltip:AddLine("|cff32c4ffServer Coordinates:|r")
-        tooltip:AddDoubleLine("  X:", string.format("%.2f", self._serverX), 0.7, 0.7, 0.7, 1, 1, 0)
-        tooltip:AddDoubleLine("  Y:", string.format("%.2f", self._serverY), 0.7, 0.7, 0.7, 1, 1, 0)
-        tooltip:AddDoubleLine("  Z:", string.format("%.2f", self._serverZ), 0.7, 0.7, 0.7, 1, 1, 0)
-        tooltip:AddDoubleLine("  Orientation:", string.format("%.2f", self._orientation), 0.7, 0.7, 0.7, 0.8, 0.8, 1)
-        tooltip:AddLine("|cff888888(Use .gps to update)|r", 0.5, 0.5, 0.5)
+
+    local nx, ny, wx, wy, wz, gameMapId = self:GetPosition()
+    tooltip:AddDoubleLine("Coordinates:", nx and string.format("%.1f, %.1f", nx * 100, ny * 100) or "n/a",
+        0.7, 0.7, 0.7, 0.5, 1, 0.5)
+    if wx then
+        tooltip:AddDoubleLine("World:", string.format("%.1f, %.1f, %.1f", wx, wy, wz or 0), 0.7, 0.7, 0.7, 1, 1, 0)
     end
-    
-
-    if PlayerCanGainXP() then
-        -- Current Hotspot section (if in one)
-        if self._inHotspot and self._currentHotspot then
-            tooltip:AddLine(" ")
-            tooltip:AddLine("|cffff8000HOTSPOT ACTIVE|r")
-
-            local activeList = self._currentHotspots
-            if not activeList or #activeList == 0 then
-                activeList = { self._currentHotspot }
-            end
-
-            for index, hotspot in ipairs(activeList) do
-                local name = hotspot.name or ("Hotspot " .. index)
-                local bonus = hotspot.bonusPercent or hotspot.bonus or 0
-
-                tooltip:AddDoubleLine("  Name:", name,
-                    0.7, 0.7, 0.7, 1, 0.5, 0)
-
-                if bonus > 0 then
-                    tooltip:AddDoubleLine("  Bonus:", "+" .. bonus .. "% XP/Loot",
-                        0.7, 0.7, 0.7, 0.3, 1, 0.3)
-                end
-
-                if hotspot.timeRemaining then
-                    tooltip:AddDoubleLine("  Time Left:", DCInfoBar:FormatTimeShort(hotspot.timeRemaining),
-                        0.7, 0.7, 0.7, 1, 0.82, 0)
-                end
-
-                if hotspot.mobsRemaining then
-                    tooltip:AddDoubleLine("  Mobs Left:", hotspot.mobsRemaining,
-                        0.7, 0.7, 0.7, 1, 0.82, 0)
-                end
-
-                if index < #activeList then
-                    tooltip:AddLine(" ")
-                end
-            end
-        end
-
-        -- All Active Hotspots section
-        if #self._hotspots > 0 then
-            tooltip:AddLine(" ")
-            tooltip:AddLine("|cff32c4ffActive Hotspots:|r")
-
-            for _, hotspot in ipairs(self._hotspots) do
-                local isInPlayerZone = IsInHotspotZone(hotspot, self._zone, self._subzone, self._mapId, self._areaId)
-                local nameColor = isInPlayerZone and {1, 0.5, 0} or {0.8, 0.8, 0.8}
-                local zoneColor = isInPlayerZone and {1, 0.82, 0} or {0.6, 0.6, 0.6}
-
-                local displayName = hotspot.name or "Unknown Hotspot"
-                local displayZone = hotspot.zoneName or "Unknown Zone"
-                local bonusText = hotspot.bonusPercent and (" +" .. hotspot.bonusPercent .. "%") or ""
-
-                -- Show indicator if this hotspot matches the player's current zone/area
-                local indicator = isInPlayerZone and "|cff00ff00>|r " or "  "
-
-                tooltip:AddDoubleLine(indicator .. displayName, displayZone .. bonusText,
-                    nameColor[1], nameColor[2], nameColor[3],
-                    zoneColor[1], zoneColor[2], zoneColor[3])
-
-                -- Show time remaining if available
-                if hotspot.timeRemaining and hotspot.timeRemaining > 0 then
-                    tooltip:AddDoubleLine("    Time:", DCInfoBar:FormatTimeShort(hotspot.timeRemaining),
-                        0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
-                end
-            end
-        elseif self._hotspotsLoaded then
-            tooltip:AddLine(" ")
-            tooltip:AddLine("|cff888888No active hotspots|r", 0.5, 0.5, 0.5)
-        end
+    if gameMapId then
+        tooltip:AddDoubleLine("Map ID:", gameMapId, 0.7, 0.7, 0.7, 1, 1, 1)
     end
-    
-    -- Zone/Map IDs section
-    tooltip:AddLine(" ")
-    tooltip:AddLine("|cff32c4ffMap Information:|r")
 
-    -- Continent/Zone IDs from map system
-    if self._mapId and self._mapId > 0 then
-        tooltip:AddDoubleLine("  Continent:", self._mapId, 0.7, 0.7, 0.7, 1, 1, 1)
-    end
-    if self._zoneId and self._zoneId > 0 then
-        tooltip:AddDoubleLine("  Zone Index:", self._zoneId, 0.7, 0.7, 0.7, 1, 1, 1)
-    end
-    if self._areaId and self._areaId > 0 then
-        tooltip:AddDoubleLine("  Area ID:", self._areaId, 0.7, 0.7, 0.7, 1, 1, 1)
-    end
-    
-    -- Zone type (instance check)
     local inInstance, instanceType = IsInInstance()
     if inInstance then
-        local typeNames = {
-            party = "Dungeon",
-            raid = "Raid",
-            pvp = "Battleground",
-            arena = "Arena",
-        }
-        tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Instance Type:", typeNames[instanceType] or instanceType,
-            0.7, 0.7, 0.7, 1, 0.82, 0)
+        local typeNames = { party = "Dungeon", raid = "Raid", pvp = "Battleground", arena = "Arena" }
+        tooltip:AddDoubleLine("Instance Type:", typeNames[instanceType] or instanceType, 0.7, 0.7, 0.7, 1, 0.82, 0)
     end
-    
-    -- Check for custom zones (like Giant Isles)
-    local customZones = {
-        ["Giant Isles"] = "Custom World Content",
-        ["Warden's Landing"] = "Custom World Content",
-        ["Isles of Giants"] = "Custom World Content",
-    }
-    
-    if customZones[self._zone] or customZones[self._subzone] then
-        tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Zone Type:", "Custom World Content",
-            0.7, 0.7, 0.7, 0.2, 0.8, 1)
+
+    if not PlayerCanGainXP() then
+        return
     end
-    
-    -- Hint for hotspot teleport
-    if PlayerCanGainXP() and #self._hotspots > 0 then
+
+    if self._inHotspot then
         tooltip:AddLine(" ")
-        tooltip:AddLine("|cff888888Middle-Click: Teleport to nearest hotspot|r", 0.5, 0.5, 0.5)
+        tooltip:AddLine("|cffff8000HOTSPOT ACTIVE|r")
+    end
+
+    local hotspots = DCInfoBar.serverData.hotspots
+    if #hotspots > 0 then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cff32c4ffActive Hotspots:|r")
+        for _, hotspot in ipairs(hotspots) do
+            local here = hotspot.zoneName == self._zone
+            local bonusText = (hotspot.bonusPercent or 0) > 0 and (" +" .. hotspot.bonusPercent .. "% XP") or ""
+            local timeText = (hotspot.timeRemaining or 0) > 0 and (" (" .. DCInfoBar:FormatTimeShort(hotspot.timeRemaining) .. ")") or ""
+            tooltip:AddDoubleLine((here and "|cff00ff00>|r " or "  ") .. (hotspot.zoneName or "Unknown Zone"),
+                bonusText .. timeText,
+                here and 1 or 0.8, here and 0.5 or 0.8, here and 0 or 0.8,
+                0.7, 0.7, 0.7)
+        end
+    elseif DCInfoBar.serverData._hotspotsLoaded then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("No active hotspots", 0.5, 0.5, 0.5)
     end
 end
 
 function LocationPlugin:OnClick(button)
     if button == "LeftButton" then
-        -- Run .gps command to get server coordinates
-        SendChatMessage(".gps", "GUILD")
-        DCInfoBar:Print("Requesting GPS data from server...")
+        local nx, ny, wx, wy, wz, gameMapId = self:GetPosition()
+        local parts = { self._subzone ~= "" and (self._zone .. " / " .. self._subzone) or self._zone }
+        if nx then
+            table.insert(parts, string.format("%.1f, %.1f", nx * 100, ny * 100))
+        end
+        if wx then
+            table.insert(parts, string.format("world %.2f %.2f %.2f", wx, wy, wz or 0))
+        end
+        if gameMapId then
+            table.insert(parts, "map " .. gameMapId)
+        end
+        DCInfoBar:Print(table.concat(parts, "  |  "))
     elseif button == "RightButton" then
-        -- Open world map (3.3.5a compatible)
         if WorldMapFrame then
             if WorldMapFrame:IsShown() then
                 HideUIPanel(WorldMapFrame)
@@ -554,37 +307,31 @@ function LocationPlugin:OnClick(button)
             end
         end
     elseif button == "MiddleButton" then
-        -- Teleport to first hotspot
-        if PlayerCanGainXP() and #self._hotspots > 0 then
-            local hotspot = self._hotspots[1]
-            local DC = rawget(_G, "DCAddonProtocol")
-            if DC and hotspot.id then
-                DC:Request("SPOT", 0x03, { id = hotspot.id })  -- Teleport request
-                DCInfoBar:Print("Teleporting to hotspot: " .. (hotspot.name or "Unknown"))
-            elseif DC.Hotspot and DC.Hotspot.Teleport then
-                DC.Hotspot.Teleport(hotspot.id)
-                DCInfoBar:Print("Teleporting to hotspot: " .. (hotspot.name or "Unknown"))
-            else
-                DCInfoBar:Print("Hotspot teleport not available")
-            end
-        else
+        local hotspot = self:GetNearestHotspot()
+        local proto = DCInfoBar:GetProtocol()
+        if not hotspot then
             DCInfoBar:Print("No active hotspots to teleport to")
+        elseif proto then
+            -- Server-side GM-only; the result (SPOT 0x14) is printed by DC-Mapupgrades.
+            proto:Request("SPOT", SPOT_CMSG_TELEPORT, { id = hotspot.id })
+            DCInfoBar:Print("Requested teleport to hotspot in " .. (hotspot.zoneName or "Unknown Zone"))
         end
     end
 end
 
 function LocationPlugin:OnCreateOptions(parent, yOffset)
-    local coordsCB = DCInfoBar:CreateCheckbox(parent, "Show coordinates", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Show coordinates", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showCoordinates", checked)
+        self._elapsed = 999
     end, DCInfoBar:GetPluginSetting(self.id, "showCoordinates"))
     yOffset = yOffset - 30
-    
-    local subzoneCB = DCInfoBar:CreateCheckbox(parent, "Show subzone instead of zone", 20, yOffset, function(checked)
+
+    DCInfoBar:CreateCheckbox(parent, "Show subzone instead of zone", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showSubzone", checked)
+        self._elapsed = 999
     end, DCInfoBar:GetPluginSetting(self.id, "showSubzone"))
-    
+
     return yOffset - 30
 end
 
--- Register plugin
 DCInfoBar:RegisterPlugin(LocationPlugin)

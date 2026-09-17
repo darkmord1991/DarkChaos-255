@@ -209,22 +209,22 @@ namespace DCPrestigeAddon
         msg.Set("bonusPerLevel", bonusPerLevel);
         msg.Set("totalBonus", totalBonus);
 
-        // Build bonuses array
-        std::string bonusesJson = "[";
+        // Build bonuses array as a real JSON array. Passing a pre-built string
+        // through Set(key, std::string) delivered it to clients as a quoted string.
+        DCAddon::JsonValue bonuses;
+        bonuses.SetArray(maxPrestigeLevel);
         for (uint32 i = 1; i <= maxPrestigeLevel; ++i)
         {
-            if (i > 1)
-                bonusesJson += ",";
-
-            char buf[128];
-            std::snprintf(buf, sizeof(buf),
-                "{\"level\":%u,\"bonus\":%u,\"cumulative\":%u,\"unlocked\":%s}",
-                i, bonusPerLevel, i * bonusPerLevel, i <= prestigeLevel ? "true" : "false");
-            bonusesJson += buf;
+            DCAddon::JsonValue bonus;
+            bonus.SetObject();
+            bonus.Set("level", DCAddon::JsonValue(i));
+            bonus.Set("bonus", DCAddon::JsonValue(bonusPerLevel));
+            bonus.Set("cumulative", DCAddon::JsonValue(i * bonusPerLevel));
+            bonus.Set("unlocked", DCAddon::JsonValue(i <= prestigeLevel));
+            bonuses.Push(std::move(bonus));
         }
-        bonusesJson += "]";
 
-        msg.Set("bonuses", bonusesJson);
+        msg.Set("bonuses", std::move(bonuses));
         msg.Set("nextLevelBonus", prestigeLevel < maxPrestigeLevel ? (prestigeLevel + 1) * bonusPerLevel : 0);
         msg.Set("atMaxPrestige", prestigeLevel >= maxPrestigeLevel);
 

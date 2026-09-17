@@ -149,49 +149,44 @@ function DCInfoBar:FormatTimeShort(seconds)
 end
 
 function DCInfoBar:FormatGold(copper)
-    if not copper then return "0g" end
-    
+    copper = tonumber(copper) or 0
+    local sign = copper < 0 and "-" or ""
+    copper = math.abs(copper)
+
     local gold = math.floor(copper / 10000)
     local silver = math.floor((copper % 10000) / 100)
     local copperRem = copper % 100
-    
-    if self.db and self.db.plugins and self.db.plugins["DCInfoBar_Gold"] then
-        local goldSettings = self.db.plugins["DCInfoBar_Gold"]
-        if goldSettings.showSilverCopper then
-            return string.format("%dg %ds %dc", gold, silver, copperRem)
-        end
+
+    if self:GetPluginSetting("DCInfoBar_Gold", "showSilverCopper") then
+        return string.format("%s%dg %ds %dc", sign, gold, silver, copperRem)
     end
-    
-    -- Abbreviated format
+
     if gold >= 1000000 then
-        return string.format("%.1fM", gold / 1000000)
+        return string.format("%s%.1fM", sign, gold / 1000000)
     elseif gold >= 10000 then
-        return string.format("%.1fK", gold / 1000)
-    else
-        return string.format("%d", gold) .. "g"
+        return string.format("%s%.1fK", sign, gold / 1000)
     end
+    return string.format("%s%dg", sign, gold)
 end
 
+-- Three-stop gradient: perc 0 -> color1, 0.5 -> color2, 1 -> color3.
 function DCInfoBar:ColorGradient(perc, r1, g1, b1, r2, g2, b2, r3, g3, b3)
     if perc >= 1 then
         return r3, g3, b3
     elseif perc <= 0 then
         return r1, g1, b1
     end
-    
-    local segment, relperc
-    if perc >= 0.5 then
-        segment = 2
-        relperc = (perc - 0.5) * 2
-        r1, g1, b1 = r2, g2, b2
+
+    local fromR, fromG, fromB, toR, toG, toB, t
+    if perc < 0.5 then
+        fromR, fromG, fromB, toR, toG, toB, t = r1, g1, b1, r2, g2, b2, perc * 2
     else
-        segment = 1
-        relperc = perc * 2
+        fromR, fromG, fromB, toR, toG, toB, t = r2, g2, b2, r3, g3, b3, (perc - 0.5) * 2
     end
-    
-    return r1 + (r3 - r1) * relperc,
-           g1 + (g3 - g1) * relperc,
-           b1 + (b3 - b1) * relperc
+
+    return fromR + (toR - fromR) * t,
+           fromG + (toG - fromG) * t,
+           fromB + (toB - fromB) * t
 end
 
 function DCInfoBar:GetColorHex(r, g, b)
@@ -218,4 +213,24 @@ function DCInfoBar:WrapColor(text, color)
     
     local hex = self.Colors[color] or color
     return "|cff" .. hex .. text .. "|r"
+end
+
+-- Truncate to maxChars characters without splitting a UTF-8 sequence
+-- (zone names on non-English clients contain multi-byte characters).
+function DCInfoBar:TruncateText(text, maxChars)
+    text = tostring(text or "")
+    local count, cut = 0, nil
+    for pos in string.gmatch(text, "()[%z\1-\127\194-\244][\128-\191]*") do
+        count = count + 1
+        if count == maxChars - 2 then
+            cut = pos
+        end
+        if count > maxChars then
+            -- cut is the start of character maxChars-2; keep everything before
+            -- the following character and append the ellipsis.
+            local nextStart = string.match(text, "^[%z\1-\127\194-\244][\128-\191]*()", cut)
+            return string.sub(text, 1, (nextStart or cut) - 1) .. "..."
+        end
+    end
+    return text
 end

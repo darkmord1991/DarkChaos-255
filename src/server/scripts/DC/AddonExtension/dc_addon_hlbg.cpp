@@ -1601,9 +1601,12 @@ namespace HLBG
         }
 
         std::string action = "join";
+        uint32 instanceId = 0;
         JsonValue json = GetJsonData(msg);
         if (!json.IsNull() && json.HasKey("action"))
             action = json["action"].AsString();
+        if (!json.IsNull() && json.HasKey("instanceId"))
+            instanceId = json["instanceId"].AsUInt32();
 
         if (action == "leave" || action == "stop")
         {
@@ -1612,7 +1615,7 @@ namespace HLBG
         }
 
         std::string error;
-        if (!DCHLBGSpectator::StartSpectating(player, error))
+        if (!DCHLBGSpectator::StartSpectating(player, instanceId, error))
         {
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cffff0000[HLBG Spectator]|r {}", error);

@@ -103,7 +103,8 @@ local function GetAngleFromCursor(button)
     local dx = cx - mx
     local dy = cy - my
     
-    return math.deg(math.atan2(dy, dx))
+    -- 0-360 like LibDBIcon's minimapPos, which DC-QOS's button ring compares against.
+    return math.deg(math.atan2(dy, dx)) % 360
 end
 
 -- =============================================================================
@@ -356,6 +357,14 @@ SlashCmdList["DCWELCOME"] = function(msg)
     -- Fall through to original handler
     if origSlashHandler then
         origSlashHandler(msg)
+    end
+end
+
+-- Re-place the button on its saved angle. DC-QOS's minimap button ring calls
+-- this when it hands the button back (its module disabled).
+function DCWelcome:UpdateMinimapButtonPosition()
+    if DCWelcomeMinimapButton then
+        UpdateButtonPosition(DCWelcomeMinimapButton, GetButtonPosition())
     end
 end
 

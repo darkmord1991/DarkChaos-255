@@ -513,8 +513,7 @@ function GF:CreateQueueStatusFrame()
 
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetTexture(0.03, 0.05, 0.11, 0.92)
-    if bg.SetColorTexture then bg:SetColorTexture(0.03, 0.05, 0.11, 0.92) end
+    bg:SetTexture(0, 0, 0, 0.85)
 
     -- Animated searching eye (golden atlas glow behind the spinning eye).
     local eyeGlow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -625,8 +624,11 @@ local PROPOSAL_ROLE_ATLAS = {
 function GF:CreateQueueProposalFrame()
     if self.queueProposalFrame then return self.queueProposalFrame end
 
+    -- Laid out like the stock 3.3.5 ready dialog: instance art + name +
+    -- difficulty, the assigned role, then the per-member ready marks and
+    -- the countdown, with stock Enter Dungeon / Decline buttons.
     local frame = CreateFrame("Frame", "DCMatchmakingProposalFrame", UIParent)
-    frame:SetSize(340, 240)
+    frame:SetSize(320, 256)
     frame:SetPoint("CENTER", 0, 120)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetToplevel(true)
@@ -640,59 +642,84 @@ function GF:CreateQueueProposalFrame()
     })
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -18)
+    title:SetPoint("TOP", 0, -16)
     title:SetText("Group Found!")
-    title:SetTextColor(1, 0.82, 0)
     frame.title = title
 
-    -- Assigned-role icon (retail LFG prompt art).
+    -- Instance line: list icon, name, difficulty / raid size.
+    local icon = frame:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(36, 36)
+    icon:SetPoint("TOPLEFT", 28, -44)
+    frame.instanceIcon = icon
+
+    local instanceName = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instanceName:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -2)
+    instanceName:SetWidth(232)
+    instanceName:SetJustifyH("LEFT")
+    if instanceName.SetWordWrap then
+        instanceName:SetWordWrap(false)
+    end
+    frame.instanceName = instanceName
+
+    local instanceInfo = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    instanceInfo:SetPoint("TOPLEFT", instanceName, "BOTTOMLEFT", 0, -2)
+    instanceInfo:SetWidth(232)
+    instanceInfo:SetJustifyH("LEFT")
+    frame.instanceInfo = instanceInfo
+
+    -- Assigned role: retail prompt icon + "Your role: X", centred as one unit.
+    local roleLine = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    roleLine:SetPoint("TOP", 14, -96)
+    roleLine:SetText("")
+    frame.roleLine = roleLine
+
     local roleIcon = frame:CreateTexture(nil, "ARTWORK")
-    roleIcon:SetSize(48, 48)
-    roleIcon:SetPoint("TOP", title, "BOTTOM", 0, -6)
+    roleIcon:SetSize(26, 26)
+    roleIcon:SetPoint("RIGHT", roleLine, "LEFT", -6, 0)
     roleIcon:Hide()
     frame.roleIcon = roleIcon
 
-    local info = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    info:SetPoint("TOP", roleIcon, "BOTTOM", 0, -6)
-    info:SetWidth(300)
+    local info = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    info:SetPoint("TOP", 0, -122)
+    info:SetWidth(280)
     info:SetJustifyH("CENTER")
     info:SetText("")
     frame.info = info
 
-    -- Per-member accept indicators (created on demand in OnQueueProposal).
+    -- Per-member accept indicators (created on demand in SetProposalMarks).
     local marksAnchor = CreateFrame("Frame", nil, frame)
     marksAnchor:SetSize(300, 18)
-    marksAnchor:SetPoint("TOP", info, "BOTTOM", 0, -6)
+    marksAnchor:SetPoint("TOP", 0, -142)
     frame.marksAnchor = marksAnchor
     frame.marks = {}
 
-    local accepted = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    local accepted = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     accepted:SetPoint("TOP", marksAnchor, "BOTTOM", 0, -4)
     accepted:SetText("")
     frame.accepted = accepted
 
     -- Countdown bar
     local bar = CreateFrame("StatusBar", nil, frame)
-    bar:SetSize(280, 14)
-    bar:SetPoint("TOP", accepted, "BOTTOM", 0, -8)
+    bar:SetSize(280, 12)
+    bar:SetPoint("TOP", accepted, "BOTTOM", 0, -6)
     bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
     bar:SetStatusBarColor(0.2, 0.7, 0.2)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(1)
     local barBg = bar:CreateTexture(nil, "BACKGROUND")
     barBg:SetAllPoints()
-    if barBg.SetColorTexture then barBg:SetColorTexture(0, 0, 0, 0.5) end
+    barBg:SetTexture(0, 0, 0, 0.5)
     frame.bar = bar
 
-    local acceptBtn = CreateStyledButton(frame, 110, 26, "Enter Dungeon")
-    acceptBtn:SetPoint("BOTTOMLEFT", 38, 18)
+    local acceptBtn = CreateStyledButton(frame, 120, 22, "Enter Dungeon")
+    acceptBtn:SetPoint("BOTTOMLEFT", 30, 16)
     acceptBtn:SetScript("OnClick", function()
         GF:RespondToQueueProposal(true)
     end)
     frame.acceptBtn = acceptBtn
 
-    local declineBtn = CreateStyledButton(frame, 110, 26, "Decline")
-    declineBtn:SetPoint("BOTTOMRIGHT", -38, 18)
+    local declineBtn = CreateStyledButton(frame, 120, 22, "Decline")
+    declineBtn:SetPoint("BOTTOMRIGHT", -30, 16)
     declineBtn:SetScript("OnClick", function()
         GF:RespondToQueueProposal(false)
     end)
@@ -879,6 +906,42 @@ function GF:OnQueueProposal(data)
     self._proposalRole = data.role
     local frame = self:CreateQueueProposalFrame()
 
+    -- Instance line: catalog name, difficulty or raid size, and the list
+    -- icon (the stock dialog shows the dungeon's art the same way).
+    local category = tonumber(data.category) or QUEUE_CAT_DUNGEON
+    local dungeonId = tonumber(data.dungeonId) or 0
+    local difficulty = tonumber(data.difficulty) or 0
+    local isRaid = category == QUEUE_CAT_RAID
+    local name
+    if dungeonId > 0 and self.CatalogEntryName then
+        name = self:CatalogEntryName(category, dungeonId)
+    end
+    if not name or name == "" then
+        name = isRaid and "Raid" or "Random Dungeon"
+    end
+    local info
+    if isRaid then
+        info = RaidDiffLabel(difficulty, tonumber(data.raidSize) or 10)
+    else
+        info = (self.DUNGEON_DIFFICULTY_LABELS and self.DUNGEON_DIFFICULTY_LABELS[difficulty]) or ""
+        if info ~= "" then
+            info = info .. " Dungeon"
+        end
+    end
+    frame.instanceName:SetText(name)
+    frame.instanceInfo:SetText(info)
+    if frame.instanceIcon then
+        local art = namespace.ResolveGroupFinderEntryArt
+            and namespace.ResolveGroupFinderEntryArt({
+                mapId = dungeonId, dungeonName = name, isRaid = isRaid })
+        if namespace.ApplyTextureCandidates
+            and namespace.ApplyTextureCandidates(frame.instanceIcon, art) then
+            frame.instanceIcon:Show()
+        else
+            frame.instanceIcon:Hide()
+        end
+    end
+
     -- Assigned-role icon (retail prompt art), keyed by the server role name.
     local roleKey = PROPOSAL_ROLE_ATLAS[string.lower(tostring(data.role or ""))]
     if roleKey and namespace.SetGFAtlas
@@ -887,9 +950,13 @@ function GF:OnQueueProposal(data)
     else
         frame.roleIcon:Hide()
     end
+    if data.role then
+        frame.roleLine:SetText("Your role: |cffffd200" .. tostring(data.role) .. "|r")
+    else
+        frame.roleLine:SetText("")
+    end
+    frame.info:SetText("Accept to join the group.")
 
-    local roleText = data.role and (" as |cffffd200" .. tostring(data.role) .. "|r") or ""
-    frame.info:SetText("Your group is ready" .. roleText .. ".\nAccept to join!")
     local totalSize = tonumber(data.size) or 5
     -- Backfilled bots arrive already accepted, so the tally starts above zero.
     local acceptedCount = tonumber(data.accepted) or 0

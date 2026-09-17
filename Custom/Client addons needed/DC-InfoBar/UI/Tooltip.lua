@@ -26,16 +26,22 @@ function DCInfoBar:AddTooltipDoubleLine(tooltip, left, right, lr, lg, lb, rr, rg
 end
 
 function DCInfoBar:AddTooltipProgressBar(tooltip, current, max, label)
-    if not max or max == 0 then max = 1 end
-    local percent = math.floor((current / max) * 100)
+    current = tonumber(current) or 0
+    max = tonumber(max) or 0
+    if max <= 0 then
+        tooltip:AddDoubleLine(label or "", tostring(current), 1, 1, 1, 0.8, 0.8, 0.8)
+        return
+    end
+
+    local ratio = math.max(0, math.min(1, current / max))
     local barWidth = 20
-    local filled = math.floor((current / max) * barWidth)
-    -- Use pipe characters instead of Unicode block characters
-    local bar = string.rep("|", filled) .. string.rep(".", barWidth - filled)
-    
+    local filled = math.floor(ratio * barWidth)
+    -- '|' starts an escape sequence in WoW strings; use '=' for the fill.
+    local bar = "|cff50ff7a" .. string.rep("=", filled) .. "|r|cff555555" .. string.rep("-", barWidth - filled) .. "|r"
+
     tooltip:AddDoubleLine(
         label or "",
-        string.format("[%s] %d/%d (%d%%)", bar, current, max, percent),
+        string.format("%s %d/%d (%d%%)", bar, current, max, math.floor(ratio * 100)),
         1, 1, 1,
         0.8, 0.8, 0.8
     )

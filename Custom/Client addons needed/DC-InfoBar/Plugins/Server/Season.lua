@@ -1,74 +1,21 @@
 --[[
     DC-InfoBar Season Plugin
     Shows current season, tokens earned, and progress
-    
-    Data Source: DCAddonProtocol SEAS module
+
+    Data Source: DCAddonProtocol SEAS module. Handlers and the initial requests
+    live in Core.lua (SetupServerCommunication / RequestServerData).
 ]]
 
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
-local function GetSeasonCurrencyItemIds()
-    local tokenId = 0
-    local essenceId = 0
-    local central = rawget(_G, "DCAddonProtocol")
-    local seasonData = DCInfoBar.serverData and DCInfoBar.serverData.season or nil
-
-    if seasonData then
-        tokenId = tonumber(seasonData.tokenId) or tokenId
-        essenceId = tonumber(seasonData.essenceId) or essenceId
-    end
-
-    if central then
-        tokenId = tonumber(central.TOKEN_ITEM_ID) or tokenId
-        essenceId = tonumber(central.ESSENCE_ITEM_ID) or essenceId
-    end
-
-    return tokenId, essenceId
-end
-
-local function SyncCurrencyIdsFromPayload(data)
-    if type(data) ~= "table" then
-        return
-    end
-
-    local tokenId = tonumber(data.tokenId or data.tokenID)
-    local essenceId = tonumber(data.essenceId or data.essenceID)
-
-    if not tokenId and not essenceId then
-        return
-    end
-
-    DCInfoBar.serverData = DCInfoBar.serverData or {}
-    DCInfoBar.serverData.season = DCInfoBar.serverData.season or {}
-
-    if tokenId then
-        DCInfoBar.serverData.season.tokenId = tokenId
-    end
-    if essenceId then
-        DCInfoBar.serverData.season.essenceId = essenceId
-    end
-
-    local central = rawget(_G, "DCAddonProtocol")
-    if central then
-        if tokenId then
-            central.TOKEN_ITEM_ID = tokenId
-        end
-        if essenceId then
-            central.ESSENCE_ITEM_ID = essenceId
-        end
-    end
-end
-
 local function GetItemCountSafe(itemId)
-    if type(_G.GetItemCount) == "function" then
-        -- 3.3.5 supports GetItemCount(itemId[, includeBank])
-        local ok, count = pcall(_G.GetItemCount, itemId, true)
-        if ok and type(count) == "number" then
-            return count
-        end
+    itemId = tonumber(itemId) or 0
+    if itemId <= 0 or type(GetItemCount) ~= "function" then
+        return 0
     end
-    return 0
+    local ok, count = pcall(GetItemCount, itemId, true)
+    return (ok and tonumber(count)) or 0
 end
 
 local SeasonPlugin = {
@@ -79,348 +26,184 @@ local SeasonPlugin = {
     side = "left",
     priority = 10,
     icon = "Interface\\Icons\\Achievement_Arena_2v2_1",
-    updateInterval = 5.0,  -- Update every 5 seconds
-    
+    updateInterval = 5.0,
+
     leftClickHint = "Open Progress panel",
     rightClickHint = "View season leaderboard",
-    
-    -- Cached display data
-    _displayText = "Season",
-    _seasonName = "Unknown",
-    _seasonId = 0,
-    _dataReceived = false,
 }
 
+-- Weekly progress lives in the server DB, so it needs a round-trip. Only ask
+-- when the season currency in the bags actually changed (a token or essence
+-- was gained/spent), not on every bag or loot event.
+function SeasonPlugin:CheckCurrencyChanged()
+    local season = DCInfoBar.serverData.season
+    local tokens = GetItemCountSafe(season.tokenId)
+    local essence = GetItemCountSafe(season.essenceId)
+
+    if tokens == self._lastTokenCount and essence == self._lastEssenceCount then
+        return
+    end
+
+    local firstSample = (self._lastTokenCount == nil)
+    self._lastTokenCount = tokens
+    self._lastEssenceCount = essence
+    if firstSample or not season._progressReceived then
+        return
+    end
+
+    local now = GetTime()
+    if self._lastProgressRequestAt and (now - self._lastProgressRequestAt) < 2 then
+        -- Throttled: re-check once the window has passed so the last change isn't lost.
+        if not self._recheckQueued then
+            self._recheckQueued = true
+            DCInfoBar:After(2, function()
+                SeasonPlugin._recheckQueued = false
+                SeasonPlugin._lastTokenCount = nil
+                SeasonPlugin:CheckCurrencyChanged()
+                DCInfoBar:RequestSeasonProgress()
+            end)
+        end
+        return
+    end
+    self._lastProgressRequestAt = now
+    DCInfoBar:RequestSeasonProgress()
+end
+
 function SeasonPlugin:OnActivate()
-    local function RequestSeasonData()
-        local DC = rawget(_G, "DCAddonProtocol")
-        if DC then
-            DC:Request("SEAS", 0x01, {})  -- CMSG_GET_CURRENT
-            DC:Request("SEAS", 0x03, {})  -- CMSG_GET_PROGRESS
-        end
+    if self._bagWatchFrame then
+        return
     end
 
-    local function RefreshLocalInventoryTotals()
-        DCInfoBar.serverData = DCInfoBar.serverData or {}
-        DCInfoBar.serverData.season = DCInfoBar.serverData.season or {}
-
-        local season = DCInfoBar.serverData.season
-        
-        -- Use server-backed currency from DCAddonProtocol (single source of truth)
-        local central = rawget(_G, "DCAddonProtocol")
-        if central and type(central.GetServerCurrencyBalance) == "function" then
-            local balance = central:GetServerCurrencyBalance()
-            if balance then
-                season.totalTokens = balance.tokens or 0
-                season.totalEssence = balance.emblems or 0
-                return
-            end
-        end
-        
-        -- Fallback: use GetItemCountSafe only if DCAddonProtocol not available
-        local tokenId, essenceId = GetSeasonCurrencyItemIds()
-        season.totalTokens = GetItemCountSafe(tokenId)
-        season.totalEssence = GetItemCountSafe(essenceId)
-    end
-
-    local function ThrottledSeasonRefresh(reason)
-        -- Keep updates responsive without spamming the server.
-        local now = (GetTime and GetTime()) or 0
-        self._lastSeasonRefreshAt = self._lastSeasonRefreshAt or 0
-
-        -- Always refresh client-side inventory totals immediately.
-        RefreshLocalInventoryTotals()
-        self._elapsed = 999 -- Force plugin redraw
-
-        -- Server progress (weekly tokens) can require a server roundtrip.
-        if (now - self._lastSeasonRefreshAt) < 2.0 then
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("BAG_UPDATE")
+    f:SetScript("OnEvent", function()
+        -- BAG_UPDATE fires once per bag in bursts; batch into one check.
+        if SeasonPlugin._checkQueued then
             return
         end
-        self._lastSeasonRefreshAt = now
-
-        local DC = rawget(_G, "DCAddonProtocol")
-        if DC then
-            DC:Request("SEAS", 0x03, {}) -- CMSG_GET_PROGRESS
-        end
-    end
-    
-    local function RegisterHandlers()
-        -- One-time setup: re-activation (RefreshAllPlugins) must not re-register
-        -- handlers or stack duplicate poll frames.
-        if SeasonPlugin._handlersRegistered then
-            return
-        end
-
-        local DC = rawget(_G, "DCAddonProtocol")
-        if not DC then
-            -- Retry after delay (guarded so repeated OnActivate calls don't stack pollers)
-            if not SeasonPlugin._retryFrame then
-                local retryFrame = CreateFrame("Frame")
-                retryFrame.elapsed = 0
-                retryFrame:SetScript("OnUpdate", function(self, elapsed)
-                    self.elapsed = self.elapsed + elapsed
-                    if self.elapsed >= 2 then
-                        self:SetScript("OnUpdate", nil)
-                        SeasonPlugin._retryFrame = nil
-                        RegisterHandlers()
-                    end
-                end)
-                SeasonPlugin._retryFrame = retryFrame
-            end
-            return
-        end
-
-        SeasonPlugin._handlersRegistered = true
-
-        -- Register handler for season response (SMSG_CURRENT = 0x10)
-        DC:RegisterHandler("SEAS", 0x10, function(data)
-            if data then
-                SyncCurrencyIdsFromPayload(data)
-                DCInfoBar:HandleSeasonData(data)
-                SeasonPlugin._dataReceived = true
-                SeasonPlugin._elapsed = 999  -- Force update
-                
-                -- Also update DC-Welcome Seasons if loaded
-                if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
-                    DCWelcome.Seasons.Data.seasonNumber = data.seasonId or data.id
-                    DCWelcome.Seasons.Data.seasonName = data.seasonName or data.name
-                    DCWelcome.Seasons.Data._loaded = true
-                    if DCWelcome.Seasons.UpdateProgressTracker then
-                        DCWelcome.Seasons:UpdateProgressTracker()
-                    end
-                end
-            end
+        SeasonPlugin._checkQueued = true
+        DCInfoBar:After(0.5, function()
+            SeasonPlugin._checkQueued = false
+            SeasonPlugin:CheckCurrencyChanged()
         end)
-        
-        -- Also register for progress response (SMSG_PROGRESS = 0x12)
-        DC:RegisterHandler("SEAS", 0x12, function(data)
-            if data then
-                SyncCurrencyIdsFromPayload(data)
-                DCInfoBar:HandleSeasonProgressData(data)
-                SeasonPlugin._dataReceived = true
-                SeasonPlugin._elapsed = 999  -- Force update
+    end)
+    self._bagWatchFrame = f
+end
 
-                local central = rawget(_G, "DCAddonProtocol")
-                if central and type(central.SetServerCurrencyBalance) == "function" then
-                    local totalTokens = tonumber(data.tokens or data.totalTokens) or 0
-                    local totalEssence = tonumber(data.essence or data.totalEssence) or 0
-                    central:SetServerCurrencyBalance(totalTokens, totalEssence)
-                end
-                
-                -- Also update DC-Welcome Seasons if loaded
-                if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
-                    local D = DCWelcome.Seasons.Data
-                    
-                    -- Weekly tokens/essence are the current week's progress
-                    D.weeklyTokens = data.weeklyTokens or D.weeklyTokens
-                    D.weeklyEssence = data.weeklyEssence or D.weeklyEssence
-                    
-                    -- Total tokens/essence are inventory counts (sent as 'tokens' and 'essence')
-                    D.tokens = data.tokens or D.tokens
-                    D.essence = data.essence or D.essence
-                    
-                    -- Weekly caps
-                    D.weeklyTokenCap = data.tokenCap or D.weeklyTokenCap
-                    D.weeklyEssenceCap = data.essenceCap or D.weeklyEssenceCap
-                    
-                    D._loaded = true
-                    if DCWelcome.Seasons.UpdateProgressTracker then
-                        DCWelcome.Seasons:UpdateProgressTracker()
-                    end
-                end
-                    -- Debug print
-                    DCInfoBar:Debug(string.format("Season plugin received progress: weeklyTokens=%s tokens=%s weeklyCap=%s", tostring(data.weeklyTokens or "nil"), tostring(data.tokens or "nil"), tostring(data.tokenCap or "nil")))
-            end
-        end)
-        
-        -- Request initial data
-        RequestSeasonData()
-
-        -- Also keep token totals fresh by watching bag/loot updates.
-        -- This fixes cases where tokens are received but the bar doesn't update
-        -- until the next manual/periodic server refresh.
-        if not SeasonPlugin._invWatchFrame then
-            local f = CreateFrame("Frame")
-            f:RegisterEvent("BAG_UPDATE")
-            f:RegisterEvent("BAG_UPDATE_DELAYED")
-            f:RegisterEvent("CHAT_MSG_LOOT")
-            f:RegisterEvent("PLAYER_ENTERING_WORLD")
-            f:SetScript("OnEvent", function(_, event)
-                -- Batch rapid bag updates (loot) into one refresh.
-                if DCInfoBar and DCInfoBar.After then
-                    if SeasonPlugin._pendingRefresh then
-                        return
-                    end
-                    SeasonPlugin._pendingRefresh = true
-                    DCInfoBar:After(0.25, function()
-                        SeasonPlugin._pendingRefresh = false
-                        ThrottledSeasonRefresh(event)
-                    end)
-                else
-                    ThrottledSeasonRefresh(event)
-                end
-            end)
-            SeasonPlugin._invWatchFrame = f
-        end
-        
-        -- Retry after delay if no data (increased retries)
-        if not SeasonPlugin._dataRetryFrame then
-            local retryFrame = CreateFrame("Frame")
-            retryFrame.elapsed = 0
-            retryFrame.retries = 0
-            retryFrame:SetScript("OnUpdate", function(self, elapsed)
-                self.elapsed = self.elapsed + elapsed
-                if self.elapsed >= 3 then
-                    self.elapsed = 0
-                    self.retries = self.retries + 1
-
-                    if self.retries >= 5 then
-                        self:SetScript("OnUpdate", nil)
-                        return
-                    end
-
-                    if not SeasonPlugin._dataReceived then
-                        RequestSeasonData()
-                    else
-                        self:SetScript("OnUpdate", nil)
-                    end
-                end
-            end)
-            SeasonPlugin._dataRetryFrame = retryFrame
-        end
+function SeasonPlugin:OnDeactivate()
+    if self._bagWatchFrame then
+        self._bagWatchFrame:UnregisterAllEvents()
+        self._bagWatchFrame = nil
     end
-    
-    RegisterHandlers()
+end
 
-    -- Prime local totals right away (even before server data arrives)
-    ThrottledSeasonRefresh("OnActivate")
+local function GetDisplaySeason()
+    local season = DCInfoBar.serverData.season
+    if (season.id or 0) > 0 then
+        return season
+    end
+
+    -- Fallback: DC-Welcome may already know the season before our reply lands.
+    local welcome = rawget(_G, "DCWelcome")
+    local D = welcome and welcome.Seasons and welcome.Seasons.Data
+    if D and D._loaded and tonumber(D.seasonNumber) and tonumber(D.seasonNumber) > 0 then
+        return {
+            id = tonumber(D.seasonNumber),
+            name = D.seasonName or "Unknown",
+            weeklyTokens = D.weeklyTokens or 0,
+            weeklyCap = D.weeklyTokenCap or 0,
+            weeklyEssence = D.weeklyEssence or 0,
+            essenceCap = D.weeklyEssenceCap or 0,
+            totalTokens = D.tokens or 0,
+            endsIn = 0,
+            weeklyReset = 0,
+        }
+    end
+    return nil
+end
+
+local function DisplayName(season)
+    local name = season.name
+    if not name or name == "Unknown" or name == "Unknown Season" then
+        return "Season " .. tostring(season.id)
+    end
+    return name
 end
 
 function SeasonPlugin:OnUpdate(elapsed)
-    local seasonData = DCInfoBar.serverData.season
-    
-    if seasonData.id > 0 then
-        self._seasonId = seasonData.id
-        self._seasonName = seasonData.name
-        
-        -- Display format: "S3: Primal" or "Season 3"
-        local showTokens = DCInfoBar:GetPluginSetting(self.id, "showTokens")
-        
-        if showTokens then
-            -- Show season + tokens
-            local tokenText = seasonData.weeklyTokens .. "/" .. seasonData.weeklyCap
-            return "S" .. seasonData.id .. ": ", tokenText
-        else
-            -- Just show season name
-            local displayName = seasonData.name
-            if displayName == "Unknown" or displayName == "Unknown Season" then
-                displayName = "Season " .. seasonData.id
-            end
-            return "", "S" .. seasonData.id .. ": " .. displayName
-        end
-    else
+    local season = GetDisplaySeason()
+    if not season then
         return "", "Season"
     end
+
+    if DCInfoBar:GetPluginSetting(self.id, "showTokens") ~= false then
+        local cap = tonumber(season.weeklyCap) or 0
+        local tokenText = tostring(season.weeklyTokens or 0)
+        if cap > 0 then
+            tokenText = tokenText .. "/" .. cap
+        end
+        return "S" .. season.id .. ":", tokenText
+    end
+
+    return "", "S" .. season.id .. ": " .. DisplayName(season)
 end
 
 function SeasonPlugin:OnServerData(data)
-    -- Called when new season data arrives from server
-    self._seasonId = data.id or 0
-    self._seasonName = data.name or "Unknown"
     self._elapsed = 999  -- Force immediate update
 end
 
 function SeasonPlugin:OnTooltip(tooltip)
-    local seasonData = DCInfoBar.serverData.season
-    
-    -- Fallback: Check DCWelcome.Seasons.Data if our data isn't populated
-    if (not seasonData.id or seasonData.id == 0 or seasonData.name == "Unknown") and DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
-        local D = DCWelcome.Seasons.Data
-        if D._loaded and D.seasonNumber and D.seasonNumber > 0 then
-            seasonData = {
-                id = D.seasonNumber,
-                name = D.seasonName or "Unknown Season",
-                weeklyTokens = D.weeklyTokens or D.tokens or 0,
-                weeklyCap = D.weeklyTokenCap or 1000,
-                weeklyEssence = D.weeklyEssence or D.essence or 0,
-                essenceCap = D.weeklyEssenceCap or 1000,
-                totalTokens = D.tokens or 0,
-                endsIn = 0,
-                weeklyReset = 0,
-            }
-        end
+    local season = GetDisplaySeason()
+    if not season then
+        tooltip:AddLine("Waiting for season data...", 0.7, 0.7, 0.7)
+        return
     end
-    
-    local displayName = seasonData.name
-    if displayName == "Unknown" or displayName == "Unknown Season" then
-        displayName = "Season " .. (seasonData.id or 1)
-    end
-    
-    tooltip:AddLine(displayName, 1, 0.82, 0)
+
+    tooltip:AddLine(DisplayName(season), 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
-    
-    -- Weekly progress
+
     tooltip:AddLine(" ")
     tooltip:AddLine("|cff32c4ffWeekly Progress|r")
-    
-    -- Tokens bar
-    DCInfoBar:AddTooltipProgressBar(tooltip, 
-        seasonData.weeklyTokens, 
-        seasonData.weeklyCap, 
-        "Tokens")
-    
-    -- Essence bar
-    DCInfoBar:AddTooltipProgressBar(tooltip,
-        seasonData.weeklyEssence,
-        seasonData.essenceCap,
-        "Essence")
-    
-    -- Total this season
-    if seasonData.totalTokens and seasonData.totalTokens > 0 then
+    DCInfoBar:AddTooltipProgressBar(tooltip, season.weeklyTokens, season.weeklyCap, "Tokens")
+    DCInfoBar:AddTooltipProgressBar(tooltip, season.weeklyEssence, season.essenceCap, "Essence")
+
+    if (season.totalTokens or 0) > 0 then
         tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Total Tokens:", DCInfoBar:FormatNumber(seasonData.totalTokens), 
+        tooltip:AddDoubleLine("Tokens in bags:", DCInfoBar:FormatNumber(season.totalTokens),
             0.7, 0.7, 0.7, 1, 1, 1)
     end
-    
-    -- Time info
-    if seasonData.endsIn and seasonData.endsIn > 0 then
+
+    if (season.endsIn or 0) > 0 or (season.weeklyReset or 0) > 0 then
         tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Season Ends:", DCInfoBar:FormatTimeShort(seasonData.endsIn),
+    end
+    if (season.endsIn or 0) > 0 then
+        tooltip:AddDoubleLine("Season Ends:", DCInfoBar:FormatTimeShort(season.endsIn),
             0.7, 0.7, 0.7, 1, 0.82, 0)
     end
-    
-    if seasonData.weeklyReset and seasonData.weeklyReset > 0 then
-        tooltip:AddDoubleLine("Weekly Reset:", DCInfoBar:FormatTimeShort(seasonData.weeklyReset),
+    if (season.weeklyReset or 0) > 0 then
+        tooltip:AddDoubleLine("Weekly Reset:", DCInfoBar:FormatTimeShort(season.weeklyReset),
             0.7, 0.7, 0.7, 0.5, 1, 0.5)
     end
 end
 
 function SeasonPlugin:OnClick(button)
     if button == "LeftButton" then
-        -- Open DC-Welcome progress panel if available
-        if DCWelcome and DCWelcome.ShowProgress then
-            DCWelcome:ShowProgress()
-        elseif DCWelcome and DCWelcome.Toggle then
-            DCWelcome:Toggle()
-        elseif DC_Welcome_Frame and DC_Welcome_Frame.Show then
-            DC_Welcome_Frame:Show()
-        elseif DCSeasons and DCSeasons.Toggle then
-            -- Fallback to seasons panel
-            DCSeasons:Toggle()
+        local welcome = rawget(_G, "DCWelcome")
+        if welcome and welcome.ShowWelcomeTab then
+            welcome:ShowWelcomeTab("progress")
         else
-            -- Request progress data and show in chat
-            local DC = rawget(_G, "DCAddonProtocol")
-            if DC then
-                DC:Request("WELC", 0x06, {})  -- CMSG_GET_PROGRESS
+            local proto = DCInfoBar:GetProtocol()
+            if proto then
+                proto:Request("WELC", 0x06, {})  -- CMSG_GET_PROGRESS
                 DCInfoBar:Print("Requested progress data from server...")
             else
                 DCInfoBar:Print("Progress panel not available")
             end
         end
     elseif button == "RightButton" then
-        -- Open leaderboard
-        if DCLeaderboards and DCLeaderboards.Show then
-            DCLeaderboards:Show("seasonal")
+        local leaderboards = rawget(_G, "DCLeaderboards")
+        if leaderboards and leaderboards.Show then
+            leaderboards:Show("seasonal")
         else
             DCInfoBar:Print("Leaderboards addon not loaded")
         end
@@ -428,12 +211,12 @@ function SeasonPlugin:OnClick(button)
 end
 
 function SeasonPlugin:OnCreateOptions(parent, yOffset)
-    local showTokensCB = DCInfoBar:CreateCheckbox(parent, "Show tokens in bar", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Show tokens in bar", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showTokens", checked)
+        self._elapsed = 999
     end, DCInfoBar:GetPluginSetting(self.id, "showTokens") ~= false)
-    
+
     return yOffset - 30
 end
 
--- Register plugin
 DCInfoBar:RegisterPlugin(SeasonPlugin)

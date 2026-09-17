@@ -101,8 +101,9 @@ DELETE FROM `fishing_loot_template` WHERE `entry` = 3317;
 -- 14. Fix item_template display IDs
 --     300011/300012: displayid 64584 is invalid → use 70000 (generic token icon)
 UPDATE `item_template` SET `displayid` = 70000 WHERE `entry` IN (300011, 300012);
---     300313–300331: displayid 68750 is invalid → use 32837
-UPDATE `item_template` SET `displayid` = 32837 WHERE `entry` BETWEEN 300313 AND 300331;
+--     300313–300331 (M+ keystones): 68750 and 32837 (INV_Sword_20) are both wrong → 8525134
+--     (inv_relics_hourglass); class must be 15 to match Item.dbc (see Mythic+/dc_keystone_items.sql)
+UPDATE `item_template` SET `class` = 15, `subclass` = 0, `displayid` = 8525134 WHERE `entry` BETWEEN 300313 AND 300331;
 
 -- 15. Fix item_template class for 300311/300312: class=10 (Money) is obsolete
 --     → class=15 (Miscellaneous), subclass=0 (Junk)

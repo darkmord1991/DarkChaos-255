@@ -428,6 +428,8 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->scalingApplied = false;
     state->countdownStarted = 0;
     state->participants.clear();
+    state->bots.clear();
+    state->botRun = false;
     state->lootAwards.clear();
     state->awardedItemsByPlayer.clear();
     state->recentBossEvades.clear();
@@ -1052,6 +1054,12 @@ void MythicPlusRunManager::RegisterGroupMembers(Player* activator, InstanceState
 void MythicPlusRunManager::AddParticipant(InstanceState* state, Player* player)
 {
     if (!state || !player)
+        return;
+
+    // Spectators stand inside the run's instance but take no part in it: no
+    // deaths, loot, tokens or records. The pending id covers the moment of
+    // arrival, before the spectator session is visible to every caller.
+    if (sMythicSpectator.IsSpectating(player) || player->HasPendingSpectatorForBG(player->GetInstanceId()))
         return;
 
     ObjectGuid::LowType guidLow = player->GetGUID().GetCounter();
@@ -2927,11 +2935,13 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     std::string leaderName = activator->GetName();
     if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
         leaderName = owner->GetName();
+    if (state->botRun)
+        leaderName = "BOT " + leaderName;
 
     std::string dungeonName = GetMapDisplayName(state->mapId);
     sMythicSpectator.RegisterActiveRun(state->instanceId, state->mapId,
         state->keystoneLevel, leaderName, true, state->instanceId,
-        dungeonName);
+        dungeonName, state->botRun);
 
     if (DCMythicSpectator::SpectateableRun* liveRun =
             sMythicSpectator.GetRunMutable(state->instanceId))
@@ -3625,6 +3635,147 @@ MythicPlusRunManager::InstanceState const* MythicPlusRunManager::GetRunState(Map
     // be erased underneath them - but it must not be cached across ticks.
     std::lock_guard<std::recursive_mutex> guard(_stateMutex);
     return GetState(map);
+}
+
+bool MythicPlusRunManager::StartBotRun(Player* activator, uint8 keystoneLevel, std::string& outError)
+{
+    outError.clear();
+
+    if (!activator || !activator->IsInWorld())
+    {
+        outError = "The activating bot is not in the world.";
+        return false;
+    }
+
+    if (!activator->GetSession() || !activator->GetSession()->IsBot())
+    {
+        outError = "Bot runs must be activated by a bot.";
+        return false;
+    }
+
+    Map* map = activator->GetMap();
+    if (!map || !map->IsDungeon())
+    {
+        outError = "The activating bot is not inside a dungeon.";
+        return false;
+    }
+
+    // TryActivateKeystone only uses the Font of Power to identify the instance,
+    // so any loaded copy on this map will do.
+    GameObject* font = nullptr;
+    for (auto const& [spawnId, gameObject] : map->GetGameObjectBySpawnIdStore())
+    {
+        (void)spawnId;
+        if (gameObject && gameObject->GetEntry() == MythicPlusConstants::GO_FONT_OF_POWER)
+        {
+            font = gameObject;
+            break;
+        }
+    }
+
+    if (!font)
+    {
+        outError = "No Font of Power is loaded in this instance.";
+        return false;
+    }
+
+    // Validate first: TryActivateKeystone reports its failures only to the
+    // activator's client, and a bot has none.
+    KeystoneDescriptor descriptor;
+    if (!CanActivateKeystone(activator, font, descriptor, outError, keystoneLevel))
+        return false;
+
+    if (!TryActivateKeystone(activator, font, keystoneLevel))
+    {
+        outError = "Keystone activation failed; see the mythic.run log.";
+        return false;
+    }
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+    if (InstanceState* state = GetState(map))
+        state->botRun = true;
+
+    LOG_INFO("mythic.run", "Bot run activated by {} on map {} instance {} at +{}",
+        activator->GetName(), map->GetId(), map->GetInstanceId(), uint32(keystoneLevel));
+    return true;
+}
+
+bool MythicPlusRunManager::AbortRun(Map* map, std::string_view reason)
+{
+    if (!map)
+        return false;
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
+    InstanceState* state = GetState(map);
+    if (!state || state->keystoneLevel == 0 || state->completed || state->failed)
+        return false;
+
+    // HandleFailState does not lift the countdown root.
+    if (state->countdownActive)
+    {
+        Map::PlayerList const& players = map->GetPlayers();
+        for (auto const& ref : players)
+        {
+            Player* player = ref.GetSource();
+            if (player && player->HasUnitState(UNIT_STATE_ROOT))
+                player->SetControlled(false, UNIT_STATE_ROOT);
+        }
+    }
+
+    // Same outcome as a group cancel vote. HandleFailState erases the state.
+    HandleFailState(state, reason, true);
+    ResetDungeonForRunStart(map);
+    return true;
+}
+
+uint8 MythicPlusRunManager::GetRunPhase(Map* map) const
+{
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
+    InstanceState const* state = GetState(map);
+    if (!state || state->keystoneLevel == 0 || state->completed || state->failed)
+        return 0;
+
+    return (state->countdownActive || !state->startedAt) ? 1 : 2;
+}
+
+void MythicPlusRunManager::GetRemainingBossEntries(Map* map, std::vector<uint32>& out) const
+{
+    out.clear();
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
+    InstanceState const* state = GetState(map);
+    if (!state)
+        return;
+
+    for (uint32 entry : state->bossOrder)
+        if (state->bossKillStamps.find(entry) == state->bossKillStamps.end())
+            out.push_back(entry);
+}
+
+namespace DCMythicPlusBots
+{
+    bool StartBotRun(Player* activator, uint8 keystoneLevel, std::string& outError)
+    {
+        return sMythicRuns->StartBotRun(activator, keystoneLevel, outError);
+    }
+
+    bool AbortRun(Map* map, std::string const& reason)
+    {
+        return sMythicRuns->AbortRun(map, reason);
+    }
+
+    uint8 GetRunPhase(Map* map)
+    {
+        return sMythicRuns->GetRunPhase(map);
+    }
+
+    void GetRemainingBossEntries(Map* map, std::vector<uint32>& out)
+    {
+        sMythicRuns->GetRemainingBossEntries(map, out);
+    }
 }
 
 bool MythicPlusRunManager::IsMythicPlusActive(Map* map) const

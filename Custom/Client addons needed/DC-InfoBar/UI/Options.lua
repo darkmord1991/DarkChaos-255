@@ -151,21 +151,21 @@ function DCInfoBar:CreateGeneralTab(parent)
     -- Enable/Disable
     local enableCB = self:CreateCheckbox(parent, "Enable DC-InfoBar", 0, yOffset, function(checked)
         self.db.global.enabled = checked
-        if self.bar then
-            if checked then self.bar:Show() else self.bar:Hide() end
-        end
+        self:UpdateVisibility(true)
     end, self.db and self.db.global and self.db.global.enabled)
     yOffset = yOffset - 30
     
     -- Hide in combat
     local combatCB = self:CreateCheckbox(parent, "Hide in combat", 0, yOffset, function(checked)
         self.db.global.hideInCombat = checked
+        self:UpdateVisibility(true)
     end, self.db and self.db.global and self.db.global.hideInCombat)
     yOffset = yOffset - 30
     
     -- Hide in instance
     local instanceCB = self:CreateCheckbox(parent, "Hide in instances", 0, yOffset, function(checked)
         self.db.global.hideInInstance = checked
+        self:UpdateVisibility(true)
     end, self.db and self.db.global and self.db.global.hideInInstance)
     yOffset = yOffset - 30
     
@@ -238,11 +238,13 @@ function DCInfoBar:CreatePluginsTab(parent)
     local pluginOrder = {
         -- Left side
         { id = "DCInfoBar_Season", name = "Season Info", category = "Server Data" },
+        { id = "DCInfoBar_Prestige", name = "Prestige", category = "Server Data" },
         { id = "DCInfoBar_Keystone", name = "Keystone", category = "Server Data" },
         { id = "DCInfoBar_Affixes", name = "Weekly Affixes", category = "Server Data" },
         { id = "DCInfoBar_WorldBoss", name = "World Boss Timers", category = "Server Data" },
         { id = "DCInfoBar_Events", name = "Zone Events", category = "Server Data" },
         { id = "DCInfoBar_Location", name = "Location", category = "Character" },
+        { id = "DCInfoBar_XPRep", name = "XP / Reputation", category = "Character" },
         -- Right side
         { id = "DCInfoBar_Gold", name = "Gold", category = "Character" },
         { id = "DCInfoBar_Durability", name = "Durability", category = "Character" },
@@ -277,12 +279,8 @@ function DCInfoBar:CreatePluginsTab(parent)
         cb:SetChecked(enabled)
         cb:SetScript("OnClick", function(self)
             local checked = self:GetChecked()
-            DCInfoBar:SetPluginSetting(pluginInfo.id, "enabled", checked)
-            if checked then
-                DCInfoBar:ActivatePlugin(pluginInfo.id)
-            else
-                DCInfoBar:DeactivatePlugin(pluginInfo.id)
-            end
+            DCInfoBar:SetPluginSetting(pluginInfo.id, "enabled", checked and true or false)
+            DCInfoBar:RefreshAllPlugins()
         end)
         
         -- Plugin name
@@ -348,17 +346,11 @@ function DCInfoBar:CreatePositionTab(parent)
     local positionGroup = {}
     local topBtn = self:CreateRadioButton(parent, "Top of screen", 20, yOffset, function()
         self:SetBarSetting("position", "top")
-        if self.bar then
-            self.bar:RefreshSettings()
-        end
     end, self:GetBarSetting("position") == "top", positionGroup)
     yOffset = yOffset - 25
     
     local bottomBtn = self:CreateRadioButton(parent, "Bottom of screen", 20, yOffset, function()
         self:SetBarSetting("position", "bottom")
-        if self.bar then
-            self.bar:RefreshSettings()
-        end
     end, self:GetBarSetting("position") == "bottom", positionGroup)
     yOffset = yOffset - 40
     
@@ -371,9 +363,6 @@ function DCInfoBar:CreatePositionTab(parent)
     -- Show background
     local showBgCB = self:CreateCheckbox(parent, "Show background", 20, yOffset, function(checked)
         self:SetBarSetting("showBackground", checked)
-        if self.bar and self.bar.bg then
-            if checked then self.bar.bg:Show() else self.bar.bg:Hide() end
-        end
     end, self:GetBarSetting("showBackground") ~= false)
     yOffset = yOffset - 30
     
@@ -387,11 +376,6 @@ function DCInfoBar:CreatePositionTab(parent)
         local bgColor = self:GetBarSetting("backgroundColor") or { 0.04, 0.04, 0.05, 0.85 }
         bgColor[4] = value / 100
         self:SetBarSetting("backgroundColor", bgColor)
-        if self.bar and self.bar.bg then
-            -- Apply alpha via SetAlpha for 3.3.5a consistency.
-            self.bar.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, 1)
-            self.bar.bg:SetAlpha(bgColor[4] or 1)
-        end
     end)
     opacitySlider:SetPoint("LEFT", opacityLabel, "RIGHT", 20, 0)
     yOffset = yOffset - 40
@@ -403,9 +387,6 @@ function DCInfoBar:CreatePositionTab(parent)
     
     local heightSlider = self:CreateSlider(parent, 150, yOffset, 18, 32, self:GetBarSetting("height") or 22, function(value)
         self:SetBarSetting("height", value)
-        if self.bar then
-            self.bar:SetHeight(value)
-        end
     end)
     heightSlider:SetPoint("LEFT", heightLabel, "RIGHT", 40, 0)
 end
@@ -450,12 +431,17 @@ function DCInfoBar:CreateCommunicationTab(parent)
     local statusLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statusLabel:SetPoint("TOPLEFT", 0, yOffset)
     
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        statusLabel:SetText("Status: |cff50ff7aConnected to DCAddonProtocol|r")
-    else
-        statusLabel:SetText("Status: |cffff5050DCAddonProtocol not found|r")
+    local function RefreshStatus()
+        local DC = rawget(_G, "DCAddonProtocol")
+        if not DC then
+            statusLabel:SetText("Status: |cffff5050DCAddonProtocol not found|r")
+        elseif DC.IsConnected and not DC:IsConnected() then
+            statusLabel:SetText("Status: |cffffd100Waiting for server handshake|r")
+        else
+            statusLabel:SetText("Status: |cff50ff7aConnected|r")
+        end
     end
+    RefreshStatus()
     yOffset = yOffset - 30
     
     -- Debug options
@@ -469,18 +455,6 @@ function DCInfoBar:CreateCommunicationTab(parent)
         self.db.communication.showDebugMessages = checked
         self.db.debug = checked
     end, self.db and self.db.communication and self.db.communication.showDebugMessages)
-    yOffset = yOffset - 30
-    
-    -- Log requests
-    local logReqCB = self:CreateCheckbox(scrollChild, "Log server requests", 0, yOffset, function(checked)
-        self.db.communication.logRequests = checked
-    end, self.db and self.db.communication and self.db.communication.logRequests)
-    yOffset = yOffset - 30
-    
-    -- Log responses
-    local logRespCB = self:CreateCheckbox(scrollChild, "Log server responses", 0, yOffset, function(checked)
-        self.db.communication.logResponses = checked
-    end, self.db and self.db.communication and self.db.communication.logResponses)
     yOffset = yOffset - 30
     
     -- Test mode
@@ -523,6 +497,7 @@ function DCInfoBar:CreateCommunicationTab(parent)
     
     -- Update data display on show
     parent:SetScript("OnShow", function()
+        RefreshStatus()
         local dataText = ""
         
         -- Season
@@ -541,16 +516,6 @@ function DCInfoBar:CreateCommunicationTab(parent)
         -- Affixes
         dataText = dataText .. "|cff32c4ffAffixes:|r\n"
         local names = self.serverData.affixes.names or {}
-        if (#names == 0) and self.serverData.affixes.ids and #self.serverData.affixes.ids > 0 then
-            names = {}
-            for _, id in ipairs(self.serverData.affixes.ids) do
-                local name = nil
-                if id and id > 0 and type(GetSpellInfo) == "function" then
-                    name = GetSpellInfo(id)
-                end
-                names[#names + 1] = name or tostring(id or "Unknown")
-            end
-        end
         if #names > 0 then
             dataText = dataText .. "  " .. table.concat(names, ", ") .. "\n"
         else
@@ -725,7 +690,7 @@ function DCInfoBar:CreateDropdown(parent, x, options, onChange)
     
     dropdown.arrow = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     dropdown.arrow:SetPoint("RIGHT", -8, 0)
-    dropdown.arrow:SetText("▼")
+    dropdown.arrow:SetText("v")
     
     dropdown:EnableMouse(true)
     dropdown:SetScript("OnMouseDown", function(self)
@@ -836,12 +801,14 @@ function DCInfoBar:ShowPluginOptions(pluginId)
     -- Show Label
     local labelCB = self:CreateCheckbox(content, "Show Label", 20, yOffset, function(checked)
         self:SetPluginSetting(pluginId, "showLabel", checked)
+        self:RefreshAllPlugins()
     end, pluginSettings.showLabel ~= false)
     yOffset = yOffset - 30
 
     -- Show Icon
     local iconCB = self:CreateCheckbox(content, "Show Icon", 20, yOffset, function(checked)
         self:SetPluginSetting(pluginId, "showIcon", checked)
+        self:RefreshAllPlugins()
     end, pluginSettings.showIcon ~= false)
     yOffset = yOffset - 40
 
@@ -851,11 +818,12 @@ function DCInfoBar:ShowPluginOptions(pluginId)
         yOffset = plugin:OnCreateOptions(content, yOffset)
     end
 
-    -- Done button
-    local doneBtn = self:CreateButton(content, "Done", 90, -210, 120, function()
+    -- Done button below the last option; grow the popup to fit.
+    local doneBtn = self:CreateButton(content, "Done", 90, yOffset - 10, 120, function()
         popup:Hide()
         self:RefreshAllPlugins()
     end)
+    popup:SetHeight(math.max(250, -(yOffset - 10) + 50))
 
     popup:Show()
 end

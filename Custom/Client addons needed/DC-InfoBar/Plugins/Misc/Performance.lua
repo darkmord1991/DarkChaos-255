@@ -22,8 +22,7 @@ local PerformancePlugin = {
     rightClickHint = "Show memory breakdown",
     
     _fps = 0,
-    _latencyHome = 0,
-    _latencyWorld = 0,
+    _latency = 0,
     _memory = 0,
     _lastServerInfoRequestAt = 0,
 }
@@ -65,86 +64,38 @@ local function GetServerInfoSnapshot()
 end
 
 function PerformancePlugin:OnUpdate(elapsed)
-    -- Get FPS
     self._fps = math.floor(GetFramerate() or 0)
-    
-    -- Get latency (returns bandwidthIn, bandwidthOut, latencyHome, latencyWorld)
-    local _, _, latencyHome, latencyWorld = GetNetStats()
-    self._latencyHome = latencyHome or 0
-    self._latencyWorld = latencyWorld or 0
-    
-    -- Build display string
-    local showFPS = DCInfoBar:GetPluginSetting(self.id, "showFPS")
-    local showLatency = DCInfoBar:GetPluginSetting(self.id, "showLatency")
-    local showMemory = DCInfoBar:GetPluginSetting(self.id, "showMemory")
 
-    -- Memory is expensive: UpdateAddOnMemoryUsage() forces a GC accounting pass
-    -- over every addon. Only compute it when it's actually displayed, and at most
-    -- once every ~5s instead of every tick.
-    if showMemory then
-        self._memAccum = (self._memAccum or 999) + (elapsed or 0)
-        if self._memAccum >= 5 then
-            self._memAccum = 0
-            UpdateAddOnMemoryUsage()
-            local totalMem = 0
-            local numAddons = GetNumAddOns()
-            for i = 1, numAddons do
-                totalMem = totalMem + (GetAddOnMemoryUsage(i) or 0)
-            end
-            self._memory = totalMem / 1024  -- Convert to MB
-        end
-    end
-    
+    -- 3.3.5a returns bandwidthIn, bandwidthOut, latency (no home/world split).
+    local _, _, latency = GetNetStats()
+    self._latency = latency or 0
+
+    -- Whole-UI Lua heap in KB: free to read, unlike UpdateAddOnMemoryUsage().
+    self._memory = collectgarbage("count") / 1024
+
     local parts = {}
-    
-    if showFPS ~= false then
-        local fpsColor = "green"
-        if self._fps < 20 then
-            fpsColor = "red"
-        elseif self._fps < 40 then
-            fpsColor = "yellow"
-        end
+
+    if DCInfoBar:GetPluginSetting(self.id, "showFPS") ~= false then
+        local fpsColor = (self._fps < 20 and "red") or (self._fps < 40 and "yellow") or "green"
         table.insert(parts, DCInfoBar:WrapColor(self._fps .. " fps", fpsColor))
     end
-    
-    if showLatency ~= false then
-        local latency = math.max(self._latencyHome, self._latencyWorld)
-        local latColor = "green"
-        if latency > 300 then
-            latColor = "red"
-        elseif latency > 150 then
-            latColor = "yellow"
-        end
-        table.insert(parts, DCInfoBar:WrapColor(latency .. "ms", latColor))
+
+    if DCInfoBar:GetPluginSetting(self.id, "showLatency") ~= false then
+        local latColor = (self._latency > 300 and "red") or (self._latency > 150 and "yellow") or "green"
+        table.insert(parts, DCInfoBar:WrapColor(self._latency .. "ms", latColor))
     end
-    
-    if showMemory then
+
+    if DCInfoBar:GetPluginSetting(self.id, "showMemory") then
         table.insert(parts, string.format("%.0fMB", self._memory))
     end
 
-    local showServerInfo = DCInfoBar:GetPluginSetting(self.id, "showServerInfo")
-    if showServerInfo ~= false then
-        local now = time()
-        local info, infoTime = GetServerInfoSnapshot()
-        local lastUpdate = (type(infoTime) == "number") and infoTime or 0
-        local needsRefresh = (now - lastUpdate) >= 120
-        local DCWelcome = rawget(_G, "DCWelcome")
-        if needsRefresh and DCWelcome and DCWelcome.RequestServerInfo then
-            if (now - (self._lastServerInfoRequestAt or 0)) >= 120 then
-                self._lastServerInfoRequestAt = now
-                DCWelcome:RequestServerInfo()
-            end
-        end
-    end
-    
     return "", table.concat(parts, " ")
 end
 
 function PerformancePlugin:OnTooltip(tooltip)
     tooltip:AddLine("Performance", 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
-    
-    -- FPS
+
     local fpsR, fpsG, fpsB = 0.3, 1, 0.5
     if self._fps < 20 then
         fpsR, fpsG, fpsB = 1, 0.3, 0.3
@@ -152,100 +103,87 @@ function PerformancePlugin:OnTooltip(tooltip)
         fpsR, fpsG, fpsB = 1, 0.82, 0
     end
     tooltip:AddDoubleLine("Framerate:", self._fps .. " fps", 0.7, 0.7, 0.7, fpsR, fpsG, fpsB)
-    
-    -- Latency
-    local latHome = self._latencyHome
-    local latWorld = self._latencyWorld
-    
-    local homeR, homeG, homeB = 0.3, 1, 0.5
-    if latHome > 300 then homeR, homeG, homeB = 1, 0.3, 0.3
-    elseif latHome > 150 then homeR, homeG, homeB = 1, 0.82, 0 end
-    
-    local worldR, worldG, worldB = 0.3, 1, 0.5
-    if latWorld > 300 then worldR, worldG, worldB = 1, 0.3, 0.3
-    elseif latWorld > 150 then worldR, worldG, worldB = 1, 0.82, 0 end
-    
-    tooltip:AddDoubleLine("Latency (Home):", latHome .. " ms", 0.7, 0.7, 0.7, homeR, homeG, homeB)
-    tooltip:AddDoubleLine("Latency (World):", latWorld .. " ms", 0.7, 0.7, 0.7, worldR, worldG, worldB)
-    
-    -- Memory
-    tooltip:AddLine(" ")
-    tooltip:AddLine("|cff32c4ffMemory Usage|r")
-    tooltip:AddDoubleLine("Total:", string.format("%.1f MB", self._memory), 0.7, 0.7, 0.7, 1, 1, 1)
-    
-    -- Top addons by memory
+
+    local latR, latG, latB = 0.3, 1, 0.5
+    if self._latency > 300 then
+        latR, latG, latB = 1, 0.3, 0.3
+    elseif self._latency > 150 then
+        latR, latG, latB = 1, 0.82, 0
+    end
+    tooltip:AddDoubleLine("Latency:", self._latency .. " ms", 0.7, 0.7, 0.7, latR, latG, latB)
+
+    -- Per-addon accounting is expensive, so it only runs while the tooltip is
+    -- being built (once per hover), never from the bar update.
     UpdateAddOnMemoryUsage()
     local addonMem = {}
+    local addonTotal = 0
     for i = 1, GetNumAddOns() do
         local name = GetAddOnInfo(i)
         local mem = GetAddOnMemoryUsage(i) or 0
-        if mem > 100 then  -- Only show addons using >100KB
+        addonTotal = addonTotal + mem
+        if mem > 100 then  -- Only list addons using >100KB
             table.insert(addonMem, { name = name, mem = mem })
         end
     end
-    
     table.sort(addonMem, function(a, b) return a.mem > b.mem end)
-    
+
     tooltip:AddLine(" ")
-    tooltip:AddLine("Top Addons:")
+    tooltip:AddLine("|cff32c4ffMemory Usage|r")
+    tooltip:AddDoubleLine("UI Lua heap:", string.format("%.1f MB", collectgarbage("count") / 1024), 0.7, 0.7, 0.7, 1, 1, 1)
+    tooltip:AddDoubleLine("Addons:", string.format("%.1f MB", addonTotal / 1024), 0.7, 0.7, 0.7, 1, 1, 1)
     for i = 1, math.min(5, #addonMem) do
         local addon = addonMem[i]
-        local memStr
-        if addon.mem >= 1024 then
-            memStr = string.format("%.1f MB", addon.mem / 1024)
-        else
-            memStr = string.format("%.0f KB", addon.mem)
-        end
+        local memStr = addon.mem >= 1024 and string.format("%.1f MB", addon.mem / 1024) or string.format("%.0f KB", addon.mem)
         tooltip:AddDoubleLine("  " .. addon.name, memStr, 0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
     end
 
-    local showServerInfo = DCInfoBar:GetPluginSetting(self.id, "showServerInfo")
-    if showServerInfo ~= false then
-        tooltip:AddLine(" ")
-        tooltip:AddLine("|cff32c4ffServer|r")
+    if DCInfoBar:GetPluginSetting(self.id, "showServerInfo") == false then
+        return
+    end
 
-        local info, infoTime = GetServerInfoSnapshot()
-        local hasInfo = (type(info) == "table") and next(info) ~= nil
-        if hasInfo then
-            local serverName = info.serverName or info.name
-            local seasonName = info.seasonName or (info.season and info.season.name)
-            local maxLevel = info.maxLevel
-            local uptime = info.uptime or info.uptimeSeconds or info.uptimeSec or info.uptimeMinutes
-            if type(uptime) == "number" and info.uptimeMinutes and not info.uptimeSeconds and not info.uptimeSec then
-                uptime = uptime * 60
-            end
-            local players = info.playersOnline or info.onlinePlayers or info.playerCount or info.players or info.online
+    tooltip:AddLine(" ")
+    tooltip:AddLine("|cff32c4ffServer|r")
 
-            if serverName then
-                tooltip:AddDoubleLine("Server:", tostring(serverName), 0.7, 0.7, 0.7, 1, 1, 1)
-            end
-            if seasonName then
-                tooltip:AddDoubleLine("Season:", tostring(seasonName), 0.7, 0.7, 0.7, 1, 1, 1)
-            end
-            if maxLevel then
-                tooltip:AddDoubleLine("Max level:", tostring(maxLevel), 0.7, 0.7, 0.7, 1, 1, 1)
-            end
-            if uptime then
-                tooltip:AddDoubleLine("Uptime:", FormatDuration(uptime), 0.7, 0.7, 0.7, 1, 1, 1)
-            end
-            if players then
-                tooltip:AddDoubleLine("Players:", tostring(players), 0.7, 0.7, 0.7, 1, 1, 1)
-            end
-            if infoTime then
-                local age = time() - infoTime
-                tooltip:AddDoubleLine("Last update:", FormatDuration(age) .. " ago", 0.7, 0.7, 0.7, 0.8, 0.8, 0.8)
-            end
-        else
-            tooltip:AddLine("Server info: loading...", 0.7, 0.7, 0.7)
-            local DCWelcome = rawget(_G, "DCWelcome")
-            if DCWelcome and DCWelcome.RequestServerInfo then
-                local now = time()
-                if (now - (self._lastServerInfoRequestAt or 0)) > 60 then
-                    self._lastServerInfoRequestAt = now
-                    DCWelcome:RequestServerInfo()
-                end
-            end
+    local info, infoTime = GetServerInfoSnapshot()
+    if type(info) == "table" and next(info) ~= nil then
+        local serverName = info.serverName or info.name
+        local seasonName = info.seasonName or (info.season and info.season.name)
+        local uptime = info.uptime or info.uptimeSeconds or info.uptimeSec
+        if not uptime and info.uptimeMinutes then
+            uptime = info.uptimeMinutes * 60
         end
+        local players = info.playersOnline or info.onlinePlayers or info.playerCount or info.players or info.online
+
+        if serverName then
+            tooltip:AddDoubleLine("Server:", tostring(serverName), 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+        if seasonName then
+            tooltip:AddDoubleLine("Season:", tostring(seasonName), 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+        if info.maxLevel then
+            tooltip:AddDoubleLine("Max level:", tostring(info.maxLevel), 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+        if uptime then
+            tooltip:AddDoubleLine("Uptime:", FormatDuration(uptime), 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+        if players then
+            tooltip:AddDoubleLine("Players:", tostring(players), 0.7, 0.7, 0.7, 1, 1, 1)
+        end
+        if infoTime then
+            tooltip:AddDoubleLine("Last update:", FormatDuration(time() - infoTime) .. " ago", 0.7, 0.7, 0.7, 0.8, 0.8, 0.8)
+        end
+    else
+        tooltip:AddLine("Server info: loading...", 0.7, 0.7, 0.7)
+    end
+
+    -- Refresh on hover when the cached info is older than 2 minutes.
+    local welcome = rawget(_G, "DCWelcome")
+    local now = time()
+    if welcome and welcome.RequestServerInfo
+        and (now - (tonumber(infoTime) or 0)) >= 120
+        and (now - (self._lastServerInfoRequestAt or 0)) >= 60 then
+        self._lastServerInfoRequestAt = now
+        welcome:RequestServerInfo()
     end
 end
 

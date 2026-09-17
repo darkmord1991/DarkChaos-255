@@ -157,11 +157,32 @@ function HLBG.TrackStatusSignal(statusValue, mapId)
         -- the player was already gone. Comparing the client's own zone string
         -- against itself keeps this locale-independent.
         if HLBG.IsHLBGMapId(mapNum) then
-            HLBG._presenceZone = HLBG.safeGetRealZoneText()
+            -- The server adds us to the battleground on the worldport ack, so the
+            -- first status arrives during the loading screen, while the zone text
+            -- still names the zone we are leaving. Capturing it then made the
+            -- first zone event after arrival read as "left the battleground" and
+            -- hid the HUD until the next broadcast. Defer the capture instead.
+            if HLBG._inTransit then
+                HLBG._presenceZone = nil
+                HLBG._presenceZonePending = true
+            else
+                HLBG._presenceZone = HLBG.safeGetRealZoneText()
+                HLBG._presenceZonePending = false
+            end
         else
             HLBG._presenceZone = nil
+            HLBG._presenceZonePending = false
+            HLBG._presenceArrivalAt = nil
         end
     end
+end
+
+-- Seconds after arrival during which a zone text change is adopted rather than
+-- treated as a departure (see StillInPresenceZone).
+local PRESENCE_ARRIVAL_GRACE = 5
+
+local function Now()
+    return (type(GetTime) == 'function' and GetTime()) or 0
 end
 
 -- True while the client still reports the zone it was in when the server last
@@ -169,17 +190,61 @@ end
 -- off the map, whatever the cached status says. An unknown zone on either side
 -- means "cannot tell", which keeps the server's word authoritative.
 local function StillInPresenceZone()
-    local zone = HLBG._presenceZone
-    if zone == nil or zone == "" then
-        return true
-    end
-
     local current = HLBG.safeGetRealZoneText()
-    if current == "" then
+
+    if HLBG._presenceZonePending then
+        if HLBG._inTransit or current == "" then
+            return true
+        end
+
+        HLBG._presenceZone = current
+        HLBG._presenceZonePending = false
+        HLBG._presenceArrivalAt = Now()
         return true
     end
 
-    return current == zone
+    local zone = HLBG._presenceZone
+    if zone == nil or zone == "" or current == "" or current == zone then
+        return true
+    end
+
+    -- The zone text can still name the previous zone at PLAYER_ENTERING_WORLD
+    -- and only switch on the ZONE_CHANGED_NEW_AREA that follows. Handler order
+    -- across frames is not fixed, so adopt the new text right after arriving.
+    local arrivedAt = tonumber(HLBG._presenceArrivalAt)
+    if arrivedAt and (Now() - arrivedAt) < PRESENCE_ARRIVAL_GRACE then
+        HLBG._presenceZone = current
+        return true
+    end
+
+    return false
+end
+
+-- Loading-screen window: PLAYER_LEAVING_WORLD .. PLAYER_ENTERING_WORLD.
+do
+    local transitFrame = CreateFrame("Frame")
+    transitFrame:RegisterEvent("PLAYER_LEAVING_WORLD")
+    transitFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    transitFrame:SetScript("OnEvent", function(self, event)
+        if event == "PLAYER_LEAVING_WORLD" then
+            HLBG._inTransit = true
+            if HLBG.UI and HLBG.UI.ModernHUD then
+                HLBG.UI.ModernHUD:Hide()
+            end
+            return
+        end
+
+        HLBG._inTransit = false
+        -- Other PLAYER_ENTERING_WORLD handlers may have run while the flag was
+        -- still set and kept the HUD hidden; re-evaluate once the world is up.
+        if HLBG.HasRecentMapPresence and HLBG.HasRecentMapPresence(60) then
+            HLBG.After(0.5, function()
+                if HLBG.UpdateHUD then
+                    HLBG.UpdateHUD()
+                end
+            end)
+        end
+    end)
 end
 
 function HLBG.HasRecentMapPresence(maxAgeSeconds)

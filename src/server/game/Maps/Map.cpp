@@ -2085,7 +2085,12 @@ bool InstanceMap::AddPlayerToMap(Player* player)
     if (m_resetAfterUnload) // this instance has been reset, it's not meant to be used anymore
         return false;
 
-    if (IsDungeon())
+    // DarkChaos: a Mythic+ spectator (see MapInstanced::CreateInstanceForPlayer)
+    // enters without being bound, keeps any lockout held on another copy, and
+    // does not count toward the hourly instance limit.
+    bool const spectatorEntry = player->HasPendingSpectatorForBG(GetInstanceId());
+
+    if (IsDungeon() && !spectatorEntry)
     {
         Group* group = player->GetGroup();
 

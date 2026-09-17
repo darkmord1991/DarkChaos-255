@@ -12,6 +12,7 @@
 #include "dc_addon_namespace.h"
 #include "WorldSessionMgr.h"
 #include "WorldPacket.h"
+#include "WorldSession.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ObjectAccessor.h"
@@ -352,19 +353,25 @@ namespace MythicPlus
         }
     }
 
-    // Send current keystone info
+    // Send current keystone info (JSON). DC-MythicPlus and DC-InfoBar both read
+    // hasKey/dungeonId/dungeonName/level/depleted; weeklyBest/seasonBest feed the
+    // InfoBar keystone tooltip. The subqueries always yield exactly one row, so
+    // the best-run values arrive even when the player holds no keystone.
     static void SendKeyInfo(Player* player)
     {
-        // Query player's current keystone from dc_mplus_keystones
         uint32 guid = player->GetGUID().GetCounter();
         ObjectGuid playerGuid = player->GetGUID();
 
         std::string const sql = Acore::StringFormat(
-            "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
-            "FROM dc_mplus_keystones k "
-            "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id "
-            "WHERE k.character_guid = {}",
-            guid);
+            "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, ''), "
+            "CAST(COALESCE((SELECT MAX(w.keystone_level) FROM dc_mythic_weekly_best w "
+            " WHERE w.player_guid = {} AND w.week_start = {}), 0) AS UNSIGNED), "
+            "CAST(COALESCE((SELECT MAX(s.best_level) FROM dc_mplus_scores s "
+            " WHERE s.character_guid = {} AND s.season_id = {}), 0) AS UNSIGNED) "
+            "FROM (SELECT 1) AS one "
+            "LEFT JOIN dc_mplus_keystones k ON k.character_guid = {} "
+            "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id",
+            guid, sMythicRuns->GetWeekStartTimestamp(), guid, sMythicRuns->GetCurrentSeasonId(), guid);
 
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
             .WithCallback([playerGuid](QueryResult result)
@@ -373,29 +380,28 @@ namespace MythicPlus
             if (!player || !player->GetSession())
                 return;
 
+            JsonMessage msg(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO);
+
+            bool hasKey = result && !(*result)[0].IsNull();
+            msg.Set("hasKey", hasKey);
+
+            if (hasKey)
+            {
+                std::string const joinedName = (*result)[2].Get<std::string>();
+
+                msg.Set("dungeonId", (*result)[0].Get<uint32>());
+                msg.Set("dungeonName", joinedName.empty() ? std::string("Unknown") : joinedName);
+                msg.Set("level", (*result)[1].Get<uint32>());
+                msg.Set("depleted", false);  // dc_mplus_keystones has no depleted column
+            }
+
             if (result)
             {
-                uint32 dungeonId = (*result)[0].Get<uint32>();
-                uint32 level = (*result)[1].Get<uint32>();
-                bool depleted = false;  // dc_mplus_keystones doesn't have depleted column
-
-                std::string const joinedName = (*result)[2].Get<std::string>();
-                std::string dungeonName = joinedName.empty() ? "Unknown" : joinedName;
-
-                Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
-                    .Add(1)  // has keystone
-                    .Add(dungeonId)
-                    .Add(dungeonName)
-                    .Add(level)
-                    .Add(depleted)
-                    .Send(player);
+                msg.Set("weeklyBest", static_cast<uint32>((*result)[3].Get<uint64>()));
+                msg.Set("seasonBest", static_cast<uint32>((*result)[4].Get<uint64>()));
             }
-            else
-            {
-                Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
-                    .Add(0)  // no keystone
-                    .Send(player);
-            }
+
+            msg.Send(player);
         }));
     }
 
@@ -678,6 +684,38 @@ namespace MythicPlus
         // reward-pool read all happened in the async stages of SendVaultInfo
         // before this finisher was invoked (data / rewardBySlot parameters).
 
+        auto MakeRewardsArr = [&](uint8 globalSlot) -> JsonValue
+        {
+            JsonValue rewardsArr;
+            rewardsArr.SetArray();
+
+            auto itr = rewardBySlot.find(globalSlot);
+            if (itr == rewardBySlot.end())
+                return rewardsArr;
+
+            JsonValue rewardObj;
+            rewardObj.SetObject();
+            rewardObj.Set("itemId", itr->second.first);
+            rewardObj.Set("ilvl", static_cast<int32>(itr->second.second));
+
+            // Custom entries are not in the client's item cache, so
+            // GetItemInfo() returns nil there forever, and GetItemIcon() only
+            // knows items that exist in the client's Item.dbc. Ship the name,
+            // quality and icon so the panel can draw the reward either way.
+            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itr->second.first))
+            {
+                rewardObj.Set("itemName", proto->Name1);
+                rewardObj.Set("quality", static_cast<int32>(proto->Quality));
+
+                ItemDisplayInfoEntry const* display = sItemDisplayInfoStore.LookupEntry(proto->DisplayInfoID);
+                if (display && display->inventoryIcon && *display->inventoryIcon)
+                    rewardObj.Set("icon", std::string(display->inventoryIcon));
+            }
+
+            rewardsArr.Push(rewardObj);
+            return rewardsArr;
+        };
+
         auto MakeClaimSlotObj = [&](uint8 globalSlot, uint8 slotInTrack, uint32 threshold, uint32 progress, bool isUnlocked) -> JsonValue
         {
             JsonValue slotObj;
@@ -689,36 +727,14 @@ namespace MythicPlus
 
             if (claimed && claimedSlot == globalSlot)
             {
+                // Keep the reward attached so the panel shows what was taken.
                 slotObj.Set("status", "claimed");
+                slotObj.Set("rewards", MakeRewardsArr(globalSlot));
             }
             else if (isUnlocked)
             {
                 slotObj.Set("status", "unlocked");
-                JsonValue rewardsArr;
-                rewardsArr.SetArray();
-
-                auto itr = rewardBySlot.find(globalSlot);
-                if (itr != rewardBySlot.end())
-                {
-                    JsonValue rewardObj;
-                    rewardObj.SetObject();
-                    rewardObj.Set("itemId", itr->second.first);
-                    rewardObj.Set("ilvl", static_cast<int32>(itr->second.second));
-
-                    // Custom entries are not in the client's item cache, so
-                    // GetItemInfo() returns nil there forever. Ship the name
-                    // and quality so the panel can name the reward instead of
-                    // showing a bare item level.
-                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itr->second.first))
-                    {
-                        rewardObj.Set("itemName", proto->Name1);
-                        rewardObj.Set("quality", static_cast<int32>(proto->Quality));
-                    }
-
-                    rewardsArr.Push(rewardObj);
-                }
-
-                slotObj.Set("rewards", rewardsArr);
+                slotObj.Set("rewards", MakeRewardsArr(globalSlot));
             }
             else
             {
@@ -990,6 +1006,19 @@ namespace MythicPlus
         JsonValue historyTracks = BuildHistoryTracks();
 
         bool claimAvailable = (unlockedCountClaim > 0) && (!claimed);
+
+        // Push the reward items' query responses ahead of the panel data. An
+        // item the client has never seen opens its tooltip as "Retrieving item
+        // information", and CMSG_ITEM_QUERY_SINGLE is answered inside the map
+        // tick, which is slow under a full bot roster. Same approach as
+        // dc_vendor_item_cache_prime.cpp; bots have no item cache to fill.
+        WorldSession* session = player->GetSession();
+        if (session && !session->IsBot())
+        {
+            for (auto const& entry : rewardBySlot)
+                if (sObjectMgr->GetItemTemplate(entry.second.first))
+                    session->SendItemQueryResponse(entry.second.first);
+        }
 
         JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_VAULT_INFO)
             // Backward compatibility: top-level fields represent CLAIM WEEK.
@@ -1784,43 +1813,6 @@ namespace MythicPlus
     // ========================================================================
     // JSON HANDLERS - For complex data that benefits from structured format
     // ========================================================================
-
-    // Send key info as JSON (more readable, easier to extend)
-    void SendJsonKeyInfo(Player* player)
-    {
-        uint32 guid = player->GetGUID().GetCounter();
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
-            "FROM dc_mplus_keystones k "
-            "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id "
-            "WHERE k.character_guid = {}",
-            guid);
-
-        if (result)
-        {
-            uint32 dungeonId = (*result)[0].Get<uint32>();
-            uint32 level = (*result)[1].Get<uint32>();
-            bool depleted = false;  // dc_mplus_keystones doesn't have depleted column
-
-            std::string const joinedName = (*result)[2].Get<std::string>();
-            std::string dungeonName = joinedName.empty() ? "Unknown" : joinedName;
-
-            JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
-                .Set("hasKey", true)
-                .Set("dungeonId", dungeonId)
-                .Set("dungeonName", dungeonName)
-                .Set("level", level)
-                .Set("depleted", depleted)
-                .Send(player);
-        }
-        else
-        {
-            JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
-                .Set("hasKey", false)
-                .Send(player);
-        }
-    }
 
     // Send affixes as JSON
     void SendJsonAffixes(Player* player)

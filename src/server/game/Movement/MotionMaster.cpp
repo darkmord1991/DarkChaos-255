@@ -723,9 +723,17 @@ void MotionMaster::MoveFall(uint32 id /*=0*/, bool addFlagForNPC)
     {
         _owner->RemoveUnitMovementFlag(MOVEMENTFLAG_MASK_MOVING);
         _owner->RemoveUnitMovementFlag(MOVEMENTFLAG_FLYING | MOVEMENTFLAG_CAN_FLY);
-        _owner->AddUnitMovementFlag(MOVEMENTFLAG_FALLING);
-        _owner->m_movementInfo.SetFallTime(0);
-        _owner->SendMovementFlagUpdate();
+
+        // A creature that is still rooted here - a flying passenger killed in its vehicle seat, which keeps
+        // MOVEMENTFLAG_ROOT until it exits, or a DB-rooted flyer - must not get MOVEMENTFLAG_FALLING next to
+        // the root flag: that pair freezes clients, SendMovementFlagUpdate() refuses it, and the spline launched
+        // below strips it again anyway. The fall spline alone carries the corpse down.
+        if (!_owner->HasUnitMovementFlag(MOVEMENTFLAG_ROOT))
+        {
+            _owner->AddUnitMovementFlag(MOVEMENTFLAG_FALLING);
+            _owner->m_movementInfo.SetFallTime(0);
+            _owner->SendMovementFlagUpdate();
+        }
     }
 
     Movement::MoveSplineInit init(_owner);

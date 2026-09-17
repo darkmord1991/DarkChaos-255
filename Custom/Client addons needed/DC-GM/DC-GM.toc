@@ -54,6 +54,7 @@ Frames\Frames_Tabs.lua
 GOMove\GOMoveFunctions.lua
 GOMove\GOMoveScripts.lua
 GOMove\NPCMoveScripts.lua
+GOMove\MapButton.lua
 GOMove\MapButton.xml
 Frames\Frames_MiniMenu.lua
 Frames\Frames_LookupButtons.lua

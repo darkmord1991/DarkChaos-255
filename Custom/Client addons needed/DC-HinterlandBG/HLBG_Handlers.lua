@@ -477,6 +477,166 @@ local function EnsureNativeHLBGLivePollFrame()
 end
 
 EnsureNativeHLBGLivePollFrame()
+
+-- ---------------------------------------------------------------------------
+-- Spectating a match (unified spectator core)
+-- ---------------------------------------------------------------------------
+-- Sessions run over the Group Finder opcodes shared by every spectatable
+-- system: start/stop requests (GRPF 0x25/0x26), SMSG_SPECTATE_STARTED/ENDED
+-- (0x48/0x49), and live data as the native spectator snapshot or GRPF 0x45.
+-- An HLBG session's data is the same JSON the native HLBG live snapshot
+-- carries, so it feeds ApplyNativeHLBGLiveSnapshot and the existing HUD.
+-- DC-MythicPlus draws its own spectator bar from the same messages; the
+-- protocol keeps every registered handler, so both addons see them.
+local NATIVE_SPECTATOR_LIVE_CAPABILITY = 0x00040000
+local SPECTATOR_POLL_INTERVAL = 0.25
+local GRPF_CMSG_START_SPECTATE = 0x25
+local GRPF_CMSG_STOP_SPECTATE = 0x26
+local GRPF_SMSG_SPECTATE_DATA = 0x45
+local GRPF_SMSG_SPECTATE_STARTED = 0x48
+local GRPF_SMSG_SPECTATE_ENDED = 0x49
+local lastNativeSpectatorRevision = 0
+local spectatorPollFrame = nil
+
+HLBG._spectating = HLBG._spectating or false
+
+local function ShouldUseNativeSpectatorBridge()
+    if type(rawget(_G, 'GetNativeSpectatorLiveSnapshot')) ~= 'function' then
+        return false
+    end
+
+    local snapshot = GetHLBGProtocolCapabilitySnapshot()
+    return snapshot ~= nil and snapshot.connected
+        and HasCapabilityBit(snapshot.negotiatedCaps, NATIVE_SPECTATOR_LIVE_CAPABILITY)
+end
+
+local function ApplySpectatorPayload(payload)
+    local decoded = TryDecodeHLBGJson(payload)
+    if type(decoded) ~= 'table' or decoded.system ~= 'hlbg' then
+        return false
+    end
+
+    return ApplyNativeHLBGLiveSnapshot(decoded)
+end
+
+local function EnsureSpectatorPollFrame()
+    if spectatorPollFrame then
+        return
+    end
+
+    spectatorPollFrame = CreateFrame('Frame')
+    spectatorPollFrame.elapsed = 0
+    spectatorPollFrame:SetScript('OnUpdate', function(self, elapsed)
+        if not HLBG._spectating then
+            return
+        end
+
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < SPECTATOR_POLL_INTERVAL then
+            return
+        end
+        self.elapsed = 0
+
+        if not ShouldUseNativeSpectatorBridge() then
+            return
+        end
+
+        -- Revision poll: the native side keeps only the latest snapshot.
+        local ok, revision, payload = pcall(rawget(_G, 'GetNativeSpectatorLiveSnapshot'))
+        revision = ok and tonumber(revision) or 0
+        if revision <= 0 or revision == lastNativeSpectatorRevision then
+            return
+        end
+
+        lastNativeSpectatorRevision = revision
+        ApplySpectatorPayload(payload)
+    end)
+end
+
+local function RequestSpectatorOpcode(opcode, payload)
+    local protocol = GetHLBGProtocol()
+    if not protocol or type(protocol.Request) ~= 'function' then
+        return false
+    end
+
+    protocol:Request('GRPF', opcode, payload)
+    return true
+end
+
+local function SetSpectating(active)
+    HLBG._spectating = active and true or false
+    lastNativeSpectatorRevision = 0
+    CallIfPresent(HLBG.UpdateHUDVisibility)
+    CallIfPresent(HLBG.UpdateSpectateButton)
+end
+
+-- Watch a running match without joining it; instanceId 0 (or nil) lets the
+-- server pick the match in progress.
+function HLBG.StartSpectating(instanceId)
+    local id = tonumber(instanceId) or 0
+    return RequestSpectatorOpcode(GRPF_CMSG_START_SPECTATE, { system = 'hlbg', id = id, runId = id })
+end
+
+function HLBG.StopSpectating()
+    return RequestSpectatorOpcode(GRPF_CMSG_STOP_SPECTATE, {})
+end
+
+function HLBG.ToggleSpectating()
+    if HLBG._spectating then
+        return HLBG.StopSpectating()
+    end
+
+    return HLBG.StartSpectating(0)
+end
+
+function HLBG.OnSpectateStarted(data)
+    if type(data) ~= 'table' or data.system ~= 'hlbg' then
+        return
+    end
+
+    SetSpectating(true)
+    EnsureSpectatorPollFrame()
+
+    local requestFn = rawget(_G, 'RequestNativeSpectatorLiveSnapshot')
+    if ShouldUseNativeSpectatorBridge() and type(requestFn) == 'function' then
+        pcall(requestFn, 'hlbg-spectate')
+    end
+end
+
+function HLBG.OnSpectateEnded(data)
+    if not HLBG._spectating then
+        return
+    end
+
+    -- An end message for another system's session is not ours to act on.
+    if type(data) == 'table' and data.system and data.system ~= 'hlbg' then
+        return
+    end
+
+    SetSpectating(false)
+end
+
+function HLBG.OnSpectateData(data)
+    if HLBG._spectating then
+        ApplySpectatorPayload(data)
+    end
+end
+
+do
+    local protocol = GetHLBGProtocol()
+    if protocol and type(protocol.RegisterHandler) == 'function' then
+        protocol:RegisterHandler('GRPF', GRPF_SMSG_SPECTATE_STARTED, function(data)
+            HLBG.OnSpectateStarted(data)
+        end)
+        protocol:RegisterHandler('GRPF', GRPF_SMSG_SPECTATE_ENDED, function(data)
+            HLBG.OnSpectateEnded(data)
+        end)
+        protocol:RegisterHandler('GRPF', GRPF_SMSG_SPECTATE_DATA, function(data)
+            HLBG.OnSpectateData(data)
+        end)
+    end
+end
+
 -- Debug buffer: SavedVariables-backed ring buffer for developer diagnostics
 DCHLBG_DebugLog = DCHLBG_DebugLog or {}
 HLBG.DebugBuffer = HLBG.DebugBuffer or DCHLBG_DebugLog

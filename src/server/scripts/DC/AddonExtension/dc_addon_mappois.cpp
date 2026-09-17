@@ -71,8 +71,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -228,6 +230,7 @@ namespace MapPOIs
         std::string name;           // empty => client falls back to the type label
         char const* type = nullptr;
         uint32 entry = 0;           // spawn template entry, for duplicate collapsing
+        ObjectGuid::LowType spawnId = 0; // creature/gameobject spawn guid, only for the startup log
         uint32 map = 0;
         float x = 0.0f;
         float y = 0.0f;
@@ -245,6 +248,9 @@ namespace MapPOIs
     // masters posted a little away from the landing pad, tight enough that two
     // nodes in one settlement do not cross-match.
     constexpr float TAXI_NODE_MATCH_RANGE = 60.0f;
+
+    // Unmatched flight markers are listed one per line at startup, up to this many.
+    constexpr uint32 MAX_UNMATCHED_FLIGHT_LOG_LINES = 20;
 
     static std::string ToLower(std::string const& value)
     {
@@ -308,14 +314,12 @@ namespace MapPOIs
         return nullptr;
     }
 
-    // TaxiNodes.dbc id a flight master serves, or 0 when nothing is close enough.
-    // The client cannot read its own taxi mask on 3.3.5, so this is what lets it
-    // tell a discovered flight point from an undiscovered one (see
-    // HandleRequestKnownTaxi).
-    static uint32 FindTaxiNodeAt(uint32 mapId, float x, float y, float z)
+    // Nearest TaxiNodes.dbc entry on the same map at ANY distance, or 0 when the
+    // map has no taxi node at all. distanceSq receives the squared 3D distance.
+    static uint32 FindNearestTaxiNode(uint32 mapId, float x, float y, float z, float& distanceSq)
     {
         uint32 bestNode = 0;
-        float bestDistanceSq = TAXI_NODE_MATCH_RANGE * TAXI_NODE_MATCH_RANGE;
+        float bestDistanceSq = std::numeric_limits<float>::max();
 
         for (uint32 i = 1; i < sTaxiNodesStore.GetNumRows(); ++i)
         {
@@ -326,15 +330,30 @@ namespace MapPOIs
             float const dx = node->x - x;
             float const dy = node->y - y;
             float const dz = node->z - z;
-            float const distanceSq = (dx * dx) + (dy * dy) + (dz * dz);
-            if (distanceSq < bestDistanceSq)
+            float const nodeDistanceSq = (dx * dx) + (dy * dy) + (dz * dz);
+            if (nodeDistanceSq < bestDistanceSq)
             {
-                bestDistanceSq = distanceSq;
+                bestDistanceSq = nodeDistanceSq;
                 bestNode = node->ID;
             }
         }
 
+        distanceSq = bestDistanceSq;
         return bestNode;
+    }
+
+    // TaxiNodes.dbc id a flight master serves, or 0 when nothing is close enough.
+    // The client cannot read its own taxi mask on 3.3.5, so this is what lets it
+    // tell a discovered flight point from an undiscovered one (see
+    // HandleRequestKnownTaxi).
+    static uint32 FindTaxiNodeAt(uint32 mapId, float x, float y, float z)
+    {
+        float distanceSq = 0.0f;
+        uint32 const node = FindNearestTaxiNode(mapId, x, y, z, distanceSq);
+        if (!node || distanceSq >= TAXI_NODE_MATCH_RANGE * TAXI_NODE_MATCH_RANGE)
+            return 0;
+
+        return node;
     }
 
     static bool IsDuplicateOf(std::vector<MapPOI> const& pois, MapPOI const& candidate)
@@ -393,6 +412,7 @@ namespace MapPOIs
             poi.name = proto->Name;
             poi.type = type;
             poi.entry = data.id;
+            poi.spawnId = spawnId;
             poi.map = data.mapid;
             poi.x = data.posX;
             poi.y = data.posY;
@@ -436,6 +456,7 @@ namespace MapPOIs
             poi.name = proto->name;
             poi.type = goType;
             poi.entry = data.id;
+            poi.spawnId = spawnId;
             poi.map = data.mapid;
             poi.x = data.posX;
             poi.y = data.posY;
@@ -448,7 +469,7 @@ namespace MapPOIs
         }
 
         uint32 flightCount = 0;
-        uint32 flightWithoutNode = 0;
+        std::vector<MapPOI const*> flightWithoutNode;
         uint32 innCount = 0;
         uint32 mailCount = 0;
         uint32 teleporterCount = 0;
@@ -460,7 +481,7 @@ namespace MapPOIs
             {
                 ++flightCount;
                 if (!poi.taxiNode)
-                    ++flightWithoutNode;
+                    flightWithoutNode.push_back(&poi);
             }
             else if (std::strcmp(poi.type, PoiType::INN) == 0)
                 ++innCount;
@@ -496,10 +517,40 @@ namespace MapPOIs
         // A flight master with no taxi node cannot be discovery-gated, so the
         // client falls back to always drawing it. Worth surfacing: it usually
         // means the node is missing from TaxiNodes.dbc or sits too far away.
-        if (flightWithoutNode)
+        if (!flightWithoutNode.empty())
+        {
             LOG_WARN("dc.addon",
                 "MapPOI (MPOI): {} of {} flight markers matched no TaxiNodes.dbc entry within {} yards",
-                flightWithoutNode, flightCount, TAXI_NODE_MATCH_RANGE);
+                flightWithoutNode.size(), flightCount, TAXI_NODE_MATCH_RANGE);
+
+            // Name each one: a bare count cannot tell a node sitting 80 yards off
+            // from a map that has no taxi network at all.
+            std::size_t const shown = std::min<std::size_t>(flightWithoutNode.size(), MAX_UNMATCHED_FLIGHT_LOG_LINES);
+            for (std::size_t i = 0; i < shown; ++i)
+            {
+                MapPOI const* poi = flightWithoutNode[i];
+                CreatureTemplate const* proto = sObjectMgr->GetCreatureTemplate(poi->entry);
+                std::string const name = proto ? proto->Name : poi->name;
+
+                float distanceSq = 0.0f;
+                uint32 const nearest = FindNearestTaxiNode(poi->map, poi->x, poi->y, poi->z, distanceSq);
+                if (nearest)
+                    LOG_INFO("dc.addon",
+                        "MapPOI (MPOI):   unmatched flight marker entry {} guid {} '{}' map {} "
+                        "({:.2f}, {:.2f}, {:.2f}) - nearest TaxiNodes.dbc {} on that map is {:.1f} yards away",
+                        poi->entry, poi->spawnId, name, poi->map, poi->x, poi->y, poi->z,
+                        nearest, std::sqrt(distanceSq));
+                else
+                    LOG_INFO("dc.addon",
+                        "MapPOI (MPOI):   unmatched flight marker entry {} guid {} '{}' map {} "
+                        "({:.2f}, {:.2f}, {:.2f}) - no TaxiNodes.dbc entry on that map",
+                        poi->entry, poi->spawnId, name, poi->map, poi->x, poi->y, poi->z);
+            }
+
+            if (flightWithoutNode.size() > shown)
+                LOG_INFO("dc.addon", "MapPOI (MPOI):   ... and {} more unmatched flight markers",
+                    flightWithoutNode.size() - shown);
+        }
 
         return pois;
     }

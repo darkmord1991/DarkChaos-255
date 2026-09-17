@@ -16,7 +16,7 @@ local DurabilityPlugin = {
     side = "right",
     priority = 910,
     icon = "Interface\\Icons\\Trade_BlackSmithing",
-    updateInterval = 5.0,
+    updateInterval = 1.0,  -- cheap (11 slot reads); keeps the low-durability flash visible
     
     leftClickHint = "Repair (if at vendor)",
     rightClickHint = "Show item breakdown",
@@ -105,7 +105,7 @@ function DurabilityPlugin:OnTooltip(tooltip)
             local percent = data.percent
             
             local r, g, b = 0.3, 1, 0.5  -- Green
-            if percent <= 25 then
+            if percent <= (DCInfoBar:GetPluginSetting(self.id, "lowThreshold") or 25) then
                 r, g, b = 1, 0.3, 0.3  -- Red
             elseif percent <= 50 then
                 r, g, b = 1, 0.82, 0  -- Yellow
@@ -123,7 +123,7 @@ function DurabilityPlugin:OnTooltip(tooltip)
     tooltip:AddLine(" ")
     
     local r, g, b = 0.3, 1, 0.5
-    if self._lowestDura <= 25 then
+    if self._lowestDura <= (DCInfoBar:GetPluginSetting(self.id, "lowThreshold") or 25) then
         r, g, b = 1, 0.3, 0.3
     elseif self._lowestDura <= 50 then
         r, g, b = 1, 0.82, 0
@@ -162,12 +162,18 @@ end
 
 function DurabilityPlugin:OnClick(button)
     if button == "LeftButton" then
-        -- Try to repair if at vendor
-        if CanMerchantRepair() then
-            RepairAllItems()
-            DCInfoBar:Print("Equipment repaired!")
-        else
+        if not (CanMerchantRepair and CanMerchantRepair()) then
             DCInfoBar:Print("Find a repair vendor to repair equipment.")
+            return
+        end
+        local cost, canRepair = GetRepairAllCost()
+        if not canRepair or (cost or 0) <= 0 then
+            DCInfoBar:Print("Nothing to repair.")
+        elseif cost > GetMoney() then
+            DCInfoBar:Print("Not enough gold to repair (" .. DCInfoBar:FormatGold(cost) .. ").")
+        else
+            RepairAllItems()
+            DCInfoBar:Print("Equipment repaired for " .. DCInfoBar:FormatGold(cost) .. ".")
         end
     elseif button == "RightButton" then
         -- Print breakdown

@@ -3164,32 +3164,22 @@ local function DarkChaos_ItemUpgrade_UpdateBrowserStrip()
 	local itemBrowserShown = DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown();
 	local tierBrowserShown = DarkChaos_TierBrowserFrame and DarkChaos_TierBrowserFrame:IsShown();
 
-	if frame.BrowseButton then
-		frame.BrowseButton:SetAlpha(itemBrowserShown and 1.0 or 0.78);
-	end
-
-	if frame.TierBrowseButton then
-		frame.TierBrowseButton:SetAlpha(tierBrowserShown and 1.0 or 0.78);
-	end
-
-	local strip = frame.ButtonFrame and frame.ButtonFrame.SecondaryStrip;
-	if strip then
-		local active = itemBrowserShown or tierBrowserShown;
-		if strip.Border then
-			if active then
-				strip.Border:SetVertexColor(0.74, 0.62, 0.18, 0.46);
-			else
-				strip.Border:SetVertexColor(0.74, 0.62, 0.18, 0.22);
-			end
+	-- Both buttons stay fully opaque; the one whose browser is open keeps its
+	-- highlight lit. (The strip behind them used to be tinted gold here, which
+	-- is what drew the yellow bar.)
+	local function SetBrowseState(button, open)
+		if not button then
+			return;
 		end
-		if strip.Background then
-			if active then
-				strip.Background:SetVertexColor(0.02, 0.02, 0.03, 0.82);
-			else
-				strip.Background:SetVertexColor(0.02, 0.02, 0.03, 0.70);
-			end
+		button:SetAlpha(1.0);
+		if open then
+			button:LockHighlight();
+		else
+			button:UnlockHighlight();
 		end
 	end
+	SetBrowseState(frame.BrowseButton, itemBrowserShown);
+	SetBrowseState(frame.TierBrowseButton, tierBrowserShown);
 end
 
 DarkChaos_ItemUpgrade_BuildStatComparison = function(item, targetLevel)
@@ -3312,19 +3302,88 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		felTint:SetTexture(0, 0, 0, 0.60);
 	end
 
-	-- Items / Tiers browser buttons: UIPanelButtonTemplate defaults to gold text
-	-- (GameFontNormal) in WoW 3.3.5a; switch to neutral white so they don't look
-	-- like highlighted UI elements.
+	-- Items / Tiers browser buttons: full-size, readable panel buttons in the
+	-- footer (they were 44x16 at 78% alpha on a gold-tinted strip). The strip
+	-- behind them is retired; the open browser is shown by a locked highlight.
 	-- Items: opens the bag/equip item list for quick selection.
 	-- Tiers: shows the upgrade-tier reference browser.
+	local BROWSE_TOOLTIPS = {
+		BrowseButton = { "Items", "Browse your equipped and bag items that can be upgraded." },
+		TierBrowseButton = { "Tiers", "Show every upgrade tier with its level range and costs." },
+	};
+	local prevBrowse;
 	for _, btnKey in ipairs({ "BrowseButton", "TierBrowseButton" }) do
 		local btn = self[btnKey];
 		if btn then
+			btn:SetWidth(76);
+			btn:SetHeight(22);
+			btn:ClearAllPoints();
+			if prevBrowse then
+				btn:SetPoint("LEFT", prevBrowse, "RIGHT", 4, 0);
+			else
+				btn:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", 24, 20);
+			end
+			btn:SetAlpha(1);
+			btn:SetFrameLevel(self:GetFrameLevel() + 6);
 			local fs = btn:GetFontString();
 			if fs then
-				fs:SetTextColor(0.90, 0.90, 0.90);
+				fs:SetFontObject(GameFontHighlightSmall);
+				fs:SetTextColor(1, 1, 1);
 			end
+			local tip = BROWSE_TOOLTIPS[btnKey];
+			btn:SetScript("OnEnter", function(widget)
+				GameTooltip:SetOwner(widget, "ANCHOR_TOPLEFT");
+				GameTooltip:SetText(tip[1], 1, 1, 1);
+				GameTooltip:AddLine(tip[2], 0.8, 0.8, 0.8, true);
+				GameTooltip:Show();
+			end);
+			btn:SetScript("OnLeave", function()
+				GameTooltip:Hide();
+			end);
+			prevBrowse = btn;
 		end
+	end
+	local strip = self.ButtonFrame and self.ButtonFrame.SecondaryStrip;
+	if strip then
+		strip:Hide();
+	end
+
+	-- Gold rule lines inside the item card read as stray yellow bars.
+	if self.ItemCard then
+		if self.ItemCard.TopLine then self.ItemCard.TopLine:Hide(); end
+		if self.ItemCard.BottomLine then self.ItemCard.BottomLine:Hide(); end
+	end
+
+	-- The 3.3.5 UI schema has no relativeKey: every "$parent.icon" anchor in the
+	-- XML silently fell back to the parent button, so each currency amount drew
+	-- left of its button and the icon landed on the neighbouring amount.
+	local function AnchorCurrencyCount(button)
+		if button and button.count and button.icon then
+			button.count:ClearAllPoints();
+			button.count:SetPoint("RIGHT", button.icon, "LEFT", -4, 0);
+			button.count:SetJustifyH("RIGHT");
+		end
+	end
+	for _, holder in ipairs({ self.CostFrame, self.ButtonFrame and self.ButtonFrame.MoneyFrame }) do
+		if holder then
+			AnchorCurrencyCount(holder.TokenCurrency);
+			AnchorCurrencyCount(holder.EssenceCurrency);
+		end
+	end
+
+	-- "No more upgrades" sat behind the item card (a lower frame level) as
+	-- barely visible dark-red text; show it inside the card instead.
+	if self.NoMoreUpgrades and self.ItemCard then
+		local notice = self.NoMoreUpgrades;
+		local cardOverlay = CreateFrame("Frame", nil, self.ItemCard);
+		cardOverlay:SetAllPoints(self.ItemCard);
+		cardOverlay:SetFrameLevel(self.ItemCard:GetFrameLevel() + 4);
+		notice:SetParent(cardOverlay);
+		notice:ClearAllPoints();
+		notice:SetPoint("TOPRIGHT", self.ItemCard, "TOPRIGHT", -16, -16);
+		notice:SetWidth(140);
+		notice:SetJustifyH("RIGHT");
+		notice:SetTextColor(0.25, 1.0, 0.25);
 	end
 
 	-- Explicitly pin UpgradeProgress and UpgradeToLabel inside ItemCard so they
@@ -3380,8 +3439,12 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	-- these were converted to 32-bit TGA. Static (no animation).
 	-- "full"  = item selected and data loaded  (golden amber chevron)
 	-- "empty" = item still syncing / not yet selected (light chevron)
+	-- The client only renders power-of-two textures (a 17x45 file drew as a solid
+	-- white box), so the files are padded to 32x64 with the chevron in the top-left
+	-- corner; DC.ARROW_TEX_COORDS crops it back out.
 	DC.ARROW_TEX_FULL  = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-full.tga";
 	DC.ARROW_TEX_EMPTY = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-empty.tga";
+	DC.ARROW_TEX_COORDS = { 0, 17 / 32, 0, 45 / 64 };
 
 	if self.Arrow then
 		if self.Arrow.Glow then
@@ -3392,6 +3455,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 			self.Arrow.Texture:SetPoint("CENTER", self.Arrow, "CENTER", 0, 0);
 			self.Arrow.Texture:SetSize(28, 74);   -- 17×45 displayed at ~1.65×
 			self.Arrow.Texture:SetTexture(DC.ARROW_TEX_EMPTY);
+			self.Arrow.Texture:SetTexCoord(unpack(DC.ARROW_TEX_COORDS));
 			self.Arrow.Texture:SetVertexColor(1, 1, 1);
 			self.Arrow.Texture:SetAlpha(1);
 			self.Arrow.Texture:Show();
@@ -4546,23 +4610,31 @@ local function SetButtonEnabled(button, enabled)
 		end
 	end
 
-	-- Standard solid red button. Keep the white Sheen low so the fill reads as a
-	-- clean red instead of washing out to salmon/pink.
+	-- Enabled: solid red with white text. Disabled: neutral slate with light
+	-- grey text, so it reads as "not available" instead of a faded red button.
+	-- Keep the white Sheen low so the red fill does not wash out to salmon.
 	if button.Fill then
 		if enabled then
 			button.Fill:SetVertexColor(0.70, 0.10, 0.10, 1);
 		else
-			button.Fill:SetVertexColor(0.26, 0.10, 0.10, 0.95);
+			button.Fill:SetVertexColor(0.17, 0.17, 0.19, 0.95);
+		end
+	end
+	if button.Border then
+		if enabled then
+			button.Border:SetVertexColor(0.10, 0.02, 0.02, 1);
+		else
+			button.Border:SetVertexColor(0.32, 0.32, 0.35, 1);
 		end
 	end
 	if button.Sheen then
-		button.Sheen:SetAlpha(enabled and 0.16 or 0.08);
+		button.Sheen:SetAlpha(enabled and 0.16 or 0.05);
 	end
 	if button.Text then
 		if enabled then
 			button.Text:SetTextColor(1.0, 1.0, 1.0);
 		else
-			button.Text:SetTextColor(0.60, 0.55, 0.55);
+			button.Text:SetTextColor(0.78, 0.78, 0.78);
 		end
 	end
 	if button.Glow then
@@ -5097,8 +5169,11 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		if frame.ButtonFrame then frame.ButtonFrame:Show(); end
 		if frame.BrowseButton then frame.BrowseButton:Show(); end
 		if frame.TierBrowseButton then frame.TierBrowseButton:Show(); end
-		if upgradeButton then upgradeButton:Show(); end
-		
+		if upgradeButton then
+			upgradeButton:Show();
+			if upgradeButton.Text then upgradeButton.Text:SetText("Upgrade"); end
+		end
+
 		frame.ItemSlot.EmptyGlow:Show();
 		SetItemButtonTexture(frame.ItemSlot, nil);
 		local normalTexture = _G[frame.ItemSlot:GetName().."NormalTexture"];
@@ -5240,6 +5315,9 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 				and not DC.currentItem.awaitingServerInfo;
 			local tex = arrowReady and DC.ARROW_TEX_FULL or DC.ARROW_TEX_EMPTY;
 			frame.Arrow.Texture:SetTexture(tex);
+			if DC.ARROW_TEX_COORDS then
+				frame.Arrow.Texture:SetTexCoord(unpack(DC.ARROW_TEX_COORDS));
+			end
 		end
 	end
 
@@ -5371,6 +5449,9 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		else
 			frame.NoMoreUpgrades:Hide();
 		end
+	end
+	if upgradeButton and upgradeButton.Text then
+		upgradeButton.Text:SetText(canUpgrade and "Upgrade" or "Fully Upgraded");
 	end
 	
 	-- Update stat package selector for heirloom mode

@@ -15,9 +15,7 @@ local DEFAULTS = {
         height = 22,
         backgroundColor = { 0.05, 0.05, 0.05, 0.9 },
         borderColor = { 0.1, 0.8, 0.2, 0.8 },  -- Fel Green
-        locked = true,
         showBackground = true,
-        scale = 1.0,
         strata = "HIGH",
     },
     
@@ -26,9 +24,8 @@ local DEFAULTS = {
         enabled = true,
         hideInCombat = false,
         hideInInstance = false,
-        showLabels = true,
-        showIcons = true,
-        updateInterval = 1.0,
+        showLabels = true,          -- master switch over per-plugin showLabel
+        showIcons = true,           -- master switch over per-plugin showIcon
     },
     
     -- Plugin enable/disable and per-plugin settings
@@ -41,6 +38,14 @@ local DEFAULTS = {
             showLabel = true,
             showIcon = true,
             showTokens = true,
+        },
+        ["DCInfoBar_Prestige"] = {
+            enabled = true,
+            side = "left",
+            priority = 15,
+            showLabel = false,
+            showIcon = true,
+            blinkWhenReady = true,
         },
         ["DCInfoBar_Keystone"] = {
             enabled = true,
@@ -55,7 +60,7 @@ local DEFAULTS = {
             side = "left",
             priority = 30,
             showLabel = false,
-            showIcons = true,    -- Show 3 small icons
+            showIcon = true,
             textMode = false,    -- Show as "Fort/Burst/Storm"
         },
         ["DCInfoBar_WorldBoss"] = {
@@ -85,6 +90,14 @@ local DEFAULTS = {
             showIcon = true,
             showCoordinates = false,
             showSubzone = true,
+        },
+        ["DCInfoBar_XPRep"] = {
+            enabled = true,
+            side = "left",
+            priority = 320,
+            showLabel = true,
+            showIcon = true,
+            hideAtMaxLevel = true,
         },
         
         -- Character plugins (right side)
@@ -124,6 +137,7 @@ local DEFAULTS = {
             showFPS = true,
             showLatency = true,
             showMemory = false,
+            showServerInfo = true,
         },
         ["DCInfoBar_Launchers"] = {
             enabled = true,
@@ -146,20 +160,12 @@ local DEFAULTS = {
         },
     },
     
-    -- Plugin order (for drag-drop reordering in future)
-    pluginOrder = {
-        left = { "Season", "Keystone", "Affixes", "WorldBoss", "Events", "Location" },
-        right = { "Gold", "Durability", "Bags", "Performance", "Launchers", "Clock" },
-    },
-    
     -- Communication / Debug settings
     communication = {
         showDebugMessages = false,
-        logRequests = false,
-        logResponses = false,
         testMode = false,
     },
-    
+
     -- Debug
     debug = false,
 }
@@ -268,12 +274,12 @@ end
 function DCInfoBar:ResetToDefaults()
     DCInfoBarDB = self:DeepCopy(DEFAULTS)
     self.db = DCInfoBarDB
-    
+
     -- Refresh everything
+    self:RefreshAllPlugins()
     if self.bar then
         self.bar:RefreshSettings()
     end
-    self:RefreshAllPlugins()
     
     self:Print("Settings reset to defaults.")
 end

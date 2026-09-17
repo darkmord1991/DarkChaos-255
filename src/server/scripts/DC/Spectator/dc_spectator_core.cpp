@@ -15,7 +15,9 @@
 #include "WorldSession.h"
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
+#include <mutex>
 #include <unordered_set>
 #include "dc_update_profiler.h"
 
@@ -69,6 +71,59 @@ namespace
             DCAddon::Opcode::GroupFinder::SMSG_SPECTATE_DATA, payload)
             .Send(spectator);
     }
+
+    // Players whose spectator flag the core keeps applied. Guarded: the zone
+    // hook that re-applies it runs on map threads as well as the world thread.
+    std::mutex sFlagHoldersMutex;
+    std::unordered_set<ObjectGuid> sFlagHolders;
+    std::atomic<uint32> sFlagHolderCount{0};
+
+    bool IsFlagHolder(ObjectGuid guid)
+    {
+        std::lock_guard<std::mutex> lock(sFlagHoldersMutex);
+        return sFlagHolders.find(guid) != sFlagHolders.end();
+    }
+
+    void ForgetFlagHolder(ObjectGuid guid)
+    {
+        std::lock_guard<std::mutex> lock(sFlagHoldersMutex);
+        if (sFlagHolders.erase(guid))
+            --sFlagHolderCount;
+    }
+}
+
+void HoldSpectatorFlag(Player* spectator)
+{
+    if (!spectator)
+        return;
+
+    {
+        std::lock_guard<std::mutex> lock(sFlagHoldersMutex);
+        if (sFlagHolders.insert(spectator->GetGUID()).second)
+            ++sFlagHolderCount;
+    }
+
+    if (!spectator->IsSpectator())
+        spectator->SetIsSpectator(true);
+}
+
+void ReleaseSpectatorFlag(Player* spectator)
+{
+    if (!spectator)
+        return;
+
+    ForgetFlagHolder(spectator->GetGUID());
+
+    if (spectator->IsSpectator())
+        spectator->SetIsSpectator(false);
+}
+
+bool IsHoldingSpectatorFlag(Player const* player)
+{
+    if (!player || sFlagHolderCount.load(std::memory_order_relaxed) == 0)
+        return false;
+
+    return IsFlagHolder(player->GetGUID());
 }
 
 char const* SystemName(SystemId id)
@@ -80,6 +135,51 @@ char const* SystemName(SystemId id)
         case SystemId::HLBG: return "hlbg";
     }
     return "unknown";
+}
+
+bool ParseSystemName(std::string const& name, SystemId& out)
+{
+    for (SystemId id : { SystemId::MythicPlus, SystemId::Duel, SystemId::HLBG })
+    {
+        if (name == SystemName(id))
+        {
+            out = id;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void NotifySessionStarted(Player* spectator, SystemId id, uint32 sessionId,
+    std::string const& message)
+{
+    if (!spectator || !spectator->GetSession())
+        return;
+
+    DCAddon::JsonMessage(DCAddon::Module::GROUP_FINDER,
+        DCAddon::Opcode::GroupFinder::SMSG_SPECTATE_STARTED)
+        .Set("success", true)
+        .Set("system", std::string(SystemName(id)))
+        .Set("id", static_cast<int32>(sessionId))
+        .Set("runId", static_cast<int32>(sessionId))
+        .Set("message", message)
+        .Send(spectator);
+}
+
+void NotifySessionEnded(Player* spectator, SystemId id,
+    std::string const& message)
+{
+    if (!spectator || !spectator->GetSession()
+        || spectator->GetSession()->PlayerLogout())
+        return;
+
+    DCAddon::JsonMessage(DCAddon::Module::GROUP_FINDER,
+        DCAddon::Opcode::GroupFinder::SMSG_SPECTATE_ENDED)
+        .Set("success", true)
+        .Set("system", std::string(SystemName(id)))
+        .Set("message", message)
+        .Send(spectator);
 }
 
 void SendSnapshotPayload(Player* spectator, DCAddon::JsonValue const& payload,
@@ -122,9 +222,50 @@ ISpectatableContext* Registry::FindContextFor(ObjectGuid guid) const
     return nullptr;
 }
 
+ISpectatableContext* Registry::FindContext(SystemId id) const
+{
+    for (ISpectatableContext* context : _contexts)
+        if (context->GetSystemId() == id)
+            return context;
+
+    return nullptr;
+}
+
 bool Registry::IsSpectating(ObjectGuid guid) const
 {
     return FindContextFor(guid) != nullptr;
+}
+
+DCAddon::JsonValue Registry::BuildListings(Player* viewer) const
+{
+    DCAddon::JsonValue listings;
+    listings.SetArray();
+
+    for (ISpectatableContext* context : _contexts)
+        context->AppendListings(viewer, listings);
+
+    return listings;
+}
+
+bool Registry::StartById(Player* player, SystemId id, uint32 sessionId,
+    std::string& error)
+{
+    ISpectatableContext* context = FindContext(id);
+    if (!context)
+    {
+        error = "That spectator system is not available.";
+        return false;
+    }
+
+    // One session at a time across all systems: each system's own checks
+    // only see its own sessions.
+    if (player && IsSpectating(player->GetGUID()))
+    {
+        error = "You are already spectating. Leave first.";
+        return false;
+    }
+
+    return context->StartById(player, sessionId, error);
 }
 
 void Registry::StopAll(Player* player)
@@ -219,11 +360,33 @@ namespace
     {
     public:
         DCSpectatorCorePlayerScript()
-            : PlayerScript("DCSpectatorCorePlayerScript", { PLAYERHOOK_ON_LOGOUT }) { }
+            : PlayerScript("DCSpectatorCorePlayerScript",
+                { PLAYERHOOK_ON_BEFORE_LOGOUT, PLAYERHOOK_ON_UPDATE_ZONE }) { }
 
-        void OnPlayerLogout(Player* player) override
+        // Before, not on, logout: WorldSession::LogoutPlayer calls
+        // LeaveBattleground right after this hook. A Hinterland spectator
+        // carries the match's battleground id without being a participant,
+        // and leaving it there would run the core's deserter tracking and
+        // entry-point teleport against a match the player never joined.
+        void OnPlayerBeforeLogout(Player* player) override
         {
             sSpectatorRegistry.StopAll(player);
+            if (player)
+                ForgetFlagHolder(player->GetGUID());
+        }
+
+        // The worldport ack clears the spectator flag on every port to a
+        // non-arena map. SendInitialPacketsAfterAddToMap then calls UpdateZone,
+        // the first point after arrival at which the flag sticks.
+        void OnPlayerUpdateZone(Player* player, uint32 /*newZone*/,
+            uint32 /*newArea*/) override
+        {
+            if (!player || player->IsSpectator()
+                || sFlagHolderCount.load(std::memory_order_relaxed) == 0)
+                return;
+
+            if (IsFlagHolder(player->GetGUID()))
+                player->SetIsSpectator(true);
         }
     };
 

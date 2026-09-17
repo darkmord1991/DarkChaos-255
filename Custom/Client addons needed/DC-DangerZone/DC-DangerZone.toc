@@ -1,8 +1,10 @@
 ## Interface: 30300
-## Title: DC-DangerZone
-## Notes: Ground-AoE danger-zone telegraphs. Draws a projected ground ring at active danger zones reported by the WotLKExtensions GetActiveDangerZones() native.
+## Title: |cffFFCC00DC|r DangerZone
+## Notes: Ground-AoE danger-zone telegraphs. Draws retail-style textured ground decals (or a projected dotted ring) at the active danger zones reported by the WotLKExtensions GetActiveDangerZones() native, warns while you stand in one, and is configurable under Interface -> AddOns.
 ## Author: DarkChaos
-## Version: 1.0.0
+## Version: 2.0.0
 ## SavedVariablesPerCharacter: DCDangerZoneDB
 
-DC-DangerZone.lua
+Core.lua
+Render.lua
+Options.lua

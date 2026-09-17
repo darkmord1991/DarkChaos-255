@@ -14,6 +14,7 @@
 #include "ObjectGuid.h"
 #include "Map.h"
 
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -136,7 +137,10 @@ namespace DCMythicSpectator
         uint32 runId = 0;
         uint32 instanceId = 0;
         uint32 mapId = 0;
+        // 0 for a dungeon run without a keystone (RegisterDungeonRun).
         uint8 keystoneLevel = 0;
+        // The instance's Difficulty: 0 Normal, 1 Heroic, 2 Mythic.
+        uint8 difficulty = 0;
         uint32 startedAt = 0;
         uint32 timerRemaining = 0;
         uint8 bossesKilled = 0;
@@ -204,7 +208,13 @@ namespace DCMythicSpectator
         void RegisterActiveRun(uint32 instanceId, uint32 mapId, uint8 keystoneLevel,
                        std::string const& leaderName, bool allowSpectators = true,
                        uint32 runId = 0,
-                       std::string const& dungeonName = "");
+                       std::string const& dungeonName = "",
+                       bool botRun = false);
+        // A dungeon run without a keystone (bot Normal/Heroic runs). Listed and
+        // watched like a keystone run; boss progress comes from the instance's
+        // encounters, and nothing is recorded. Ended with UnregisterActiveRun.
+        void RegisterDungeonRun(uint32 instanceId, uint32 mapId, uint8 difficulty,
+                       std::string const& leaderName, std::string const& dungeonName);
         void UnregisterActiveRun(uint32 instanceId);
         void UpdateRunStatus(uint32 instanceId, uint32 timerRemaining, uint8 bossesKilled,
                              uint8 bossesTotal, uint8 deaths);
@@ -222,6 +232,13 @@ namespace DCMythicSpectator
         void StopSpectating(Player* player);
         bool IsSpectating(Player* player) const;
         bool WatchPlayer(Player* spectator, Player* target);
+        // Back to free roam: drop the bind-sight camera on the watched player.
+        // With moveToWatched the spectator lands where that player stands - the
+        // way out when their own body is stuck (behind a collision wall, say).
+        void UnwatchPlayer(Player* spectator, bool moveToWatched = false);
+        // Leave the run on the next world update, exactly like "leave".
+        // Safe from any thread: teleport hooks also run on map threads.
+        void RequestLeave(ObjectGuid guid);
 
         SpectatorState* GetSpectatorState(ObjectGuid guid);
         std::vector<Player*> GetSpectatorsForInstance(uint32 instanceId) const;
@@ -267,6 +284,7 @@ namespace DCMythicSpectator
         void RestoreSpectatorPosition(Player* player, SpectatorState const& state);
         void UpdateSpectatorViewpoint(Player* spectator);
         void CleanupExpiredInvites();
+        void ProcessLeaveRequests();
 
         MythicSpectatorConfig _config;
         std::unordered_map<uint32, SpectateableRun> _activeRuns;       // instanceId -> run
@@ -275,6 +293,9 @@ namespace DCMythicSpectator
         std::unordered_map<uint32, RunReplay> _activeReplays;          // instanceId -> recording
         std::unordered_map<ObjectGuid, ReplayPlaybackState> _replayPlayback; // spectator guid -> replay state
         uint32 _updateTimer = 0;
+
+        std::mutex _leaveRequestsMutex;
+        std::unordered_set<ObjectGuid> _leaveRequests;
     };
 
     #define sMythicSpectator DCMythicSpectator::MythicSpectatorManager::Get()

@@ -12,11 +12,14 @@
 #include "Pet.h"
 #include "Config.h"
 #include "Chat.h"
+#include "DBCStores.h"
 #include "GameTime.h"
 #include "DatabaseEnv.h"
+#include "Group.h"
 #include "ObjectAccessor.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "ObjectMgr.h"
 #include "InstanceScript.h"
 #include "Log.h"
 #include "WorldPacket.h"
@@ -28,6 +31,8 @@
 #include "DC/Spectator/dc_spectator_core.h"
 #include "Random.h"
 
+#include <algorithm>
+#include <cmath>
 #include <sstream>
 #include "dc_update_profiler.h"
 
@@ -58,7 +63,223 @@ namespace
         return ss.str();
     }
 
-    DCAddon::JsonValue BuildLiveSnapshotPayload(SpectateableRun const& run)
+    // ------------------------------------------------------------
+    // Dungeon floor plans
+    // ------------------------------------------------------------
+    // The client's dungeon map (3.3) is split into floors whose world-space
+    // bounds live in DungeonMap.dbc; DungeonMapChunk.dbc says which WMO group
+    // is on which floor. The spectator addon draws run members on the map the
+    // spectator is looking at, so every snapshot carries the floor bounds and
+    // each member's floor.
+    struct FloorBounds
+    {
+        uint32 floorIndex = 0;
+        float minX = 0.f;   // world Y range: the map's horizontal axis, west on the left
+        float maxX = 0.f;
+        float minY = 0.f;   // world X range: the map's vertical axis, north on top
+        float maxY = 0.f;
+    };
+
+    struct DungeonFloorPlan
+    {
+        std::vector<FloorBounds> floors;
+        std::unordered_map<int32, uint32> floorByWmoGroup;   // VMAP groupId -> floor index
+    };
+
+    std::unordered_map<uint32, DungeonFloorPlan> BuildFloorPlans()
+    {
+        std::unordered_map<uint32, DungeonFloorPlan> plans;
+        std::unordered_map<uint32, uint32> floorByDungeonMapId;
+
+        for (DungeonMapEntry const* entry : sDungeonMapStore)
+        {
+            FloorBounds bounds;
+            bounds.floorIndex = entry->FloorIndex;
+            bounds.minX = entry->MinX;
+            bounds.maxX = entry->MaxX;
+            bounds.minY = entry->MinY;
+            bounds.maxY = entry->MaxY;
+            plans[entry->MapID].floors.push_back(bounds);
+            floorByDungeonMapId[entry->ID] = entry->FloorIndex;
+        }
+
+        for (DungeonMapChunkEntry const* chunk : sDungeonMapChunkStore)
+        {
+            auto floor = floorByDungeonMapId.find(chunk->DungeonMapID);
+            if (floor == floorByDungeonMapId.end())
+                continue;
+
+            plans[chunk->MapID].floorByWmoGroup[static_cast<int32>(chunk->WmoGroupID)] = floor->second;
+        }
+
+        for (auto& [mapId, plan] : plans)
+        {
+            (void)mapId;
+            std::sort(plan.floors.begin(), plan.floors.end(),
+                [](FloorBounds const& a, FloorBounds const& b) { return a.floorIndex < b.floorIndex; });
+        }
+
+        return plans;
+    }
+
+    // Built once on first use and read-only after that (snapshots are built on
+    // the world thread, but the magic static makes any first caller safe).
+    DungeonFloorPlan const* GetFloorPlan(uint32 mapId)
+    {
+        static std::unordered_map<uint32, DungeonFloorPlan> const plans = BuildFloorPlans();
+        auto it = plans.find(mapId);
+        return it != plans.end() ? &it->second : nullptr;
+    }
+
+    // The floor a position is on: the WMO group it stands in when the chunk
+    // table knows it, else the lowest floor whose bounds contain the point,
+    // else the first floor. 0 when the map has no dungeon map at all.
+    uint32 ResolveFloor(Map* map, uint32 phaseMask, float x, float y, float z)
+    {
+        DungeonFloorPlan const* plan = GetFloorPlan(map->GetId());
+        if (!plan || plan->floors.empty())
+            return 0;
+
+        uint32 mogpFlags = 0;
+        int32 adtId = 0;
+        int32 rootId = 0;
+        int32 groupId = 0;
+        if (map->GetAreaInfo(phaseMask, x, y, z, mogpFlags, adtId, rootId, groupId))
+        {
+            auto it = plan->floorByWmoGroup.find(groupId);
+            if (it != plan->floorByWmoGroup.end())
+                return it->second;
+        }
+
+        for (FloorBounds const& floor : plan->floors)
+            if (y >= floor.minX && y <= floor.maxX && x >= floor.minY && x <= floor.maxY)
+                return floor.floorIndex;
+
+        return plan->floors.front().floorIndex;
+    }
+
+    double RoundCoord(float value)
+    {
+        return std::round(static_cast<double>(value) * 10.0) / 10.0;
+    }
+
+    // Run members and the spectator's own position, so the addon can draw the
+    // group on the minimap (yard offsets from the spectator) and on the dungeon
+    // map (fractions of the floor bounds). Stream mode hides the names here as
+    // everywhere else.
+    void AppendPositions(DCAddon::JsonValue& payload, SpectateableRun const& run, Player* spectator)
+    {
+        Map* map = sMapMgr->FindMap(run.mapId, run.instanceId);
+        if (!map)
+            return;
+
+        MythicSpectatorManager& manager = MythicSpectatorManager::Get();
+        SpectatorState const* state = spectator ? manager.GetSpectatorState(spectator->GetGUID()) : nullptr;
+        ObjectGuid const watching = state ? state->watchingPlayer : ObjectGuid::Empty;
+        bool const hideNames = run.streamMode != STREAM_MODE_NONE;
+
+        DCAddon::JsonValue floors;
+        floors.SetArray();
+        if (DungeonFloorPlan const* plan = GetFloorPlan(run.mapId))
+        {
+            for (FloorBounds const& floor : plan->floors)
+            {
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("index", static_cast<int32>(floor.floorIndex));
+                entry.Set("minX", static_cast<double>(floor.minX));
+                entry.Set("maxX", static_cast<double>(floor.maxX));
+                entry.Set("minY", static_cast<double>(floor.minY));
+                entry.Set("maxY", static_cast<double>(floor.maxY));
+                floors.Push(std::move(entry));
+            }
+        }
+        payload.Set("floors", std::move(floors));
+
+        DCAddon::JsonValue players;
+        players.SetArray();
+        uint32 index = 0;
+        for (auto const& ref : map->GetPlayers())
+        {
+            Player* member = ref.GetSource();
+            if (!member || member->IsSpectator() || manager.IsSpectating(member))
+                continue;
+
+            ++index;
+            Group const* group = member->GetGroup();
+
+            DCAddon::JsonValue entry;
+            entry.SetObject();
+            entry.Set("name", hideNames ? Acore::StringFormat("Player {}", index) : member->GetName());
+            // UnitGUID() spelling: the addon hands it to the client extension's
+            // ResolveEntityPositionByGUID for an exact, per-frame position while
+            // the member is in view; the x/y/z below cover the rest.
+            entry.Set("guid", Acore::StringFormat("0x{:016X}", member->GetGUID().GetRawValue()));
+            entry.Set("class", static_cast<int32>(member->getClass()));
+            entry.Set("x", RoundCoord(member->GetPositionX()));
+            entry.Set("y", RoundCoord(member->GetPositionY()));
+            entry.Set("z", RoundCoord(member->GetPositionZ()));
+            entry.Set("floor", static_cast<int32>(ResolveFloor(map, member->GetPhaseMask(),
+                member->GetPositionX(), member->GetPositionY(), member->GetPositionZ())));
+            entry.Set("health", static_cast<int32>(member->GetHealthPct()));
+            entry.Set("alive", member->IsAlive());
+            entry.Set("leader", group && group->GetLeaderGUID() == member->GetGUID());
+            entry.Set("watched", watching == member->GetGUID());
+            players.Push(std::move(entry));
+        }
+        payload.Set("players", std::move(players));
+
+        if (spectator && spectator->GetMapId() == run.mapId && spectator->GetInstanceId() == run.instanceId)
+        {
+            DCAddon::JsonValue me;
+            me.SetObject();
+            me.Set("x", RoundCoord(spectator->GetPositionX()));
+            me.Set("y", RoundCoord(spectator->GetPositionY()));
+            me.Set("z", RoundCoord(spectator->GetPositionZ()));
+            me.Set("floor", static_cast<int32>(ResolveFloor(map, spectator->GetPhaseMask(),
+                spectator->GetPositionX(), spectator->GetPositionY(), spectator->GetPositionZ())));
+            payload.Set("me", std::move(me));
+        }
+    }
+
+    uint32 ElapsedSeconds(SpectateableRun const& run)
+    {
+        uint64 const now = GameTime::GetGameTime().count();
+        return now > run.startedAt ? static_cast<uint32>(now - run.startedAt) : 0;
+    }
+
+    // Bosses killed and in total for a run without a keystone: the instance's
+    // encounters for its difficulty (instance_encounters), each done once its
+    // bit is in the completed-encounter mask. False when the map has none.
+    bool GetEncounterProgress(Map* map, uint8& killed, uint8& total)
+    {
+        killed = 0;
+        total = 0;
+
+        DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(map->GetId(),
+            map->GetDifficulty());
+        if (!encounters || encounters->empty())
+            return false;
+
+        uint32 completed = 0;
+        if (InstanceMap* instance = map->ToInstanceMap())
+            if (InstanceScript* script = instance->GetInstanceScript())
+                completed = script->GetCompletedEncounterMask();
+
+        for (DungeonEncounter const* encounter : *encounters)
+        {
+            if (!encounter || !encounter->dbcEntry || encounter->dbcEntry->encounterIndex >= 32)
+                continue;
+
+            ++total;
+            if (completed & (1u << encounter->dbcEntry->encounterIndex))
+                ++killed;
+        }
+
+        return total > 0;
+    }
+
+    DCAddon::JsonValue BuildLiveSnapshotPayload(SpectateableRun const& run, Player* spectator)
     {
         DCAddon::JsonValue payload;
         payload.SetObject();
@@ -82,7 +303,11 @@ namespace
             ? std::string("Unknown Dungeon")
             : run.dungeonName);
         payload.Set("level", static_cast<int32>(run.keystoneLevel));
-        payload.Set("timer", FormatTimerText(run.timerRemaining));
+        payload.Set("difficulty", static_cast<int32>(run.difficulty));
+        // A run without a keystone has no countdown; its clock runs up.
+        uint32 const elapsed = ElapsedSeconds(run);
+        payload.Set("elapsed", static_cast<int32>(elapsed));
+        payload.Set("timer", FormatTimerText(run.keystoneLevel ? run.timerRemaining : elapsed));
         payload.Set("timerRemaining", static_cast<int32>(run.timerRemaining));
         payload.Set("bossesKilled", static_cast<int32>(run.bossesKilled));
         payload.Set("bossesTotal", static_cast<int32>(run.bossesTotal));
@@ -97,13 +322,14 @@ namespace
         payload.Set("active", true);
         payload.Set("system", std::string(DCSpectator::SystemName(
             DCSpectator::SystemId::MythicPlus)));
+        AppendPositions(payload, run, spectator);
         return payload;
     }
 
     void SendLiveSnapshot(Player* spectator, SpectateableRun const& run)
     {
         DCSpectator::SendSnapshotPayload(spectator,
-            BuildLiveSnapshotPayload(run));
+            BuildLiveSnapshotPayload(run, spectator));
     }
 }
 
@@ -252,7 +478,8 @@ std::string MythicSpectatorManager::GenerateRandomCode(uint32 length)
 // ============================================================
 void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId,
     uint32 mapId, uint8 keystoneLevel, std::string const& leaderName,
-    bool allowSpectators, uint32 runId, std::string const& dungeonName)
+    bool allowSpectators, uint32 runId, std::string const& dungeonName,
+    bool botRun)
 {
     if (!_config.enabled)
         return;
@@ -265,6 +492,7 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId,
     run.instanceId = instanceId;
     run.mapId = mapId;
     run.keystoneLevel = keystoneLevel;
+    run.difficulty = DUNGEON_DIFFICULTY_EPIC;
     run.startedAt = GameTime::GetGameTime().count();
     run.timerRemaining = 0;
     run.bossesKilled = 0;
@@ -279,12 +507,37 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId,
 
     _activeRuns[instanceId] = run;
 
-    // Start recording if enabled
-    if (_config.replayEnabled)
+    // Start recording if enabled. Bot-only runs are listed but not recorded.
+    if (_config.replayEnabled && !botRun)
         StartRecording(instanceId);
 
     LOG_DEBUG("scripts.dc", "MythicSpectator: Registered run {} (map {}, +{})",
               instanceId, mapId, keystoneLevel);
+}
+
+// No key level to hold against MinKeystoneLevel and no replay: these runs are
+// the bot runs of `.playerbots dungeon start`, which register themselves once
+// the group is inside and unregister at teardown.
+void MythicSpectatorManager::RegisterDungeonRun(uint32 instanceId, uint32 mapId, uint8 difficulty,
+    std::string const& leaderName, std::string const& dungeonName)
+{
+    if (!_config.enabled)
+        return;
+
+    SpectateableRun run;
+    run.instanceId = instanceId;
+    run.mapId = mapId;
+    run.difficulty = difficulty;
+    run.startedAt = GameTime::GetGameTime().count();
+    run.dungeonName = dungeonName;
+    run.leaderName = leaderName;
+    run.allowsSpectators = _config.allowPublicListing;
+    run.streamMode = _config.defaultStreamMode;
+
+    _activeRuns[instanceId] = run;
+
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Registered dungeon run {} (map {}, difficulty {})",
+              instanceId, mapId, difficulty);
 }
 
 void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
@@ -293,24 +546,24 @@ void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
     if (it == _activeRuns.end())
         return;
 
-    Map* runMap = sMapMgr->FindMap(it->second.mapId, instanceId);
-
     // Stop and save replay
     if (_config.replayEnabled)
         StopRecording(instanceId, true);
 
-    // Kick all spectators from this run
-    for (ObjectGuid guid : it->second.spectators)
+    // Kick all spectators from this run. Iterate a copy: StopSpectating erases
+    // from this very set. Resolve globally rather than on the run's map, so a
+    // spectator still in transit is released instead of left in GM mode.
+    std::vector<ObjectGuid> const spectators(it->second.spectators.begin(), it->second.spectators.end());
+    for (ObjectGuid guid : spectators)
     {
-        if (!runMap)
-            continue;
-
-        if (Player* spectator = ObjectAccessor::GetPlayer(runMap, guid))
+        if (Player* spectator = ObjectAccessor::FindConnectedPlayer(guid))
         {
             ChatHandler(spectator->GetSession()).SendSysMessage(
                 "|cffff0000[M+ Spectator]|r The run has ended. You have been returned to your previous location.");
             StopSpectating(spectator);
         }
+        else
+            _spectators.erase(guid);
     }
 
     _activeRuns.erase(it);
@@ -428,6 +681,13 @@ bool MythicSpectatorManager::CanSpectate(Player* player, uint32 instanceId, std:
         return false;
     }
 
+    // The spectator flag's attack check covers the player, not their pet.
+    if (!player->m_Controlled.empty())
+    {
+        error = "Dismiss your pet before spectating.";
+        return false;
+    }
+
     if (player->IsInCombat())
     {
         error = "Can't spectate while in combat.";
@@ -529,16 +789,37 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
     player->SetGameMaster(true);
     player->SetGMVisible(false);
 
-    // Teleport to the dungeon
+    // A dungeon teleport normally picks its instance from the player's own binds,
+    // which know nothing about this run - and a lockout on another copy of the
+    // dungeon would win. The pending spectator id sends the player into this
+    // instance instead, without binding them (MapInstanced::CreateInstanceForPlayer,
+    // InstanceMap::AddPlayerToMap); the worldport ack clears it on arrival.
+    player->SetPendingSpectatorForBG(instanceId);
+
+    // Teleport to the dungeon. TELE_TO_GM_MODE skips the entry requirements
+    // (level, attunement, lockout checks) a spectator never has to meet.
     float z = targetPlayer->GetPositionZ() + 0.25f;
-    player->TeleportTo(run.mapId, targetPlayer->GetPositionX(), targetPlayer->GetPositionY(),
-                       z, targetPlayer->GetOrientation());
+    if (!player->TeleportTo(run.mapId, targetPlayer->GetPositionX(), targetPlayer->GetPositionY(),
+                            z, targetPlayer->GetOrientation(), TELE_TO_GM_MODE))
+    {
+        player->SetPendingSpectatorForBG(0);
+        player->SetGameMaster(false);
+        player->SetGMVisible(true);
+        run.spectators.erase(player->GetGUID());
+        _spectators.erase(player->GetGUID());
+        ChatHandler(player->GetSession()).SendSysMessage("|cffff0000[M+ Spectator]|r Could not teleport you to the run.");
+        return false;
+    }
 
-    // Start watching the first player
-    WatchPlayer(player, targetPlayer);
+    // No casting or attacking while watching. Only after the teleport was
+    // accepted: TeleportTo refuses to port a flagged player into an instance.
+    DCSpectator::HoldSpectatorFlag(player);
 
+    // Free roam by default: the spectator walks the dungeon themselves (GM
+    // mode, invisible). Locking the camera to a member is opt-in.
     ChatHandler(player->GetSession()).PSendSysMessage(
-        "|cff00ff00[M+ Spectator]|r Now spectating +{} {}. Use |cffffd700.spectate watch <player>|r to switch views.",
+        "|cff00ff00[M+ Spectator]|r Now spectating +{} {}. You move freely; |cffffd700.spectate watch <player>|r "
+        "locks the camera to a player and |cffffd700.spectate free|r releases it.",
         run.keystoneLevel, run.leaderName);
 
     // Announce to participants if enabled
@@ -553,6 +834,9 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
             }
         }
     }
+
+    DCSpectator::NotifySessionStarted(player, DCSpectator::SystemId::MythicPlus,
+        run.runId != 0 ? run.runId : instanceId, "Now spectating the run.");
 
     LOG_INFO("scripts.dc", "MythicSpectator: {} started spectating run {} (+{})",
              player->GetName(), instanceId, run.keystoneLevel);
@@ -629,7 +913,10 @@ void MythicSpectatorManager::StopSpectating(Player* player)
     if (runIt != _activeRuns.end())
         runIt->second.spectators.erase(player->GetGUID());
 
-    // Restore original state
+    // Restore original state. The pending id is normally cleared on arrival;
+    // clear it here too in case the session ends before the spectator landed.
+    DCSpectator::ReleaseSpectatorFlag(player);
+    player->SetPendingSpectatorForBG(0);
     player->SetGameMaster(false);
     player->SetGMVisible(true);
     RestoreSpectatorPosition(player, state);
@@ -639,6 +926,8 @@ void MythicSpectatorManager::StopSpectating(Player* player)
     if (player->GetSession())
         ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[M+ Spectator]|r You have stopped spectating.");
 
+    DCSpectator::NotifySessionEnded(player, DCSpectator::SystemId::MythicPlus, "Stopped spectating.");
+
     LOG_DEBUG("scripts.dc", "MythicSpectator: {} stopped spectating", player->GetName());
 }
 
@@ -647,6 +936,28 @@ bool MythicSpectatorManager::IsSpectating(Player* player) const
     if (!player)
         return false;
     return _spectators.find(player->GetGUID()) != _spectators.end();
+}
+
+void MythicSpectatorManager::RequestLeave(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(_leaveRequestsMutex);
+    _leaveRequests.insert(guid);
+}
+
+void MythicSpectatorManager::ProcessLeaveRequests()
+{
+    std::unordered_set<ObjectGuid> requests;
+    {
+        std::lock_guard<std::mutex> lock(_leaveRequestsMutex);
+        if (_leaveRequests.empty())
+            return;
+        requests.swap(_leaveRequests);
+    }
+
+    for (ObjectGuid const& guid : requests)
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+            if (IsSpectating(player))
+                StopSpectating(player);
 }
 
 bool MythicSpectatorManager::WatchPlayer(Player* spectator, Player* target)
@@ -693,6 +1004,38 @@ bool MythicSpectatorManager::WatchPlayer(Player* spectator, Player* target)
         "|cff00ff00[M+ Spectator]|r Now watching {}.", target->GetName());
 
     return true;
+}
+
+void MythicSpectatorManager::UnwatchPlayer(Player* spectator, bool moveToWatched)
+{
+    if (!spectator)
+        return;
+
+    auto it = _spectators.find(spectator->GetGUID());
+    if (it == _spectators.end())
+        return;
+
+    ObjectGuid const watched = it->second.watchingPlayer;
+    it->second.watchingPlayer.Clear();
+
+    if (WorldObject* viewpoint = spectator->GetViewpoint())
+    {
+        if (Unit* unit = viewpoint->ToUnit())
+        {
+            unit->RemoveAurasByType(SPELL_AURA_BIND_SIGHT, spectator->GetGUID());
+            spectator->RemoveAurasDueToSpell(SPECTATOR_BINDSIGHT_SPELL, spectator->GetGUID());
+        }
+    }
+
+    if (!moveToWatched || watched.IsEmpty() || spectator->IsBeingTeleported())
+        return;
+
+    Player* target = ObjectAccessor::GetPlayer(spectator->GetMap(), watched);
+    if (target && target->IsInWorld() && target->GetInstanceId() == spectator->GetInstanceId())
+    {
+        spectator->NearTeleportTo(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(),
+            target->GetOrientation());
+    }
 }
 
 SpectatorState* MythicSpectatorManager::GetSpectatorState(ObjectGuid guid)
@@ -802,6 +1145,10 @@ std::string MythicSpectatorManager::FormatRunData(SpectateableRun const& run, ui
 // ============================================================
 void MythicSpectatorManager::Update(uint32 diff)
 {
+    // Every tick, and before the enabled check: a spectator who walked out of
+    // the run is sent home even if spectating was switched off meanwhile.
+    ProcessLeaveRequests();
+
     if (!_config.enabled)
         return;
 
@@ -810,16 +1157,32 @@ void MythicSpectatorManager::Update(uint32 diff)
         return;
     _updateTimer = 0;
 
-    // Update run status from MythicPlusRunManager
+    // Update run status from MythicPlusRunManager, or for a run without a
+    // keystone from the instance's encounters.
+    std::vector<uint32> vanishedRuns;
     for (auto& [instanceId, run] : _activeRuns)
     {
         Map* map = sMapMgr->FindMap(run.mapId, instanceId);
         if (!map)
+        {
+            // The run manager unregisters a keystone run; a dungeon run is
+            // dropped here too should its owner never have done it.
+            if (!run.keystoneLevel)
+                vanishedRuns.push_back(instanceId);
             continue;
+        }
 
-        // Get state from MythicPlusRunManager
-        MythicPlusRunManager::InstanceState const* state = sMythicRuns->GetRunState(map);
-        if (state)
+        if (!run.keystoneLevel)
+        {
+            uint8 killed = 0;
+            uint8 total = 0;
+            if (GetEncounterProgress(map, killed, total))
+            {
+                run.bossesKilled = killed;
+                run.bossesTotal = total;
+            }
+        }
+        else if (MythicPlusRunManager::InstanceState const* state = sMythicRuns->GetRunState(map))
         {
             uint64 now = GameTime::GetGameTime().count();
             run.timerRemaining = (state->timerEndsAt > now) ? static_cast<uint32>(state->timerEndsAt - now) : 0;
@@ -833,15 +1196,37 @@ void MythicSpectatorManager::Update(uint32 diff)
             BroadcastRunUpdate(instanceId);
     }
 
+    for (uint32 instanceId : vanishedRuns)
+        UnregisterActiveRun(instanceId);
+
     // Cleanup orphaned spectators (disconnected or crashed without proper logout)
-    // This prevents memory leaks from accumulating over time
+    // This prevents memory leaks from accumulating over time.
+    // A spectator still online but outside the run left it some way the exit
+    // hook did not catch; send them back like a normal leave, rather than
+    // dropping the state and leaving them invisible and flagged. Anyone on the
+    // loading screen is in no map yet - that includes every spectator on the
+    // way in, whom the old "not on the run map" test threw out mid-teleport.
     std::vector<ObjectGuid> orphanedGuids;
+    std::vector<ObjectGuid> strayGuids;
     for (auto const& [guid, state] : _spectators)
     {
-        Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
-        if (!map || !ObjectAccessor::GetPlayer(map, guid))
+        Player* player = ObjectAccessor::FindConnectedPlayer(guid);
+        if (!player)
+        {
             orphanedGuids.push_back(guid);
+            continue;
+        }
+
+        if (player->IsBeingTeleported() || !player->IsInWorld())
+            continue;
+
+        if (player->GetMapId() != state.targetMapId || player->GetInstanceId() != state.targetInstanceId)
+            strayGuids.push_back(guid);
     }
+
+    for (ObjectGuid const& guid : strayGuids)
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+            StopSpectating(player);
     for (ObjectGuid guid : orphanedGuids)
     {
         auto it = _spectators.find(guid);
@@ -956,42 +1341,30 @@ void MythicSpectatorManager::UpdateSpectatorViewpoint(Player* spectator)
 
     SpectatorState& state = it->second;
 
-    // If watching a player, update position to follow
-    if (!state.watchingPlayer.IsEmpty())
-    {
-        Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
-        Player* target = map ? ObjectAccessor::GetPlayer(map, state.watchingPlayer) : nullptr;
-        if (target && target->IsAlive() && target->GetInstanceId() == state.targetInstanceId)
-        {
-            // Ensure viewpoint is maintained
-            if (!spectator->GetViewpoint() || spectator->GetViewpoint()->GetGUID() != target->GetGUID())
-            {
-                if (spectator->HaveAtClient(target))
-                    spectator->CastSpell(target, SPECTATOR_BINDSIGHT_SPELL, true);
-            }
-        }
-        else
-        {
-            // Target dead or left - find another player to watch
-            state.watchingPlayer.Clear();
+    // Free roam: nothing to maintain.
+    if (state.watchingPlayer.IsEmpty())
+        return;
 
-            Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
-            if (map)
-            {
-                Map::PlayerList const& players = map->GetPlayers();
-                for (auto const& ref : players)
-                {
-                    if (Player* p = ref.GetSource())
-                    {
-                        if (p->IsAlive() && !IsSpectating(p))
-                        {
-                            WatchPlayer(spectator, p);
-                            break;
-                        }
-                    }
-                }
-            }
+    Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
+    Player* target = map ? ObjectAccessor::GetPlayer(map, state.watchingPlayer) : nullptr;
+    if (target && target->IsAlive() && target->GetInstanceId() == state.targetInstanceId)
+    {
+        // Ensure viewpoint is maintained
+        if (!spectator->GetViewpoint() || spectator->GetViewpoint()->GetGUID() != target->GetGUID())
+        {
+            if (spectator->HaveAtClient(target))
+                spectator->CastSpell(target, SPECTATOR_BINDSIGHT_SPELL, true);
         }
+        return;
+    }
+
+    // The watched player died or left: back to free roam, rather than jumping
+    // to whoever happens to come first in the map's player list.
+    UnwatchPlayer(spectator);
+    if (spectator->GetSession())
+    {
+        ChatHandler(spectator->GetSession()).SendSysMessage(
+            "|cff00ff00[M+ Spectator]|r The player you were watching is gone - camera released.");
     }
 }
 
@@ -1432,6 +1805,30 @@ bool MythicSpectatorManager::IsReplayPlayback(Player* player) const
 
 } // namespace DCMythicSpectator
 
+// Bot dungeon runs without a keystone (mod-playerbots DCBotMythicRun) list
+// themselves for spectating through these. modules.lib does not link
+// scripts.lib, so the module re-declares them and the symbols resolve at the
+// worldserver link, like the keystone API in dc_mythicplus_run_manager.cpp.
+namespace DCMythicPlusBots
+{
+    void RegisterSpectatableDungeonRun(Map* map, std::string const& leaderName)
+    {
+        if (!map || !map->IsDungeon())
+            return;
+
+        sMythicSpectator.RegisterDungeonRun(map->GetInstanceId(), map->GetId(),
+            static_cast<uint8>(map->GetDifficulty()), leaderName, map->GetMapName());
+    }
+
+    void UnregisterSpectatableDungeonRun(uint32 instanceId)
+    {
+        // Never a keystone run: those belong to the run manager.
+        DCMythicSpectator::SpectateableRun const* run = sMythicSpectator.GetRun(instanceId);
+        if (run && !run->keystoneLevel)
+            sMythicSpectator.UnregisterActiveRun(instanceId);
+    }
+}
+
 using namespace DCMythicSpectator;
 
 // ============================================================
@@ -1451,6 +1848,7 @@ public:
             { "code",    HandleSpectateCode,    SEC_PLAYER,        Console::No },
             { "player",  HandleSpectatePlayer,  SEC_PLAYER,        Console::No },
             { "watch",   HandleSpectateWatch,   SEC_PLAYER,        Console::No },
+            { "free",    HandleSpectateFree,    SEC_PLAYER,        Console::No },
             { "leave",   HandleSpectateLeave,   SEC_PLAYER,        Console::No },
             { "invite",  HandleSpectateInvite,  SEC_PLAYER,        Console::No },
             { "guild",   HandleSpectateGuild,   SEC_PLAYER,        Console::No },
@@ -1558,6 +1956,26 @@ public:
         }
 
         sMythicSpectator.WatchPlayer(spectator, target);
+        return true;
+    }
+
+    // Release the camera: back to free roam
+    static bool HandleSpectateFree(ChatHandler* handler)
+    {
+        Player* spectator = handler->GetPlayer();
+        if (!spectator)
+            return true;
+
+        if (!sMythicSpectator.IsSpectating(spectator))
+        {
+            handler->SendSysMessage("|cffff0000[M+ Spectator]|r You are not spectating.");
+            return true;
+        }
+
+        // Released where the camera was: the spectator lands on the player
+        // they watched, which also frees a body stuck behind a wall.
+        sMythicSpectator.UnwatchPlayer(spectator, true);
+        handler->SendSysMessage("|cff00ff00[M+ Spectator]|r Camera released - you move freely from where you were watching.");
         return true;
     }
 
@@ -1740,7 +2158,30 @@ public:
 class DCMythicSpectatorPlayerScript : public PlayerScript
 {
 public:
-    DCMythicSpectatorPlayerScript() : PlayerScript("DCMythicSpectatorPlayerScript", { PLAYERHOOK_ON_LOGOUT }) { }
+    DCMythicSpectatorPlayerScript() : PlayerScript("DCMythicSpectatorPlayerScript",
+        { PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_BEFORE_TELEPORT }) { }
+
+    // Leaving the run any way but "leave" - the dungeon's exit portal, a
+    // summon, an instance reset - would drop the spectator at the dungeon
+    // entrance instead of where they started, still invisible and flagged.
+    // Cancel that port and run the normal leave, which sends them back.
+    // Teleports also start on map threads, so this reads only the core's
+    // guarded holder set and queues the leave for the world update. M+ is the
+    // only system whose spectators stand in a dungeon, and the leave's own
+    // port home passes because StopSpectating releases the flag first.
+    bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float /*x*/, float /*y*/, float /*z*/,
+        float /*orientation*/, uint32 /*options*/, Unit* /*target*/) override
+    {
+        if (!player || mapid == player->GetMapId() || !DCSpectator::IsHoldingSpectatorFlag(player))
+            return true;
+
+        Map* map = player->FindMap();
+        if (!map || !map->IsDungeon())
+            return true;
+
+        sMythicSpectator.RequestLeave(player->GetGUID());
+        return false;
+    }
 
     void OnPlayerLogout(Player* player) override
     {
@@ -1810,7 +2251,7 @@ public:
         if (!run)
             return false;
 
-        payload = BuildLiveSnapshotPayload(*run);
+        payload = BuildLiveSnapshotPayload(*run, spectator);
         return true;
     }
 

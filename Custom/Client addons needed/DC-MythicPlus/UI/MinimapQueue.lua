@@ -76,17 +76,32 @@ end
 
 -- Minimap buttons ride the ring, so a saved angle survives the minimap being
 -- resized (DC-QOS's skin does exactly that) where a saved x/y would not.
+--
+-- The ring is LibDBIcon's track -- radius 80 from the map centre, pulled onto
+-- a bevelled square when GetMinimapShape() is SQUARE -- which is also what
+-- DC-QOS's minimap button ring lays every button out on. Matching it exactly
+-- means a queue update re-placing the eye lands it where the ring already put
+-- it, instead of pulling it off the edge of a square minimap.
+local RING_RADIUS = 80
+local RING_DIAG_RADIUS = math.sqrt(2 * RING_RADIUS * RING_RADIUS) - 10
+
 function GF:PositionMinimapQueueEye()
     local eye = self.minimapQueueEye
     if not eye or not Minimap then return end
 
     local db = EnsureDB()
     local angle = math.rad(db.angle or DEFAULT_ANGLE)
-    local radius = ((Minimap:GetWidth() or 140) / 2) + 10
+    local x, y = math.cos(angle), math.sin(angle)
+    local shape = type(GetMinimapShape) == "function" and GetMinimapShape() or "ROUND"
+    if shape == "SQUARE" then
+        x = math.max(-RING_RADIUS, math.min(x * RING_DIAG_RADIUS, RING_RADIUS))
+        y = math.max(-RING_RADIUS, math.min(y * RING_DIAG_RADIUS, RING_RADIUS))
+    else
+        x, y = x * RING_RADIUS, y * RING_RADIUS
+    end
 
     eye:ClearAllPoints()
-    eye:SetPoint("CENTER", Minimap, "CENTER",
-        math.cos(angle) * radius, math.sin(angle) * radius)
+    eye:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
 local function OnDragUpdate(eye)
@@ -96,7 +111,7 @@ local function OnDragUpdate(eye)
     local cx, cy = GetCursorPosition()
     if not mx or not cx or not scale or scale == 0 then return end
 
-    EnsureDB().angle = math.deg(math.atan2(cy / scale - my, cx / scale - mx))
+    EnsureDB().angle = math.deg(math.atan2(cy / scale - my, cx / scale - mx)) % 360
     GF:PositionMinimapQueueEye()
 end
 
@@ -228,9 +243,8 @@ function GF:CreateMinimapQueueEye()
     if self.minimapQueueEye then return self.minimapQueueEye end
     if not Minimap then return nil end
 
-    -- Named without "MinimapButton"/"MiniMapIcon" on purpose: DC-QOS's minimap
-    -- skin sweeps every child matching those names into its own button column,
-    -- which would drag the eye off the ring the moment that module is enabled.
+    -- DC-QOS's minimap button ring knows this frame by name: it reads and
+    -- writes db.angle, and moves the eye aside if it would cover another button.
     local eye = CreateFrame("Button", "DCMatchmakingQueueEye", Minimap)
     eye:SetWidth(BUTTON_SIZE)
     eye:SetHeight(BUTTON_SIZE)

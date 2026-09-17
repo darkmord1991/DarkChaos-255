@@ -901,6 +901,32 @@ struct DungeonEncounterEntry
     //uint32 spellIconID;                                   // 22
 };
 
+// DarkChaos: floor plans of the client's dungeon maps (3.3). The Mythic+
+// spectator reads them to place run members on the dungeon map. Like
+// WorldMapArea, the map's horizontal axis is world Y (west on the left) and
+// its vertical axis is world X (north on top).
+struct DungeonMapEntry
+{
+    uint32 ID;                                              // 0
+    uint32 MapID;                                           // 1
+    uint32 FloorIndex;                                      // 2        1-based, what GetCurrentMapDungeonLevel() returns
+    float  MinX;                                            // 3        world Y range (map horizontal axis)
+    float  MaxX;                                            // 4
+    float  MinY;                                            // 5        world X range (map vertical axis)
+    float  MaxY;                                            // 6
+    uint32 ParentWorldMapID;                                // 7        WorldMapArea of the zone around the dungeon
+};
+
+// Which WMO group belongs to which floor (VMAP's groupId is the same id).
+struct DungeonMapChunkEntry
+{
+    uint32 ID;                                              // 0
+    uint32 MapID;                                           // 1
+    uint32 WmoGroupID;                                      // 2
+    uint32 DungeonMapID;                                    // 3        DungeonMap.dbc row
+    float  MinZ;                                            // 4
+};
+
 struct DurabilityCostsEntry
 {
     uint32    Itemlvl;                                      // 0

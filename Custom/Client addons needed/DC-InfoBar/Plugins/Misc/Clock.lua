@@ -94,36 +94,17 @@ function ClockPlugin:OnTooltip(tooltip)
     -- Reset timers
     tooltip:AddLine(" ")
     tooltip:AddLine("|cff32c4ffReset Timers|r")
-    
-    -- Calculate time until daily reset (usually 3:00 AM server time)
-    local resetHour = 3  -- Typical daily reset
-    local hoursUntilReset = (resetHour - serverHour - 1) % 24
-    local minsUntilReset = 60 - serverMin
-    if minsUntilReset == 60 then
-        minsUntilReset = 0
-        hoursUntilReset = hoursUntilReset + 1
+
+    -- GetQuestResetTime(): seconds until the daily quest reset, from the server.
+    local dailyReset = GetQuestResetTime and GetQuestResetTime() or 0
+    if dailyReset and dailyReset > 0 then
+        tooltip:AddDoubleLine("Daily Reset:", DCInfoBar:FormatTimeShort(dailyReset), 0.7, 0.7, 0.7, 0.5, 1, 0.5)
     end
-    
-    tooltip:AddDoubleLine("Daily Reset:", 
-        string.format("%d hours, %d minutes", hoursUntilReset, minsUntilReset),
-        0.7, 0.7, 0.7, 0.5, 1, 0.5)
-    
-    -- Weekly reset (Tuesday 3:00 AM typically)
-    local weekday = tonumber(date("%w"))  -- 0 = Sunday
-    local tuesday = 2
-    local daysUntilTuesday = (tuesday - weekday) % 7
-    if daysUntilTuesday == 0 and serverHour >= resetHour then
-        daysUntilTuesday = 7
-    end
-    
-    if daysUntilTuesday == 0 then
-        tooltip:AddDoubleLine("Weekly Reset:", 
-            string.format("%d hours", hoursUntilReset),
-            0.7, 0.7, 0.7, 1, 0.82, 0)
-    else
-        tooltip:AddDoubleLine("Weekly Reset:", 
-            string.format("%d days, %d hours", daysUntilTuesday, hoursUntilReset),
-            0.7, 0.7, 0.7, 1, 0.82, 0)
+
+    -- Weekly reset (Great Vault / Mythic+ week) comes with the season info.
+    local weeklyReset = DCInfoBar.serverData.season.weeklyReset or 0
+    if weeklyReset > 0 then
+        tooltip:AddDoubleLine("Weekly Reset:", DCInfoBar:FormatTimeShort(weeklyReset), 0.7, 0.7, 0.7, 1, 0.82, 0)
     end
 end
 

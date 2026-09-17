@@ -247,9 +247,21 @@ if not HLBG.UI.Queue.Content then
             end)
         end
     end)
+    -- Watch the running match without joining it (spectator mode). The label
+    -- follows the session through HLBG.UpdateSpectateButton.
+    local spectateBtn = CreateFrame("Button", nil, HLBG.UI.Queue.Content, "UIPanelButtonTemplate")
+    spectateBtn:SetSize(140, 25)
+    spectateBtn:SetPoint("TOP", refreshBtn, "BOTTOM", 0, -8)
+    spectateBtn:SetText("Watch Live Match")
+    spectateBtn:SetScript("OnClick", function()
+        if type(HLBG.ToggleSpectating) == "function" then
+            HLBG.ToggleSpectating()
+        end
+    end)
+    HLBG.UI.Queue.SpectateButton = spectateBtn
     -- Info text about queue system
     local infoText = HLBG.UI.Queue.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    infoText:SetPoint("TOP", refreshBtn, "BOTTOM", 0, -30)
+    infoText:SetPoint("TOP", spectateBtn, "BOTTOM", 0, -22)
     infoText:SetWidth(500)
     infoText:SetJustifyH("LEFT")
     infoText:SetText([[|cFFFFD700How to Join Hinterland BG:|r
@@ -259,6 +271,8 @@ if not HLBG.UI.Queue.Content then
    .hlbg queue join
    .hlbg queue leave
    .hlbg queue status
+4. Watch Live Match spectates the running battle without joining it
+   (chat: .hlbg spectate / .hlbg spectate leave)
 |cFFAAAAAANote: History and leaderboard views are provided through DC-Leaderboards (/leaderboard).|r]])
     HLBG.UI.Queue.InfoText = infoText
     -- Auto-request queue status when tab is shown.
@@ -285,6 +299,13 @@ if not HLBG.UI.Queue.Content then
     -- Initialize queue state
     if not HLBG._queueState then
         HLBG._queueState = { inQueue = false }
+    end
+end
+
+function HLBG.UpdateSpectateButton()
+    local button = HLBG.UI and HLBG.UI.Queue and HLBG.UI.Queue.SpectateButton
+    if button then
+        button:SetText(HLBG._spectating and "Stop Watching" or "Watch Live Match")
     end
 end
 

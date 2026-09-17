@@ -531,6 +531,14 @@ DC.GroupFinder = {
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_START_SPECTATE, { runId = runId })
     end,
     
+    -- Unified live list: system is "mplus", "hlbg" or "duel" and id is the
+    -- entry's id from SMSG_SPECTATE_LIST (0 = the running HLBG match).
+    StartSpectateSession = function(system, id)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_START_SPECTATE,
+            { system = system, id = id, runId = id })
+    end,
+
+    -- Stops whichever session is active, in any system.
     StopSpectate = function()
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_STOP_SPECTATE, {})
     end,

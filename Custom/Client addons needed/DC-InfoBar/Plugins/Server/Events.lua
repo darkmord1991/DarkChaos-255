@@ -1,8 +1,9 @@
 --[[
     DC-InfoBar Events Plugin
     Shows active zone events (invasions, rifts, etc.)
-    
-    Data Source: DCAddonProtocol (custom message)
+
+    Data Source: EVNT pushes and WRLD snapshot/updates (Core.lua UpsertEvent).
+    Core keeps timeRemaining live and prunes ended events after their linger window.
 ]]
 
 local addonName = "DC-InfoBar"
@@ -13,62 +14,23 @@ local EventsPlugin = {
     name = "Zone Events",
     category = "server",
     type = "combo",
-    side = "right",      -- Matches Settings.lua default
-    priority = 890,      -- Matches Settings.lua default
+    side = "right",
+    priority = 890,
     icon = "Interface\\Icons\\Ability_Warrior_BattleShout",
     updateInterval = 1.0,
-    
-    leftClickHint = "Quick-join event",
-    rightClickHint = "Show event details",
+
+    leftClickHint = "Open world map",
+    rightClickHint = "Print event details",
 }
 
+-- 6-digit RGB, used as "|cff" .. color
 local EVENT_TYPE_COLORS = {
-    invasion = "ffff5050",
-    rift = "ffa335ee",
-    stampede = "ffffd100",
+    invasion = "ff5050",
+    rift = "a335ee",
+    stampede = "ffd100",
 }
-
-local DEFAULT_EVENT_COLOR = "ff9d9d9d"
-
-local function Now()
-    if GetTime then
-        return GetTime()
-    end
-    return 0
-end
-
-local function IsStoppedState(state)
-    return state == "victory" or state == "failed" or state == "stopped" or state == "cancelled" or state == "ended"
-end
-
--- Live countdown: Core stamps endsAt (local clock) when a server update
--- arrives, so the display ticks every second instead of stepping by the
--- ~10 s server push interval. Falls back to the raw pushed value.
-local function GetLiveRemaining(event)
-    if not event then
-        return nil
-    end
-    local endsAt = tonumber(event.endsAt)
-    if endsAt then
-        return math.floor(endsAt - Now() + 0.5)
-    end
-    return tonumber(event.timeRemaining)
-end
-
-function EventsPlugin:OnActivate()
-    DCInfoBar:Debug("Events plugin activated - waiting for server data")
-    -- Ensure serverData.events exists
-    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
-    
-    -- Force an initial UI update in case events are already present
-    -- IMPORTANT: do NOT call RefreshAllPlugins() here (it causes re-entrant activation recursion)
-    if DCInfoBar.ForceUpdateAllPlugins then
-        DCInfoBar:ForceUpdateAllPlugins()
-    end
-
-    -- Register handler for test data injection
-    DCInfoBar._eventPluginActive = true
-end
+local DEFAULT_EVENT_COLOR = "9d9d9d"
+local CRITICAL_COLOR = "ff3030"
 
 local function GetSetting(key, default)
     local value = DCInfoBar:GetPluginSetting(EventsPlugin.id, key)
@@ -78,261 +40,180 @@ local function GetSetting(key, default)
     return value
 end
 
+local function IsStopped(event)
+    return event.active == false or DCInfoBar.EVENT_STOPPED_STATES[event.state or ""]
+end
+
 local function GetEventColor(event, flashCritical)
-    if flashCritical and event.type == "invasion" then
-        local wave = event.wave or 0
-        local maxWave = event.maxWaves or 0
-        if maxWave > 0 and wave >= maxWave then
-            return "ffff3030"
+    if flashCritical and event.type == "invasion" and not IsStopped(event) then
+        local maxWave = tonumber(event.maxWaves) or 0
+        if maxWave > 0 and (tonumber(event.wave) or 0) >= maxWave then
+            return CRITICAL_COLOR
         end
     end
     return EVENT_TYPE_COLORS[event.type or ""] or DEFAULT_EVENT_COLOR
 end
 
-local function BuildEventLine(event, showZone, showTimer)
-    if not event then
-        return ""
-    end
-
-    local state = event.state or event.status
-
-    local text
+local function GetStatusText(event)
     if event.type == "invasion" then
-        if state == "warning" or (event.wave or 0) == 0 then
-            text = "Incoming"
-        elseif IsStoppedState(state) then
-            if state == "victory" then
-                text = "Stopped (Victory)"
-            elseif state == "failed" then
-                text = "Stopped (Failed)"
-            else
-                text = "Stopped"
+        if IsStopped(event) then
+            if event.state == "victory" then
+                return "Stopped (Victory)"
+            elseif event.state == "failed" then
+                return "Stopped (Failed)"
             end
-        else
-            local wave = tonumber(event.wave) or 1
-            local maxWaves = tonumber(event.maxWaves) or 4
-            wave = math.max(1, math.min(maxWaves, wave))
-            text = string.format("Wave %d/%d", wave, maxWaves)
-            if event.enemiesRemaining then
-                text = text .. string.format(" (%d)", event.enemiesRemaining)
-            end
+            return "Stopped"
         end
+        if event.state == "warning" or (tonumber(event.wave) or 0) == 0 then
+            return "Incoming"
+        end
+        local maxWaves = tonumber(event.maxWaves) or 4
+        local wave = math.max(1, math.min(maxWaves, tonumber(event.wave) or 1))
+        local text = string.format("Wave %d/%d", wave, maxWaves)
+        if tonumber(event.enemiesRemaining) then
+            text = text .. string.format(" (%d)", event.enemiesRemaining)
+        end
+        return text
     elseif event.type == "rift" then
-        text = "Rift"
+        return IsStopped(event) and "Rift closed" or "Rift"
     elseif event.type == "stampede" then
-        text = "Stampede"
-    else
-        text = event.name or "Event"
+        return IsStopped(event) and "Stampede over" or "Stampede"
     end
+    return event.name or "Event"
+end
 
-    if showTimer then
-        local remaining = GetLiveRemaining(event)
-        if (not remaining or remaining <= 0) and event.hideAt then
-            remaining = math.floor((tonumber(event.hideAt) or 0) - Now())
-        end
-        if remaining and remaining > 0 then
-            text = text .. " " .. DCInfoBar:FormatTime(remaining)
-        end
-    end
-
-    if showZone and event.zone then
-        text = string.format("%s - %s", event.zone, text)
-    end
-
-    return text
+local function GetRemaining(event)
+    return tonumber(event.timeRemaining)
 end
 
 function EventsPlugin:OnUpdate(elapsed)
-    -- Ensure events table exists
-    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
-    local events = DCInfoBar.serverData.events
-    local hideWhenNone = GetSetting("hideWhenNone", true)
-    local showZone = GetSetting("showZone", true)
-    local showTimer = GetSetting("showTimer", true)
-    local flashCritical = GetSetting("flashCritical", true)
-    
-    -- Debug: log if no events exist
+    local events = DCInfoBar:GetVisibleEvents(true)
+
     if #events == 0 then
-        DCInfoBar:Debug("Events plugin: No events in serverData.events")
-    else
-        DCInfoBar:Debug("Events plugin: " .. #events .. " event(s) in serverData.events")
-    end
-    
-    -- Prune expired stopped events
-    do
-        local t = Now()
-        for i = #events, 1, -1 do
-            local e = events[i]
-            if e and e.hideAt and t >= (tonumber(e.hideAt) or 0) then
-                table.remove(events, i)
+        if GetSetting("hideWhenNone", true) then
+            if self.button and self.button:IsShown() then
+                self.button:Hide()
             end
-        end
-    end
-
-    -- Filter to active events (plus recently stopped events)
-    local activeEvents = {}
-    if events and type(events) == "table" then
-        for _, event in ipairs(events) do
-            if event then
-                -- Normalize state field (could be "state" or "status")
-                local state = event.state or event.status or "active"
-                local isActive = event.active ~= false  -- Default to true if not explicitly false
-                
-                DCInfoBar:Debug(string.format("Event check: %s, active=%s, state=%s", 
-                    event.name or "Unknown", tostring(event.active), tostring(state)))
-                
-                local isActiveState = (state == "active" or state == "warning" or state == "spawning" or state == "ongoing" or state == "progress" or state == nil)
-                local isStoppedButVisible = (not isActive) and IsStoppedState(state) and event.hideAt and (Now() < (tonumber(event.hideAt) or 0))
-
-                if (isActive and isActiveState) or isStoppedButVisible then
-                    table.insert(activeEvents, event)
-                    DCInfoBar:Debug("  -> Included in active events")
-                else
-                    DCInfoBar:Debug("  -> Filtered out (active=" .. tostring(isActive) .. ", state=" .. tostring(state) .. ")")
-                end
-            end
-        end
-    end
-    
-    DCInfoBar:Debug("Events plugin: " .. #activeEvents .. " active event(s)")
-    
-    if #activeEvents == 0 then
-        if hideWhenNone and self.button then
-            self.button:Hide()
-        end
-        if hideWhenNone then
             return "", ""
         end
         return "", "|cffbbbbbbNo active events|r"
-    else
-        if self.button and not self.button:IsShown() then
-            DCInfoBar:Debug("Showing Events button")
-            self.button:Show()
-        end
     end
-    
-    -- Show first/most important event
-    local event = activeEvents[1]
-    local color = GetEventColor(event, flashCritical)
-    local text = BuildEventLine(event, showZone, showTimer)
-    
-    return "", "|c" .. color .. text .. "|r"
+
+    if self.button and not self.button:IsShown() then
+        self.button:Show()
+    end
+
+    local event = events[1]
+    local text = GetStatusText(event)
+
+    local remaining = GetRemaining(event)
+    if GetSetting("showTimer", true) and remaining and remaining > 0 then
+        text = text .. " " .. DCInfoBar:FormatTime(remaining)
+    end
+    if GetSetting("showZone", true) and event.zone then
+        text = event.zone .. " - " .. text
+    end
+    if #events > 1 then
+        text = text .. string.format(" (+%d)", #events - 1)
+    end
+
+    return "", "|cff" .. GetEventColor(event, GetSetting("flashCritical", true)) .. text .. "|r"
 end
 
 function EventsPlugin:OnTooltip(tooltip)
     tooltip:AddLine("Zone Events", 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
-    
-    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
-    local events = DCInfoBar.serverData.events
-    local showZone = GetSetting("showZone", true)
-    local showTimer = GetSetting("showTimer", true)
-    local maxEntries = tonumber(GetSetting("maxTooltipEntries", 4)) or 4
-    maxEntries = math.max(1, math.min(10, maxEntries))
-    
-    -- Filter to active events (plus recently stopped events)
-    local activeEvents = {}
-    for _, event in ipairs(events) do
-        local state = (event and (event.state or event.status)) or nil
-        local isActive = event and (event.active ~= false)
-        local isActiveState = (state == "active" or state == "warning" or state == "spawning" or not state)
-        local isStoppedButVisible = (event and (not isActive) and IsStoppedState(state) and event.hideAt and (Now() < (tonumber(event.hideAt) or 0)))
-        if (isActive and isActiveState) or isStoppedButVisible then
-            table.insert(activeEvents, event)
-        end
-    end
-    
-    if #activeEvents == 0 then
+
+    local events = DCInfoBar:GetVisibleEvents(true)
+    if #events == 0 then
         tooltip:AddLine("No active events", 0.7, 0.7, 0.7)
         return
     end
-    
-    for index, event in ipairs(activeEvents) do
+
+    local maxEntries = math.max(1, math.min(10, tonumber(GetSetting("maxTooltipEntries", 4)) or 4))
+    local flashCritical = GetSetting("flashCritical", true)
+
+    for index, event in ipairs(events) do
         if index > maxEntries then
             break
         end
         tooltip:AddLine(" ")
-        local nameColor = GetEventColor(event, GetSetting("flashCritical", true))
-        tooltip:AddLine("|cff" .. nameColor .. (event.name or "Event") .. "|r")
-        
-        if showZone and event.zone then
+        tooltip:AddLine("|cff" .. GetEventColor(event, flashCritical) .. (event.name or "Event") .. "|r")
+
+        if event.zone then
             tooltip:AddDoubleLine("  Location:", event.zone, 0.7, 0.7, 0.7, 1, 1, 1)
         end
-        
-        if event.type == "invasion" then
-            local state = event.state or event.status
-            if state == "warning" or (tonumber(event.wave) or 0) == 0 then
-                tooltip:AddDoubleLine("  Status:", "Incoming", 0.7, 0.7, 0.7, 1, 1, 1)
-            elseif IsStoppedState(state) then
-                tooltip:AddDoubleLine("  Status:", "Stopped", 0.7, 0.7, 0.7, 1, 1, 1)
-            else
-                tooltip:AddDoubleLine("  Wave:", (tonumber(event.wave) or 1) .. " of " .. (tonumber(event.maxWaves) or 4),
-                    0.7, 0.7, 0.7, 1, 1, 1)
-            end
-            if event.enemiesRemaining then
-                tooltip:AddDoubleLine("  Enemies:", event.enemiesRemaining,
-                    0.7, 0.7, 0.7, 1, 1, 1)
-            end
+        tooltip:AddDoubleLine("  Status:", GetStatusText(event), 0.7, 0.7, 0.7, 1, 1, 1)
+
+        -- Giant Isles invasion extras
+        if tonumber(event.boatsTotal) and tonumber(event.boatsTotal) > 0 then
+            tooltip:AddDoubleLine("  Boats scuttled:", (tonumber(event.boatsScuttled) or 0) .. " / " .. event.boatsTotal,
+                0.7, 0.7, 0.7, 1, 1, 1)
         end
-        
-        local remaining = GetLiveRemaining(event)
-        if showTimer and remaining and remaining > 0 then
-            tooltip:AddDoubleLine("  Time:", DCInfoBar:FormatTime(remaining),
+        -- ritualTime is only sent while channeling (a merged record keeps the old
+        -- value afterwards), so gate on the ritual state.
+        if event.ritual == "channeling" then
+            local ritualTime = tonumber(event.ritualTime)
+            tooltip:AddDoubleLine("  Loa ritual:", ritualTime and DCInfoBar:FormatTime(ritualTime) or "Channeling",
+                0.7, 0.7, 0.7, 1, 0.5, 0.5)
+        elseif event.ritual == "empowered" then
+            tooltip:AddDoubleLine("  Loa ritual:", "Empowered", 0.7, 0.7, 0.7, 1, 0.3, 0.3)
+        end
+
+        local remaining = GetRemaining(event)
+        if remaining and remaining > 0 then
+            tooltip:AddDoubleLine(IsStopped(event) and "  Clears in:" or "  Time:", DCInfoBar:FormatTime(remaining),
                 0.7, 0.7, 0.7, 1, 0.82, 0)
         end
     end
 
-    if #activeEvents > maxEntries then
+    if #events > maxEntries then
         tooltip:AddLine(" ")
-        tooltip:AddLine(string.format("+ %d more events", #activeEvents - maxEntries), 0.6, 0.6, 0.6)
+        tooltip:AddLine(string.format("+ %d more events", #events - maxEntries), 0.6, 0.6, 0.6)
     end
 end
 
 function EventsPlugin:OnClick(button)
-    DCInfoBar.serverData.events = DCInfoBar.serverData.events or {}
-    local events = DCInfoBar.serverData.events
-    
-    -- Filter to active events (ignore stopped)
-    local activeEvents = {}
-    for _, event in ipairs(events) do
-        if event.active ~= false and (event.state == "active" or event.state == "warning" or event.state == "spawning" or not event.state) then
-            table.insert(activeEvents, event)
-        end
-    end
-    
+    local events = DCInfoBar:GetVisibleEvents(true)
+
     if button == "LeftButton" then
-        -- Quick join event group
-        if #activeEvents > 0 then
-            DCInfoBar:Print("Joining event: " .. activeEvents[1].name)
-            -- Would send join request to server
+        if WorldMapFrame then
+            if WorldMapFrame:IsShown() then
+                HideUIPanel(WorldMapFrame)
+            else
+                ShowUIPanel(WorldMapFrame)
+            end
         end
     elseif button == "RightButton" then
-        -- Show event details
-        if #activeEvents > 0 then
-            for _, event in ipairs(activeEvents) do
-                DCInfoBar:Print(event.name .. " - " .. (event.zone or "Unknown location"))
-            end
+        if #events == 0 then
+            DCInfoBar:Print("No active events")
+            return
+        end
+        for _, event in ipairs(events) do
+            DCInfoBar:Print(string.format("%s - %s: %s", event.name or "Event", event.zone or "Unknown location",
+                GetStatusText(event)))
         end
     end
 end
 
 function EventsPlugin:OnCreateOptions(parent, yOffset)
-    local hideCB = DCInfoBar:CreateCheckbox(parent, "Hide when no events active", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Hide when no events active", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "hideWhenNone", checked)
-    end, DCInfoBar:GetPluginSetting(self.id, "hideWhenNone") ~= false)
+        self._elapsed = 999
+    end, GetSetting("hideWhenNone", true))
     yOffset = yOffset - 30
 
-    local showZoneCB = DCInfoBar:CreateCheckbox(parent, "Show zone name in bar", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Show zone name in bar", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showZone", checked)
     end, GetSetting("showZone", true))
     yOffset = yOffset - 30
 
-    local showTimerCB = DCInfoBar:CreateCheckbox(parent, "Show timers/countdowns", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Show timers/countdowns", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showTimer", checked)
     end, GetSetting("showTimer", true))
     yOffset = yOffset - 30
 
-    local flashCB = DCInfoBar:CreateCheckbox(parent, "Highlight critical invasion waves", 20, yOffset, function(checked)
+    DCInfoBar:CreateCheckbox(parent, "Highlight critical invasion waves", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "flashCritical", checked)
     end, GetSetting("flashCritical", true))
     yOffset = yOffset - 40
@@ -340,14 +221,13 @@ function EventsPlugin:OnCreateOptions(parent, yOffset)
     local sliderLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     sliderLabel:SetPoint("TOPLEFT", 20, yOffset)
     sliderLabel:SetText("Max tooltip events:")
-    
+
     local slider = DCInfoBar:CreateSlider(parent, 200, yOffset - 10, 1, 6, GetSetting("maxTooltipEntries", 4), function(value)
         DCInfoBar:SetPluginSetting(self.id, "maxTooltipEntries", value)
     end)
     slider:SetPoint("LEFT", sliderLabel, "RIGHT", 20, 0)
-    
+
     return yOffset - 40
 end
 
--- Register plugin
 DCInfoBar:RegisterPlugin(EventsPlugin)

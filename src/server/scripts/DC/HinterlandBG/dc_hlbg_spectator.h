@@ -2,7 +2,7 @@
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  *
- * Hinterland BG spectating - join the running match GM-invisible and
+ * Hinterland BG spectating - join a running match GM-invisible and
  * receive live HUD snapshots through the unified spectator core.
  */
 
@@ -17,7 +17,8 @@ class Player;
 
 namespace DCHLBGSpectator
 {
-    bool StartSpectating(Player* player, std::string& error);
+    // instanceId 0 picks the running match (an in-progress one first).
+    bool StartSpectating(Player* player, uint32 instanceId, std::string& error);
     bool StopSpectating(Player* player);
     bool IsSpectating(ObjectGuid guid);
 }

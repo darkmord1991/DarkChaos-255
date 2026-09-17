@@ -1,0 +1,17 @@
+## Interface: 30300
+## Title: |cffFFCC00DC|r Character Frame
+## Notes: Retail-style character panel for DarkChaos 3.3.5a: modern chrome, sidebar (stats, titles, equipment sets, item upgrades) and server-synced transmog outfits.
+## Author: DarkChaos
+## Version: 1.0.0
+## SavedVariablesPerCharacter: DCCharacterFrameCharDB
+## OptionalDeps: DC-AddonProtocol, DC-Collection, DC-ItemUpgrade, DC-QOS, DC-Welcome
+
+# The stock CharacterFrame / PaperDollFrame are restyled IN PLACE: no Blizzard
+# global is replaced (see check_addons.py FRAMEXML rule). Load order matters:
+# Stats/Sidebar/Upgrades register sidebar panes with Core, Sidebar builds them.
+Core.lua
+Chrome.lua
+Stats.lua
+Sidebar.lua
+Outfits.lua
+Upgrades.lua

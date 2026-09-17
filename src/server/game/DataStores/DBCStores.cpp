@@ -75,6 +75,8 @@ DBCStorage <CurrencyTypesEntry> sCurrencyTypesStore(CurrencyTypesfmt);
 
 DBCStorage <DestructibleModelDataEntry> sDestructibleModelDataStore(DestructibleModelDatafmt);
 DBCStorage <DungeonEncounterEntry> sDungeonEncounterStore(DungeonEncounterfmt);
+DBCStorage <DungeonMapEntry> sDungeonMapStore(DungeonMapEntryfmt);
+DBCStorage <DungeonMapChunkEntry> sDungeonMapChunkStore(DungeonMapChunkEntryfmt);
 DBCStorage <DurabilityQualityEntry> sDurabilityQualityStore(DurabilityQualityfmt);
 DBCStorage <DurabilityCostsEntry> sDurabilityCostsStore(DurabilityCostsfmt);
 
@@ -310,6 +312,9 @@ void LoadDBCStores(std::string const& dataPath)
     LOAD_DBC(sCurrencyTypesStore,                   "CurrencyTypes.dbc",                    "currencytypes_dbc");
     LOAD_DBC(sDestructibleModelDataStore,           "DestructibleModelData.dbc",            "destructiblemodeldata_dbc");
     LOAD_DBC(sDungeonEncounterStore,                "DungeonEncounter.dbc",                 "dungeonencounter_dbc");
+    // DarkChaos: no *_dbc override tables for these two, they are read as extracted.
+    LOAD_DBC(sDungeonMapStore,                      "DungeonMap.dbc",                       nullptr);
+    LOAD_DBC(sDungeonMapChunkStore,                 "DungeonMapChunk.dbc",                  nullptr);
     LOAD_DBC(sDurabilityCostsStore,                 "DurabilityCosts.dbc",                  "durabilitycosts_dbc");
     LOAD_DBC(sDurabilityQualityStore,               "DurabilityQuality.dbc",                "durabilityquality_dbc");
     LOAD_DBC(sEmotesStore,                          "Emotes.dbc",                           "emotes_dbc");

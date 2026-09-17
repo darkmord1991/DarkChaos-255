@@ -7,6 +7,30 @@ local function LoadMicroButtonTextures(self, name)
 	self:SetHighlightTexture("Interface\\Buttons\\UI-MicroButton-Hilight")
 end
 
+-- Stock VehicleMenuBar_MoveMicroButtons runs whenever the main bar comes back from a
+-- vehicle or possess bar (and whenever a vehicle skin is applied) and re-anchors
+-- SocialsMicroButton straight to QuestLogMicroButton. That lays Socials over this
+-- button and shifts the rest of the bar back by one slot, so the journal "turns into"
+-- Social. Re-slot the button after every such move.
+local function EncounterJournal_AnchorMicroButton(skinName)
+	local btn = EncounterJournalMicroButton
+	if not btn or not QuestLogMicroButton then
+		return
+	end
+
+	btn:SetParent(QuestLogMicroButton:GetParent())
+	btn:ClearAllPoints()
+	btn:SetPoint("BOTTOMLEFT", QuestLogMicroButton, "BOTTOMRIGHT", -3, 0)
+	btn:Show()
+
+	-- Vehicle skins stack Socials under Character as the start of a second row; only the
+	-- flat bar chains Socials after the journal button.
+	if not skinName and SocialsMicroButton then
+		SocialsMicroButton:ClearAllPoints()
+		SocialsMicroButton:SetPoint("BOTTOMLEFT", btn, "BOTTOMRIGHT", -3, 0)
+	end
+end
+
 function EncounterJournal_SetupMicroButton()
 	if EncounterJournalMicroButton or not QuestLogMicroButton then
 		return
@@ -19,11 +43,10 @@ function EncounterJournal_SetupMicroButton()
 
 	local btn = CreateFrame("Button", "EncounterJournalMicroButton", parent, "MainMenuBarMicroButton")
 	LoadMicroButtonTextures(btn, "EJ")
-	btn:SetPoint("BOTTOMLEFT", QuestLogMicroButton, "BOTTOMRIGHT", -3, 0)
+	EncounterJournal_AnchorMicroButton(VehicleMenuBar and VehicleMenuBar.currSkin)
 
-	if SocialsMicroButton then
-		SocialsMicroButton:ClearAllPoints()
-		SocialsMicroButton:SetPoint("BOTTOMLEFT", btn, "BOTTOMRIGHT", -3, 0)
+	if VehicleMenuBar_MoveMicroButtons then
+		hooksecurefunc("VehicleMenuBar_MoveMicroButtons", EncounterJournal_AnchorMicroButton)
 	end
 
 	local title = ADVENTURE or "Adventure Guide"

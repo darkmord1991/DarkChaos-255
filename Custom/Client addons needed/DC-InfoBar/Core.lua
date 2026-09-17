@@ -11,10 +11,9 @@ _G.DCInfoBar = DCInfoBar
 -- Core Variables
 -- ============================================================================
 
-DCInfoBar.VERSION = "1.0.0"
+DCInfoBar.VERSION = "1.1.0"
 DCInfoBar.plugins = {}              -- Registered plugins
 DCInfoBar.activePlugins = { left = {}, right = {} }
-DCInfoBar.serverData = {}           -- Cached server data
 
 -- DCAddonProtocol reference
 local DC = nil
@@ -97,21 +96,27 @@ end
 -- Server Data Cache (populated by DCAddonProtocol)
 -- ============================================================================
 
+-- Shape is read by other addons (DC-MythicPlus WorldTab, DC-Mapupgrades,
+-- DC-Welcome): keep field names stable.
 DCInfoBar.serverData = {
-    -- Seasonal data
+    -- Seasonal data (SEAS). endsIn/weeklyReset are live seconds maintained by
+    -- TickServerTimers from the _endsAt/_weeklyResetAt local-clock anchors.
     season = {
         id = 0,
         name = "Unknown",
+        tokenId = 0,
+        essenceId = 0,
         weeklyTokens = 0,
-        weeklyCap = 500,
+        weeklyCap = 0,
         weeklyEssence = 0,
-        essenceCap = 200,
+        essenceCap = 0,
         totalTokens = 0,
-        endsIn = 0,           -- Seconds until season ends
-        weeklyReset = 0,      -- Seconds until weekly reset
+        totalEssence = 0,
+        endsIn = 0,
+        weeklyReset = 0,
     },
-    
-    -- Keystone data
+
+    -- Keystone data (MPLUS SMSG_KEY_INFO)
     keystone = {
         hasKey = false,
         dungeonId = 0,
@@ -122,24 +127,27 @@ DCInfoBar.serverData = {
         weeklyBest = 0,
         seasonBest = 0,
     },
-    
-    -- Affixes data
+
+    -- Weekly affixes (MPLUS SMSG_AFFIXES)
     affixes = {
-        ids = {},             -- Array of spell IDs
-        names = {},           -- Array of names
-        descriptions = {},    -- Array of descriptions
-        resetIn = 0,          -- Seconds until reset
+        ids = {},
+        names = {},
+        descriptions = {},
+        icons = {},
+        resetIn = 0,
     },
-    
-    -- World boss timers
-    worldBosses = {
-        -- { name = "Oondasta", zone = "Giant Isles", status = "spawning", spawnIn = 3600, hp = nil }
-    },
-    
-    -- Zone events
-    events = {
-        -- { name = "Zandalari Invasion", zone = "Giant Isles", type = "invasion", wave = 2, maxWaves = 4, timeRemaining = 300 }
-    },
+
+    -- Prestige (PRES SMSG_INFO / SMSG_BONUSES), filled by Plugins/Server/Prestige.lua
+    prestige = {},
+
+    -- World bosses (WRLD): { name, zone, spawnId, entry, status, spawnIn, spawnAt, hp, ... }
+    worldBosses = {},
+
+    -- Zone events (EVNT + WRLD): { id, name, zone, type, state, active, wave, maxWaves, ... }
+    events = {},
+
+    -- Active hotspots (WRLD snapshot/updates, SPOT list replies)
+    hotspots = {},
 
     -- Server restart/shutdown countdown
     restartStatus = {
@@ -183,45 +191,42 @@ function DCInfoBar:ActivatePlugin(pluginId)
 
     local plugin = self.plugins[pluginId]
     if not plugin then return end
-    
-    -- Check if enabled in settings
+
     if not self:IsPluginEnabled(pluginId) then
         return
     end
-    
-    -- Get side from settings or plugin default
-    local side = self:GetPluginSetting(pluginId, "side") or plugin.side
-    plugin.side = side
-    
-    -- Get priority from settings or plugin default
-    local priority = self:GetPluginSetting(pluginId, "priority") or plugin.priority
-    plugin.priority = priority
-    
-    -- Add to active list
-    table.insert(self.activePlugins[side], plugin)
-    
-    -- Sort by priority
-    table.sort(self.activePlugins[side], function(a, b)
+
+    plugin.side = self:GetPluginSetting(pluginId, "side") or plugin.side
+    plugin.priority = self:GetPluginSetting(pluginId, "priority") or plugin.priority
+
+    local list = self.activePlugins[plugin.side]
+    for _, p in ipairs(list) do
+        if p == plugin then
+            return
+        end
+    end
+    table.insert(list, plugin)
+    table.sort(list, function(a, b)
         return a.priority < b.priority
     end)
-    
-    -- Create button for plugin
+
     if self.bar then
         self.bar:CreatePluginButton(plugin)
     end
 
-    -- Call plugin's OnActivate if exists, but only for plugins transitioning
-    -- from inactive to active. RefreshAllPlugins() re-invokes ActivatePlugin()
-    -- for every enabled plugin on every settings/side/priority change, and
-    -- OnActivate is not idempotent (it registers handlers/hooks/frames), so
-    -- re-firing it here would leak duplicate registrations.
+    -- OnActivate is not idempotent (it registers events/frames), so only fire
+    -- it on a real inactive -> active transition. RefreshAllPlugins() rebuilds
+    -- the active lists without clearing _activePluginIds for that reason.
     self._activePluginIds = self._activePluginIds or {}
     if not self._activePluginIds[pluginId] then
         self._activePluginIds[pluginId] = true
         if plugin.OnActivate then
             self._activatingPluginId = pluginId
-            plugin:OnActivate()
+            local ok, err = pcall(plugin.OnActivate, plugin)
             self._activatingPluginId = nil
+            if not ok then
+                self:Print("Plugin " .. pluginId .. " failed to activate: " .. tostring(err))
+            end
         end
     end
 
@@ -232,8 +237,7 @@ function DCInfoBar:DeactivatePlugin(pluginId)
     local plugin = self.plugins[pluginId]
     if not plugin then return end
 
-    -- Remove from active list
-    for side, list in pairs(self.activePlugins) do
+    for _, list in pairs(self.activePlugins) do
         for i, p in ipairs(list) do
             if p.id == pluginId then
                 table.remove(list, i)
@@ -242,45 +246,53 @@ function DCInfoBar:DeactivatePlugin(pluginId)
         end
     end
 
-    -- Hide button
     if plugin.button then
         plugin.button:Hide()
     end
 
-    -- Clear the active-tracking flag so a later ActivatePlugin() call
-    -- (e.g. re-enabling the plugin) fires OnActivate() again.
+    -- Clear the active-tracking flag so re-enabling fires OnActivate() again.
+    local wasActive = self._activePluginIds and self._activePluginIds[pluginId]
     if self._activePluginIds then
         self._activePluginIds[pluginId] = nil
     end
 
-    -- Call plugin's OnDeactivate if exists
-    if plugin.OnDeactivate then
+    if wasActive and plugin.OnDeactivate then
         plugin:OnDeactivate()
+    end
+
+    if self.bar then
+        self.bar:RefreshLayout()
     end
 end
 
 function DCInfoBar:RefreshAllPlugins()
     -- Never rebuild while a plugin is mid-activation (can cause recursion / empty bar).
-    if self._activatingPluginId then
+    if self._activatingPluginId or self._refreshingPlugins then
         return
     end
-
-    if self._refreshingPlugins then
-        return
-    end
-
     self._refreshingPlugins = true
 
-    -- Clear active lists
     self.activePlugins = { left = {}, right = {} }
-    
-    -- Re-activate all enabled plugins
+
     for id, plugin in pairs(self.plugins) do
-        self:ActivatePlugin(id)
+        if self:IsPluginEnabled(id) then
+            self:ActivatePlugin(id)
+        elseif self._activePluginIds and self._activePluginIds[id] then
+            self:DeactivatePlugin(id)
+        elseif plugin.button then
+            plugin.button:Hide()
+        end
     end
-    
-    -- Refresh bar layout
+
     if self.bar then
+        -- Re-apply per-button style (icon/label toggles, side changes) and
+        -- redraw every text, then lay out once.
+        for _, plugin in pairs(self.plugins) do
+            if plugin.button and self.ApplyPluginButtonStyle then
+                self:ApplyPluginButtonStyle(plugin)
+            end
+        end
+        self:ForceUpdateAllPlugins()
         self.bar:RefreshLayout()
     end
 
@@ -290,255 +302,386 @@ end
 -- ============================================================================
 -- Server Communication (DCAddonProtocol)
 -- ============================================================================
+-- Every protocol handler DC-InfoBar needs is registered here, once, at file
+-- load (see the bottom of this file). Registering at load instead of at
+-- PLAYER_LOGIN means pushes that arrive right after the addon handshake (the
+-- WRLD snapshot, invasion updates) are never missed while the bar initializes.
+--
+-- Plain RegisterHandler on purpose: DCAddonProtocol's dispatcher skips every
+-- plain handler for a module/opcode as soon as a JSON handler exists for it,
+-- so a JSON handler here would silently starve DC-MythicPlus / DC-Mapupgrades.
+-- Plain handlers still receive the decoded JSON table.
 
--- Season Opcodes (matches server-side dc_addon_season.cpp)
-local SEAS_CMSG_GET_CURRENT = 0x01
-local SEAS_SMSG_CURRENT     = 0x10
-local SEAS_SMSG_PROGRESS    = 0x12
+local SEAS_CMSG_GET_CURRENT  = 0x01
+local SEAS_CMSG_GET_PROGRESS = 0x03
+local SEAS_SMSG_CURRENT      = 0x10
+local SEAS_SMSG_PROGRESS     = 0x12
 
--- M+ Opcodes (if DC.Opcode.MPlus doesn't exist)
 local MPLUS_CMSG_GET_KEY_INFO = 0x01
 local MPLUS_CMSG_GET_AFFIXES  = 0x02
 local MPLUS_SMSG_KEY_INFO     = 0x10
 local MPLUS_SMSG_AFFIXES      = 0x11
 
+local PRES_CMSG_GET_INFO = 0x01
+
+local SPOT_SMSG_HOTSPOT_LIST = 0x10
+local SPOT_SMSG_HOTSPOT_INFO = 0x11
+
+local WRLD_CMSG_GET_CONTENT = 0x01
+local WRLD_SMSG_CONTENT     = 0x10
+local WRLD_SMSG_UPDATE      = 0x11
+
+local EVNT_SMSG_UPDATE = 0x10
+local EVNT_SMSG_SPAWN  = 0x11
+local EVNT_SMSG_REMOVE = 0x12
+
+-- How long an ended event stays on the bar ("Stopped (Victory)").
+local EVENT_LINGER_SECONDS = 30
+
+local EVENT_STOPPED_STATES = {
+    victory = true,
+    failed = true,
+    stopped = true,
+    cancelled = true,
+    ended = true,
+}
+DCInfoBar.EVENT_STOPPED_STATES = EVENT_STOPPED_STATES
+
+local function Now()
+    return GetTime and GetTime() or 0
+end
+
+-- Server countdowns are relative seconds; anchor them to the local clock so
+-- they tick smoothly between pushes and never depend on update cadence.
+local function Deadline(seconds)
+    seconds = tonumber(seconds)
+    if seconds and seconds > 0 then
+        return Now() + seconds
+    end
+    return nil
+end
+
+function DCInfoBar:GetProtocol()
+    DC = DC or rawget(_G, "DCAddonProtocol")
+    return DC
+end
+
+function DCInfoBar:NotifyPlugin(pluginId, data)
+    local plugin = self.plugins[pluginId]
+    if plugin and plugin.OnServerData then
+        plugin:OnServerData(data)
+    end
+end
+
+-- A pipe-delimited message arrives as several string args. Re-join them so a
+-- '|' inside a field (affix descriptions) doesn't truncate the payload.
+local function CollapseHandlerArgs(...)
+    local first = ...
+    if type(first) == "table" or select("#", ...) <= 1 then
+        return first
+    end
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[i] = tostring((select(i, ...)))
+    end
+    return table.concat(parts, "|")
+end
+
 function DCInfoBar:SetupServerCommunication()
-    DC = rawget(_G, "DCAddonProtocol")
-    
-    if not DC then
+    if self._serverHandlersRegistered then
+        return true
+    end
+
+    local proto = self:GetProtocol()
+    if not proto or not proto.RegisterHandler then
         self:Debug("DCAddonProtocol not found - server features disabled")
         return false
     end
-    
-    self:Debug("DCAddonProtocol found - registering handlers")
-    
-    -- Register handlers for server data
-    
-    -- Season info (using direct opcodes - not DC.Opcode.Season which doesn't exist)
-    DC:RegisterHandler("SEAS", SEAS_SMSG_CURRENT, function(data)
+    self._serverHandlersRegistered = true
+
+    proto:RegisterHandler("SEAS", SEAS_SMSG_CURRENT, function(data)
         DCInfoBar:HandleSeasonData(data)
     end)
-    
-    -- Also handle progress data for more detailed season info
-    DC:RegisterHandler("SEAS", SEAS_SMSG_PROGRESS, function(data)
+    proto:RegisterHandler("SEAS", SEAS_SMSG_PROGRESS, function(data)
         DCInfoBar:HandleSeasonProgressData(data)
     end)
-    
-    -- Keystone info (from Group Finder)
-    if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.SMSG_KEYSTONE_INFO then
-        DC:RegisterHandler("GRPF", DC.GroupFinderOpcodes.SMSG_KEYSTONE_INFO, function(data)
-            DCInfoBar:HandleKeystoneData(data)
-        end)
-    end
-    
-    -- Keystone info (from MythicPlus module)
-    DC:RegisterHandler("MPLUS", MPLUS_SMSG_KEY_INFO, function(data)
-        DCInfoBar:HandleKeystoneData(data)
+
+    proto:RegisterHandler("MPLUS", MPLUS_SMSG_KEY_INFO, function(...)
+        DCInfoBar:HandleKeystoneData(...)
+    end)
+    proto:RegisterHandler("MPLUS", MPLUS_SMSG_AFFIXES, function(...)
+        DCInfoBar:HandleAffixData(CollapseHandlerArgs(...))
     end)
 
-    -- Weekly affixes (from MythicPlus module)
-    DC:RegisterHandler("MPLUS", MPLUS_SMSG_AFFIXES, function(...)
-        local args = { ... }
-        local payload = args[1]
-        if payload == nil and #args > 0 then
-            payload = args
-        end
-        DCInfoBar:HandleAffixData(payload)
+    proto:RegisterHandler("EVNT", EVNT_SMSG_UPDATE, function(data)
+        DCInfoBar:HandleEventData(data)
     end)
-    
-    -- We'll also hook into DCMythicPlusHUD if available for affix data
-    -- Event updates (legacy path via GRPF module)
-    if DC.RegisterJSONHandler then
-        DC:RegisterJSONHandler("GRPF", 0x70, function(data)
-            DCInfoBar:HandleEventData(data)
-        end)
+    proto:RegisterHandler("EVNT", EVNT_SMSG_SPAWN, function(data)
+        DCInfoBar:HandleEventData(data)
+    end)
+    proto:RegisterHandler("EVNT", EVNT_SMSG_REMOVE, function(data)
+        DCInfoBar:HandleEventRemove(data)
+    end)
 
-        -- Dedicated EVENTS module feed (preferred)
-        DC:RegisterJSONHandler("EVNT", 0x10, function(data) -- SMSG_EVENT_UPDATE
-            DCInfoBar:HandleEventData(data)
-        end)
+    proto:RegisterHandler("WRLD", WRLD_SMSG_CONTENT, function(data)
+        DCInfoBar:HandleWorldContent(data)
+    end)
+    proto:RegisterHandler("WRLD", WRLD_SMSG_UPDATE, function(data)
+        DCInfoBar:HandleWorldUpdate(data)
+    end)
 
-        DC:RegisterJSONHandler("EVNT", 0x11, function(data) -- SMSG_EVENT_SPAWN
-            DCInfoBar:HandleEventData(data)
-        end)
-
-        DC:RegisterJSONHandler("EVNT", 0x12, function(data) -- SMSG_EVENT_REMOVE
-            DCInfoBar:HandleEventRemove(data)
-        end)
-
-        self:Debug("Registered JSON handlers for events")
-    elseif DC.RegisterHandler then
-        -- Fallback: register non-JSON handlers if JSON not available
-        DC:RegisterHandler("EVNT", 0x10, function(data)
-            DCInfoBar:Debug("Received legacy EVNT handler payload")
-            DCInfoBar:HandleEventData(data)
-        end)
-        DC:RegisterHandler("EVNT", 0x11, function(data)
-            DCInfoBar:Debug("Received legacy EVNT spawn payload")
-            DCInfoBar:HandleEventData(data)
-        end)
-        DC:RegisterHandler("EVNT", 0x12, function(data)
-            DCInfoBar:Debug("Received legacy EVNT remove payload")
-            DCInfoBar:HandleEventRemove(data)
-        end)
-        -- NOTE: GRPF 0x70 is SMSG_EVENT_CREATED (Group Finder scheduled
-        -- events) and belongs to DC-MythicPlus — do not claim it here.
-        self:Debug("Registered legacy handlers for events (JSON not available)")
-    else
-        self:Debug("Warning: No handler registration method available in DCAddonProtocol")
-    end
-
-    -- Register world content handlers (WRLD module)
-    if DC.RegisterJSONHandler then
-        DC:RegisterJSONHandler("WRLD", 0x10, function(data) -- SMSG_CONTENT
-            DCInfoBar:HandleWorldContent(data)
-        end)
-        DC:RegisterJSONHandler("WRLD", 0x11, function(data) -- SMSG_UPDATE
-            DCInfoBar:HandleWorldUpdate(data)
-        end)
-    elseif DC.RegisterHandler then
-        -- Fallback to legacy handlers if JSON not supported
-        DC:RegisterHandler("WRLD", 0x10, function(data)
-            DCInfoBar:Debug("Received legacy WRLD content payload (fallback)")
-            DCInfoBar:HandleWorldContent(data)
-        end)
-        DC:RegisterHandler("WRLD", 0x11, function(data)
-            DCInfoBar:Debug("Received legacy WRLD update payload (fallback)")
-            DCInfoBar:HandleWorldUpdate(data)
-        end)
-    end
+    -- Hotspot list replies. InfoBar itself relies on the WRLD snapshot, but
+    -- other addons (DC-Mapupgrades) poll SPOT, and their replies are free data.
+    proto:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_LIST, function(data)
+        DCInfoBar:HandleHotspotList(data)
+    end)
+    proto:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_INFO, function(data)
+        DCInfoBar:UpsertHotspot(data)
+        DCInfoBar:ForceUpdateAllPlugins()
+    end)
 
     return true
 end
 
--- Anchor a server-relative countdown to the local clock so the Events plugin
--- can tick it every second between server pushes (which arrive every ~10 s).
-local function StampEventDeadline(record)
-    local remaining = tonumber(record.timeRemaining)
-    if remaining and remaining > 0 and GetTime then
-        record.endsAt = GetTime() + remaining
-    else
-        record.endsAt = nil
+-- ============================================================================
+-- Zone events
+-- ============================================================================
+
+-- Upsert one event record. Updates are partial: only the fields present in the
+-- payload overwrite the stored record, so an update that omits name/zone does
+-- not blank them. Unknown keys (ritual, boatsScuttled, ...) are kept verbatim.
+function DCInfoBar:UpsertEvent(e)
+    if type(e) ~= "table" then
+        return nil
     end
-    return record
+
+    local events = self.serverData.events
+    local id = e.eventId or e.id
+    local existing = nil
+    if id ~= nil and id ~= 0 then
+        for _, ex in ipairs(events) do
+            if ex.id == id then
+                existing = ex
+                break
+            end
+        end
+    end
+
+    local rec = existing or {}
+    for k, v in pairs(e) do
+        rec[k] = v
+    end
+
+    rec.id = id or 0
+    rec.name = e.name or e.displayName or rec.name or "Event"
+    rec.zone = e.zone or e.zoneName or (e.mapId and ("Map " .. tostring(e.mapId))) or rec.zone or "Unknown"
+    rec.type = e.type or rec.type or "event"
+
+    local state = e.state or e.status or e.action
+    if state == "spawn" then
+        state = "spawning"
+    end
+    rec.state = state or rec.state or "active"
+
+    if e.active ~= nil then
+        rec.active = (e.active ~= false)
+    elseif rec.active == nil then
+        rec.active = true
+    end
+
+    local remaining = tonumber(e.timeRemaining or e.timeLeft)
+    if remaining then
+        rec.timeRemaining = remaining
+        rec.endsAt = Deadline(remaining)
+    end
+
+    local ended = (rec.active == false) or EVENT_STOPPED_STATES[rec.state]
+    if ended then
+        rec.hideAt = rec.hideAt or (Now() + EVENT_LINGER_SECONDS)
+        if not remaining then
+            -- No server timer on the end message: count down the linger window.
+            rec.endsAt = rec.hideAt
+        end
+    else
+        rec.hideAt = nil
+    end
+
+    if not existing then
+        table.insert(events, rec)
+    end
+    return rec
 end
 
--- Handle event JSON payload from server and update serverData.events
 function DCInfoBar:HandleEventData(data)
-    if not data then return end
-
-    self.serverData.events = self.serverData.events or {}
-    local events = self.serverData.events
-
-    local eventId = data["eventId"] or data["id"] or 0
-    local record = {
-        id = eventId,
-        name = data["name"] or "Event",
-        zone = data["zone"] or data["zoneName"] or (data["mapId"] and ("Map " .. tostring(data["mapId"]))) or "Unknown",
-        type = data["type"] or "event",
-        state = data["state"] or data["status"] or "active",
-        active = data["active"] ~= false,
-        wave = data["wave"] or 0,
-        maxWaves = data["maxWaves"] or 4,
-        enemiesRemaining = data["enemiesRemaining"] or nil,
-        timeRemaining = data["timeRemaining"] or nil,
-        lane = data["lane"] or nil,
-        reason = data["reason"],
-    }
-
-    -- If an event ends, keep it visible briefly with a countdown, then prune.
-    do
-        local state = record.state
-        local ended = (record.active == false) or (state == "victory" or state == "failed" or state == "stopped" or state == "cancelled" or state == "ended")
-        if ended then
-            local now = GetTime and GetTime() or 0
-            record.hideAt = now + 30
-            -- If the server doesn't provide a timer, show the remaining time until hide.
-            if not record.timeRemaining or record.timeRemaining <= 0 then
-                record.timeRemaining = 30
-            end
-        end
+    if type(data) ~= "table" then
+        return
     end
 
-    StampEventDeadline(record)
-
-    local updated = false
-    for index, existing in ipairs(events) do
-        if existing.id == record.id and record.id ~= 0 then
-            -- If the event became active again, clear any prior hideAt.
-            if record.active ~= false then
-                record.hideAt = nil
-            elseif existing and existing.hideAt and record.hideAt then
-                -- Preserve the later hideAt if multiple end messages arrive.
-                record.hideAt = math.max(existing.hideAt, record.hideAt)
-            end
-
-            events[index] = record
-            updated = true
-            break
-        end
+    local rec = self:UpsertEvent(data)
+    if rec then
+        self:Debug(string.format("Event: id=%s name=%s state=%s active=%s",
+            tostring(rec.id), tostring(rec.name), tostring(rec.state), tostring(rec.active)))
     end
-
-    if not updated then
-        table.insert(events, record)
-    end
-
-    -- Debug: announce event data arrival
-    DCInfoBar:Debug(string.format("HandleEventData: id=%s name=%s type=%s state=%s active=%s", tostring(record.id or "0"), tostring(record.name), tostring(record.type), tostring(record.state), tostring(record.active)))
-
-    -- Force visual update (lighter than full RefreshAllPlugins rebuild)
-    DCInfoBar:ForceUpdateAllPlugins()
+    self:ForceUpdateAllPlugins()
 end
 
 function DCInfoBar:HandleEventRemove(data)
-    self.serverData.events = self.serverData.events or {}
     local events = self.serverData.events
+    local targetId = type(data) == "table" and (data.eventId or data.id) or nil
 
-    if not data then
-        wipe(events)
-        DCInfoBar:Debug("HandleEventRemove: wiped all events")
-        DCInfoBar:ForceUpdateAllPlugins()
-        return
-    end
-
-    local targetId = data["eventId"] or data["id"]
     if not targetId then
         wipe(events)
-        DCInfoBar:Debug("HandleEventRemove: no target id, wiped all events")
-        DCInfoBar:ForceUpdateAllPlugins()
-        return
-    end
-
-    for index = #events, 1, -1 do
-        if events[index].id == targetId then
-            table.remove(events, index)
-            DCInfoBar:Debug("HandleEventRemove: removed event id=" .. tostring(targetId))
-            break
+    elseif EVENT_STOPPED_STATES[data.state or data.status or ""] then
+        -- A remove that carries an outcome (water monster "victory") should
+        -- linger like any other ended event instead of vanishing instantly.
+        data.active = false
+        self:UpsertEvent(data)
+    else
+        for index = #events, 1, -1 do
+            if events[index].id == targetId then
+                table.remove(events, index)
+                break
+            end
         end
     end
 
-    DCInfoBar:ForceUpdateAllPlugins()
+    self:ForceUpdateAllPlugins()
 end
 
--- Handle world content payload: hotspots, bosses, events
-local function NormalizeHotspotItem(h)
-    if not h or type(h) ~= "table" then return nil end
-    local id = tonumber(h.id or h.hotspotId)
-    if not id then return nil end
-    return {
-        id = id,
-        name = h.name or "Hotspot",
-        mapId = tonumber(h.mapId or h.map) or 0,
-        zoneId = tonumber(h.zoneId or h.zone) or 0,
-        zoneName = h.zoneName or h.zone or "Unknown Zone",
-        x = tonumber(h.x) or 0,
-        y = tonumber(h.y) or 0,
-        z = tonumber(h.z) or 0,
-        bonusPercent = tonumber(h.bonusPercent or h.xpBonus or h.bonus) or 0,
-        timeRemaining = tonumber(h.timeRemaining or h.timeLeft or h.dur) or 0,
-        action = h.action,
-    }
+-- Shared "is this event worth showing" filter for the plugin, tooltip and click.
+function DCInfoBar:GetVisibleEvents(includeStopped)
+    local out = {}
+    local now = Now()
+    for _, event in ipairs(self.serverData.events) do
+        local stopped = (event.active == false) or EVENT_STOPPED_STATES[event.state]
+        if not stopped then
+            table.insert(out, event)
+        elseif includeStopped and event.hideAt and now < event.hideAt then
+            table.insert(out, event)
+        end
+    end
+    return out
 end
+
+-- ============================================================================
+-- Hotspots (single store, shared with DC-MythicPlus WorldTab)
+-- ============================================================================
+
+-- Accepts both the verbose WRLD keys and the compact SPOT keys
+-- (i=id, m=mapId, z=zoneId, n=zoneName, x/y, h=height, t=seconds, b=bonus).
+-- Compact records are detected by 'i', because 'z' means zoneId there but the
+-- Z coordinate in the verbose form.
+function DCInfoBar:NormalizeHotspot(h)
+    if type(h) ~= "table" then
+        return nil
+    end
+
+    local rec
+    if h.i ~= nil then
+        rec = {
+            id = tonumber(h.i),
+            mapId = tonumber(h.m) or 0,
+            zoneId = tonumber(h.z) or 0,
+            zoneName = h.n or "Unknown Zone",
+            x = tonumber(h.x) or 0,
+            y = tonumber(h.y) or 0,
+            z = tonumber(h.h) or 0,
+            timeRemaining = tonumber(h.t) or 0,
+            bonusPercent = tonumber(h.b) or 0,
+        }
+    else
+        rec = {
+            id = tonumber(h.id or h.hotspotId),
+            mapId = tonumber(h.mapId or h.map) or 0,
+            zoneId = tonumber(h.zoneId) or 0,
+            zoneName = h.zoneName or "Unknown Zone",
+            x = tonumber(h.x) or 0,
+            y = tonumber(h.y) or 0,
+            z = tonumber(h.z) or 0,
+            timeRemaining = tonumber(h.timeRemaining or h.timeLeft or h.dur) or 0,
+            bonusPercent = tonumber(h.bonusPercent or h.xpBonus or h.bonus) or 0,
+        }
+    end
+
+    if not rec.id then
+        return nil
+    end
+
+    rec.name = h.name or "Hotspot"
+    rec.bonus = rec.bonusPercent
+    rec.action = h.action
+    rec.expiresAt = Deadline(rec.timeRemaining)
+    return rec
+end
+
+function DCInfoBar:SetHotspots(rawList)
+    local list = {}
+    if type(rawList) == "table" then
+        for _, h in ipairs(rawList) do
+            local rec = self:NormalizeHotspot(h)
+            if rec then
+                table.insert(list, rec)
+            end
+        end
+    end
+    self.serverData.hotspots = list
+    self.serverData._hotspotsLoaded = true
+end
+
+function DCInfoBar:RemoveHotspot(id)
+    id = tonumber(id)
+    local hotspots = self.serverData.hotspots
+    for i = #hotspots, 1, -1 do
+        if hotspots[i].id == id then
+            table.remove(hotspots, i)
+        end
+    end
+end
+
+function DCInfoBar:UpsertHotspot(raw)
+    local rec = self:NormalizeHotspot(raw)
+    if not rec then
+        return nil
+    end
+
+    if rec.action == "expire" or rec.action == "remove" then
+        self:RemoveHotspot(rec.id)
+        return nil
+    end
+
+    local hotspots = self.serverData.hotspots
+    for i, ex in ipairs(hotspots) do
+        if ex.id == rec.id then
+            hotspots[i] = rec
+            return rec
+        end
+    end
+    table.insert(hotspots, rec)
+    return rec
+end
+
+function DCInfoBar:HandleHotspotList(data)
+    if type(data) ~= "table" then
+        return
+    end
+    -- Version-gated "unchanged" reply to another addon's poll: keep our set.
+    if data.unchanged then
+        return
+    end
+
+    if data.hotspots then
+        self:SetHotspots(data.hotspots)
+    elseif #data > 0 then
+        self:SetHotspots(data)
+    else
+        self:SetHotspots({})
+    end
+    self:ForceUpdateAllPlugins()
+end
+
+-- ============================================================================
+-- World bosses
+-- ============================================================================
 
 -- Fallback boss definitions (used if the server only sends partial boss lists)
 -- Single source of truth for client-side boss identity/metadata.
@@ -562,469 +705,344 @@ function DCInfoBar:NormName(s)
     return s
 end
 
-function DCInfoBar:EnsureDefaultWorldBosses()
-    self.serverData.worldBosses = self.serverData.worldBosses or {}
-    local bosses = self.serverData.worldBosses
-    
-    -- Use centralized NormName method
-    local function NormName(s) return self:NormName(s) end
+-- spawnIn is kept for consumers (DC-MythicPlus WorldTab, DC-Mapupgrades);
+-- spawnAt is the local-clock anchor TickServerTimers derives it from.
+local function StampBossSpawn(rec, spawnIn)
+    spawnIn = tonumber(spawnIn)
+    if spawnIn then
+        rec.spawnIn = spawnIn
+        rec.spawnAt = Now() + spawnIn
+    end
+end
 
-    local existingBySpawnId = {}
-    local existingByEntry = {}
-    local existingByName = {}
+function DCInfoBar:EnsureDefaultWorldBosses()
+    local bosses = self.serverData.worldBosses
 
     local defaultBySpawnId = {}
     local defaultByEntry = {}
     local defaultByName = {}
     for _, def in ipairs(self.DEFAULT_WORLD_BOSSES) do
-        defaultBySpawnId[tonumber(def.spawnId)] = def
-        defaultByEntry[tonumber(def.entry)] = def
-        defaultByName[NormName(def.name)] = def
+        defaultBySpawnId[def.spawnId] = def
+        defaultByEntry[def.entry] = def
+        defaultByName[self:NormName(def.name)] = def
     end
 
+    -- Patch identity/metadata of the scripted bosses so later merges match.
     for _, b in ipairs(bosses) do
-        if b then
-            if b.spawnId ~= nil then b.spawnId = tonumber(b.spawnId) or b.spawnId end
-            if b.entry ~= nil then b.entry = tonumber(b.entry) or b.entry end
+        b.spawnId = tonumber(b.spawnId) or b.spawnId
+        b.entry = tonumber(b.entry) or b.entry
 
-            -- If the server sent a legacy record without spawnId, recover it using defaults.
-            if (not b.spawnId) and b.entry and defaultByEntry[tonumber(b.entry)] then
-                b.spawnId = defaultByEntry[tonumber(b.entry)].spawnId
-            end
-
-            -- If we have spawnId but are missing entry, recover entry using defaults.
-            if (not b.entry) and b.spawnId and defaultBySpawnId[tonumber(b.spawnId)] then
-                b.entry = defaultBySpawnId[tonumber(b.spawnId)].entry
-            end
-
-            -- Patch missing identifiers/fields so future merges can match reliably.
-            local def = nil
-            if b.spawnId and defaultBySpawnId[tonumber(b.spawnId)] then
-                def = defaultBySpawnId[tonumber(b.spawnId)]
-            elseif b.entry and defaultByEntry[tonumber(b.entry)] then
-                def = defaultByEntry[tonumber(b.entry)]
-            elseif b.name and defaultByName[NormName(b.name)] then
-                def = defaultByName[NormName(b.name)]
-            end
-
-            if def then
-                if not b.spawnId then b.spawnId = def.spawnId end
-                -- For these three scripted bosses, prefer canonical metadata to keep UI stable.
-                if (not b.entry) or tonumber(b.entry) ~= tonumber(def.entry) then
-                    b.entry = def.entry
-                end
-                if (not b.zone) or b.zone == "Unknown" or b.zone == "Unknown Zone" or NormName(b.zone) == "" or (NormName(b.zone) ~= NormName(def.zone)) then
-                    b.zone = def.zone
-                end
-                if (not b.name) or b.name == "Unknown" or tostring(b.name) == tostring(def.entry) or (NormName(b.name) ~= NormName(def.name)) then
-                    b.name = def.name
-                end
-            end
-
-            if b.spawnId then
-                existingBySpawnId[tonumber(b.spawnId)] = b
-            end
-            if b.entry then
-                existingByEntry[tonumber(b.entry)] = b
-            end
-            if b.name then
-                existingByName[NormName(b.name)] = b
-            end
+        local def = (b.spawnId and defaultBySpawnId[b.spawnId])
+            or (b.entry and defaultByEntry[b.entry])
+            or (b.name and defaultByName[self:NormName(b.name)])
+        if def then
+            b.spawnId = def.spawnId
+            b.entry = def.entry
+            b.zone = def.zone
+            b.name = def.name
         end
     end
 
-    for _, def in ipairs(self.DEFAULT_WORLD_BOSSES or {}) do
-        -- Ensure each configured spawnId exists. spawnId is the authoritative identity.
-        local existing = existingBySpawnId[def.spawnId]
-        if existing then
-            -- Do not invent timers client-side; server is authoritative.
-            existing.status = existing.status or "spawning"
+    -- Collapse duplicates (keyed by spawnId, then entry, name, guid), keeping
+    -- the richer record.
+    local function Score(x)
+        local s = 0
+        if x.spawnId then s = s + 10 end
+        if x.status == "active" then s = s + 3 end
+        if x.hp ~= nil then s = s + 1 end
+        if x.spawnIn ~= nil then s = s + 1 end
+        return s
+    end
+
+    local seen = {}
+    local i = 1
+    while i <= #bosses do
+        local b = bosses[i]
+        local key
+        if b.spawnId then
+            key = "s:" .. tostring(b.spawnId)
+        elseif b.entry then
+            key = "e:" .. tostring(b.entry)
+        elseif b.name then
+            key = "n:" .. self:NormName(b.name)
+        elseif b.guid then
+            key = "g:" .. tostring(b.guid)
+        end
+
+        local kept = key and seen[key]
+        if kept then
+            if Score(b) > Score(kept) then
+                for k, v in pairs(b) do
+                    kept[k] = v
+                end
+            end
+            table.remove(bosses, i)
         else
-            local rec = {
+            if key then
+                seen[key] = b
+            end
+            i = i + 1
+        end
+    end
+
+    -- Make sure every configured boss is listed. Timers stay server-authoritative.
+    for _, def in ipairs(self.DEFAULT_WORLD_BOSSES) do
+        if not seen["s:" .. tostring(def.spawnId)] then
+            table.insert(bosses, {
                 entry = def.entry,
                 name = def.name,
                 zone = def.zone,
                 spawnId = def.spawnId,
                 status = "spawning",
-                spawnIn = nil,
-            }
-
-            table.insert(bosses, rec)
-            existingBySpawnId[def.spawnId] = rec
-            existingByEntry[def.entry] = rec
-            existingByName[NormName(def.name)] = rec
-        end
-    end
-
-    -- Final pass: remove any duplicates that still slipped in (prefer spawnId, then active).
-    do
-        local seen = {}
-        local i = 1
-        while i <= #bosses do
-            local b = bosses[i]
-            local key = nil
-
-            -- Prefer spawnId as primary identity. If missing, try to recover it from defaults.
-            local sid = (b and b.spawnId and tonumber(b.spawnId)) or nil
-            if (not sid) and b and b.entry and defaultByEntry[tonumber(b.entry)] then
-                sid = defaultByEntry[tonumber(b.entry)].spawnId
-                b.spawnId = sid
-            end
-
-            if sid then
-                key = "s:" .. tostring(sid)
-            elseif b and b.entry then
-                key = "e:" .. tostring(b.entry)
-            elseif b and b.name then
-                key = "n:" .. NormName(b.name)
-            elseif b and b.guid then
-                key = "g:" .. tostring(b.guid)
-            end
-
-            if key and seen[key] then
-                local kept = seen[key]
-                local drop = b
-
-                local function score(x)
-                    local s = 0
-                    if x and x.spawnId then s = s + 10 end
-                    if x and x.status == "active" then s = s + 3 end
-                    if x and x.hp ~= nil then s = s + 1 end
-                    if x and x.spawnIn ~= nil then s = s + 1 end
-                    return s
-                end
-
-                if score(drop) > score(kept) then
-                    -- Replace kept values with better data
-                    for k, v in pairs(drop) do
-                        kept[k] = v
-                    end
-                end
-                table.remove(bosses, i)
-            else
-                if key then
-                    seen[key] = b
-                end
-                i = i + 1
-            end
+            })
         end
     end
 end
 
-function DCInfoBar:HandleWorldContent(data)
-    if not data then return end
-    self.serverData._lastWRLDContentAt = (GetTime and GetTime() or 0)
-
-    -- Debug capture: store a small summary of the raw boss payload.
-    if type(data.bosses) == "table" then
-        self.serverData._lastWRLDBossContentSummary = {}
-        for _, b in ipairs(data.bosses) do
-            if type(b) == "table" then
-                table.insert(self.serverData._lastWRLDBossContentSummary, string.format(
-                    "spawnId=%s entry=%s status=%s active=%s spawnIn=%s action=%s",
-                    tostring(b.spawnId), tostring(b.entry or b.npcEntry or b.creatureEntry), tostring(b.status or b.state), tostring(b.active), tostring(b.spawnIn or b.timeLeft), tostring(b.action)
-                ))
+-- Find the stored boss a payload refers to (spawnId, then entry, guid, name).
+local function FindBoss(bosses, spawnId, entry, guid, name)
+    for _, key in ipairs({ "spawnId", "entry", "guid", "name" }) do
+        local want = (key == "spawnId" and spawnId) or (key == "entry" and entry)
+            or (key == "guid" and guid) or (key == "name" and name)
+        if want ~= nil then
+            for i, ex in ipairs(bosses) do
+                if ex[key] == want then
+                    return i, ex
+                end
             end
         end
     end
-    -- Hotspots (not currently shown in DC-InfoBar but store for completeness)
-    if data.hotspots then
-        local hotspots = {}
-        for _, h in ipairs(data.hotspots) do
-            local rec = NormalizeHotspotItem(h)
-            if rec then table.insert(hotspots, rec) end
+    return nil, nil
+end
+
+local function SummarizeBosses(list)
+    local out = {}
+    for _, b in ipairs(list) do
+        if type(b) == "table" then
+            table.insert(out, string.format("spawnId=%s entry=%s status=%s active=%s spawnIn=%s action=%s",
+                tostring(b.spawnId), tostring(b.entry or b.npcEntry or b.creatureEntry),
+                tostring(b.status or b.state), tostring(b.active), tostring(b.spawnIn or b.timeLeft),
+                tostring(b.action)))
         end
-        self.serverData.hotspots = hotspots
+    end
+    return out
+end
+
+function DCInfoBar:HandleWorldContent(data)
+    if type(data) ~= "table" then
+        return
+    end
+    self.serverData._lastWRLDContentAt = Now()
+
+    if data.hotspots then
+        self:SetHotspots(data.hotspots)
     end
 
-    -- Bosses
-    if data.bosses then
-        self.serverData.worldBosses = self.serverData.worldBosses or {}
-        local bosses = self.serverData.worldBosses
-        local now = GetTime and GetTime() or 0
-
-        if self.Debug and type(data.bosses) == "table" then
-            self:Debug("HandleWorldContent: bosses received=" .. tostring(#data.bosses))
+    if type(data.bosses) == "table" then
+        if self.db and self.db.debug then
+            self.serverData._lastWRLDBossContentSummary = SummarizeBosses(data.bosses)
         end
 
+        local bosses = self.serverData.worldBosses
+        local now = Now()
+
         for _, b in ipairs(data.bosses) do
-            local record = {}
-            record.name = b.name or b.displayName or b.entry or b.guid or "Unknown"
-            record.zone = b.zone or b.zoneName or (b.mapId and ("Map " .. tostring(b.mapId))) or "Unknown"
-            record.spawnId = tonumber(b.spawnId) or nil
-            record.entry = tonumber(b.entry or b.npcEntry or b.creatureEntry) or nil
-            record.mapId = tonumber(b.mapId) or nil
-            record.nx = tonumber(b.nx) or nil
-            record.ny = tonumber(b.ny) or nil
-            -- Map status: prefer explicit status field, otherwise derive from active/action
+            local record = {
+                name = b.name or b.displayName or b.entry or b.guid or "Unknown",
+                zone = b.zone or b.zoneName or (b.mapId and ("Map " .. tostring(b.mapId))) or "Unknown",
+                spawnId = tonumber(b.spawnId),
+                entry = tonumber(b.entry or b.npcEntry or b.creatureEntry),
+                mapId = tonumber(b.mapId),
+                nx = tonumber(b.nx),
+                ny = tonumber(b.ny),
+                guid = b.guid,
+                hp = b.hp or b.hpPct,
+            }
+
             if b.status or b.state then
                 record.status = b.status or b.state
             elseif b.active ~= nil then
                 record.status = b.active and "active" or "inactive"
-            elseif b.action then
-                if b.action == "engage" then record.status = "active"
-                elseif b.action == "death" or b.action == "despawn" then record.status = "inactive"
-                else record.status = "spawning" end
+            elseif b.action == "engage" then
+                record.status = "active"
+            elseif b.action == "death" or b.action == "despawn" then
+                record.status = "inactive"
             else
-                record.status = (b.active == false) and "inactive" or "spawning"
+                record.status = "spawning"
             end
 
-            -- Support explicit spawn action -> show "just spawned" for a short window.
             if b.action == "spawn" then
                 record.status = "active"
                 record.justSpawnedUntil = now + 60
             end
 
-            -- spawnIn/timeLeft
-            record.spawnIn = b.spawnIn or b.timeLeft or nil
-            -- hp percent
-            if b.hpPct then record.hp = b.hpPct end
-            if b.hp then record.hp = b.hp end
-            record.guid = b.guid
+            StampBossSpawn(record, b.spawnIn or b.timeLeft)
 
-            -- Upsert by spawnId, guid, or name
-            local replaced = false
-            if record.spawnId then
-                for i, ex in ipairs(bosses) do
-                    if ex.spawnId == record.spawnId then
-                        bosses[i] = record; replaced = true; break
-                    end
-                end
-            end
-            if (not replaced) and record.entry then
-                for i, ex in ipairs(bosses) do
-                    if ex.entry == record.entry then
-                        bosses[i] = record; replaced = true; break
-                    end
-                end
-            end
-            if record.guid then
-                for i, ex in ipairs(bosses) do
-                    if ex.guid == record.guid then
-                        bosses[i] = record; replaced = true; break
-                    end
-                end
-            end
-            if not replaced then
-                for i, ex in ipairs(bosses) do
-                    if ex.name == record.name then
-                        bosses[i] = record; replaced = true; break
-                    end
-                end
-            end
-            if not replaced then
+            local index = FindBoss(bosses, record.spawnId, record.entry, record.guid, record.name)
+            if index then
+                bosses[index] = record
+            else
                 table.insert(bosses, record)
             end
         end
 
-        -- If the server only sends a partial list, ensure the defaults exist so the UI shows all bosses.
         self:EnsureDefaultWorldBosses()
     end
 
-    -- Events
-    if data.events then
-        self.serverData.events = self.serverData.events or {}
-        local events = self.serverData.events
+    if type(data.events) == "table" then
         for _, e in ipairs(data.events) do
-            local eventId = e.id or e.eventId or 0
-            local state = e.state or e.status or e.action or "active"
-            if state == "spawn" then state = "spawning" end
-            local record = {
-                id = eventId,
-                name = e.name or e.displayName or "Event",
-                zone = e.zone or e.zoneName or (e.mapId and ("Map " .. tostring(e.mapId))) or "Unknown",
-                type = e.type or "event",
-                state = state,
-                active = (e.active == nil) and true or (e.active ~= false),
-                wave = e.wave,
-                maxWaves = e.maxWaves,
-                enemiesRemaining = e.enemiesRemaining,
-                timeRemaining = e.timeRemaining or e.timeLeft,
-            }
-            StampEventDeadline(record)
-
-            -- Upsert
-            local updated = false
-            for i, ex in ipairs(events) do
-                if ex.id ~= 0 and ex.id == record.id and record.id ~= 0 then
-                    events[i] = record; updated = true; break
-                end
-            end
-            if not updated then table.insert(events, record) end
+            self:UpsertEvent(e)
         end
     end
 
-    -- Trigger visual update (lighter than full RefreshAllPlugins rebuild)
-    self:Debug("HandleWorldContent: world content updated (bosses/events/hotspots)")
-    DCInfoBar:ForceUpdateAllPlugins()
+    self:ForceUpdateAllPlugins()
 end
 
--- Handle world content updates (partial updates - merge with existing state)
+-- Partial updates: merge into existing state.
 function DCInfoBar:HandleWorldUpdate(data)
-    if not data then return end
-    self.serverData._lastWRLDUpdateAt = (GetTime and GetTime() or 0)
-
-    -- Debug capture: store a small summary of the most recent boss update payload.
-    if type(data.bosses) == "table" then
-        self.serverData._lastWRLDBossUpdateSummary = {}
-        for _, b in ipairs(data.bosses) do
-            if type(b) == "table" then
-                table.insert(self.serverData._lastWRLDBossUpdateSummary, string.format(
-                    "spawnId=%s entry=%s status=%s active=%s spawnIn=%s action=%s",
-                    tostring(b.spawnId), tostring(b.entry or b.npcEntry or b.creatureEntry), tostring(b.status or b.state), tostring(b.active), tostring(b.spawnIn or b.timeLeft), tostring(b.action)
-                ))
-            end
-        end
+    if type(data) ~= "table" then
+        return
     end
+    self.serverData._lastWRLDUpdateAt = Now()
 
-    -- Hotspot updates
-    if data.hotspots then
-        self.serverData.hotspots = self.serverData.hotspots or {}
-        local hotspots = self.serverData.hotspots
-
+    if type(data.hotspots) == "table" then
         for _, h in ipairs(data.hotspots) do
-            local rec = NormalizeHotspotItem(h)
-            if rec then
-                if rec.action == "expire" or rec.action == "remove" then
-                    for i = #hotspots, 1, -1 do
-                        if hotspots[i].id == rec.id then
-                            table.remove(hotspots, i)
-                            break
-                        end
-                    end
-                else
-                    local replaced = false
-                    for i, ex in ipairs(hotspots) do
-                        if ex.id == rec.id then
-                            hotspots[i] = rec
-                            replaced = true
-                            break
-                        end
-                    end
-                    if not replaced then
-                        table.insert(hotspots, rec)
-                    end
-                end
-            end
+            self:UpsertHotspot(h)
         end
     end
 
-    -- Boss updates
-    if data.bosses then
-        self.serverData.worldBosses = self.serverData.worldBosses or {}
-        local bosses = self.serverData.worldBosses
-        local now = GetTime and GetTime() or 0
-        for _, b in ipairs(data.bosses) do
-            local spawnId = tonumber(b.spawnId) or nil
-            local guid = b.guid
-            local name = b.name
-            local entry = tonumber(b.entry or b.npcEntry or b.creatureEntry) or nil
-            local up = {}
-            if spawnId then up.spawnId = spawnId end
-            if entry then up.entry = entry end
+    if type(data.bosses) == "table" then
+        if self.db and self.db.debug then
+            self.serverData._lastWRLDBossUpdateSummary = SummarizeBosses(data.bosses)
+        end
 
-            -- Some servers send full status payloads without an explicit action.
-            if b.status or b.state then
-                up.status = b.status or b.state
-            end
-            if b.zone or b.zoneName then
-                up.zone = b.zone or b.zoneName
-            end
-            if b.name then
-                up.name = b.name
-            end
+        local bosses = self.serverData.worldBosses
+        local now = Now()
+
+        for _, b in ipairs(data.bosses) do
+            local spawnId = tonumber(b.spawnId)
+            local entry = tonumber(b.entry or b.npcEntry or b.creatureEntry)
+            local up = {
+                spawnId = spawnId,
+                entry = entry,
+                status = b.status or b.state,
+                zone = b.zone or b.zoneName,
+                name = b.name,
+                lastThreshold = b.threshold,
+                hp = b.hpPct or b.hp,
+            }
 
             if b.action == "engage" then
                 up.status = "active"
-                up.hp = b.hpPct or b.hp
-            end
-            if b.action == "spawn" then
+            elseif b.action == "spawn" then
                 up.status = "active"
-                up.hp = b.hpPct or b.hp
                 up.justSpawnedUntil = now + 60
-            end
-            if b.action == "death" or b.action == "remove" or b.action == "despawn" then
+            elseif b.action == "death" or b.action == "remove" or b.action == "despawn" then
                 up.status = "inactive"
-                up.justSpawnedUntil = nil
             end
-            if b.hpPct then up.hp = b.hpPct end
-            if b.timeLeft then up.spawnIn = b.timeLeft end
-            if b.spawnIn then up.spawnIn = b.spawnIn end
-            if b.threshold then up.lastThreshold = b.threshold end
 
-            local matched = false
-            for i, ex in ipairs(bosses) do
-                if (spawnId and ex.spawnId == spawnId) or (entry and ex.entry == entry) or (guid and ex.guid == guid) or (name and ex.name == name) then
-                    for k, v in pairs(up) do ex[k] = v end
-                    matched = true; break
-                end
+            local _, ex = FindBoss(bosses, spawnId, entry, b.guid, b.name)
+            if not ex then
+                ex = { name = b.name or entry or "Unknown", guid = b.guid }
+                table.insert(bosses, ex)
             end
-            if not matched then
-                local record = { name = name or entry or "Unknown", guid = guid, zone = b.zone or b.zoneName, spawnId = spawnId, entry = entry }
-                for k,v in pairs(up) do record[k] = v end
-                table.insert(bosses, record)
+            for k, v in pairs(up) do
+                ex[k] = v
             end
+            if up.status == "inactive" then
+                ex.justSpawnedUntil = nil
+            end
+            StampBossSpawn(ex, b.spawnIn or b.timeLeft)
         end
 
-        -- Keep defaults present even if updates only mention one boss.
         self:EnsureDefaultWorldBosses()
     end
 
-    -- Event updates
-    if data.events then
-        self.serverData.events = self.serverData.events or {}
-        local events = self.serverData.events
+    if type(data.events) == "table" then
         for _, e in ipairs(data.events) do
-            local id = e.id or e.eventId or 0
-            local state = e.state or e.status or e.action
-            if state == "spawn" then state = "spawning" end
-            local record = {
-                id = id,
-                name = e.name,
-                zone = e.zone or e.zoneName,
-                type = e.type or "event",
-                state = state,
-                active = (e.active == nil) and true or (e.active ~= false),
-                wave = e.wave,
-                maxWaves = e.maxWaves,
-                enemiesRemaining = e.enemiesRemaining,
-                timeRemaining = e.timeRemaining or e.timeLeft,
-            }
-            StampEventDeadline(record)
-            -- Upsert by id
-            local matched = false
-            if id ~= 0 then
-                for i, ex in ipairs(events) do
-                    if ex.id == id then events[i] = record; matched = true; break end
-                end
-            end
-            if not matched then table.insert(events, record) end
+            self:UpsertEvent(e)
         end
     end
 
-    self:Debug("HandleWorldUpdate: world updates merged")
-    DCInfoBar:ForceUpdateAllPlugins()
+    self:ForceUpdateAllPlugins()
 end
 
+-- ============================================================================
+-- Periodic timers (1 Hz, driven from OnUpdate)
+-- ============================================================================
+
+-- Derives every legacy "seconds remaining" field from its local-clock anchor so
+-- countdowns stay correct for DC-InfoBar and for addons that read serverData.
+function DCInfoBar:TickServerTimers()
+    local now = Now()
+    local sd = self.serverData
+
+    local season = sd.season
+    if season._endsAt then
+        season.endsIn = math.max(0, season._endsAt - now)
+    end
+    if season._weeklyResetAt then
+        season.weeklyReset = math.max(0, season._weeklyResetAt - now)
+    end
+
+    local affixes = sd.affixes
+    if affixes._resetAt then
+        affixes.resetIn = math.max(0, affixes._resetAt - now)
+    end
+
+    for _, b in ipairs(sd.worldBosses) do
+        if b.spawnAt then
+            b.spawnIn = math.max(0, b.spawnAt - now)
+        end
+    end
+
+    local events = sd.events
+    for i = #events, 1, -1 do
+        local e = events[i]
+        if e.hideAt and now >= e.hideAt then
+            table.remove(events, i)
+        elseif e.endsAt then
+            e.timeRemaining = math.max(0, math.floor(e.endsAt - now + 0.5))
+        end
+    end
+
+    local hotspots = sd.hotspots
+    for i = #hotspots, 1, -1 do
+        local h = hotspots[i]
+        if h.expiresAt then
+            local left = h.expiresAt - now
+            if left <= 0 then
+                table.remove(hotspots, i)
+            else
+                h.timeRemaining = math.floor(left)
+            end
+        end
+    end
+end
+
+-- ============================================================================
+-- Requests
+-- ============================================================================
+
+-- opts.retries     : how often to retry while the protocol isn't connected yet
+-- opts.missingOnly : only ask for categories that haven't answered yet
+-- opts.force       : bypass the 1 s throttle
 function DCInfoBar:RequestServerData(opts)
     opts = (type(opts) == "table") and opts or {}
     local retries = tonumber(opts.retries) or 0
 
-    if not DC then 
-        DC = rawget(_G, "DCAddonProtocol")
-    end
-    
-    if not DC then
+    local proto = self:GetProtocol()
+    if not proto then
         self:Debug("DCAddonProtocol not available for RequestServerData")
         return
     end
+    self:SetupServerCommunication()
 
-    -- Wait until the protocol reports connected (otherwise early requests can be dropped)
-    if DC.IsConnected and not DC:IsConnected() then
+    -- Early requests before the handshake completes can be dropped.
+    if proto.IsConnected and not proto:IsConnected() then
         if retries > 0 then
-            self:Debug("RequestServerData: waiting for DCAddonProtocol connection...")
             self:After(2, function()
-                DCInfoBar:RequestServerData({ retries = retries - 1 })
+                DCInfoBar:RequestServerData({ retries = retries - 1, missingOnly = opts.missingOnly })
             end)
         else
             self:Debug("RequestServerData: DCAddonProtocol not connected (giving up)")
@@ -1032,311 +1050,166 @@ function DCInfoBar:RequestServerData(opts)
         return
     end
 
-    local now = GetTime and GetTime() or 0
-    if self._lastServerDataRequestAt and (now - self._lastServerDataRequestAt) < 1 then
+    local now = Now()
+    if not opts.force and self._lastServerDataRequestAt and (now - self._lastServerDataRequestAt) < 1 then
         return
     end
     self._lastServerDataRequestAt = now
-    
-    self:Debug("Requesting server data...")
-    
-    -- Request seasonal info (using direct opcode)
-    DC:Request("SEAS", SEAS_CMSG_GET_CURRENT, {})
-    DC:Request("SEAS", 0x03, {})  -- Also try CMSG_GET_PROGRESS
-    
-    -- Request keystone info from both modules for redundancy
-    if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE then
-        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_MY_KEYSTONE, {})
-    end
-    
-    DC:Request("MPLUS", MPLUS_CMSG_GET_KEY_INFO, {})
-    DC:Request("MPLUS", MPLUS_CMSG_GET_AFFIXES, {})
-    
-    -- Hotspot list is now requested by Location.lua with TTL-based caching.
-    -- The WRLD module below also includes hotspots in its response.
-    -- Removed redundant direct SPOT request to reduce bandwidth.
-    -- DC:Request("SPOT", 0x01, {})
 
-    -- Request aggregated world content snapshot (includes hotspots, bosses, events)
-    DC:Request("WRLD", 0x01, {})
-    
-    -- Request prestige info
-    DC:Request("PRES", 0x01, {})
+    local sd = self.serverData
+    local missingOnly = opts.missingOnly
+
+    if not missingOnly or not sd.season._infoReceived then
+        proto:Request("SEAS", SEAS_CMSG_GET_CURRENT, {})
+    end
+    if not missingOnly or not sd.season._progressReceived then
+        proto:Request("SEAS", SEAS_CMSG_GET_PROGRESS, {})
+    end
+    if not missingOnly or not sd.keystone.received then
+        proto:Request("MPLUS", MPLUS_CMSG_GET_KEY_INFO, {})
+    end
+    if not missingOnly or not sd.affixes.received then
+        proto:Request("MPLUS", MPLUS_CMSG_GET_AFFIXES, {})
+    end
+    if not missingOnly or not sd.prestige.received then
+        proto:Request("PRES", PRES_CMSG_GET_INFO, {})
+    end
+    -- The server pushes the WRLD snapshot after the handshake; only ask when
+    -- it hasn't arrived (e.g. /reload, where no new handshake happens).
+    if not sd._lastWRLDContentAt then
+        proto:Request("WRLD", WRLD_CMSG_GET_CONTENT, {})
+    end
+
+    -- One follow-up pass for anything that didn't answer (dropped early packet).
+    if not missingOnly then
+        self:After(10, function()
+            DCInfoBar:RequestServerData({ missingOnly = true, force = true })
+        end)
+    end
+end
+
+-- Ask the server for weekly season progress again (e.g. after tokens changed).
+function DCInfoBar:RequestSeasonProgress()
+    local proto = self:GetProtocol()
+    if proto then
+        proto:Request("SEAS", SEAS_CMSG_GET_PROGRESS, {})
+    end
+end
+
+-- ============================================================================
+-- Mythic+ affixes
+-- ============================================================================
+
+-- Client-side affix descriptors from WotLK-Extensions (custom DBC), keyed by id.
+-- Gives names/descriptions/icons without a server round-trip or GetSpellInfo
+-- guessing. nil when the DLL doesn't expose the table.
+function DCInfoBar:GetNativeAffix(id)
+    id = tonumber(id)
+    if not id then
+        return nil
+    end
+
+    if self._nativeAffixes == nil then
+        self._nativeAffixes = false
+        local fn = rawget(_G, "GetDCMythicPlusAffixes")
+        if type(fn) == "function" then
+            local ok, rows = pcall(fn)
+            if ok and type(rows) == "table" then
+                local byId = {}
+                for _, row in ipairs(rows) do
+                    if type(row) == "table" and tonumber(row.id) then
+                        byId[tonumber(row.id)] = row
+                    end
+                end
+                self._nativeAffixes = byId
+            end
+        end
+    end
+
+    return self._nativeAffixes and self._nativeAffixes[id] or nil
+end
+
+-- Best display name for an affix id: server name > native DBC > spell name > id.
+function DCInfoBar:ResolveAffixName(id, serverName)
+    if serverName and serverName ~= "" then
+        return serverName
+    end
+    local native = self:GetNativeAffix(id)
+    if native and native.name and native.name ~= "" then
+        return native.name
+    end
+    id = tonumber(id)
+    if id and id > 0 and GetSpellInfo then
+        local spellName = GetSpellInfo(id)
+        if spellName then
+            return spellName
+        end
+    end
+    return tostring(id or "Unknown")
 end
 
 local function NormalizeAffixPayload(data)
-    local out = {
-        ids = {},
-        names = {},
-        descriptions = {},
-        resetIn = 0,
-    }
+    local out = { ids = {}, names = {}, descriptions = {}, icons = {}, resetIn = 0 }
 
-    if not data then
-        return out
+    local function Add(id, name, desc)
+        id = tonumber(id) or 0
+        local native = DCInfoBar:GetNativeAffix(id)
+        local n = #out.ids + 1
+        out.ids[n] = id
+        out.names[n] = DCInfoBar:ResolveAffixName(id, name)
+        out.descriptions[n] = (desc and desc ~= "") and desc or (native and native.description) or nil
+        out.icons[n] = native and native.icon or nil
     end
 
     if type(data) == "table" then
-        if data.affixIds or data.ids or data.affixNames or data.names then
-            out.ids = data.affixIds or data.ids or {}
-            out.names = data.affixNames or data.names or {}
-            out.descriptions = data.descriptions or data.descs or {}
-            out.resetIn = data.resetIn or data.reset or 0
-            if (#out.names == 0) and (#out.ids > 0) then
-                for _, id in ipairs(out.ids) do
-                    local name = nil
-                    if id and id > 0 and type(GetSpellInfo) == "function" then
-                        name = GetSpellInfo(id)
-                    end
-                    out.names[#out.names + 1] = name or tostring(id or "Unknown")
-                end
-            end
-            return out
-        end
-
-        if data.affixes and type(data.affixes) == "table" then
+        if type(data.affixes) == "table" then
             for _, affix in ipairs(data.affixes) do
-                local id, name, desc
                 if type(affix) == "table" then
-                    id = affix.id or affix.spellId or affix.spellID or affix.affixId
-                    name = affix.name or affix.affixName or affix.spellName
-                    desc = affix.description or affix.affixDesc or affix.desc
-                elseif type(affix) == "number" then
-                    id = affix
+                    Add(affix.id or affix.spellId or affix.spellID or affix.affixId,
+                        affix.name or affix.affixName or affix.spellName,
+                        affix.description or affix.affixDesc or affix.desc)
+                elseif tonumber(affix) then
+                    Add(affix)
                 elseif type(affix) == "string" then
-                    local num = tonumber(affix)
-                    if num then
-                        id = num
-                    else
-                        name = affix
-                    end
+                    Add(0, affix)
                 end
-
-                if not name and id and type(GetSpellInfo) == "function" then
-                    name = GetSpellInfo(id)
-                end
-                if not name or name == "" then
-                    name = tostring(id or "Unknown")
-                end
-
-                out.ids[#out.ids + 1] = id or 0
-                out.names[#out.names + 1] = name
-                out.descriptions[#out.descriptions + 1] = desc
             end
-            out.resetIn = data.resetIn or data.reset or 0
-            return out
-        end
-
-        if type(data.affixData) == "string" then
+        elseif data.affixIds or data.ids then
+            local ids = data.affixIds or data.ids
+            local names = data.affixNames or data.names or {}
+            local descs = data.descriptions or data.descs or {}
+            for i, id in ipairs(ids) do
+                Add(id, names[i], descs[i])
+            end
+        elseif type(data.affixData) == "string" then
             return NormalizeAffixPayload(data.affixData)
         end
+        out.resetIn = tonumber(data.resetIn or data.reset) or 0
     elseif type(data) == "string" then
-        for entry in tostring(data):gmatch("[^;]+") do
+        -- "id:name:desc;id:name:desc"
+        for entry in data:gmatch("[^;]+") do
             local idStr, name, desc = entry:match("^(%d+):([^:]*):?(.*)$")
             if idStr then
-                local id = tonumber(idStr)
-                if (not name or name == "") and id and type(GetSpellInfo) == "function" then
-                    name = GetSpellInfo(id)
-                end
-                if not name or name == "" then
-                    name = tostring(id or "Unknown")
-                end
-                out.ids[#out.ids + 1] = id or 0
-                out.names[#out.names + 1] = name
-                out.descriptions[#out.descriptions + 1] = (desc ~= "" and desc or nil)
-            else
-                local onlyName = entry:match("^([^:]+)$")
-                if onlyName and onlyName ~= "" then
-                    out.ids[#out.ids + 1] = 0
-                    out.names[#out.names + 1] = onlyName
-                    out.descriptions[#out.descriptions + 1] = nil
-                end
+                Add(idStr, name, desc)
+            elseif entry ~= "" then
+                Add(0, entry)
             end
         end
-        return out
     end
 
     return out
 end
 
--- Convenience getters for other addons/scripts to query current season token values
-function DCInfoBar:GetWeeklyTokens()
-    if self.serverData and self.serverData.season then
-        return self.serverData.season.weeklyTokens or 0
-    end
-    return 0
-end
-
-function DCInfoBar:GetInventoryTokens()
-    if self.serverData and self.serverData.season then
-        return self.serverData.season.totalTokens or 0
-    end
-    return 0
-end
-
--- Handle season progress data (SMSG 0x12)
-function DCInfoBar:HandleSeasonProgressData(data)
-    if not data then return end
-    
-    -- Update season data with progress info
-    local season = self.serverData.season
-    
-    if data.seasonId or data.id then
-        season.id = data.seasonId or data.id
-    end
-    if data.tokenId or data.tokenID then
-        season.tokenId = tonumber(data.tokenId or data.tokenID) or season.tokenId
-    end
-    if data.essenceId or data.essenceID then
-        season.essenceId = tonumber(data.essenceId or data.essenceID) or season.essenceId
-    end
-    -- Prefer explicit weeklyTokens when provided
-    if data.weeklyTokens then
-        season.weeklyTokens = data.weeklyTokens
-    end
-    if data.weeklyEssence then
-        season.weeklyEssence = data.weeklyEssence
-    end
-    if data.tokenCap then
-        season.weeklyCap = data.tokenCap
-    end
-    if data.essenceCap then
-        season.essenceCap = data.essenceCap
-    end
-    -- Use `tokens`/`totalTokens` as the player's inventory total
-    if data.tokens then
-        season.totalTokens = data.tokens
-    elseif data.totalTokens then
-        season.totalTokens = data.totalTokens
-    end
-    if data.essence then
-        season.totalEssence = data.essence
-    end
-
-    local central = rawget(_G, "DCAddonProtocol")
-    if central then
-        if season.tokenId then
-            central.TOKEN_ITEM_ID = season.tokenId
-        end
-        if season.essenceId then
-            central.ESSENCE_ITEM_ID = season.essenceId
-        end
-        if type(central.SetServerCurrencyBalance) == "function" then
-            central:SetServerCurrencyBalance(season.totalTokens or 0, season.totalEssence or 0)
-        end
-    end
-
-    
-    -- If name is still Unknown, check DCWelcome
-    if (not season.name or season.name == "Unknown" or season.name == "Unknown Season") then
-        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
-            local D = DCWelcome.Seasons.Data
-            if D.seasonName and D.seasonName ~= "Unknown Season" then
-                season.name = D.seasonName
-            end
-        end
-    end
-    
-    -- Notify season plugin
-    if self.plugins["DCInfoBar_Season"] and self.plugins["DCInfoBar_Season"].OnServerData then
-        self.plugins["DCInfoBar_Season"]:OnServerData(season)
-    end
-    
-    -- Print debug values for quick verification in the chat (when debug mode enabled)
-    self:Debug(string.format("HandleSeasonProgressData: seasonId=%d weeklyTokens=%d totalTokens=%d weeklyCap=%d", 
-        season.id or 0, season.weeklyTokens or 0, season.totalTokens or 0, season.weeklyCap or 0))
-    self:Debug('Full payload: ' .. (type(data) == "table" and (data.weeklyTokens or data.tokens or 0) or "(no-data)"))
-end
-
--- Handle incoming season data
-function DCInfoBar:HandleSeasonData(data)
-    if not data then return end
-    
-    self.serverData.season = {
-        id = data.seasonId or data.id or 0,
-        name = data.seasonName or data.name or "Unknown",
-        tokenId = tonumber(data.tokenId or data.tokenID) or 0,
-        essenceId = tonumber(data.essenceId or data.essenceID) or 0,
-        weeklyTokens = data.weeklyTokens or 0,
-        weeklyCap = data.weeklyCap or data.tokenCap or 1000,
-        weeklyEssence = data.weeklyEssence or 0,
-        essenceCap = data.essenceCap or 1000,
-        totalTokens = data.tokens or data.totalTokens or 0,
-        totalEssence = data.essence or data.totalEssence or 0,
-        endsIn = data.endsIn or 0,
-        weeklyReset = data.weeklyReset or 0,
-    }
-
-    local central = rawget(_G, "DCAddonProtocol")
-    if central then
-        if self.serverData.season.tokenId and self.serverData.season.tokenId > 0 then
-            central.TOKEN_ITEM_ID = self.serverData.season.tokenId
-        end
-        if self.serverData.season.essenceId and self.serverData.season.essenceId > 0 then
-            central.ESSENCE_ITEM_ID = self.serverData.season.essenceId
-        end
-        if type(central.SetServerCurrencyBalance) == "function" then
-            central:SetServerCurrencyBalance(self.serverData.season.totalTokens or 0,
-                self.serverData.season.totalEssence or 0)
-        end
-    end
-    
-    -- If name is still Unknown, check DCWelcome
-    if (self.serverData.season.name == "Unknown" or self.serverData.season.name == "Unknown Season") then
-        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then
-            local D = DCWelcome.Seasons.Data
-            if D.seasonName and D.seasonName ~= "Unknown Season" then
-                self.serverData.season.name = D.seasonName
-            end
-        end
-    end
-    
-    -- Notify season plugin
-    if self.plugins["DCInfoBar_Season"] and self.plugins["DCInfoBar_Season"].OnServerData then
-        self.plugins["DCInfoBar_Season"]:OnServerData(self.serverData.season)
-    end
-    
-    self:Debug("Season data received: " .. self.serverData.season.name)
-end
-
--- Handle incoming keystone data
-function DCInfoBar:HandleKeystoneData(data)
-    if not data then return end
-    
-    self.serverData.keystone = {
-        hasKey = (data.level and data.level > 0) or false,
-        dungeonId = data.dungeonId or data.mapId or 0,
-        dungeonName = data.dungeonName or data.name or "None",
-        dungeonAbbrev = data.abbreviation or data.abbrev or "",
-        level = data.level or data.keyLevel or 0,
-        depleted = data.depleted or false,
-        weeklyBest = data.weeklyBest or 0,
-        seasonBest = data.seasonBest or 0,
-    }
-    
-    -- Generate abbreviation if not provided
-    if self.serverData.keystone.dungeonName and self.serverData.keystone.dungeonAbbrev == "" then
-        self.serverData.keystone.dungeonAbbrev = self:GenerateDungeonAbbrev(self.serverData.keystone.dungeonName)
-    end
-    
-    -- Notify keystone plugin
-    if self.plugins["DCInfoBar_Keystone"] and self.plugins["DCInfoBar_Keystone"].OnServerData then
-        self.plugins["DCInfoBar_Keystone"]:OnServerData(self.serverData.keystone)
-    end
-    
-    self:Debug("Keystone data received: +" .. self.serverData.keystone.level .. " " .. self.serverData.keystone.dungeonAbbrev)
-end
-
--- Handle incoming affix data
 function DCInfoBar:HandleAffixData(data)
-    if not data then return end
-
-    self.serverData.affixes = NormalizeAffixPayload(data)
-    
-    -- Notify affixes plugin
-    if self.plugins["DCInfoBar_Affixes"] and self.plugins["DCInfoBar_Affixes"].OnServerData then
-        self.plugins["DCInfoBar_Affixes"]:OnServerData(self.serverData.affixes)
+    if not data then
+        return
     end
+
+    local affixes = NormalizeAffixPayload(data)
+    affixes.received = true
+    affixes._resetAt = Deadline(affixes.resetIn)
+    self.serverData.affixes = affixes
+    self:NotifyPlugin("DCInfoBar_Affixes", affixes)
 end
 
 function DCInfoBar:ImportMythicPlusAffixCache()
@@ -1344,7 +1217,146 @@ function DCInfoBar:ImportMythicPlusAffixCache()
     local cache = hudDb and hudDb.cache or nil
     if cache and type(cache.affixes) == "table" and #cache.affixes > 0 then
         self:HandleAffixData({ affixes = cache.affixes })
+        -- A cache import is not a server answer; still ask the server.
+        self.serverData.affixes.received = nil
     end
+end
+
+-- ============================================================================
+-- Season
+-- ============================================================================
+
+-- Convenience getters for other addons/scripts to query current season token values
+function DCInfoBar:GetWeeklyTokens()
+    return self.serverData.season.weeklyTokens or 0
+end
+
+function DCInfoBar:GetInventoryTokens()
+    return self.serverData.season.totalTokens or 0
+end
+
+-- Push currency ids/balance to DCAddonProtocol's shared cache. The balance is
+-- only pushed once a progress reply (the only message that carries it) arrived,
+-- so a late season-info reply can never zero it.
+function DCInfoBar:SyncSeasonCurrency()
+    local central = self:GetProtocol()
+    local season = self.serverData.season
+    if not central then
+        return
+    end
+    if (season.tokenId or 0) > 0 then
+        central.TOKEN_ITEM_ID = season.tokenId
+    end
+    if (season.essenceId or 0) > 0 then
+        central.ESSENCE_ITEM_ID = season.essenceId
+    end
+    if season._progressReceived and type(central.SetServerCurrencyBalance) == "function" then
+        central:SetServerCurrencyBalance(season.totalTokens or 0, season.totalEssence or 0)
+    end
+end
+
+local function ApplySeasonFields(season, data)
+    local id = tonumber(data.seasonId or data.id)
+    if id then season.id = id end
+
+    local name = data.seasonName or data.name
+    if name and name ~= "" then season.name = name end
+
+    season.tokenId = tonumber(data.tokenId or data.tokenID) or season.tokenId
+    season.essenceId = tonumber(data.essenceId or data.essenceID) or season.essenceId
+    season.weeklyCap = tonumber(data.tokenCap or data.weeklyCap) or season.weeklyCap
+    season.essenceCap = tonumber(data.essenceCap) or season.essenceCap
+
+    if data.endsIn ~= nil then
+        season.endsIn = tonumber(data.endsIn) or 0
+        season._endsAt = Deadline(season.endsIn)
+    end
+    if data.weeklyReset ~= nil then
+        season.weeklyReset = tonumber(data.weeklyReset) or 0
+        season._weeklyResetAt = Deadline(season.weeklyReset)
+    end
+end
+
+-- SMSG_CURRENT (0x10): season metadata. Carries no balances.
+function DCInfoBar:HandleSeasonData(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local season = self.serverData.season
+    ApplySeasonFields(season, data)
+    season._infoReceived = true
+
+    self:SyncSeasonCurrency()
+    self:NotifyPlugin("DCInfoBar_Season", season)
+    self:Debug("Season data received: " .. tostring(season.name))
+end
+
+-- SMSG_PROGRESS (0x12): weekly progress and inventory balances.
+function DCInfoBar:HandleSeasonProgressData(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local season = self.serverData.season
+    ApplySeasonFields(season, data)
+
+    season.weeklyTokens = tonumber(data.weeklyTokens) or season.weeklyTokens
+    season.weeklyEssence = tonumber(data.weeklyEssence) or season.weeklyEssence
+    -- 'tokens'/'essence' are the current inventory counts.
+    season.totalTokens = tonumber(data.tokens or data.totalTokens) or season.totalTokens
+    season.totalEssence = tonumber(data.essence or data.totalEssence) or season.totalEssence
+    season._progressReceived = true
+
+    self:SyncSeasonCurrency()
+    self:NotifyPlugin("DCInfoBar_Season", season)
+    self:Debug(string.format("Season progress: weeklyTokens=%s totalTokens=%s cap=%s",
+        tostring(season.weeklyTokens), tostring(season.totalTokens), tostring(season.weeklyCap)))
+end
+
+-- ============================================================================
+-- Keystone
+-- ============================================================================
+
+-- MPLUS SMSG_KEY_INFO. Current servers send JSON (hasKey, dungeonId, dungeonName,
+-- level, depleted, weeklyBest, seasonBest); older ones sent the pipe form
+-- "hasKey|dungeonId|dungeonName|level|depleted", which is still accepted.
+function DCInfoBar:HandleKeystoneData(first, ...)
+    local data = first
+    if type(first) ~= "table" then
+        local dungeonId, dungeonName, level, depleted = ...
+        data = {
+            hasKey = (first == "1" or first == 1),
+            dungeonId = dungeonId,
+            dungeonName = dungeonName,
+            level = level,
+            depleted = (depleted == "1" or depleted == 1 or depleted == "true"),
+        }
+    end
+
+    local ks = self.serverData.keystone
+    local level = tonumber(data.level or data.keyLevel or data.keystoneLevel) or 0
+    local hasKey = data.hasKey
+    if hasKey == nil then
+        hasKey = data.hasKeystone
+    end
+    if hasKey == nil then
+        hasKey = level > 0
+    end
+    hasKey = (hasKey and level > 0) and true or false
+
+    ks.received = true
+    ks.hasKey = hasKey
+    ks.level = hasKey and level or 0
+    ks.dungeonId = hasKey and (tonumber(data.dungeonId or data.keystoneDungeonId or data.mapId) or 0) or 0
+    ks.dungeonName = hasKey and (data.dungeonName or data.keystoneDungeonName or data.name or "Unknown") or "None"
+    ks.dungeonAbbrev = hasKey and (data.abbreviation or data.abbrev or self:GenerateDungeonAbbrev(ks.dungeonName)) or ""
+    ks.depleted = hasKey and (data.depleted == true) or false
+    ks.weeklyBest = tonumber(data.weeklyBest) or ks.weeklyBest or 0
+    ks.seasonBest = tonumber(data.seasonBest) or ks.seasonBest or 0
+
+    self:NotifyPlugin("DCInfoBar_Keystone", ks)
+    self:Debug("Keystone data received: +" .. tostring(ks.level) .. " " .. tostring(ks.dungeonAbbrev))
 end
 
 -- Centralized dungeon abbreviation lookup (single source of truth)
@@ -1607,8 +1619,14 @@ function DCInfoBar:UpdateRestartGauge(elapsed)
     gauge:SetValue(status.remaining)
     gauge:SetStatusBarColor(r, g, b, 0.9)
 
-    local label = (status.mode == "restart") and "Server Restart" or "Server Shutdown"
-    gauge.text:SetText(label .. " - " .. self:FormatTime(status.remaining))
+    -- The gauge ticks at 10 Hz; only re-render the text when the second changes.
+    local wholeSeconds = math.floor(status.remaining)
+    if gauge._shownSeconds ~= wholeSeconds or gauge._shownMode ~= status.mode then
+        gauge._shownSeconds = wholeSeconds
+        gauge._shownMode = status.mode
+        local label = (status.mode == "restart") and "Server Restart" or "Server Shutdown"
+        gauge.text:SetText(label .. " - " .. self:FormatTime(status.remaining))
+    end
     gauge:Show()
 end
 
@@ -1634,46 +1652,93 @@ function DCInfoBar:ShowRestartGaugeTooltip(frame)
 end
 
 -- ============================================================================
+-- Visibility
+-- ============================================================================
+
+function DCInfoBar:ShouldShowBar()
+    local g = self.db and self.db.global
+    if not g or not g.enabled then
+        return false
+    end
+    if g.hideInCombat and self._inCombat then
+        return false
+    end
+    if g.hideInInstance and IsInInstance and IsInInstance() then
+        return false
+    end
+    return true
+end
+
+-- Applies the enabled/combat/instance rules. Only acts when the wanted state
+-- changes (or force is set), so a hide requested by another addon (e.g. the
+-- DC-Welcome addon panel) is not undone on the next frame.
+function DCInfoBar:UpdateVisibility(force)
+    if not self.bar then
+        return
+    end
+
+    local show = self:ShouldShowBar()
+    if not force and show == self._barWantedShown then
+        return
+    end
+    self._barWantedShown = show
+
+    if show then
+        self.bar:Show()
+        self:ForceUpdateAllPlugins()
+    else
+        self.bar:Hide()
+    end
+end
+
+-- ============================================================================
 -- Update System
 -- ============================================================================
 
+function DCInfoBar:RunPluginUpdate(plugin, now)
+    -- Real time since this plugin last updated. Plugins force an early redraw by
+    -- setting _elapsed = 999, so the accumulator can't be used as a delta.
+    local dt = now - (plugin._lastUpdateAt or now)
+    plugin._lastUpdateAt = now
+
+    local ok, label, value, color = pcall(plugin.OnUpdate, plugin, dt)
+    if ok then
+        self.bar:UpdatePluginText(plugin, label, value, color)
+    elseif self.db and self.db.debug then
+        self:Debug("Plugin " .. tostring(plugin.id) .. " OnUpdate error: " .. tostring(label))
+    end
+end
+
 function DCInfoBar:OnUpdate(elapsed)
-    if not self.db or not self.db.global or not self.db.global.enabled then
+    if not self.db or not self.bar then
         return
     end
-    
-    -- Hide in combat if configured
-    if self.db.global.hideInCombat and UnitAffectingCombat("player") then
-        if self.bar and self.bar:IsShown() then
-            self.bar:Hide()
-        end
-        self:UpdateRestartGauge(elapsed)
-        return
-    elseif self.bar and not self.bar:IsShown() and self.db.global.enabled then
-        self.bar:Show()
+
+    -- Server countdowns keep running while the bar is hidden: other addons read them.
+    self._timerElapsed = (self._timerElapsed or 0) + elapsed
+    if self._timerElapsed >= 1 then
+        self._timerElapsed = 0
+        self:TickServerTimers()
     end
-    
-    -- Update each active plugin (always, regardless of button visibility, so plugins can control their own visibility)
+
+    self:UpdateRestartGauge(elapsed)
+
+    if not self.bar:IsShown() then
+        return
+    end
+
+    local now = GetTime()
     for _, side in ipairs(SIDES) do
         for _, plugin in ipairs(self.activePlugins[side]) do
-            if plugin.button then
+            if plugin.button and plugin.OnUpdate then
                 plugin._elapsed = (plugin._elapsed or 0) + elapsed
-                
                 if plugin._elapsed >= (plugin.updateInterval or 1.0) then
                     plugin._elapsed = 0
-                    
-                    if plugin.OnUpdate then
-                        local success, label, value, color = pcall(plugin.OnUpdate, plugin, elapsed)
-                        if success then
-                            self.bar:UpdatePluginText(plugin, label, value, color)
-                        end
-                    end
+                    self:RunPluginUpdate(plugin, now)
                 end
             end
         end
     end
-
-    self:UpdateRestartGauge(elapsed)
 end
 
 function DCInfoBar:ForceUpdateAllPlugins()
@@ -1681,13 +1746,12 @@ function DCInfoBar:ForceUpdateAllPlugins()
         return
     end
 
+    local now = GetTime()
     for _, side in ipairs(SIDES) do
-        for _, plugin in ipairs(self.activePlugins[side] or {}) do
-            if plugin and plugin.button and plugin.OnUpdate then
-                local ok, label, value, color = pcall(plugin.OnUpdate, plugin, 0)
-                if ok then
-                    self.bar:UpdatePluginText(plugin, label, value, color)
-                end
+        for _, plugin in ipairs(self.activePlugins[side]) do
+            if plugin.button and plugin.OnUpdate then
+                plugin._elapsed = 0
+                self:RunPluginUpdate(plugin, now)
             end
         end
     end
@@ -1698,13 +1762,9 @@ end
 -- ============================================================================
 
 function DCInfoBar:Initialize()
-    -- Initialize token info from DC-Central
     local function SafeStep(label, fn)
         local ok, err = xpcall(fn, function(e)
-            local trace = ""
-            if debugstack then
-                trace = debugstack(2, 8, 8)
-            end
+            local trace = debugstack and debugstack(2, 8, 8) or ""
             return tostring(e) .. (trace ~= "" and (" | " .. trace) or "")
         end)
         if not ok then
@@ -1713,131 +1773,63 @@ function DCInfoBar:Initialize()
         return ok
     end
 
-    SafeStep("InitializeTokenInfo", function()
-        self:InitializeTokenInfo()
-    end)
-    
-    -- Initialize saved variables
-    SafeStep("InitializeDB", function()
-        self:InitializeDB()
-    end)
+    SafeStep("InitializeTokenInfo", function() self:InitializeTokenInfo() end)
+    SafeStep("InitializeDB", function() self:InitializeDB() end)
+    SafeStep("SetupServerCommunication", function() self:SetupServerCommunication() end)
+    SafeStep("ImportMythicPlusAffixCache", function() self:ImportMythicPlusAffixCache() end)
 
-    -- Lightweight runtime diagnostics (gated by debug)
-    do
-        local enabled = (self.db and self.db.global and self.db.global.enabled) and "true" or "false"
-        self:Debug("Init: global.enabled=" .. enabled)
-    end
-    
-    -- Setup server communication
-    SafeStep("SetupServerCommunication", function()
-        local ok = self:SetupServerCommunication()
-        self:Debug("Init: DCAddonProtocol=" .. (ok and "found" or "missing"))
-        local DCProtocol = rawget(_G, "DCAddonProtocol")
-        if DCProtocol then
-            self:Debug("Init: DC.RegisterJSONHandler=" .. (DCProtocol.RegisterJSONHandler and "yes" or "no"))
-            self:Debug("Init: DC.PREFIX=" .. tostring(DCProtocol.PREFIX))
-        end
-    end)
-
-    SafeStep("ImportMythicPlusAffixCache", function()
-        self:ImportMythicPlusAffixCache()
-    end)
-    
-    -- Create the bar
     SafeStep("CreateBar", function()
         if self.CreateBar then
             self.bar = self:CreateBar()
         else
             self:Print("Init: CreateBar() missing - UI/Bar.lua not loaded?")
         end
-
-        if self.bar then
-            self:Debug("Init: bar created, shown=" .. (self.bar:IsShown() and "true" or "false") .. ", h=" .. tostring(self.bar:GetHeight()) .. ", strata=" .. tostring(self.bar:GetFrameStrata()))
-        else
-            self:Debug("Init: bar NOT created")
-        end
     end)
 
-    -- Ensure Interface Options panel is registered (so it shows under Interface -> AddOns)
     SafeStep("CreateOptionsPanel", function()
         if self.CreateOptionsPanel and not self.optionsPanel then
             self:CreateOptionsPanel()
         end
     end)
-    
-    SafeStep("ActivatePlugins", function()
-        -- Count registered plugins before activation
-        local registeredCount = 0
-        for _ in pairs(self.plugins or {}) do
-            registeredCount = registeredCount + 1
-        end
-        self:Debug("Init: registered plugins=" .. tostring(registeredCount))
 
-        -- Activate all enabled plugins
-        for id, plugin in pairs(self.plugins or {}) do
+    SafeStep("ActivatePlugins", function()
+        for id in pairs(self.plugins) do
             if self:IsPluginEnabled(id) then
                 self:ActivatePlugin(id)
             end
         end
-
-        local leftCount = (self.activePlugins and self.activePlugins.left and #self.activePlugins.left) or 0
-        local rightCount = (self.activePlugins and self.activePlugins.right and #self.activePlugins.right) or 0
-        self:Debug("Init: active plugins left=" .. tostring(leftCount) .. " right=" .. tostring(rightCount))
+        self:Debug(string.format("Init: active plugins left=%d right=%d",
+            #self.activePlugins.left, #self.activePlugins.right))
     end)
 
-    -- If nothing is active, tell the user how to recover.
-    do
-        local leftCount = (self.activePlugins and self.activePlugins.left and #self.activePlugins.left) or 0
-        local rightCount = (self.activePlugins and self.activePlugins.right and #self.activePlugins.right) or 0
-        local activeCount = leftCount + rightCount
-
-        local registeredCount = 0
-        for _ in pairs(self.plugins or {}) do
-            registeredCount = registeredCount + 1
-        end
-
-        if activeCount == 0 then
-            self:Debug("Init: no active plugins (registered=" .. tostring(registeredCount) .. "). Try /infobar reset.")
-        end
-    end
-    
-    SafeStep("RefreshLayout", function()
-        if self.bar then
-            self.bar:RefreshLayout()
-        end
-    end)
-    
     SafeStep("UpdateFrame", function()
-        -- Create update frame
         local updateFrame = CreateFrame("Frame")
         self._updateFrame = updateFrame
         local updateElapsed = 0
         updateFrame:SetScript("OnUpdate", function(_, elapsed)
             updateElapsed = updateElapsed + elapsed
-            if updateElapsed >= 0.1 then  -- Update at 10 FPS max
+            if updateElapsed >= 0.1 then  -- 10 Hz max
                 DCInfoBar:OnUpdate(updateElapsed)
                 updateElapsed = 0
             end
         end)
 
-        -- Ensure all plugins have initial text immediately (before the first OnUpdate tick)
-        self:ForceUpdateAllPlugins()
-        self:Debug("Init: ForceUpdateAllPlugins done")
+        self._inCombat = UnitAffectingCombat("player") and true or false
+        self:UpdateVisibility(true)
+        if self.bar then
+            self.bar:RefreshLayout()
+        end
     end)
-    
-    -- Request server data after a short delay (wait for connection)
+
+    -- Short delay so the protocol handshake has a chance to complete.
     self:After(2, function()
         DCInfoBar:RequestServerData({ retries = 10 })
     end)
-    
-    -- Setup slash commands
+
     self:SetupSlashCommands()
-    
-    if self.PrintToDcDebug then
-        self:PrintToDcDebug("DC-InfoBar v" .. self.VERSION .. " loaded. Type /infobar for options.")
-    else
-        self:Print("DC-InfoBar v" .. self.VERSION .. " loaded. Type /infobar for options.")
-    end
+
+    -- Debug-only: PrintToDcDebug would open a new chat tab on clients without DC-QOS.
+    self:Debug("DC-InfoBar v" .. self.VERSION .. " loaded. Type /infobar for options.")
 end
 
 -- ============================================================================
@@ -1848,32 +1840,30 @@ function DCInfoBar:SetupSlashCommands()
     SLASH_DCINFOBAR1 = "/infobar"
     SLASH_DCINFOBAR2 = "/dcinfo"
     SLASH_DCINFOBAR3 = "/dcib"
-    
+
     SlashCmdList["DCINFOBAR"] = function(msg)
-        local cmd = string.lower(msg or "")
-        
+        msg = msg or ""
+        local cmd = string.lower(msg:match("^(%S*)") or "")
+
         if cmd == "" or cmd == "options" or cmd == "config" then
             self:OpenOptions()
         elseif cmd == "toggle" then
             self.db.global.enabled = not self.db.global.enabled
-            if self.bar then
-                if self.db.global.enabled then self.bar:Show() else self.bar:Hide() end
-            end
+            self:UpdateVisibility(true)
             self:Print("InfoBar " .. (self.db.global.enabled and "enabled" or "disabled"))
         elseif cmd == "reset" then
             self:ResetToDefaults()
         elseif cmd == "debug" then
             self.db.debug = not self.db.debug
+            self.db.communication.showDebugMessages = self.db.debug
             self:Print("Debug mode " .. (self.db.debug and "enabled" or "disabled"))
         elseif cmd == "refresh" then
-            self:RequestServerData()
+            self:RequestServerData({ force = true })
             self:Print("Refreshing server data...")
         elseif cmd == "testevent" then
-            -- Test event display
             self:Print("Injecting test event...")
             self:HandleEventData({
                 id = 999,
-                eventId = 999,
                 name = "Test Invasion",
                 zone = "Giant Isles",
                 type = "invasion",
@@ -1882,46 +1872,41 @@ function DCInfoBar:SetupSlashCommands()
                 wave = 2,
                 maxWaves = 4,
                 enemiesRemaining = 15,
-                timeRemaining = 300
+                timeRemaining = 300,
             })
-            self:Print("Event count: " .. #(self.serverData.events or {}))
+            self:Print("Event count: " .. #self.serverData.events)
         elseif cmd == "events" then
-            local events = self.serverData.events or {}
+            local events = self.serverData.events
             self:Print("Active events: " .. #events)
             for i, event in ipairs(events) do
-                self:Print(string.format("  %d: %s (%s) - %s", i, event.name, event.zone, event.state))
+                self:Print(string.format("  %d: %s (%s) - %s", i, tostring(event.name), tostring(event.zone), tostring(event.state)))
             end
         elseif cmd == "showevent" then
-            -- Temporarily disable hideWhenNone to force show events
             self:SetPluginSetting("DCInfoBar_Events", "hideWhenNone", false)
             self:Print("Event display forced ON (hideWhenNone disabled)")
             self:RefreshAllPlugins()
         elseif cmd == "hideevent" then
-            -- Re-enable hideWhenNone
             self:SetPluginSetting("DCInfoBar_Events", "hideWhenNone", true)
             self:Print("Event display restored to normal (hideWhenNone enabled)")
             self:RefreshAllPlugins()
         elseif cmd == "testseason" then
-            -- Inject a season progress payload to test UI updates
-            local a, b, c = string.match(msg, "testseason%s+(%d+)%s*(%d*)%s*(%d*)")
-            local weekly = tonumber(a) or tonumber(b) or 0
-            local totalT = tonumber(b) or tonumber(c) or 0
-            local id = tonumber(c) or 1
-            if not weekly then weekly = 0 end
+            local weekly, total, id = msg:match("^%S+%s+(%d+)%s*(%d*)%s*(%d*)")
             local payload = {
-                seasonId = id,
-                tokens = totalT,
-                weeklyTokens = weekly,
+                seasonId = tonumber(id) or 1,
+                tokens = tonumber(total) or 0,
+                weeklyTokens = tonumber(weekly) or 0,
                 tokenCap = 1000,
                 essence = 0,
                 weeklyEssence = 0,
-                essenceCap = 1000
+                essenceCap = 1000,
             }
             self:HandleSeasonProgressData(payload)
-            self:Print("Injected test season payload: weeklyTokens=" .. tostring(payload.weeklyTokens) .. ", totalTokens=" .. tostring(payload.tokens))
+            self:Print("Injected test season payload: weeklyTokens=" .. payload.weeklyTokens .. ", totalTokens=" .. payload.tokens)
         elseif cmd == "showseason" then
-            local s = self.serverData.season or {}
-            self:Print(string.format("Season ID: %s, Name: %s, weeklyTokens: %s, tokens: %s, weeklyCap: %s, essence: %s", tostring(s.id or 0), tostring(s.name or "Unknown"), tostring(s.weeklyTokens or 0), tostring(s.totalTokens or 0), tostring(s.weeklyCap or 0), tostring(s.weeklyEssence or 0)))
+            local s = self.serverData.season
+            self:Print(string.format("Season ID: %s, Name: %s, weeklyTokens: %s, tokens: %s, weeklyCap: %s, essence: %s",
+                tostring(s.id), tostring(s.name), tostring(s.weeklyTokens), tostring(s.totalTokens),
+                tostring(s.weeklyCap), tostring(s.weeklyEssence)))
         else
             self:Print("Commands:")
             self:Print("  /infobar - Open options")
@@ -1966,28 +1951,37 @@ local eventFrame = CreateFrame("Frame")
 DCInfoBar._eventFrame = eventFrame
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
-eventFrame:SetScript("OnEvent", function(self, event, ...)
+eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
-        DCInfoBar:Print("PLAYER_LOGIN")
         DCInfoBar:After(0.5, function()
             xpcall(function()
                 DCInfoBar:Initialize()
             end, function(e)
-                local trace = ""
-                if debugstack then
-                    trace = debugstack(2, 8, 8)
-                end
+                local trace = debugstack and debugstack(2, 8, 8) or ""
                 DCInfoBar:Print("Init ERROR (top-level): " .. tostring(e) .. (trace ~= "" and (" | " .. trace) or ""))
             end)
         end)
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        DCInfoBar._inCombat = true
+        DCInfoBar:UpdateVisibility()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        DCInfoBar._inCombat = false
+        DCInfoBar:UpdateVisibility()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Refresh location data
-        if DCInfoBar.plugins["DCInfoBar_Location"] then
-            DCInfoBar.plugins["DCInfoBar_Location"]._elapsed = 999  -- Force update
+        DCInfoBar._inCombat = UnitAffectingCombat("player") and true or false
+        DCInfoBar:UpdateVisibility()
+        local location = DCInfoBar.plugins["DCInfoBar_Location"]
+        if location then
+            location._elapsed = 999  -- Force update
         end
     elseif event == "CHAT_MSG_SYSTEM" then
-        local msg = ...
-        DCInfoBar:HandleSystemMessage(msg)
+        DCInfoBar:HandleSystemMessage((...))
     end
 end)
+
+-- Register protocol handlers now (DC-AddonProtocol is a hard dependency and is
+-- already loaded) so no push that arrives before PLAYER_LOGIN is lost.
+DCInfoBar:SetupServerCommunication()

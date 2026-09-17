@@ -32,6 +32,7 @@
 #include "GroupMgr.h"
 #include "Log.h"
 #include "LootMgr.h"
+#include "MapReference.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Pet.h"
@@ -50,6 +51,9 @@
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSessionMgr.h"
+#include <map>
+#include <mutex>
+#include <tuple>
 
 /// @todo: this import is not necessary for compilation and marked as unused by the IDE
 //  however, for some reasons removing it would cause a damn linking issue
@@ -2866,12 +2870,62 @@ void Creature::LoadSparringPct()
     }
 }
 
+namespace
+{
+    // GuardAI::JustDied sends SMSG_ZONE_UNDER_ATTACK for every guard corpse, so a
+    // fight that kills a string of guards (a battleground push, a city raid)
+    // flooded LocalDefense with one line per kill. One message per area, team and
+    // instance per window keeps the alert without the spam.
+    constexpr Seconds ZoneUnderAttackCooldown = Seconds(30);
+    constexpr std::size_t ZoneUnderAttackPruneThreshold = 256;
+
+    std::mutex ZoneUnderAttackLock;
+    std::map<std::tuple<uint32, uint32, uint8>, Seconds> ZoneUnderAttackLastSent;
+
+    bool ConsumeZoneUnderAttackSlot(uint32 instanceId, uint32 areaId, TeamId team)
+    {
+        Seconds const now = GameTime::GetGameTime();
+        std::lock_guard<std::mutex> guard(ZoneUnderAttackLock);
+
+        auto const key = std::make_tuple(instanceId, areaId, static_cast<uint8>(team));
+        auto const itr = ZoneUnderAttackLastSent.find(key);
+        if (itr != ZoneUnderAttackLastSent.end() && now - itr->second < ZoneUnderAttackCooldown)
+            return false;
+
+        // Instance ids are not reused, so windows of finished instances would pile up.
+        if (ZoneUnderAttackLastSent.size() > ZoneUnderAttackPruneThreshold)
+            std::erase_if(ZoneUnderAttackLastSent, [now](auto const& entry) { return now - entry.second >= ZoneUnderAttackCooldown; });
+
+        ZoneUnderAttackLastSent[key] = now;
+        return true;
+    }
+}
+
 /// Send a message to LocalDefense channel for players opposition team in the zone
 void Creature::SendZoneUnderAttackMessage(Player* attacker)
 {
+    TeamId const victimTeam = attacker->GetBgTeamId() == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+    Map const* map = GetMap();
+
+    // The open world is instance 0; concurrent battleground or dungeon copies get their own window.
+    if (!ConsumeZoneUnderAttackSlot(map->GetInstanceId(), GetAreaId(), victimTeam))
+        return;
+
     WorldPacket data(SMSG_ZONE_UNDER_ATTACK, 4);
-    data << (uint32)GetAreaId();
-    sWorldSessionMgr->SendGlobalMessage(&data, nullptr, (attacker->GetTeamId() == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE));
+    data << uint32(GetAreaId());
+
+    // Nobody outside an instance can answer an attack inside it, so keep the alert on that map.
+    if (map->Instanceable())
+    {
+        for (MapReference const& ref : map->GetPlayers())
+            if (Player* player = ref.GetSource())
+                if (player->GetBgTeamId() == victimTeam)
+                    player->SendDirectMessage(&data);
+
+        return;
+    }
+
+    sWorldSessionMgr->SendGlobalMessage(&data, nullptr, victimTeam);
 }
 
 /**
