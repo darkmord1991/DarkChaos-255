@@ -11,9 +11,11 @@
 #include "Player.h"
 #include "Item.h"
 #include "ItemUpgradeManager.h"
+#include "DataMap.h"
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 namespace DarkChaos
 {
@@ -64,35 +66,165 @@ namespace DarkChaos
                 return state;
             }
 
-            ItemUpgradeState* GetUpgradeStateForTemplate(Player* player,
-                ItemTemplate const* proto)
+            // ---------------------------------------------------------------
+            // Apply/remove symmetry
+            // ---------------------------------------------------------------
+            // The core adds an item's stats when it is equipped and SUBTRACTS them
+            // when it is removed, and it calls these hooks for both directions. The
+            // modifiers are plain running sums, so the amount subtracted has to be
+            // exactly the amount that was added.
+            //
+            // Scaling both directions by "the multiplier in the cache right now"
+            // breaks that whenever the multiplier changed in between:
+            //
+            //  * Login. LoadFromDB applies item stats while the upgrade cache is
+            //    still cold (x1.0). The prefetch then fills the cache and calls
+            //    ForcePlayerStatUpdate, which removes and re-applies everything --
+            //    but the removal now subtracts x*m where only x*1.0 had been added,
+            //    and the re-apply adds x*m back. Net result: x*1.0. The bonus was
+            //    never folded in, on every first login after a server start.
+            //  * Upgrade purchase. Same shape: remove at the NEW multiplier, re-apply
+            //    at the new multiplier, net unchanged. The purchase only took effect
+            //    after a relog with a warm cache.
+            //  * Unequipping after either of the above subtracted x*m from a sum that
+            //    only held x, leaving a negative residue on the character.
+            //
+            // So: remember, per player and per item, the multiplier each stat block
+            // was applied with, and remove with THAT. Stored in Player::CustomData,
+            // which lives and dies with the Player and is only touched from that
+            // player's own update context, so it needs no locking.
+            struct AppliedUpgradeMultipliers : public DataMap::Base
             {
-                if (!player || !proto)
-                    return nullptr;
+                // item guid (low) -> multiplier its template stats were applied with
+                std::unordered_map<uint32, float> itemStats;
+                // (item guid low << 4 | enchant slot) -> multiplier for that enchant
+                std::unordered_map<uint64, float> enchantStats;
+
+                // The _ApplyItemBonuses pass in progress. The core opens every pass
+                // with OnPlayerCustomScalingStatValueBefore (slot + direction) and the
+                // stat hooks that follow belong to it, so they read the multiplier
+                // from here instead of each resolving their own.
+                uint32 passItemGuid = 0;
+                float passMultiplier = 1.0f;
+            };
+
+            constexpr char const* APPLIED_MULTIPLIERS_KEY = "dc_item_upgrade_applied_multipliers";
+
+            AppliedUpgradeMultipliers* GetAppliedMultipliers(Player* player)
+            {
+                return player->CustomData.GetDefault<AppliedUpgradeMultipliers>(
+                    APPLIED_MULTIPLIERS_KEY);
+            }
+
+            // The multiplier the cache holds for this item right now; 1.0 when the item
+            // is not upgraded or its state is not resident yet.
+            float GetLiveMultiplier(Item* item)
+            {
+                if (!item)
+                    return 1.0f;
 
                 UpgradeManager* mgr = GetUpgradeManager();
                 if (!mgr)
-                    return nullptr;
+                    return 1.0f;
 
-                for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                // Cache-only on purpose -- see the note in GetUpgradeStateForSlot.
+                ItemUpgradeState* state =
+                    mgr->GetCachedItemUpgradeState(item->GetGUID().GetCounter());
+                if (!state || state->upgrade_level == 0 || state->stat_multiplier <= 1.0f)
+                    return 1.0f;
+
+                return state->stat_multiplier;
+            }
+
+            // Opens a stat pass for the item in `slot`: applying records the live
+            // multiplier, removing replays whatever was recorded when it was applied.
+            void BeginStatPass(Player* player, uint8 slot, bool apply)
+            {
+                AppliedUpgradeMultipliers* applied = GetAppliedMultipliers(player);
+                applied->passItemGuid = 0;
+                applied->passMultiplier = 1.0f;
+
+                Item* item = GetEquippedItemForSlot(player, slot);
+                if (!item)
+                    return;
+
+                uint32 const itemGuid = item->GetGUID().GetCounter();
+                applied->passItemGuid = itemGuid;
+
+                if (apply)
                 {
-                    Item* item = GetEquippedItemForSlot(player, slot, proto);
-                    if (!item)
-                        continue;
-
-                    // Cache-only -- see the note in GetUpgradeStateForSlot.
-                    ItemUpgradeState* state =
-                        mgr->GetCachedItemUpgradeState(item->GetGUID().GetCounter());
-                    if (!state || state->upgrade_level == 0)
-                        continue;
-
-                    if (state->stat_multiplier <= 1.0f)
-                        continue;
-
-                    return state;
+                    applied->passMultiplier = GetLiveMultiplier(item);
+                    applied->itemStats[itemGuid] = applied->passMultiplier;
+                    return;
                 }
 
-                return nullptr;
+                auto itr = applied->itemStats.find(itemGuid);
+                if (itr != applied->itemStats.end())
+                {
+                    applied->passMultiplier = itr->second;
+                    applied->itemStats.erase(itr);
+                }
+            }
+
+            // Multiplier for a stat hook belonging to the pass opened above. Falls back
+            // to 1.0 when the hook fires for an item no pass was opened for, which is
+            // the safe direction: an unscaled stat is still symmetric.
+            float GetPassMultiplier(Player* player, uint8 slot)
+            {
+                AppliedUpgradeMultipliers* applied = GetAppliedMultipliers(player);
+                Item* item = GetEquippedItemForSlot(player, slot);
+                if (!item || item->GetGUID().GetCounter() != applied->passItemGuid)
+                    return 1.0f;
+
+                return applied->passMultiplier;
+            }
+
+            float GetPassMultiplierForTemplate(Player* player, ItemTemplate const* proto)
+            {
+                if (!proto)
+                    return 1.0f;
+
+                AppliedUpgradeMultipliers* applied = GetAppliedMultipliers(player);
+                if (!applied->passItemGuid)
+                    return 1.0f;
+
+                Item* item = player->GetItemByGuid(
+                    ObjectGuid::Create<HighGuid::Item>(applied->passItemGuid));
+                if (!item || item->GetEntry() != proto->ItemId)
+                    return 1.0f;
+
+                return applied->passMultiplier;
+            }
+
+            // Stats rolled INTO the item (RandomEnchants / random properties) scale with
+            // it; what the player adds afterwards -- the permanent enchant, gems, temporary
+            // enchants -- does not. Same line retail draws for its item-level upgrades.
+            bool IsRandomEnchantSlot(EnchantmentSlot slot)
+            {
+                return slot >= PROP_ENCHANTMENT_SLOT_0 && slot <= PROP_ENCHANTMENT_SLOT_4;
+            }
+
+            float ResolveEnchantMultiplier(Player* player, Item* item,
+                EnchantmentSlot slot, bool apply)
+            {
+                AppliedUpgradeMultipliers* applied = GetAppliedMultipliers(player);
+                uint64 const key =
+                    (uint64(item->GetGUID().GetCounter()) << 4) | uint64(slot & 0xF);
+
+                if (apply)
+                {
+                    float const multiplier = GetLiveMultiplier(item);
+                    applied->enchantStats[key] = multiplier;
+                    return multiplier;
+                }
+
+                auto itr = applied->enchantStats.find(key);
+                if (itr == applied->enchantStats.end())
+                    return 1.0f;
+
+                float const multiplier = itr->second;
+                applied->enchantStats.erase(itr);
+                return multiplier;
             }
 
             int32 ScaleSignedStatValue(int32 value, float multiplier)
@@ -191,68 +323,92 @@ namespace DarkChaos
                 PLAYERHOOK_ON_APPLY_ITEM_ARMOR_BEFORE, PLAYERHOOK_ON_APPLY_ITEM_BLOCK_VALUE_BEFORE,
                 PLAYERHOOK_ON_APPLY_ITEM_MODS_BEFORE, PLAYERHOOK_ON_APPLY_ITEM_RESISTANCE_BEFORE,
                 PLAYERHOOK_ON_APPLY_WEAPON_DAMAGE, PLAYERHOOK_ON_CUSTOM_SCALING_STAT_VALUE,
+                PLAYERHOOK_ON_CUSTOM_SCALING_STAT_VALUE_BEFORE,
+                PLAYERHOOK_ON_APPLY_ENCHANTMENT_ITEM_MODS_BEFORE,
                 PLAYERHOOK_ON_GET_FERAL_AP_BONUS
             }) {}
+
+            // First hook of every _ApplyItemBonuses pass, and the only one that carries
+            // both the slot and the direction: it opens the pass the hooks below read.
+            void OnPlayerCustomScalingStatValueBefore(Player* player,
+                ItemTemplate const* /*proto*/, uint8 slot, bool apply,
+                uint32& /*CustomScalingStatValue*/) override
+            {
+                if (!player)
+                    return;
+
+                BeginStatPass(player, slot, apply);
+            }
+
+            void OnPlayerApplyEnchantmentItemModsBefore(Player* player, Item* item,
+                EnchantmentSlot slot, bool apply, uint32 /*enchant_spell_id*/,
+                uint32& enchant_amount) override
+            {
+                if (!player || !item || !IsRandomEnchantSlot(slot))
+                    return;
+
+                enchant_amount = ScaleUnsignedStatValue(enchant_amount,
+                    ResolveEnchantMultiplier(player, item, slot, apply));
+            }
 
             void OnPlayerCustomScalingStatValue(Player* player,
                 ItemTemplate const* proto, uint32& /*statType*/, int32& val,
                 uint8 /*itemProtoStatNumber*/, uint32 /*ScalingStatValue*/,
                 ScalingStatValuesEntry const* /*ssv*/) override
             {
-                ItemUpgradeState* state = GetUpgradeStateForTemplate(player, proto);
-                if (!state)
+                if (!player)
                     return;
 
-                val = ScaleSignedStatValue(val, state->stat_multiplier);
+                val = ScaleSignedStatValue(val,
+                    GetPassMultiplierForTemplate(player, proto));
             }
 
             void OnPlayerApplyItemModsBefore(Player* player, uint8 slot,
                 bool /*apply*/, uint8 /*itemProtoStatNumber*/, uint32 /*statType*/,
                 int32& val) override
             {
-                ItemUpgradeState* state = GetUpgradeStateForSlot(player, slot);
-                if (!state)
+                if (!player)
                     return;
 
-                val = ScaleSignedStatValue(val, state->stat_multiplier);
+                val = ScaleSignedStatValue(val, GetPassMultiplier(player, slot));
             }
 
             void OnPlayerApplyItemArmorBefore(Player* player, uint8 slot,
                 ItemTemplate const* proto, bool /*apply*/, uint32& amount,
                 bool /*isBonusArmor*/) override
             {
-                ItemUpgradeState* state = GetUpgradeStateForSlot(player, slot, proto);
-                if (!state)
+                if (!player || !GetEquippedItemForSlot(player, slot, proto))
                     return;
 
-                amount = ScaleUnsignedStatValue(amount, state->stat_multiplier);
+                amount = ScaleUnsignedStatValue(amount, GetPassMultiplier(player, slot));
             }
 
             void OnPlayerApplyItemBlockValueBefore(Player* player, uint8 slot,
                 ItemTemplate const* proto, bool /*apply*/, uint32& amount) override
             {
-                ItemUpgradeState* state = GetUpgradeStateForSlot(player, slot, proto);
-                if (!state)
+                if (!player || !GetEquippedItemForSlot(player, slot, proto))
                     return;
 
-                amount = ScaleUnsignedStatValue(amount, state->stat_multiplier);
+                amount = ScaleUnsignedStatValue(amount, GetPassMultiplier(player, slot));
             }
 
             void OnPlayerApplyItemResistanceBefore(Player* player, uint8 slot,
                 ItemTemplate const* proto, bool /*apply*/, uint8 /*school*/,
                 uint32& amount) override
             {
-                ItemUpgradeState* state = GetUpgradeStateForSlot(player, slot, proto);
-                if (!state)
+                if (!player || !GetEquippedItemForSlot(player, slot, proto))
                     return;
 
-                amount = ScaleUnsignedStatValue(amount, state->stat_multiplier);
+                amount = ScaleUnsignedStatValue(amount, GetPassMultiplier(player, slot));
             }
 
             void OnPlayerApplyWeaponDamage(Player* player, uint8 slot,
                 ItemTemplate const* proto, float& minDamage, float& maxDamage,
                 uint8 /*damageIndex*/) override
             {
+                // Not part of the symmetric bookkeeping above on purpose: the core only
+                // fires this when applying and then SETS the base weapon damage rather
+                // than adding to a running sum, so there is nothing to un-apply.
                 ItemUpgradeState* state = GetUpgradeStateForSlot(player, slot, proto);
                 if (!state)
                     return;
@@ -265,12 +421,13 @@ namespace DarkChaos
                 int32 /*dpsMod*/, ItemTemplate const* proto,
                 ScalingStatValuesEntry const* /*ssv*/) override
             {
-                ItemUpgradeState* state = GetUpgradeStateForTemplate(player, proto);
-                if (!state)
+                if (!player)
                     return;
 
+                // Fired from the tail of _ApplyItemBonuses, so it is part of the pass
+                // and the feral AP it feeds (ApplyFeralAPBonus) is a running sum too.
                 feral_bonus = ScaleSignedStatValue(feral_bonus,
-                    state->stat_multiplier);
+                    GetPassMultiplierForTemplate(player, proto));
             }
         };
 

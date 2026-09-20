@@ -22,6 +22,7 @@
 #include "StringFormat.h"
 #include "Config.h"
 #include "DC/Seasons/SeasonalSystem.h"
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -170,22 +171,25 @@ std::string StatScalingCalculator::GetStatBonusDisplay(uint8 upgrade_level, uint
 
 uint16 ItemLevelCalculator::GetItemLevelBonus(uint8 upgrade_level, uint8 tier_id)
 {
-    // Base ilvl bonus per level by tier
-    static const float tier_ilvl_per_level[] = {
-        1.0f,     // Tier 1: Common
-        1.0f,     // Tier 2: Uncommon
-        0.0f,     // Tier 3: Heirloom (item level scales with player level)
-        2.0f,     // Tier 4: Epic
-        2.5f      // Tier 5: Legendary
-    };
-
-    if (tier_id < 1 || tier_id > 5)
+    // Sum of dc_item_upgrade_costs.ilvl_increase, the one source of truth for
+    // upgraded item levels (UpgradeManagerImpl::GetIlvlIncrease).
+    //
+    // This used to be a third hard-coded copy of that data -- { 1, 1, 0, 2, 2.5 }
+    // per level for tiers 1-5, returning 0 for any other tier. It disagreed with
+    // the table for the Hyjal tiers (3 and 2 per level there) the same way the
+    // addon's copy did, so the item-info response, the `.upgrade` command and the
+    // tooltip could each report a different item level for the same item.
+    UpgradeManager* mgr = GetUpgradeManager();
+    if (!mgr)
         return 0;
 
-    float bonus_per_level = tier_ilvl_per_level[tier_id - 1];
-    float total_bonus = upgrade_level * bonus_per_level;
+    // uint32 counter on purpose: a uint8 one never exceeds upgrade_level == 255
+    // and would spin forever.
+    uint32 total_bonus = 0;
+    for (uint32 level = 1; level <= upgrade_level; ++level)
+        total_bonus += mgr->GetIlvlIncrease(tier_id, static_cast<uint8>(level));
 
-    return static_cast<uint16>(std::ceil(total_bonus));
+    return static_cast<uint16>(std::min<uint32>(total_bonus, 0xFFFFu));
 }
 
 uint16 ItemLevelCalculator::GetUpgradedItemLevel(uint16 base_ilvl, uint8 upgrade_level, uint8 tier_id)

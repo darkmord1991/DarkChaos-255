@@ -203,7 +203,7 @@ function SeasonPlugin:OnClick(button)
     elseif button == "RightButton" then
         local leaderboards = rawget(_G, "DCLeaderboards")
         if leaderboards and leaderboards.Show then
-            leaderboards:Show("seasonal")
+            leaderboards:Show("seasons")
         else
             DCInfoBar:Print("Leaderboards addon not loaded")
         end

@@ -349,11 +349,15 @@ public:
         LOG_INFO("scripts.dc", "Prestige: Player {} (GUID: {}) starting prestige {} -> {}",
             playerName, player->GetGUID().ToString(), currentPrestige, newPrestige);
 
+        // Head Start (prestige talent) restarts the character a few levels higher.
+        uint32 talentLevels = static_cast<uint32>(PrestigeAPI::GetTalentEffect(player, PrestigeAPI::PRESTIGE_EFFECT_RESET_LEVEL_BONUS));
+        uint32 newLevel = std::min(resetLevel + talentLevels, requireLevel - 1);
+
         // Remove old prestige buffs
         RemovePrestigeBuffs(player);
 
         // Reset level
-        player->SetLevel(resetLevel);
+        player->SetLevel(newLevel);
 
         // Clear player flags using helper function
         ClearPrestigePlayerFlags(player);
@@ -385,6 +389,9 @@ public:
 
         // Update prestige level
         SetPrestigeProgress(player, newPrestige, newTotalPoints);
+
+        // Every prestige level adds to the account-wide prestige talent pool
+        PrestigeAPI::OnPrestigeLevelChanged(player, currentPrestige, newPrestige);
 
         // Grant title
         GrantPrestigeTitle(player, newPrestige);
@@ -432,7 +439,7 @@ public:
             player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
 
         // Reset experience to 0 for new level
-        uint32 newXpForLevel = sObjectMgr->GetXPForLevel(resetLevel);
+        uint32 newXpForLevel = sObjectMgr->GetXPForLevel(newLevel);
         player->SetUInt32Value(PLAYER_XP, 0);
         player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
 
@@ -1173,7 +1180,11 @@ namespace PrestigeAPI
 
     void SetPrestigeLevel(Player* player, uint32 level)
     {
+        uint32 oldLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
         PrestigeSystem::instance()->SetPrestigeLevel(player, level);
+        PrestigeSystem::instance()->RemovePrestigeBuffs(player);
+        PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
+        OnPrestigeLevelChanged(player, oldLevel, level);
     }
 
     bool PerformPrestige(Player* player)

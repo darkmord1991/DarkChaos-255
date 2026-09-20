@@ -100,7 +100,7 @@ local function OpenAchievementView()
         return true
     end
 
-    return OpenLeaderboards("achieve", "achieve_progress")
+    return OpenLeaderboards("achieve", "achieve_points")
 end
 
 local function OpenGreatVaultView()

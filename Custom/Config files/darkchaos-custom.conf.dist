@@ -3654,6 +3654,57 @@ Prestige.Challenges.Speed.TimeLimit = 360000
 #
 Prestige.Challenges.Solo.Enable = 1
 
+# -----------------------------------------------------------------------------
+# Prestige Talents
+#   Points go into an account-wide pool from two sources: every prestige level on
+#   ANY character of the account, and "challenges" (achievements mapped to points
+#   in world.dc_prestige_talent_challenges, counted once per account). Each
+#   character spends that pool independently (spending on one character does not
+#   use points up for another), up to MaxSpentPoints. The account total, spent or
+#   not, also unlocks the reward track (world.dc_prestige_talent_rewards).
+#   Client: /ptalents (DC-Welcome). Commands: .prestige talents |
+#   .prestige talents learn <id> | .prestige talents reset
+# -----------------------------------------------------------------------------
+
+#
+#    Prestige.Talents.Enable
+#        Description: Enable prestige talents (Ascension / Fortune / Might trees)
+#        Default:     1 (Enabled)
+#
+Prestige.Talents.Enable = 1
+
+#
+#    Prestige.Talents.PointsPerPrestigeLevel
+#        Description: Talent points added to the account pool per prestige level
+#        Default:     1
+#
+Prestige.Talents.PointsPerPrestigeLevel = 1
+
+#
+#    Prestige.Talents.MaxSpentPoints
+#        Description: Most points a single character can spend (the pool can be
+#                     larger; the surplus lets players pick a different build per
+#                     character). The trees hold 46 ranks in total.
+#        Default:     20
+#                     0 - No cap
+#
+Prestige.Talents.MaxSpentPoints = 20
+
+#
+#    Prestige.Talents.ResetCost
+#        Description: Cost in copper to refund all prestige talents (out of combat)
+#        Default:     0 (Free)
+#
+Prestige.Talents.ResetCost = 0
+
+#
+#    Prestige.Talents.AffectPvP
+#        Description: Let the Might tree's damage done / damage taken talents apply
+#                     when both sides are player-controlled
+#        Default:     0 (PvE only)
+#
+Prestige.Talents.AffectPvP = 0
+
 
 ###############################################################################
 #
@@ -4849,6 +4900,12 @@ DC.GuildHouse.Decoration.GMBypass = 1
 #
 #  Unified leaderboard system aggregating data from all DC systems.
 #
+#  Each board is ranked in full once per cache lifetime; pages, "your rank"
+#  and the client's view options are served from that ranking.
+#  Achievements are ranked per ACCOUNT (they are shared account-wide).
+#  Playerbot accounts are the ones named AiPlayerbot.RandomBotAccountPrefix
+#  (playerbots.conf); their rows are hidden unless the client ticks "Show bots".
+#
 ###############################################################################
 
 #
@@ -4867,7 +4924,7 @@ DC.Leaderboards.AccountCacheLifetime = 120
 
 #
 #    DC.Leaderboards.MaxCacheEntries
-#        Description: Maximum leaderboards to keep cached
+#        Description: Cache size at which expired boards / run-history pages are evicted
 #        Default:     100
 #
 DC.Leaderboards.MaxCacheEntries = 100

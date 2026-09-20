@@ -260,6 +260,11 @@ namespace DarkChaos
             virtual uint32 GetEssenceCost(uint8 tier_id, uint8 upgrade_level) = 0;
             virtual uint8 GetPlayerHighestTier(uint32 player_guid) = 0;
             virtual uint8 GetTierMaxLevel(uint8 tier_id) = 0;
+            // Item levels gained by reaching `upgrade_level` from the level below it
+            // (dc_item_upgrade_costs.ilvl_increase). This is THE source for upgraded
+            // item levels; it is on the interface so the tier config sent to the
+            // addon can carry it instead of the addon keeping a table of its own.
+            virtual uint16 GetIlvlIncrease(uint8 tier_id, uint8 upgrade_level) = 0;
             virtual TierDefinition const* GetTierDefinition(uint8 tier_id) = 0;
 
             // Artifact functions

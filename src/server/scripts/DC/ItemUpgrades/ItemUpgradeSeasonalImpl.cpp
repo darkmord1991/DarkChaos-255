@@ -18,6 +18,7 @@
 #include "DatabaseEnv.h"
 #include "ItemUpgradeSeasonal.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeProcScaling.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "../Seasons/SeasonalSystem.h" // Include Seasonal System
 #include <sstream>
@@ -533,6 +534,12 @@ void AddSC_ItemUpgradeSeasonal()
         {
             // Trigger global reset logic if needed, simplify leaderboards
              DarkChaos::ItemUpgrade::GetLeaderboardManager()->UpdateLeaderboards(season_id);
+
+            // The season decides which tier an item level maps to, so the set of
+            // upgrade-eligible items -- and therefore which procs scale -- can
+            // change without any item data moving. Re-index instead of leaving the
+            // startup snapshot in place for the rest of the uptime.
+            DarkChaos::ItemUpgrade::RebuildProcSpellRegistry();
         }
     };
 

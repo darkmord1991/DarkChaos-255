@@ -1,26 +1,38 @@
 --[[
-    DC-Leaderboards - Unified Leaderboard Addon v1.4.0
+    DC-Leaderboards - Unified Leaderboard Addon v1.5.0
     DarkChaos Full-Screen Leaderboard System
-    
+
     Features:
     - Full-screen leaderboard display with category tabs
     - JSON protocol communication via DCAddonProtocol
     - Two settings tabs (General, Communication)
-    - 8+ leaderboard categories with multiple subcategories
+    - 9 leaderboard categories with multiple subcategories
     - Caching for performance
-    - Sorting and filtering options
+    - View options: show/hide playerbots, one entry per account
     - Dungeon filtering for Mythic+ leaderboards
-    
+
     Leaderboard Categories:
-    1. Mythic+ (Best Key, Best Time, Most Runs, Best Score) - with dungeon filter
-    2. Seasons (Tokens, Essence, Overall Points)
-    3. HLBG (Rating, Wins, Win Rate, Total Games)
-    4. Prestige (Prestige Level, Total Points)
-    5. Item Upgrades (Total Upgrades, Efficiency, Highest Tier)
-    6. Duels (Wins, Win Rate, Rating)
-    7. AOE Loot (Looted Items, Filtered Items, Gold) - with separate quality columns
-    8. Achievements (Points, Completions)
-    
+    1. Mythic+ (Best Key, Runs, Score, Best Runs, Run History) - with dungeon filter
+    2. Seasons (Tokens, Essence, Quests, Bosses)
+    3. HLBG (Rating, Wins, Win Rate, Games, Kills, All-Time Wins, Resources)
+    4. Prestige (Prestige Level, Prestige XP)
+    5. Artifact Mastery (Mastery Points, Artifacts Mastered, Best Artifact)
+    6. Item Upgrades (Tokens, Items, Essence, Highest Tier)
+    7. Duels (Wins, Win Rate, Total, Damage)
+    8. AOE Loot (Looted Items, Filtered Items, Gold) - with separate quality columns
+    9. Achievements (Points, Completed) - ranked per account
+
+    v1.5.0 Changes:
+    - Achievements rank ACCOUNTS (achievements are shared account-wide) from the
+      real achievement data, by Achievement.dbc points or completed count
+    - "Show bots" and "One per account" view toggles; playerbots are hidden by default
+    - Your rank works on every board (it used to exist for M+ Best Key only)
+    - Your own row, and your alts, are highlighted by the server, not by name
+    - Artifact Mastery reads the mastery points the upgrade system writes
+    - Prestige is its own category (prestige level / prestige XP)
+    - Duel win rate no longer shows 10x too high; duel damage shows the full value
+    - Info column is full width outside the AOE quality view; all 16 M+ dungeons selectable
+
     v1.4.0 Changes:
     - Changed AOE Loot quality display from combined "L/E/R/U" to separate columns
     - Each quality (Legendary, Epic, Rare, Uncommon) now has its own dedicated column
@@ -49,7 +61,7 @@
 ]]
 
 local ADDON_NAME = "DC-Leaderboards"
-local VERSION = "1.4.0"
+local VERSION = "1.5.0"
 
 local addonNameGlobal = ...
 if not addonNameGlobal or addonNameGlobal == "" then
@@ -143,13 +155,23 @@ LB.Categories = {
     },
     {
         id = "prestige",
-        name = "Artifact Mastery",
+        name = "Prestige",
         icon = "Interface\\Icons\\Achievement_Level_80",
         color = "a335ee",
         subcats = {
-            { id = "prestige_level", name = "Mastery Level" },
-            { id = "prestige_points", name = "Total Points" },
-            { id = "prestige_artifacts", name = "Artifacts Unlocked" },
+            { id = "prestige_level", name = "Prestige Level" },
+            { id = "prestige_points", name = "Prestige XP" },
+        }
+    },
+    {
+        id = "mastery",
+        name = "Artifact Mastery",
+        icon = "Interface\\Icons\\INV_Enchant_EssenceCosmicGreater",
+        color = "e6cc80",
+        subcats = {
+            { id = "mastery_points", name = "Mastery Points" },
+            { id = "mastery_artifacts", name = "Artifacts Mastered" },
+            { id = "mastery_best", name = "Best Artifact" },
         }
     },
     {
@@ -192,9 +214,11 @@ LB.Categories = {
         name = "Achievements",
         icon = "Interface\\Icons\\Achievement_Quests_Completed_08",
         color = "ffff00",
+        -- Achievements are shared account-wide, so the server ranks accounts.
+        accountScoped = true,
         subcats = {
-            { id = "achieve_completed", name = "Achievements Completed" },
-            { id = "achieve_progress", name = "Total Progress" },
+            { id = "achieve_points", name = "Achievement Points" },
+            { id = "achieve_completed", name = "Completed" },
         }
     },
     {
@@ -208,6 +232,62 @@ LB.Categories = {
         }
     },
 }
+
+-- Ids other addons (and older builds of this one) still pass in.
+LB.CategoryAliases = {
+    seasonal = "seasons",
+    season = "seasons",
+    achievement = "achieve",
+    achievements = "achieve",
+    artifact = "mastery",
+}
+
+LB.SubcategoryAliases = {
+    achieve_progress = "achieve_points",
+    prestige_resets = "prestige_level",
+}
+
+-- Score / Info column headers per subcategory.
+LB.ColumnLabels = {
+    mplus_key = { "Key Level", "Runs" },
+    mplus_runs = { "Runs", "Best Key" },
+    mplus_score = { "Score", "Runs" },
+    mplus_bestruns = { "Key Level", "Dungeon" },
+    mplus_history = { "Key Level", "Run Details" },
+    season_tokens = { "Tokens", "Quests" },
+    season_essence = { "Essence", "Quests" },
+    season_quests = { "Quests", "Tokens" },
+    season_bosses = { "Bosses", "Tokens" },
+    hlbg_rating = { "Rating", "Win/Loss" },
+    hlbg_wins = { "Wins", "Total Games" },
+    hlbg_winrate = { "Win Rate", "W/L" },
+    hlbg_games = { "Games", "W/L" },
+    hlbg_kills = { "Kills", "K/D Ratio" },
+    hlbg_alltime_wins = { "All-Time Wins", "K/D Ratio" },
+    hlbg_resources = { "Resources", "K/D Ratio" },
+    prestige_level = { "Prestige", "Prestige XP" },
+    prestige_points = { "Prestige XP", "Prestige" },
+    mastery_points = { "Points", "Artifacts" },
+    mastery_artifacts = { "Artifacts", "Points" },
+    mastery_best = { "Mastery", "Best Artifact" },
+    upgrade_tokens = { "Tokens", "Items" },
+    upgrade_items = { "Items", "Tokens Spent" },
+    upgrade_essence = { "Essence", "Items" },
+    upgrade_tier = { "Tier", "Items" },
+    duel_wins = { "Wins", "Losses" },
+    duel_winrate = { "Win Rate", "Duels" },
+    duel_total = { "Duels", "W/L/D" },
+    duel_damage = { "Damage", "Wins" },
+    aoe_items = { "Items", "Common / Poor" },
+    aoe_filtered = { "Filtered", "Common / Poor" },
+    aoe_gold = { "Gold", "Items Looted" },
+    achieve_points = { "Points", "Details" },
+    achieve_completed = { "Completed", "Details" },
+}
+
+-- Info column width: full width, or narrow while the AOE quality columns show.
+local EXTRA_WIDTH_FULL = 185
+local EXTRA_WIDTH_AOE = 68
 
 -- Default settings
 LB.DefaultSettings = {
@@ -233,6 +313,10 @@ LB.DefaultSettings = {
     -- Testing/Debug settings
     selectedSeasonId = 0,  -- 0 = current season
     mplusHistoryMyRunsOnly = true,
+
+    -- View options (sent with every request)
+    showBots = false,      -- include playerbot characters
+    perAccount = false,    -- one entry per account (its best character)
     
     -- UI position (saved when frame is dragged)
     framePosition = nil,
@@ -254,9 +338,12 @@ LB.SelectedDungeonMapId = 0  -- 0 = "All Dungeons"
 -- =====================================================================
 
 LB.Cache = {
-    data = {},          -- Cached leaderboard data by category_subcat key
+    data = {},          -- Cached leaderboard data by cache key (see GetCacheKey)
     timestamps = {},    -- When each cache was last updated
-    myRanks = {},       -- Player's own rank in each category
+    meta = {},          -- Paging info per cache key: page, totalPages, totalEntries, accountScoped
+    requested = {},     -- Cache key -> time a leaderboard request went out (cleared on reply)
+    myRanks = {},       -- Player's own rank per cache key
+    myRankPending = {}, -- Cache key -> time a my-rank request went out
     playerRank = nil,   -- Player's overall rank info
     accountStats = nil, -- v1.5.0: Account-wide statistics
 }
@@ -343,6 +430,32 @@ local function FormatNumber(num)
     return tostring(num)
 end
 
+-- 12345 -> "12,345"
+local function FormatInteger(num)
+    local digits = tostring(math.floor(tonumber(num) or 0))
+    local grouped = digits:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    return (grouped:gsub("^,", ""))
+end
+
+-- Score column: exact below a million (1,523 and 1,549 must not both read
+-- "1.5K" on a ranking), abbreviated above.
+local function FormatScore(num)
+    num = tonumber(num) or 0
+    if num >= 1000000 then
+        return string.format("%.2fM", num / 1000000)
+    end
+    return FormatInteger(num)
+end
+
+-- Values that can outgrow uint32 (gold, damage) arrive in score_str.
+local function ReadScore(entry)
+    if type(entry) ~= "table" then return 0 end
+    if entry.score_str and entry.score_str ~= "" then
+        return tonumber(entry.score_str) or 0
+    end
+    return tonumber(entry.score or entry.value) or 0
+end
+
 -- Format copper value to gold/silver/copper string
 local function FormatMoney(copper)
     if not copper then return "0g" end
@@ -378,6 +491,20 @@ local function FormatPercent(value)
     return string.format("%.1f%%", value)
 end
 
+-- One board's score for display.
+local function FormatBoardScore(subcategory, value)
+    value = tonumber(value) or 0
+    subcategory = subcategory or ""
+    if subcategory:find("_winrate") then
+        -- Win rates (HLBG and duels) arrive x10 for one decimal of precision
+        return FormatPercent(value / 10)
+    elseif subcategory == "aoe_gold" then
+        -- v1.3.0: Gold arrives as copper in score_str to avoid uint32 truncation
+        return FormatMoney(value)
+    end
+    return FormatScore(value)
+end
+
 local CLASS_COLORS = {
     WARRIOR = "C79C6E",
     PALADIN = "F58CBA",
@@ -399,12 +526,117 @@ function LB:GetHistoryMyRunsOnly()
     return self:GetSetting("mplusHistoryMyRunsOnly") ~= false
 end
 
-function LB:GetCacheKey(category, subcategory)
+-- The view options every request carries; replies echo them back.
+function LB:GetViewFlags()
+    return {
+        includeBots = self:GetSetting("showBots") == true,
+        perAccount = self:GetSetting("perAccount") == true,
+        myRunsOnly = self:GetHistoryMyRunsOnly(),
+    }
+end
+
+-- The view a reply was built for. A server that does not echo the flags
+-- gets the current settings.
+function LB:ReadEchoedView(data)
+    if type(data) ~= "table" or data.includeBots == nil then
+        return self:GetViewFlags()
+    end
+    local view = {
+        includeBots = data.includeBots == true,
+        perAccount = data.perAccount == true,
+        myRunsOnly = data.myRunsOnly == true,
+    }
+    if data.myRunsOnly == nil then
+        view.myRunsOnly = self:GetHistoryMyRunsOnly()
+    end
+    return view
+end
+
+function LB:GetCacheKey(category, subcategory, view)
+    view = view or self:GetViewFlags()
     local key = (category or "unknown") .. "_" .. (subcategory or "unknown")
     if category == "mplus" and subcategory == "mplus_history" then
-        key = key .. (self:GetHistoryMyRunsOnly() and "_self" or "_all")
+        key = key .. (view.myRunsOnly and "_self" or "_all")
+    end
+    if view.includeBots then
+        key = key .. "_bots"
+    end
+    if view.perAccount then
+        key = key .. "_acct"
     end
     return key
+end
+
+function LB:GetCurrentCacheKey()
+    return self:GetCacheKey(self.currentCategory or "mplus", self.currentSubCategory or "mplus_key")
+end
+
+function LB:ClearCache()
+    self.Cache.data = {}
+    self.Cache.timestamps = {}
+    self.Cache.meta = {}
+    self.Cache.requested = {}
+    self.Cache.myRanks = {}
+    self.Cache.myRankPending = {}
+    self.Cache.accountStats = nil
+end
+
+function LB:GetCategory(categoryId)
+    for _, cat in ipairs(self.Categories) do
+        if cat.id == categoryId then
+            return cat
+        end
+    end
+    return nil
+end
+
+function LB:ResolveCategoryId(categoryId)
+    categoryId = self.CategoryAliases[categoryId] or categoryId
+    if self:GetCategory(categoryId) then
+        return categoryId
+    end
+    return nil
+end
+
+-- Maps a subcategory onto one the category offers: legacy ids to their
+-- replacement, anything unknown to the category's first tab.
+function LB:ResolveSubcategoryId(categoryId, subcategoryId)
+    local category = self:GetCategory(categoryId)
+    if not category then return subcategoryId end
+
+    subcategoryId = self.SubcategoryAliases[subcategoryId] or subcategoryId
+    if categoryId == "mplus" and type(subcategoryId) == "string" and subcategoryId:find("^mplus_dungeon_%d+$") then
+        return subcategoryId
+    end
+    for _, sub in ipairs(category.subcats) do
+        if sub.id == subcategoryId then
+            return subcategoryId
+        end
+    end
+    return category.subcats[1] and category.subcats[1].id
+end
+
+function LB:FindCategoryForSubcategory(subcategoryId)
+    subcategoryId = self.SubcategoryAliases[subcategoryId] or subcategoryId
+    for _, cat in ipairs(self.Categories) do
+        for _, sub in ipairs(cat.subcats) do
+            if sub.id == subcategoryId then
+                return cat.id
+            end
+        end
+    end
+    return nil
+end
+
+-- "One per account" means nothing on boards that already rank accounts or
+-- on the run history (a log). On the statistics page it applies to the
+-- Character Overview ranks.
+function LB:ViewSupportsPerAccount()
+    local category = self:GetCategory(self.currentCategory)
+    if not category or category.accountScoped then
+        return false
+    end
+    return not (self.currentCategory == "mplus" and self.currentSubCategory == "mplus_history")
 end
 
 -- =====================================================================
@@ -430,6 +662,7 @@ function LB:RequestLeaderboard(category, subcategory, page, limit)
     self._pendingNativeTokens = self._pendingNativeTokens or {}
     self._pendingNativeTokens.leaderboard = requestToken
 
+    local view = self:GetViewFlags()
     local request = {
         category = category,
         subcategory = subcategory,
@@ -437,11 +670,14 @@ function LB:RequestLeaderboard(category, subcategory, page, limit)
         limit = limit,
         seasonId = seasonId,
         requestToken = requestToken,
+        includeBots = view.includeBots,
+        perAccount = view.perAccount,
     }
 
     if category == "mplus" and subcategory == "mplus_history" then
-        request.myRunsOnly = self:GetHistoryMyRunsOnly()
+        request.myRunsOnly = view.myRunsOnly
     end
+    self.Cache.requested[self:GetCacheKey(category, subcategory, view)] = time()
     
     -- For HLBG category, translate subcategory to leaderboard type
     if category == "hlbg" then
@@ -469,10 +705,16 @@ end
 
 function LB:RequestMyRank(category, subcategory)
     if not DC then return false end
-    
+
+    local view = self:GetViewFlags()
+    self.Cache.myRankPending[self:GetCacheKey(category, subcategory, view)] = time()
+
     DC:Request(self.MODULE, self.Opcode.CMSG_GET_MY_RANK, {
         category = category,
         subcategory = subcategory,
+        seasonId = self:GetSetting("selectedSeasonId") or 0,
+        includeBots = view.includeBots,
+        perAccount = view.perAccount,
     })
     return true
 end
@@ -525,18 +767,20 @@ end
 
 function LB:ForceRefresh()
     if not DC then return false end
-    
+
     -- Clear cache
-    self.Cache.data = {}
-    self.Cache.timestamps = {}
-    
+    self:ClearCache()
+
+    -- Asks the server to rebuild its shared caches (it throttles this).
     DC:Request(self.MODULE, self.Opcode.CMSG_REFRESH, {})
-    
+
     -- Re-request current view
     if self.Frames.main and self.Frames.main:IsShown() then
-        local cat = self.currentCategory or "mplus"
-        local subcat = self.currentSubCategory or "mplus_key"
-        self:RequestLeaderboard(cat, subcat)
+        if self.currentCategory == "statistics" then
+            self:UpdateStatisticsDisplay()
+        else
+            self:ReloadCurrentView()
+        end
     end
     
     if self:GetSetting("soundOnRefresh") then
@@ -917,24 +1161,40 @@ function LB:OnLeaderboardData(data)
         end
     end
     
-    if type(data) ~= "table" then 
+    if type(data) ~= "table" then
         Print("Warning: Received non-table leaderboard data")
-        return 
+        return
     end
-    
+
+    -- The server acknowledges CMSG_REFRESH on this opcode; it carries no board.
+    if data.refreshed then
+        return
+    end
+
     local category = data.category or "unknown"
     local subcategory = data.subcategory or "unknown"
-    local key = self:GetCacheKey(category, subcategory)
-    
+    local key = self:GetCacheKey(category, subcategory, self:ReadEchoedView(data))
+
     -- Store in cache
     self.Cache.data[key] = data.entries or {}
     self.Cache.timestamps[key] = time()
-    
+    self.Cache.requested[key] = nil
+
     -- Store pagination info
-    self.Cache.totalEntries = data.totalEntries or #(data.entries or {})
-    self.Cache.currentPage = data.page or 1
-    self.Cache.totalPages = data.totalPages or 1
-    
+    self.Cache.meta[key] = {
+        totalEntries = tonumber(data.totalEntries) or #(data.entries or {}),
+        page = tonumber(data.page) or 1,
+        totalPages = tonumber(data.totalPages) or 1,
+        accountScoped = data.accountScoped == true,
+        -- v1.5 servers echo the view and flag the requester's rows (self/alt)
+        echoesView = data.includeBots ~= nil,
+    }
+
+    -- Each page also carries the requester's own rank on that board.
+    if data.myRank ~= nil then
+        self:StoreMyRank(key, data.myRank, data.totalEntries, data.myScore, data.myScoreStr, data.accountScoped)
+    end
+
     -- Debug log successful receive
     Print("Received " .. #(data.entries or {}) .. " entries for " .. key)
     
@@ -964,22 +1224,47 @@ function LB:OnCategoriesData(data)
     end
 end
 
+-- rank 0 means "not on this board".
+function LB:StoreMyRank(key, rank, total, score, scoreStr, accountScoped)
+    rank = tonumber(rank) or 0
+    total = tonumber(total) or 0
+
+    local percentile
+    if rank > 0 and total > 0 then
+        percentile = rank / total * 100
+    end
+
+    local value = tonumber(score)
+    if scoreStr and scoreStr ~= "" then
+        value = tonumber(scoreStr) or value
+    end
+
+    self.Cache.myRanks[key] = {
+        rank = rank,
+        total = total,
+        percentile = percentile,
+        score = value,
+        accountScoped = accountScoped == true,
+    }
+    self.Cache.myRankPending[key] = nil
+end
+
 function LB:OnMyRankData(data)
     if type(data) ~= "table" then return end
-    
+
     local category = data.category or "unknown"
     local subcategory = data.subcategory or "unknown"
-    local key = self:GetCacheKey(category, subcategory)
-    
-    self.Cache.myRanks[key] = {
-        rank = data.rank,
-        score = data.score,
-        percentile = data.percentile,
-    }
-    
+    local key = self:GetCacheKey(category, subcategory, self:ReadEchoedView(data))
+
+    self:StoreMyRank(key, data.rank, data.total, data.score, data.score_str, data.accountScoped)
+
     -- Update UI
     if self.Frames.main and self.Frames.main:IsShown() then
-        self:UpdatePlayerRankDisplay()
+        if self.currentCategory == "statistics" then
+            self:ScheduleStatisticsRefresh()
+        else
+            self:UpdatePlayerRankDisplay()
+        end
     end
 end
 
@@ -1087,7 +1372,10 @@ function LB:CreateMainFrame()
     
     -- Create season selector (bottom left)
     self:CreateSeasonSelector(frame)
-    
+
+    -- View options (above the season selector)
+    self:CreateViewToggles(frame)
+
     -- v1.3.0: Create dungeon selector (bottom right, for M+ category)
     self:CreateDungeonSelector(frame)
 
@@ -1224,6 +1512,7 @@ function LB:CreateContentArea(parent)
     local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     nameHeader:SetPoint("LEFT", 50, 0)
     nameHeader:SetText("|cffffd700Player|r")
+    self.Frames.nameHeader = nameHeader
     
     -- Score header (will be updated based on subcategory)
     local scoreHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1380,10 +1669,91 @@ function LB:CreateSeasonSelector(parent)
     })
     
     self.Frames.seasonDropdown = dropdown
-    
+
     -- Request seasons on load
     if DC then
         self:RequestSeasons()
+    end
+end
+
+-- =====================================================================
+-- VIEW OPTIONS (Bottom Left, above the season selector)
+-- =====================================================================
+
+function LB:CreateViewToggles(parent)
+    local box = CreateFrame("Frame", nil, parent)
+    box:SetSize(150, 58)
+    box:SetPoint("BOTTOMLEFT", 15, 80)
+    self.Frames.viewToggles = box
+
+    local bg = box:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(0.1, 0.1, 0.1, 0.7)
+
+    local function MakeToggle(name, label, setting, yOffset, tooltip)
+        local toggle = CreateFrame("CheckButton", name, box, "InterfaceOptionsCheckButtonTemplate")
+        toggle:SetPoint("TOPLEFT", 2, yOffset)
+        toggle:SetChecked(LB:GetSetting(setting) == true)
+
+        local text = _G[name .. "Text"]
+        if text then
+            text:SetText(label)
+        end
+
+        toggle:SetScript("OnClick", function(btn)
+            LB:SetSetting(setting, btn:GetChecked() and true or false)
+            LB:OnViewChanged()
+        end)
+        toggle:SetScript("OnEnter", function(btn)
+            GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+            GameTooltip:SetText(label, 1, 1, 1)
+            GameTooltip:AddLine(tooltip, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        toggle:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+
+        return toggle
+    end
+
+    self.Frames.showBotsToggle = MakeToggle("DCLeaderboardsShowBots", "Show bots", "showBots", -3,
+        "Include playerbot characters. They are listed as BOT <name>.")
+    self.Frames.perAccountToggle = MakeToggle("DCLeaderboardsPerAccount", "One per account", "perAccount", -29,
+        "List each account once, with its best character. Achievements are always ranked per account.")
+end
+
+function LB:UpdateViewToggles()
+    if self.Frames.showBotsToggle then
+        self.Frames.showBotsToggle:SetChecked(self:GetSetting("showBots") == true)
+    end
+
+    local toggle = self.Frames.perAccountToggle
+    if not toggle then return end
+
+    local category = self:GetCategory(self.currentCategory)
+    if category and category.accountScoped then
+        -- Shown ticked but locked: this board always ranks accounts.
+        toggle:SetChecked(true)
+        toggle:Disable()
+    elseif self:ViewSupportsPerAccount() then
+        toggle:SetChecked(self:GetSetting("perAccount") == true)
+        toggle:Enable()
+    else
+        toggle:SetChecked(self:GetSetting("perAccount") == true)
+        toggle:Disable()
+    end
+end
+
+-- A view toggle changed: cache keys include the view, so switching back and
+-- forth reuses what was already fetched.
+function LB:OnViewChanged()
+    self:UpdateViewToggles()
+
+    if self.currentCategory == "statistics" then
+        self:UpdateStatisticsDisplay()
+    elseif self.currentSubCategory then
+        self:SelectSubCategory(self.currentSubCategory)
     end
 end
 
@@ -1473,15 +1843,17 @@ function LB:CreateHistorySelector(parent)
     toggle:SetScript("OnClick", function(btn)
         LB:SetSetting("mplusHistoryMyRunsOnly", btn:GetChecked() and true or false)
 
-        -- Clear history cache for both filter states to avoid stale list swaps.
-        LB.Cache.data["mplus_mplus_history_self"] = nil
-        LB.Cache.timestamps["mplus_mplus_history_self"] = nil
-        LB.Cache.data["mplus_mplus_history_all"] = nil
-        LB.Cache.timestamps["mplus_mplus_history_all"] = nil
+        -- Clear every cached history page (all filter/view states) to avoid stale list swaps.
+        for key in pairs(LB.Cache.data) do
+            if key:find("^mplus_mplus_history") then
+                LB.Cache.data[key] = nil
+                LB.Cache.timestamps[key] = nil
+                LB.Cache.meta[key] = nil
+            end
+        end
 
         if LB.currentCategory == "mplus" and LB.currentSubCategory == "mplus_history" then
-            LB:RequestLeaderboard("mplus", "mplus_history", 1)
-            LB:RequestMyRank("mplus", "mplus_history")
+            LB:ReloadCurrentView()
         end
     end)
 
@@ -1525,7 +1897,7 @@ function LB:UpdateDungeonDropdownItems()
     
     local yOffset = -5
     local itemHeight = 18
-    local maxVisible = 12  -- Limit height
+    local maxVisible = 20  -- Limit height (a season features 16 dungeons)
     
     for i, dungeon in ipairs(dungeons) do
         if i > maxVisible + 1 then break end  -- +1 for "All Dungeons"
@@ -1582,18 +1954,14 @@ function LB:SelectDungeon(mapId, dungeonName)
     end
     
     Print("Dungeon filter: " .. (dungeonName or ("Map " .. mapId)))
-    
-    -- If a specific dungeon is selected, switch to per-dungeon subcategory
+
+    -- A specific dungeon has its own board; "All Dungeons" returns to Best Key.
+    -- Boards are cached per dungeon, so this needs no server-side flush.
     if mapId > 0 then
-        -- Change to dungeon-specific subcategory
-        self.currentSubCategory = "mplus_dungeon_" .. mapId
+        self:SelectSubCategory("mplus_dungeon_" .. mapId)
     else
-        -- Reset to default M+ subcategory
-        self.currentSubCategory = "mplus_key"
+        self:SelectSubCategory("mplus_key")
     end
-    
-    -- Refresh leaderboard with new filter
-    self:ForceRefresh()
 end
 
 -- Show/hide dungeon selector based on category
@@ -1718,9 +2086,15 @@ function LB:SelectSeason(seasonId, seasonName)
     end
     
     Print("Season changed to: " .. (seasonName or ("Season " .. seasonId)))
-    
-    -- Refresh leaderboard with new season
-    self:ForceRefresh()
+
+    -- Refresh leaderboard with new season. The server keeps its boards per
+    -- season, so this needs no server-side flush.
+    self:ClearCache()
+    if self.currentCategory == "statistics" then
+        self:UpdateStatisticsDisplay()
+    else
+        self:ReloadCurrentView()
+    end
 end
 
 -- =====================================================================
@@ -1795,11 +2169,8 @@ function LB:UpdateSubCategoryTabs()
         self.subCategoryButtons[subcat.id] = btn
         xOffset = xOffset + btnWidth + 5
     end
-    
-    -- Select first subcategory by default
-    if category.subcats[1] and not self.currentSubCategory then
-        self:SelectSubCategory(category.subcats[1].id)
-    end
+    -- The first tab is selected by SelectCategory; selecting it here as well
+    -- sent every category's first request twice.
 end
 
 -- =====================================================================
@@ -1807,6 +2178,7 @@ end
 -- =====================================================================
 
 function LB:SelectCategory(categoryId)
+    categoryId = self:ResolveCategoryId(categoryId) or "mplus"
     self.currentCategory = categoryId
     self.currentSubCategory = nil
     self.currentPage = 1
@@ -1831,19 +2203,38 @@ function LB:SelectCategory(categoryId)
     
     -- Update subcategory tabs
     self:UpdateSubCategoryTabs()
-    
+
     -- Find first subcategory and select it
-    for _, cat in ipairs(self.Categories) do
-        if cat.id == categoryId and cat.subcats[1] then
-            self:SelectSubCategory(cat.subcats[1].id)
-            break
-        end
+    local category = self:GetCategory(categoryId)
+    if category and category.subcats[1] then
+        self:SelectSubCategory(category.subcats[1].id)
     end
 end
 
 function LB:SelectSubCategory(subcategoryId)
+    -- Deep links (DC-Welcome, InfoBar) may name a subcategory of another
+    -- category, or none selected yet: switch to the category that owns it.
+    local owner = self:FindCategoryForSubcategory(subcategoryId)
+    if owner and owner ~= self.currentCategory then
+        self:SelectCategory(owner)
+        if self.currentSubCategory == self:ResolveSubcategoryId(owner, subcategoryId) then
+            return  -- SelectCategory already opened it
+        end
+    elseif not self.currentCategory then
+        self:SelectCategory("mplus")
+    end
+
+    subcategoryId = self:ResolveSubcategoryId(self.currentCategory, subcategoryId)
     self.currentSubCategory = subcategoryId
     self.currentPage = 1
+
+    -- A regular tab is not a dungeon board: the dungeon filter reads "All Dungeons" again.
+    if (self.SelectedDungeonMapId or 0) ~= 0 and not tostring(subcategoryId):find("^mplus_dungeon_") then
+        self.SelectedDungeonMapId = 0
+        if self.Frames.dungeonText then
+            self.Frames.dungeonText:SetText("|cff00ff00All Dungeons|r")
+        end
+    end
     
     -- Update button highlights
     for id, btn in pairs(self.subCategoryButtons or {}) do
@@ -1853,7 +2244,9 @@ function LB:SelectSubCategory(subcategoryId)
             btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
         end
     end
-    
+
+    self:UpdateViewToggles()
+
     -- Check if we're in statistics mode
     if self.currentCategory == "statistics" then
         if self.Frames.scrollChild then self.Frames.scrollChild:GetParent():Hide() end
@@ -1874,88 +2267,69 @@ function LB:SelectSubCategory(subcategoryId)
     -- Update header text
     self:UpdateHeaderText()
     self:UpdateDungeonSelectorVisibility()
-    
+
     -- Check cache
     local key = self:GetCacheKey(self.currentCategory, subcategoryId)
     local cacheTime = self.Cache.timestamps[key]
     local cacheLifetime = self:GetSetting("cacheLifetime") or 30
-    
+
     if cacheTime and (time() - cacheTime) < cacheLifetime then
         -- Use cached data
         self:UpdateLeaderboardDisplay()
-    else
-        -- Request fresh data
+        return
+    end
+
+    -- Request fresh data. The reply also carries the player's own rank.
+    if not self:IsRequestPending(key) then
         self:RequestLeaderboard(self.currentCategory, subcategoryId, 1)
     end
-    
-    -- Also request player's rank
-    self:RequestMyRank(self.currentCategory, subcategoryId)
+    -- Until it lands, show this board's loading state, not the previous board's rows.
+    self:UpdateLeaderboardDisplay()
+end
+
+-- Requests page 1 of the current board again, bypassing the local cache.
+function LB:ReloadCurrentView()
+    if not self.currentCategory or not self.currentSubCategory or self.currentCategory == "statistics" then
+        return
+    end
+
+    self.currentPage = 1
+    self:UpdateHeaderText()
+    self:UpdateDungeonSelectorVisibility()
+    self:UpdateViewToggles()
+    self:RequestLeaderboard(self.currentCategory, self.currentSubCategory, 1)
+    self:UpdateLeaderboardDisplay()
+end
+
+-- A leaderboard request for this key went out a moment ago and has not been answered.
+function LB:IsRequestPending(key)
+    local sentAt = self.Cache.requested and self.Cache.requested[key]
+    return sentAt ~= nil and (time() - sentAt) < 5
 end
 
 function LB:UpdateHeaderText()
     local subcat = self.currentSubCategory or ""
     local header = self.Frames.scoreHeader
     local extra = self.Frames.extraHeader
-    
+
     if not header then return end
-    
-    -- Update score header based on subcategory
-    if subcat:find("_time") then
-        header:SetText("|cffffd700Time|r")
-        extra:SetText("|cffffd700Dungeon|r")
-    elseif subcat == "hlbg_rating" then
-        header:SetText("|cffffd700Rating|r")
-        extra:SetText("|cffffd700Win/Loss|r")
-    elseif subcat == "hlbg_wins" then
-        header:SetText("|cffffd700Wins|r")
-        extra:SetText("|cffffd700Total Games|r")
-    elseif subcat == "hlbg_winrate" then
-        header:SetText("|cffffd700Win Rate|r")
-        extra:SetText("|cffffd700W/L|r")
-    elseif subcat == "hlbg_games" then
-        header:SetText("|cffffd700Games|r")
-        extra:SetText("|cffffd700W/L|r")
-    elseif subcat == "hlbg_kills" then
-        header:SetText("|cffffd700Kills|r")
-        extra:SetText("|cffffd700K/D Ratio|r")
-    elseif subcat == "hlbg_alltime_wins" then
-        header:SetText("|cffffd700All-Time Wins|r")
-        extra:SetText("|cffffd700K/D Ratio|r")
-    elseif subcat == "hlbg_resources" then
-        header:SetText("|cffffd700Resources|r")
-        extra:SetText("|cffffd700K/D Ratio|r")
-    elseif subcat:find("_rating") then
-        header:SetText("|cffffd700Rating|r")
-        extra:SetText("|cffffd700Win/Loss|r")
-    elseif subcat:find("_winrate") then
-        header:SetText("|cffffd700Win Rate|r")
-        extra:SetText("|cffffd700Games|r")
-    elseif subcat == "aoe_gold" then
-        header:SetText("|cffffd700Gold|r")
-        extra:SetText("|cffffd700Items Looted|r")
-    elseif subcat == "aoe_items" then
-        header:SetText("|cffffd700Items|r")
-        extra:SetText("|cffffd700Quality Breakdown|r")
-    elseif subcat == "aoe_filtered" then
-        header:SetText("|cffffd700Filtered|r")
-        extra:SetText("|cffffd700Quality Breakdown|r")
-    elseif subcat == "mplus_bestruns" then
-        -- v1.3.0: Best runs with dungeon names
-        header:SetText("|cffffd700Key Level|r")
-        extra:SetText("|cffffd700Dungeon|r")
-    elseif subcat == "mplus_history" then
-        header:SetText("|cffffd700Key Level|r")
-        extra:SetText("|cffffd700Run Details|r")
-    elseif subcat:find("mplus_dungeon_") then
+
+    local labels = self.ColumnLabels[subcat]
+    if not labels and subcat:find("^mplus_dungeon_") then
         -- v1.3.0: Per-dungeon view
-        header:SetText("|cffffd700Key Level|r")
-        extra:SetText("|cffffd700Dungeon (Runs)|r")
-    elseif subcat:find("_level") or subcat:find("_key") then
-        header:SetText("|cffffd700Level|r")
-        extra:SetText("|cffffd700Details|r")
-    else
-        header:SetText("|cffffd700Score|r")
-        extra:SetText("|cffffd700Info|r")
+        labels = { "Key Level", "Dungeon (Runs)" }
+    end
+    labels = labels or { "Score", "Info" }
+
+    header:SetText("|cffffd700" .. labels[1] .. "|r")
+    extra:SetText("|cffffd700" .. labels[2] .. "|r")
+
+    -- Account boards list each account under its most played character.
+    if self.Frames.nameHeader then
+        local category = self:GetCategory(self.currentCategory)
+        local accounts = (category and category.accountScoped)
+            or (self:GetSetting("perAccount") == true and self:ViewSupportsPerAccount())
+        self.Frames.nameHeader:SetText(accounts and "|cffffd700Account (main)|r" or "|cffffd700Player|r")
     end
 end
 
@@ -2006,10 +2380,11 @@ function LB:GetOrCreateEntry(index)
     entry.class:SetWidth(70)
     entry.class:SetJustifyH("LEFT")
     
-    -- Extra info
+    -- Extra info (width is set per board: narrow only while the AOE quality columns show)
     entry.extra = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     entry.extra:SetPoint("LEFT", 470, 0)
-    entry.extra:SetWidth(60)
+    entry.extra:SetWidth(EXTRA_WIDTH_FULL)
+    entry.extra:SetHeight(16)  -- one line; longer text is cut instead of spilling into the next row
     entry.extra:SetJustifyH("LEFT")
     
     -- Quality breakdown columns (for AOE Loot) - separate columns
@@ -2046,12 +2421,14 @@ function LB:GetOrCreateEntry(index)
 end
 
 function LB:UpdateLeaderboardDisplay()
-    local key = self:GetCacheKey(self.currentCategory or "mplus", self.currentSubCategory or "mplus_key")
+    local key = self:GetCurrentCacheKey()
     local data = self.Cache.data[key] or {}
-    
+    local meta = self.Cache.meta[key] or {}
+    local subcat = self.currentSubCategory or ""
+
     -- Debug output - always show what we're displaying
     Print("Displaying: " .. #data .. " entries for " .. key)
-    
+
     -- Debug: List cache contents
     if self:GetSetting("verboseLogging") then
         Print("Cache keys:")
@@ -2059,13 +2436,13 @@ function LB:UpdateLeaderboardDisplay()
             Print("  " .. cacheKey .. ": " .. #cacheData .. " entries")
         end
     end
-    
+
     -- Hide all existing entries first
-    for i, entry in pairs(self.entryPool) do
+    for _, entry in pairs(self.entryPool) do
         entry:Hide()
     end
-    
-    -- If no data, show a message
+
+    -- If no data, show a message (or that the board is still on its way)
     if #data == 0 then
         local scrollChild = self.Frames.scrollChild
         if scrollChild then
@@ -2074,35 +2451,44 @@ function LB:UpdateLeaderboardDisplay()
                 self.noDataText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
                 self.noDataText:SetPoint("CENTER", scrollChild, "CENTER", 0, 100)
             end
-            self.noDataText:SetText("|cff888888No leaderboard data available.\n\nThis could mean:\n- No players have data for this category yet\n- The server needs to track more activity\n- Try a different category|r")
+            if self.Cache.timestamps[key] then
+                self.noDataText:SetText("|cff888888No leaderboard data available.\n\nThis could mean:\n- No players have data for this category yet\n- The server needs to track more activity\n- Try a different category|r")
+            else
+                self.noDataText:SetText("|cff888888Loading...|r")
+            end
             self.noDataText:Show()
         end
-    else
-        if self.noDataText then
-            self.noDataText:Hide()
-        end
+    elseif self.noDataText then
+        self.noDataText:Hide()
     end
-    
-    -- Get player name for highlighting
+
+    -- AOE item views add L/E/R/U columns; the info column narrows to make room.
+    local isAOEItems = (self.currentCategory == "aoe" and (subcat == "aoe_items" or subcat == "aoe_filtered"))
+    local extraWidth = isAOEItems and EXTRA_WIDTH_AOE or EXTRA_WIDTH_FULL
+
+    -- Get player name for highlighting (only needed for a server that does not flag rows)
     local playerName = UnitName("player")
+    local serverFlagsRows = meta.echoesView == true
     local highlightSelf = self:GetSetting("highlightSelf")
     local showClassColors = self:GetSetting("showClassColors")
-    
+
     -- Populate entries
     for i, entryData in ipairs(data) do
         local entry = self:GetOrCreateEntry(i)
         if entry then
-            -- Rank (top 3 get special colors)
-            local rankText = tostring(entryData.rank or i)
-            if i == 1 then
+            -- Rank (top 3 get special colors). Colour by rank, not by row:
+            -- page 2 starts at rank 26.
+            local rank = tonumber(entryData.rank) or i
+            local rankText = tostring(rank)
+            if rank == 1 then
                 rankText = "|cffffd700" .. rankText .. "|r"  -- Gold
-            elseif i == 2 then
+            elseif rank == 2 then
                 rankText = "|cffc0c0c0" .. rankText .. "|r"  -- Silver
-            elseif i == 3 then
+            elseif rank == 3 then
                 rankText = "|cffcd7f32" .. rankText .. "|r"  -- Bronze
             end
             entry.rank:SetText(rankText)
-            
+
             -- Player name with class color
             local name = entryData.name or entryData.playerName or "Unknown"
             local class = entryData.class or ""
@@ -2110,60 +2496,38 @@ function LB:UpdateLeaderboardDisplay()
                 local color = GetClassColor(class)
                 name = "|cff" .. color .. name .. "|r"
             end
-            
-            -- Highlight self
-            if highlightSelf and entryData.name == playerName then
+
+            -- Highlight self. The server flags the requester's row (their
+            -- account's row on account boards) and their other characters.
+            local isSelf
+            if serverFlagsRows then
+                isSelf = entryData.self == true
+            else
+                isSelf = entryData.name == playerName
+            end
+
+            if highlightSelf and isSelf then
                 entry.bg:SetTexture(0.2, 0.4, 0.2, 0.7)
+            elseif highlightSelf and entryData.alt then
+                entry.bg:SetTexture(0.15, 0.25, 0.15, 0.6)
             else
                 entry.bg:SetTexture(0.1, 0.1, 0.1, (i % 2 == 0) and 0.6 or 0.3)
             end
-            
+
             entry.name:SetText(name)
-            
+
             -- Score (formatted based on type)
-            local subcat = self.currentSubCategory or ""
-            local scoreText
-            
-            if subcat:find("_time") then
-                local scoreVal = entryData.score or entryData.value or 0
-                scoreText = FormatTime(scoreVal)
-            elseif subcat:find("_winrate") or subcat:find("_efficiency") then
-                local scoreVal = entryData.score or entryData.value or 0
-                -- Server sends winrate scaled by 10 for precision; divide back
-                if self.currentCategory == "hlbg" and subcat:find("_winrate") then
-                    scoreVal = (tonumber(scoreVal) or 0) / 10
-                end
-                scoreText = FormatPercent(scoreVal)
-            elseif subcat == "aoe_gold" then
-                -- v1.3.0: Gold is sent as score_str (string) to avoid uint32 truncation
-                -- Fall back to score if score_str not present
-                local copperVal
-                if entryData.score_str and entryData.score_str ~= "" then
-                    copperVal = tonumber(entryData.score_str) or 0
-                else
-                    copperVal = entryData.score or entryData.value or 0
-                end
-                scoreText = FormatMoney(copperVal)
-            else
-                local scoreVal = entryData.score or entryData.value or 0
-                scoreText = FormatNumber(scoreVal)
-            end
-            entry.score:SetText(scoreText)
-            
+            entry.score:SetText(FormatBoardScore(subcat, ReadScore(entryData)))
+
             -- Class
             entry.class:SetText(entryData.class or "")
-            
+
             -- Extra info (formatted based on category)
             local extraText = ""
             if self.currentCategory == "hlbg" then
                 -- Format HLBG extra data
-                if subcat == "hlbg_winrate" then
-                    -- Show W/L for winrate category
-                    local wins = entryData.wins or 0
-                    local losses = entryData.losses or 0
-                    extraText = "|cff00ff00" .. wins .. "|r/|cffff0000" .. losses .. "|r"
-                elseif subcat == "hlbg_games" then
-                    -- Show W/L for games category
+                if subcat == "hlbg_winrate" or subcat == "hlbg_games" or subcat == "hlbg_rating" then
+                    -- Show W/L
                     local wins = entryData.wins or 0
                     local losses = entryData.losses or 0
                     extraText = "|cff00ff00" .. wins .. "|r/|cffff0000" .. losses .. "|r"
@@ -2175,11 +2539,6 @@ function LB:UpdateLeaderboardDisplay()
                         local kdRatio = (tonumber(entryData.deaths) or 1) > 0 and (tonumber(entryData.kills) or 0) / (tonumber(entryData.deaths) or 1) or 0
                         extraText = string.format("K/D: |cffffffff%.2f|r", kdRatio)
                     end
-                elseif subcat == "hlbg_rating" then
-                    -- Show W/L for rating category
-                    local wins = entryData.wins or 0
-                    local losses = entryData.losses or 0
-                    extraText = "|cff00ff00" .. wins .. "|r/|cffff0000" .. losses .. "|r"
                 elseif subcat == "hlbg_wins" then
                     -- Show total games
                     local totalGames = (tonumber(entryData.wins) or 0) + (tonumber(entryData.losses) or 0)
@@ -2188,23 +2547,23 @@ function LB:UpdateLeaderboardDisplay()
             else
                 extraText = entryData.extra or entryData.details or ""
             end
+            entry.extra:SetWidth(extraWidth)
             entry.extra:SetText(extraText)
-            
+
             -- Quality breakdown columns (for AOE Loot category)
-            local isAOE = (self.currentCategory == "aoe")
-            if isAOE and (subcat == "aoe_items" or subcat == "aoe_filtered") then
+            if isAOEItems then
                 -- Show quality columns
                 entry.qLeg:Show()
                 entry.qEpic:Show()
                 entry.qRare:Show()
                 entry.qUncommon:Show()
-                
+
                 -- Parse quality data from entryData (expected: qLeg, qEpic, qRare, qUncommon)
                 local legCount = entryData.qLeg or entryData.legendary or 0
                 local epicCount = entryData.qEpic or entryData.epic or 0
                 local rareCount = entryData.qRare or entryData.rare or 0
                 local unCount = entryData.qUncommon or entryData.uncommon or 0
-                
+
                 entry.qLeg:SetText("|cffff8000" .. FormatNumber(legCount) .. "|r")
                 entry.qEpic:SetText("|cffa335ee" .. FormatNumber(epicCount) .. "|r")
                 entry.qRare:SetText("|cff0070dd" .. FormatNumber(rareCount) .. "|r")
@@ -2218,14 +2577,12 @@ function LB:UpdateLeaderboardDisplay()
             end
         end
     end
-    
+
     -- Show/hide quality header columns based on category (3.3.5a compatible)
-    local isAOEItems = (self.currentCategory == "aoe" and (self.currentSubCategory == "aoe_items" or self.currentSubCategory == "aoe_filtered"))
-    
     if self:GetSetting("verboseLogging") and self.currentCategory == "aoe" then
         Print("AOE Loot Debug: isAOEItems=" .. tostring(isAOEItems) .. ", subcat=" .. tostring(self.currentSubCategory))
     end
-    
+
     if self.Frames.legHeader then
         if isAOEItems then self.Frames.legHeader:Show() else self.Frames.legHeader:Hide() end
     end
@@ -2238,31 +2595,33 @@ function LB:UpdateLeaderboardDisplay()
     if self.Frames.unHeader then
         if isAOEItems then self.Frames.unHeader:Show() else self.Frames.unHeader:Hide() end
     end
-    
+
     -- Update scroll child height
     local totalHeight = #data * 30
     self.Frames.scrollChild:SetHeight(math.max(totalHeight, 1))
-    
+
     -- Update page info
     self:UpdatePaginationDisplay()
-    
+
     -- Update player rank display
     self:UpdatePlayerRankDisplay()
-    
-    -- Update total players
+
+    -- Update total players (accounts on account boards)
     if self.Frames.totalPlayers then
-        self.Frames.totalPlayers:SetText("Total: |cffffffff" .. (self.Cache.totalEntries or #data) .. "|r players")
+        local noun = meta.accountScoped and "accounts" or "players"
+        self.Frames.totalPlayers:SetText("Total: |cffffffff" .. FormatInteger(meta.totalEntries or #data) .. "|r " .. noun)
     end
 end
 
 function LB:UpdatePaginationDisplay()
-    local page = self.Cache.currentPage or 1
-    local totalPages = self.Cache.totalPages or 1
-    
+    local meta = self.Cache.meta[self:GetCurrentCacheKey()] or {}
+    local page = meta.page or 1
+    local totalPages = meta.totalPages or 1
+
     if self.Frames.pageInfo then
         self.Frames.pageInfo:SetText("Page " .. page .. " / " .. totalPages)
     end
-    
+
     if self.Frames.prevBtn then
         if page <= 1 then
             self.Frames.prevBtn:Disable()
@@ -2270,7 +2629,7 @@ function LB:UpdatePaginationDisplay()
             self.Frames.prevBtn:Enable()
         end
     end
-    
+
     if self.Frames.nextBtn then
         if page >= totalPages then
             self.Frames.nextBtn:Disable()
@@ -2280,35 +2639,37 @@ function LB:UpdatePaginationDisplay()
     end
 end
 
+-- rank 0 (or none yet) means the player is not on this board.
 function LB:UpdatePlayerRankDisplay()
-    local key = self:GetCacheKey(self.currentCategory or "mplus", self.currentSubCategory or "mplus_key")
-    local myRankData = self.Cache.myRanks[key]
-    
-    if self.Frames.myRank then
-        if myRankData and myRankData.rank then
-            local rankText = "Your rank: |cff00ff00#" .. myRankData.rank .. "|r"
-            if myRankData.percentile then
-                rankText = rankText .. " (top " .. myRankData.percentile .. "%)"
-            end
-            self.Frames.myRank:SetText(rankText)
-        else
-            self.Frames.myRank:SetText("Your rank: |cffffffff--|r")
+    local myRankData = self.Cache.myRanks[self:GetCurrentCacheKey()]
+    if not self.Frames.myRank then return end
+
+    local label = (myRankData and myRankData.accountScoped) and "Your account" or "Your rank"
+    if myRankData and (tonumber(myRankData.rank) or 0) > 0 then
+        local rankText = label .. ": |cff00ff00#" .. myRankData.rank .. "|r"
+        if myRankData.percentile then
+            rankText = rankText .. string.format(" (top %.1f%%)", myRankData.percentile)
         end
+        self.Frames.myRank:SetText(rankText)
+    else
+        self.Frames.myRank:SetText(label .. ": |cffffffff--|r")
     end
 end
 
 function LB:NextPage()
-    local totalPages = self.Cache.totalPages or 1
-    local page = self.Cache.currentPage or 1
-    
+    local meta = self.Cache.meta[self:GetCurrentCacheKey()] or {}
+    local page = meta.page or 1
+    local totalPages = meta.totalPages or 1
+
     if page < totalPages then
         self:RequestLeaderboard(self.currentCategory, self.currentSubCategory, page + 1)
     end
 end
 
 function LB:PreviousPage()
-    local page = self.Cache.currentPage or 1
-    
+    local meta = self.Cache.meta[self:GetCurrentCacheKey()] or {}
+    local page = meta.page or 1
+
     if page > 1 then
         self:RequestLeaderboard(self.currentCategory, self.currentSubCategory, page - 1)
     end
@@ -2601,8 +2962,7 @@ function LB:CreateCommunicationPanel()
     clearBtn:SetPoint("LEFT", aoeBtn, "RIGHT", 10, 0)
     clearBtn:SetText("Clear Cache")
     clearBtn:SetScript("OnClick", function()
-        LB.Cache.data = {}
-        LB.Cache.timestamps = {}
+        LB:ClearCache()
         Print("Cache cleared")
     end)
     
@@ -2679,16 +3039,22 @@ end
 -- SHOW/HIDE FUNCTIONS
 -- =====================================================================
 
-function LB:Show()
+-- categoryId / subcategoryId are optional (other addons open a specific board).
+function LB:Show(categoryId, subcategoryId)
     local frame = self:CreateMainFrame()
     if not frame then return end
-    
+
     -- Apply scale
     local scale = self:GetSetting("frameScale") or 1.0
     frame.container:SetScale(scale)
-    
-    -- Select default category if none selected
-    if not self.currentCategory then
+
+    if type(categoryId) == "string" and self:ResolveCategoryId(categoryId) then
+        self:SelectCategory(categoryId)
+        if type(subcategoryId) == "string" then
+            self:SelectSubCategory(subcategoryId)
+        end
+    elseif not self.currentCategory then
+        -- Select default category if none selected
         local defaultCat = self:GetSetting("defaultCategory") or "mplus"
         self:SelectCategory(defaultCat)
     else
@@ -2738,14 +3104,19 @@ SlashCmdList["DCLEADERBOARDS"] = function(msg)
     elseif cmd == "test" then
         LB:TestConnection()
     elseif cmd == "clear" or cmd == "clearcache" then
-        LB.Cache.data = {}
-        LB.Cache.timestamps = {}
+        LB:ClearCache()
         Print("Cache cleared")
     elseif cmd == "status" then
+        local cachedBoards = 0
+        for _ in pairs(LB.Cache.data or {}) do
+            cachedBoards = cachedBoards + 1
+        end
+        local view = LB:GetViewFlags()
         Print("DC-Leaderboards v" .. VERSION)
         Print("  Current category: " .. (LB.currentCategory or "none"))
         Print("  Current subcategory: " .. (LB.currentSubCategory or "none"))
-        Print("  Cached entries: " .. #(LB.Cache.data or {}))
+        Print("  Cached boards: " .. cachedBoards)
+        Print("  Show bots: " .. tostring(view.includeBots) .. ", one per account: " .. tostring(view.perAccount))
         Print("  DC Protocol: " .. (DC and "Available" or "Not loaded"))
     elseif cmd:match("^mplus") then
         LB:Show()
@@ -2759,6 +3130,9 @@ SlashCmdList["DCLEADERBOARDS"] = function(msg)
     elseif cmd:match("^prestige") then
         LB:Show()
         LB:SelectCategory("prestige")
+    elseif cmd:match("^master") or cmd:match("^artifact") then
+        LB:Show()
+        LB:SelectCategory("mastery")
     elseif cmd:match("^upgrade") then
         LB:Show()
         LB:SelectCategory("upgrade")
@@ -2797,11 +3171,13 @@ SlashCmdList["DCLEADERBOARDS"] = function(msg)
         Print("Selected Season: " .. (LB:GetSetting("selectedSeasonId") or 0) .. " (0 = current)")
         Print("Opcodes:")
         Print("  CMSG_GET_LEADERBOARD: 0x01")
-        Print("  CMSG_GET_MY_RANK: 0x02")
-        Print("  CMSG_GET_DETAILS: 0x03")
+        Print("  CMSG_GET_CATEGORIES: 0x02")
+        Print("  CMSG_GET_MY_RANK: 0x03")
         Print("  CMSG_REFRESH: 0x04")
-        Print("  CMSG_GET_SEASONS: 0x05")
-        Print("  CMSG_TEST_TABLES: 0x06")
+        Print("  CMSG_TEST_TABLES: 0x05")
+        Print("  CMSG_GET_SEASONS: 0x06")
+        Print("  CMSG_GET_MPLUS_DUNGEONS: 0x07")
+        Print("  CMSG_GET_ACCOUNT_STATS: 0x08")
     else
         Print("Commands:")
         Print("  /lb or /leaderboard - Toggle leaderboard")
@@ -2815,7 +3191,7 @@ SlashCmdList["DCLEADERBOARDS"] = function(msg)
         Print("  /lb setseason <id> - Set season (0=current)")
         Print("  /lb debug - Toggle verbose logging")
         Print("  /lb protocol - Show protocol info")
-        Print("  /lb mplus|season|hlbg|prestige|upgrade|duel|aoe|achieve - Jump to category")
+        Print("  /lb mplus|season|hlbg|prestige|mastery|upgrade|duel|aoe|achieve - Jump to category")
     end
 end
 
@@ -3043,12 +3419,19 @@ function LB:UpdateStatisticsDisplay()
             totalsHeader.pct:SetText("")
             index = index + 1
             
-            for statName, statValue in pairs(accountData.totals) do
+            -- Sorted, so the rows do not reshuffle between redraws.
+            local statNames = {}
+            for statName in pairs(accountData.totals) do
+                table.insert(statNames, statName)
+            end
+            table.sort(statNames)
+
+            for _, statName in ipairs(statNames) do
                 local entry = self:GetOrCreateStatsEntry(index)
                 entry.catName:SetText("")
                 entry.subName:SetText(statName)
                 entry.rank:SetText("")
-                entry.score:SetText(FormatNumber(statValue))
+                entry.score:SetText(FormatScore(accountData.totals[statName]))
                 entry.pct:SetText("")
                 index = index + 1
             end
@@ -3061,67 +3444,77 @@ function LB:UpdateStatisticsDisplay()
     self.Frames.statsHeader:SetText("Character Overview")
     
     local index = 1
+    local now = time()
     
-    -- Iterate all known categories
+    -- Iterate all known categories (the M+ run history is a log, not a ranking)
     for _, cat in ipairs(self.Categories) do
         if cat.id ~= "statistics" then
             for _, sub in ipairs(cat.subcats) do
-                -- Display row
-                local entry = self:GetOrCreateStatsEntry(index)
-                
-                -- Set labels
-                entry.catName:SetText(cat.name)
-                entry.subName:SetText(sub.name)
-                
-                -- Check myRank cache
-                local key = cat.id .. "_" .. sub.id
-                local myData = self.Cache.myRanks[key]
-                
-                if myData then
-                    -- Rank
-                    if myData.rank and myData.rank > 0 then
+                if sub.id ~= "mplus_history" then
+                    -- Display row
+                    local entry = self:GetOrCreateStatsEntry(index)
+                    
+                    -- Set labels
+                    entry.catName:SetText(cat.name)
+                    entry.subName:SetText(sub.name)
+                    
+                    -- Check myRank cache (same view as the boards: bots / per account)
+                    local key = self:GetCacheKey(cat.id, sub.id)
+                    local myData = self.Cache.myRanks[key]
+                    
+                    if myData and (tonumber(myData.rank) or 0) > 0 then
                         entry.rank:SetText("#" .. myData.rank)
                         entry.rank:SetTextColor(0, 1, 0) -- Green
-                    else
+                        entry.score:SetText(FormatBoardScore(sub.id, myData.score))
+                        entry.pct:SetText(myData.percentile and string.format("Top %.1f%%", myData.percentile) or "")
+                    elseif myData then
+                        -- Not on this board
                         entry.rank:SetText("-")
                         entry.rank:SetTextColor(0.5, 0.5, 0.5)
-                    end
-                    
-                    -- Score
-                    local valStr = "-"
-                    if myData.score then
-                        if sub.id:find("_time") then
-                            valStr = FormatTime(tonumber(myData.score))
-                        elseif sub.id:find("_gold") then
-                             -- Handle gold formatting if needed
-                             local copperVal = tonumber(myData.score) or 0
-                             valStr = FormatMoney(copperVal)
-                        else
-                            valStr = FormatNumber(myData.score)
+                        entry.score:SetText("-")
+                        entry.pct:SetText("")
+                    else
+                        entry.rank:SetText("...")
+                        entry.rank:SetTextColor(0.5, 0.5, 0.5)
+                        entry.score:SetText("...")
+                        entry.pct:SetText("")
+                        
+                        -- Request it once; each reply schedules a redraw of this page
+                        local sentAt = self.Cache.myRankPending[key]
+                        if not sentAt or (now - sentAt) >= 10 then
+                            self:RequestMyRank(cat.id, sub.id)
                         end
                     end
-                    entry.score:SetText(valStr)
                     
-                    -- Percentile
-                    if myData.percentile then
-                        entry.pct:SetText(string.format("Top %.1f%%", myData.percentile))
-                    else
-                        entry.pct:SetText("")
-                    end
-                else
-                    entry.rank:SetText("...")
-                    entry.score:SetText("...")
-                    entry.pct:SetText("")
-                    
-                    -- Request it
-                    self:RequestMyRank(cat.id, sub.id)
+                    index = index + 1
                 end
-                
-                index = index + 1
             end
         end
     end
     
     container:SetSize(640, index * 26)
+end
+
+-- Several dozen my-rank replies arrive together when the Character Overview
+-- opens; redraw once after they settle instead of once per reply.
+function LB:ScheduleStatisticsRefresh()
+    if not self._statsRefreshFrame then
+        local frame = CreateFrame("Frame")
+        frame:Hide()
+        frame:SetScript("OnUpdate", function(f, elapsed)
+            f.wait = (f.wait or 0) - (elapsed or 0)
+            if f.wait > 0 then
+                return
+            end
+            f:Hide()
+            if LB.currentCategory == "statistics" then
+                LB:UpdateStatisticsDisplay()
+            end
+        end)
+        self._statsRefreshFrame = frame
+    end
+
+    self._statsRefreshFrame.wait = 0.2
+    self._statsRefreshFrame:Show()
 end
 

@@ -315,6 +315,19 @@ function DC.GetNativeTierItemRows()
 	return rows;
 end
 
+local function NormalizeIlvlIncreases(value)
+	if type(value) ~= "table" then
+		return nil;
+	end
+
+	local steps = {};
+	for index, step in ipairs(value) do
+		steps[index] = math.max(tonumber(step) or 0, 0);
+	end
+
+	return steps;
+end
+
 function DC.NormalizeTierDefinition(row)
 	if type(row) ~= "table" then
 		return nil;
@@ -349,6 +362,11 @@ function DC.NormalizeTierDefinition(row)
 		currencyItemId = tonumber(row.currencyItemId or row.CurrencyItemId) or 0,
 		isArtifact = tonumber(row.isArtifact or row.IsArtifact) or 0,
 		enabled = tonumber(row.enabled or row.Enabled) or 0,
+		-- Item levels gained per upgrade level, index 1 = level 1. Server-only
+		-- (SMSG_TIER_CONFIG); the native DBC rows and offline fallbacks do not
+		-- carry it, in which case it stays nil and no bonus is assumed.
+		ilvlIncreases = NormalizeIlvlIncreases(
+			row.ilvlIncreases or row.IlvlIncreases),
 		colorARGB = colorARGB,
 		name = NormalizeTierText(row.name or row.Name),
 		description = NormalizeTierText(row.description or row.Description),
@@ -1038,12 +1056,15 @@ end
 
 DC.STAT_PERCENT_PER_LEVEL = 2.5;
 
-local TIER_ILVL_PER_LEVEL = { 1.0, 1.0, 1.5, 2.0, 2.5 };
+-- There used to be a table here: TIER_ILVL_PER_LEVEL = { 1.0, 1.0, 1.5, 2.0, 2.5 }.
+-- It was a second copy of data the server owns (dc_item_upgrade_costs.ilvl_increase)
+-- and it had drifted: the Hyjal tiers are +3 and +2 per level on the server, not
+-- +2 and +2.5, and tiers above 5 were clamped onto tier 5's rate. The server now
+-- sends the per-level steps with the tier config and this file only adds them up.
 
 function DC.ClampTier(tier)
 	tier = math.floor(tonumber(tier) or 1);
 	if tier < 1 then return 1; end
-	if tier > #TIER_ILVL_PER_LEVEL then return #TIER_ILVL_PER_LEVEL; end
 	return tier;
 end
 
@@ -1069,10 +1090,30 @@ function DC.GetStatBonusPercent(level, tier)
 	return (DC.GetStatMultiplierForLevel(level, tier) - 1.0) * 100.0;
 end
 
+-- Item levels gained by `level` upgrades of a `tier` item: the sum of the
+-- server's per-level steps, exactly how UpgradeManagerImpl computes it.
+--
+-- Returns 0 when the tier config has not arrived or comes from a server that does
+-- not send the steps. Showing the base item level is the honest answer then --
+-- inventing a rate is what put wrong numbers in the upgrade window before.
 function DC.GetItemLevelBonus(level, tier)
-	level = math.max(tonumber(level) or 0, 0);
-	local perLevel = TIER_ILVL_PER_LEVEL[DC.ClampTier(tier)] or 1.0;
-	return math.ceil(level * perLevel);
+	level = math.max(math.floor(tonumber(level) or 0), 0);
+	if level == 0 then
+		return 0;
+	end
+
+	local definition = DC.GetTierDefinition and DC.GetTierDefinition(tier);
+	local steps = definition and definition.ilvlIncreases;
+	if type(steps) ~= "table" then
+		return 0;
+	end
+
+	local bonus = 0;
+	for index = 1, math.min(level, #steps) do
+		bonus = bonus + (tonumber(steps[index]) or 0);
+	end
+
+	return bonus;
 end
 
 function DC.GetUpgradedItemLevel(baseLevel, level, tier)
@@ -1335,6 +1376,14 @@ function DC.RegisterDCProtocolHandlers()
 		end
 	end);
 	
+	-- Extension point: called after the per-entry upgrade cache changes for a
+	-- reason other than an item-info response (today: a successful upgrade).
+	-- Deliberately an empty global so other addons can hooksecurefunc it, the
+	-- same way they already hook DarkChaos_ItemUpgrade_HandleJsonItemInfo.
+	if not DarkChaos_ItemUpgrade_OnUpgradeCacheChanged then
+		function DarkChaos_ItemUpgrade_OnUpgradeCacheChanged(itemId) end
+	end
+
 	-- SMSG_UPGRADE_RESULT (0x11) - Upgrade success/failure notification
 	DCProtocol:RegisterHandler("UPG", 0x11, function(data)
 		if type(data) ~= "table" then return; end
@@ -1386,6 +1435,25 @@ function DC.RegisterDCProtocolHandlers()
 			end
 			DC.itemUpgradeCacheByEntry[itemId].tokenCost = nextTokenCost;
 			DC.itemUpgradeCacheByEntry[itemId].essenceCost = nextEssenceCost;
+
+			-- The cached item level has to move with the level. It used to be left
+			-- at the pre-upgrade value, so anything reading this cache (the
+			-- DC-CharacterFrame upgrade pane and slot badges) showed the previous
+			-- level's item level until some unrelated item-info response landed.
+			do
+				local entry = DC.itemUpgradeCacheByEntry[itemId];
+				local baseLevel = tonumber(entry.baseItemLevel) or 0;
+				local entryTier = tonumber(entry.tier) or 0;
+				if baseLevel > 0 and entryTier > 0 and DC.GetUpgradedItemLevel then
+					entry.upgradedItemLevel =
+						DC.GetUpgradedItemLevel(baseLevel, newLevel, entryTier);
+				end
+				entry.timestamp = GetTime and GetTime() or entry.timestamp;
+			end
+
+			if DarkChaos_ItemUpgrade_OnUpgradeCacheChanged then
+				DarkChaos_ItemUpgrade_OnUpgradeCacheChanged(itemId);
+			end
 
 			if DC.CacheCostInfo and resultTier > 0 and resultMaxUpgrade > 0 and newLevel < resultMaxUpgrade then
 				DC.CacheCostInfo(resultTier, newLevel, newLevel + 1, nextTokenCost, nextEssenceCost);

@@ -1344,6 +1344,13 @@ function UI:RenderPrestigeTab(child, options, progress)
 		y = y - 6
 	end
 
+	if DCWelcome.PrestigeTalents then
+		self:AddDialogButton(child, y, "Prestige Talents", function()
+			DCWelcome.PrestigeTalents:Open()
+		end, 420, 6)
+		y = y - 38
+	end
+
 	local rule = self:AddRule(child, y, CHILD_WIDTH - 12, 6, 0.42, 0.42, 0.42, 0.70, 1)
 	y = y - 12
 
@@ -1354,6 +1361,7 @@ function UI:RenderPrestigeTab(child, options, progress)
 		"Reach the level cap to unlock prestige, then reset back to level 1.",
 		"Every prestige grants a permanent bonus to all stats - forever.",
 		"Max-level characters also grant an account-wide alt XP bonus for your other characters.",
+		"Each prestige level on any character earns an account-wide Prestige Talent point (/ptalents).",
 	}
 	for _, line in ipairs(howLines) do
 		local fs = self:AddText(child, y, "- " .. line, { r = 0.72, g = 0.72, b = 0.72 })

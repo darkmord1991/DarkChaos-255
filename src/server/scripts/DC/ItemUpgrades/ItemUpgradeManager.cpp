@@ -15,6 +15,7 @@
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "MapMgr.h"
@@ -267,6 +268,34 @@ namespace DarkChaos
                 ++stats.db_writes;
                 return true;
             }
+            // Per-process base for tooltip revisions.
+            //
+            // `tooltip_revision_by_item` is in-memory only, so without this every item
+            // restarts at revision 1 after a worldserver restart. The client caches its
+            // tooltip snapshot together with the revision and that cache survives the
+            // restart, so it re-asks with knownRevision = 1, the server sees 1 == 1 and
+            // answers NOT_MODIFIED -- and the client keeps rendering a snapshot built by
+            // the PREVIOUS build, forever. Symptom: an upgraded item shows its base
+            // stats and no upgrade lines, with the protocol log full of
+            // `status=1|rows=0` for that item guid.
+            //
+            // Seeding from the start time makes a value from an older process
+            // unreachable: a collision would need this process to bump one item more
+            // times than the seconds elapsed since the previous start, and an item can
+            // only be bumped a handful of times (max upgrade level is 15).
+            static uint32 GetTooltipRevisionEpoch()
+            {
+                static uint32 const epoch = []
+                {
+                    uint32 const seconds =
+                        static_cast<uint32>(GameTime::GetGameTime().count());
+                    // Never 0 -- the protocol treats knownRevision 0 as "no cache".
+                    return seconds != 0 ? seconds : 1u;
+                }();
+
+                return epoch;
+            }
+
             uint32 EnsureTooltipRevision(uint32 item_guid)
             {
                 if (item_guid == 0)
@@ -274,7 +303,7 @@ namespace DarkChaos
 
                 uint32& revision = tooltip_revision_by_item[item_guid];
                 if (revision == 0)
-                    revision = 1;
+                    revision = GetTooltipRevisionEpoch();
 
                 return revision;
             }
@@ -286,7 +315,7 @@ namespace DarkChaos
 
                 uint32& revision = tooltip_revision_by_item[item_guid];
                 if (revision == 0)
-                    revision = 1;
+                    revision = GetTooltipRevisionEpoch();
                 else
                     ++revision;
 
@@ -1096,7 +1125,7 @@ namespace DarkChaos
                 return state->stat_multiplier;
             }
 
-            uint16 GetIlvlIncrease(uint8 tier_id, uint8 upgrade_level)
+            uint16 GetIlvlIncrease(uint8 tier_id, uint8 upgrade_level) override
             {
                 if (upgrade_level > MAX_UPGRADE_LEVEL || upgrade_level == 0)
                     return 0;

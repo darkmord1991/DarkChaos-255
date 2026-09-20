@@ -127,7 +127,7 @@ DC.COST_COLORS = DC.COST_COLORS or {
 	Players select a stat package to determine secondary stats.
 	Package stats scale with upgrade levels (1-15).
 	
-	NOTE: DC.STAT_PACKAGES and DC.STAT_PACKAGE_LEVEL_VALUES are defined in Heirloom.lua
+	NOTE: DC.STAT_PACKAGES and DC.STAT_PACKAGE_PER_STAT_VALUES are defined in Heirloom.lua
 	      which loads first. Do not redefine them here!
 =======================================================]]
 
@@ -137,14 +137,8 @@ DC.selectedStatPackage = nil;
 -- Use value from Heirloom.lua or default
 DC.STAT_PERCENT_PER_LEVEL = DC.STAT_PERCENT_PER_LEVEL or 2.5;
 
-local TIER_ILVL_PER_LEVEL = { 1.0, 1.0, 1.5, 2.0, 2.5 };
-
-local function ClampTier(tier)
-	tier = math.floor(tonumber(tier) or 1);
-	if tier < 1 then return 1; end
-	if tier > #TIER_ILVL_PER_LEVEL then return #TIER_ILVL_PER_LEVEL; end
-	return tier;
-end
+-- The item-level table that used to be duplicated here lives nowhere now:
+-- Core.lua's DC.GetItemLevelBonus sums the per-level steps the server sends.
 
 local function GetStatMultiplierForLevel(level, tier)
 	if DC.GetStatMultiplierForLevel then
@@ -164,9 +158,11 @@ local function GetStatBonusPercent(level, tier)
 end
 
 local function GetItemLevelBonus(level, tier)
-	level = math.max(tonumber(level) or 0, 0);
-	local perLevel = TIER_ILVL_PER_LEVEL[ClampTier(tier)] or 1.0;
-	return math.ceil(level * perLevel);
+	if DC.GetItemLevelBonus then
+		return DC.GetItemLevelBonus(level, tier);
+	end
+
+	return 0;
 end
 
 local function GetUpgradedItemLevel(baseLevel, level, tier)
@@ -1652,8 +1648,12 @@ local INVENTORY_SLOT_ITEM_END = _G.INVENTORY_SLOT_ITEM_END or 39;
 local BANK_SLOT_ITEM_START = _G.BANK_SLOT_ITEM_START or 39;
 local BANK_SLOT_ITEM_END = _G.BANK_SLOT_ITEM_END or 67;
 local TOOLTIP_CACHE_LIFETIME = 30; -- seconds
-local NATIVE_ITEM_UPGRADE_CAPABILITY = (DCProtocol and DCProtocol.Capability and DCProtocol.Capability.ITEM_UPGRADE_NATIVE) or 0x00000400;
-local NATIVE_ITEM_TOOLTIP_REPLACEMENT_CAPABILITY = 0x00200000;
+-- ITEM_UPGRADE_NATIVE (0x400) is the older per-slot upgrade tooltip bridge and is
+-- NOT the same feature as full stat-line replacement. Treating it as equivalent
+-- meant a client that only had that bit still suppressed the Lua tooltip lines.
+local NATIVE_ITEM_TOOLTIP_REPLACEMENT_CAPABILITY =
+	(DCProtocol and DCProtocol.Capability and DCProtocol.Capability.ITEM_TOOLTIP_REPLACEMENT_NATIVE)
+	or 0x00200000;
 
 local function DarkChaos_ItemUpgrade_HasCapabilityBit(mask, capability)
 	mask = tonumber(mask) or 0;
@@ -1671,34 +1671,38 @@ local function DarkChaos_ItemUpgrade_HasCapabilityBit(mask, capability)
 end
 
 local function DarkChaos_ItemUpgrade_HasNativeTooltipCapability(mask)
-	return DarkChaos_ItemUpgrade_HasCapabilityBit(mask, NATIVE_ITEM_UPGRADE_CAPABILITY)
-		or DarkChaos_ItemUpgrade_HasCapabilityBit(mask, NATIVE_ITEM_TOOLTIP_REPLACEMENT_CAPABILITY);
+	return DarkChaos_ItemUpgrade_HasCapabilityBit(mask, NATIVE_ITEM_TOOLTIP_REPLACEMENT_CAPABILITY);
 end
 
+-- The NEGOTIATED mask is the only honest signal that the server will answer
+-- CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT with a body the DLL renders. The previous
+-- version fell back to "does the client export RequestNativeItemUpgradeTooltip",
+-- which is true on any WotLK-Extensions build regardless of what the server
+-- negotiated -- so this function returned true unconditionally and the Lua
+-- fallback below became unreachable dead code (including its correct Frontier
+-- heirloom budgets, which the native path then had to learn).
+--
+-- Deliberately no export-exists fallback: during the handshake window this
+-- returns false and the Lua lines render, which is the safe direction -- stale
+-- Lua lines for a second beat no lines at all on a client whose server never
+-- negotiated the feature.
 local function DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement()
 	local protocol = rawget(_G, "DCAddonProtocol") or DCProtocol;
-	if protocol and type(protocol.GetCapabilitySnapshot) == "function" then
-		local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol);
-		if ok and type(snapshot) == "table" then
-			local negotiatedCaps = tonumber(snapshot.negotiatedCaps) or 0;
-			local clientCaps = tonumber(snapshot.clientCaps) or 0;
-			if (snapshot.connected and DarkChaos_ItemUpgrade_HasNativeTooltipCapability(negotiatedCaps))
-				or DarkChaos_ItemUpgrade_HasNativeTooltipCapability(clientCaps) then
-				return true;
-			end
-		end
+	if not protocol or type(protocol.GetCapabilitySnapshot) ~= "function" then
+		return false;
 	end
 
-	local getCapabilities = rawget(_G, "GetDCClientCapabilities");
-	if type(getCapabilities) == "function" then
-		local ok, capabilities = pcall(getCapabilities);
-		if ok and DarkChaos_ItemUpgrade_HasNativeTooltipCapability(capabilities) then
-			return true;
-		end
+	local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol);
+	if not ok or type(snapshot) ~= "table" then
+		return false;
 	end
 
-	return type(RequestNativeItemUpgradeTooltip) == "function"
-		and type(GetNativeItemUpgradeTooltipData) == "function";
+	if not snapshot.connected then
+		return false;
+	end
+
+	return DarkChaos_ItemUpgrade_HasNativeTooltipCapability(
+		tonumber(snapshot.negotiatedCaps) or 0);
 end
 
 local function GetItemLinkForLocation(bag, slot)
@@ -2091,6 +2095,10 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		serverBag = tonumber(info.serverBag),
 		serverSlot = tonumber(info.serverSlot),
 		timestamp = GetTime and GetTime() or 0,
+		-- procLines[1] = the item's scaling Equip:/Use:/Chance-on-hit sentences at
+		-- currentUpgrade, procLines[n] = at currentUpgrade + n - 1. Rendered by the
+		-- server with the same function the native tooltip uses.
+		procLines = (type(info.procLines) == "table") and info.procLines or nil,
 	};
 
 	if info.heirloomPackageId or info.packageId or (existing and existing.heirloomPackageId) then
@@ -2193,6 +2201,11 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	end
 	
 	item.currentUpgrade = data.currentUpgrade or 0;
+	-- Anchored to the level they were rendered for: after an upgrade the item's
+	-- level moves before fresh item info arrives, and indexing relative to the
+	-- new level would show every sentence one level too high.
+	item.procLines = data.procLines;
+	item.procLinesBaseLevel = data.procLines and (tonumber(data.currentUpgrade) or 0) or nil;
 	item.tokenCost = tonumber(data.tokenCost) or item.tokenCost or 0;
 	item.essenceCost = tonumber(data.essenceCost) or item.essenceCost or 0;
 	local preserveBackgroundRefresh = item.allowBackgroundRefresh == true and item.hasAuthoritativeState == true;
@@ -2980,10 +2993,11 @@ local function DarkChaos_ItemUpgrade_BuildDisplayRows(item, targetLevel)
 	local packageId = isHeirloom and (item.heirloomPackageId or DC.selectedStatPackage) or nil;
 	if isHeirloom and packageId and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel then
 		local currentLevel = tonumber(item.currentUpgrade) or 0;
+		local previewEntry = tonumber(item.itemEntry) or tonumber(item.itemID);
 		local currentPackageStats = (currentLevel > 0)
-			and (DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, currentLevel) or {})
+			and (DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, currentLevel, previewEntry) or {})
 			or {};
-		local previewPackageStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, targetLevel) or {};
+		local previewPackageStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, targetLevel, previewEntry) or {};
 
 		for index, previewStat in ipairs(previewPackageStats) do
 			local currentStat = currentPackageStats[index];
@@ -3052,6 +3066,12 @@ end
 local function DarkChaos_ItemUpgrade_ClearComparisonColumns(frame)
 	if not frame then
 		return;
+	end
+
+	for _, panel in ipairs({ frame.CurrentPanel, frame.UpgradePanel }) do
+		if panel and panel.__dcProcPreviewText then
+			panel.__dcProcPreviewText:Hide();
+		end
 	end
 
 	for _, panel in ipairs({ frame.CurrentPanel, frame.UpgradePanel }) do
@@ -3155,6 +3175,127 @@ local function DarkChaos_ItemUpgrade_UpdateStatRows(frame, rows)
 	return visibleRows;
 end
 
+-- Proc preview: the item's scaling Equip:/Use:/Chance-on-hit sentences, current
+-- level on the left, target level on the right, drawn under the stat rows.
+--
+-- Sentences rather than label/value rows on purpose. A proc is a sentence with
+-- one or more numbers in it ("... gain 2576 attack power for 15 sec."); squeezing
+-- it into "label ..... value" would need a label and a single value invented on
+-- the client, and the 136px label column already truncates "Armor Penetration R...".
+local PROC_PREVIEW_WIDTH = 206;
+
+local function DarkChaos_ItemUpgrade_GetProcPreviewText(panel)
+	if not panel then
+		return nil;
+	end
+
+	if not panel.__dcProcPreviewText then
+		local text = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall");
+		text:SetWidth(PROC_PREVIEW_WIDTH);
+		text:SetJustifyH("LEFT");
+		text:SetJustifyV("TOP");
+		if text.SetWordWrap then
+			text:SetWordWrap(true);
+		end
+		if text.SetNonSpaceWrap then
+			text:SetNonSpaceWrap(false);
+		end
+		panel.__dcProcPreviewText = text;
+	end
+
+	return panel.__dcProcPreviewText;
+end
+
+local function DarkChaos_ItemUpgrade_HideProcPreview(frame)
+	if not frame then
+		return;
+	end
+
+	for _, panel in ipairs({ frame.CurrentPanel, frame.UpgradePanel }) do
+		if panel and panel.__dcProcPreviewText then
+			panel.__dcProcPreviewText:Hide();
+		end
+	end
+end
+
+local function DarkChaos_ItemUpgrade_JoinProcLines(lines)
+	if type(lines) ~= "table" then
+		return nil;
+	end
+
+	local parts = {};
+	for _, line in ipairs(lines) do
+		if type(line) == "string" and line ~= "" then
+			parts[#parts + 1] = line;
+		end
+	end
+
+	if #parts == 0 then
+		return nil;
+	end
+
+	return table.concat(parts, "\n");
+end
+
+-- Returns true when a proc block was drawn, so the caller does not put up its
+-- "No stats available" placeholder for a trinket whose only content is a proc.
+local function DarkChaos_ItemUpgrade_UpdateProcPreview(frame, item, targetLevel, renderedRowCount)
+	DarkChaos_ItemUpgrade_HideProcPreview(frame);
+
+	if not frame or not item or type(item.procLines) ~= "table" then
+		return false;
+	end
+
+	local baseLevel = tonumber(item.procLinesBaseLevel) or 0;
+	local currentLevel = tonumber(item.currentUpgrade) or 0;
+	local previewLevel = math.max(tonumber(targetLevel) or currentLevel, currentLevel);
+
+	-- +1: procLines[1] is baseLevel itself.
+	local currentText = DarkChaos_ItemUpgrade_JoinProcLines(
+		item.procLines[currentLevel - baseLevel + 1]);
+	local previewText = DarkChaos_ItemUpgrade_JoinProcLines(
+		item.procLines[previewLevel - baseLevel + 1]);
+
+	-- The target can sit outside what was rendered (item info still in flight
+	-- after an upgrade, or the server's per-response level cap). Say nothing on
+	-- that side rather than show a sentence for the wrong level.
+	if not currentText and not previewText then
+		return false;
+	end
+
+	local sides = {
+		{ panel = frame.CurrentPanel, side = "left", text = currentText, r = 0.1, g = 1.0, b = 0.1 },
+		{ panel = frame.UpgradePanel, side = "right", text = previewText, r = 0.1, g = 1.0, b = 0.1 },
+	};
+
+	-- Same sentence on both sides (maxed item, or target == current): grey the
+	-- right one, matching how an unchanged stat row is drawn.
+	if previewText and currentText and previewText == currentText then
+		sides[2].r, sides[2].g, sides[2].b = 0.75, 0.75, 0.75;
+	end
+
+	for _, entry in ipairs(sides) do
+		local fontString = entry.text and DarkChaos_ItemUpgrade_GetProcPreviewText(entry.panel);
+		if fontString then
+			local storageKey = (entry.side == "right") and "__dcRightStatRows" or "__dcLeftStatRows";
+			local rows = entry.panel[storageKey];
+			local lastRow = (renderedRowCount or 0) > 0 and rows and rows[renderedRowCount] or nil;
+
+			fontString:ClearAllPoints();
+			if lastRow then
+				fontString:SetPoint("TOPLEFT", lastRow, "BOTTOMLEFT", 0, -8);
+			else
+				fontString:SetPoint("TOPLEFT", entry.panel.RowsAnchor, "TOPLEFT", 0, -4);
+			end
+			fontString:SetTextColor(entry.r, entry.g, entry.b);
+			fontString:SetText(entry.text);
+			fontString:Show();
+		end
+	end
+
+	return true;
+end
+
 local function DarkChaos_ItemUpgrade_UpdateBrowserStrip()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then
@@ -3209,7 +3350,13 @@ DarkChaos_ItemUpgrade_BuildStatComparison = function(item, targetLevel)
 		if value ~= 0 and not ShouldSkipStatKey(statKey) then
 			local label = ResolveStatLabel(statKey);
 			if label then
-				local baseValue = RoundStatValue((value or 0) / math.max(currentMultiplier, 0.0001));
+				-- GetItemStats(link) reads the client's item cache, i.e. the BASE
+				-- item_template values. Upgrades are a server-side multiplier on the
+				-- same entry, so the link never carries scaled stats. This used to
+				-- divide by the current multiplier first -- a leftover from the retired
+				-- clone-item model, where the link pointed at a pre-scaled template --
+				-- which pinned "Current" to the base value at every upgrade level.
+				local baseValue = value or 0;
 				local currentValue = RoundStatValue(baseValue * currentMultiplier);
 				local previewValue = RoundStatValue(baseValue * previewMultiplier);
 				local diff = previewValue - currentValue;
@@ -5377,7 +5524,9 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 
 	DarkChaos_ItemUpgrade_UpdateItemLevelRows(frame, currentLevel, previewLevel);
 	local renderedRowCount = DarkChaos_ItemUpgrade_UpdateStatRows(frame, displayRows);
-	if renderedRowCount == 0 then
+	local procPreviewShown = DarkChaos_ItemUpgrade_UpdateProcPreview(
+		frame, item, DC.targetUpgradeLevel, renderedRowCount);
+	if renderedRowCount == 0 and not procPreviewShown then
 		if frame.CurrentPanel and frame.CurrentPanel.StatsText then
 			frame.CurrentPanel.StatsText:SetText("|cff808080No stats available|r");
 			frame.CurrentPanel.StatsText:Show();

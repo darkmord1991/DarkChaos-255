@@ -7,6 +7,7 @@
 #include "DC/Seasons/DCWeeklyResetHub.h"
 #include "DC/dc_constants.h"
 
+#include "AchievementMgr.h"
 #include "Chat.h"
 #include "Config.h"
 #include "Creature.h"
@@ -14,6 +15,8 @@
 #include "DBCStores.h"
 #include "GameObject.h"
 #include "GameTime.h"
+#include "Tokenize.h"
+#include <set>
 #include "Group.h"
 #include "Item.h"
 #include "InstanceScript.h"
@@ -2437,6 +2440,148 @@ void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
              ownerGuidLow, currentLevel, newLevel, state->deaths);
 }
 
+namespace
+{
+    // Mythic+ achievements, Achievement.dbc 60001-60010 (client CSV: Custom/CSV DBC/Achievement.csv)
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_INITIATE        = 60001; // first Mythic+2
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_CHALLENGER      = 60002; // 8 season dungeons at Mythic+2
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_CONTENDER       = 60003; // 8 season dungeons at Mythic+5
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_KEYSTONE_MASTER = 60004; // 8 season dungeons at Mythic+10
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_FLAWLESS_VICTORY = 60005; // Mythic+5, 0 deaths
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_DEATHLESS_ASCENT = 60006; // Mythic+10, 0 deaths
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_SPEED_DEMON     = 60007; // 10 runs within 24 hours
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_CENTURY_CLUB    = 60008; // 100 runs
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_VETERAN         = 60009; // 500 runs
+    constexpr uint32 ACHIEVEMENT_MYTHIC_PLUS_CONQUEROR       = 60010; // top 100 season score
+
+    // The achievement text says "all 8 Season 1 dungeons"; seasons can feature more
+    // (season 1 has 16), so any 8 distinct featured dungeons count.
+    constexpr uint32 FEATURED_DUNGEONS_REQUIRED = 8;
+    constexpr uint32 SPEED_DEMON_RUNS = 10;
+    constexpr uint32 CENTURY_CLUB_RUNS = 100;
+    constexpr uint32 VETERAN_RUNS = 500;
+    constexpr uint32 CONQUEROR_RANK = 100;
+
+    void GrantMythicAchievement(Player* player, uint32 achievementId)
+    {
+        if (player->HasAchieved(achievementId))
+            return;
+
+        if (AchievementEntry const* achievement = sAchievementMgr->GetAchievement(achievementId))
+            player->CompletedAchievement(achievement);
+    }
+
+    std::set<uint32> ParseMapList(Field const& field)
+    {
+        std::set<uint32> maps;
+        if (field.IsNull())
+            return maps;
+
+        std::string const list = field.Get<std::string>();
+        for (std::string_view token : Acore::Tokenize(list, ',', false))
+            if (Optional<uint32> mapId = Acore::StringTo<uint32>(token))
+                maps.insert(*mapId);
+        return maps;
+    }
+
+    // Achievements that need the player's run history. Runs on completion, off the
+    // map thread: one character DB read plus the season's featured dungeon list.
+    void CheckMythicHistoryAchievements(ObjectGuid playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel)
+    {
+        // RecordRunResult writes THIS run through async Executes that may not have
+        // committed yet (the character DB has several workers), so count only runs
+        // from before this completion and add the current one below.
+        uint64 const cutoff = GameTime::GetGameTime().count() - 2;
+        std::string const sql = Acore::StringFormat(
+            "SELECT "
+            "(SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {0} AND success = 1 "
+            "AND completed_at < FROM_UNIXTIME({1})), "
+            "(SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {0} AND success = 1 "
+            "AND completed_at >= FROM_UNIXTIME({1} - 86400) AND completed_at < FROM_UNIXTIME({1})), "
+            "(SELECT GROUP_CONCAT(DISTINCT map_id) FROM dc_mplus_runs WHERE character_guid = {0} AND season_id = {2} "
+            "AND success = 1 AND keystone_level >= 2 AND completed_at < FROM_UNIXTIME({1})), "
+            "(SELECT GROUP_CONCAT(DISTINCT map_id) FROM dc_mplus_runs WHERE character_guid = {0} AND season_id = {2} "
+            "AND success = 1 AND keystone_level >= 5 AND completed_at < FROM_UNIXTIME({1})), "
+            "(SELECT GROUP_CONCAT(DISTINCT map_id) FROM dc_mplus_runs WHERE character_guid = {0} AND season_id = {2} "
+            "AND success = 1 AND keystone_level >= 10 AND completed_at < FROM_UNIXTIME({1})), "
+            // Same ranking as the leaderboard's "mplus_score" board: SUM(best_score) per character.
+            "CAST(COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores WHERE character_guid = {0} AND season_id = {2}), 0) AS UNSIGNED), "
+            "(SELECT COUNT(*) FROM (SELECT SUM(best_score) AS total FROM dc_mplus_scores WHERE season_id = {2} "
+            "GROUP BY character_guid) t WHERE t.total > "
+            "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores WHERE character_guid = {0} AND season_id = {2}), 0))",
+            playerGuid.GetCounter(), cutoff, seasonId);
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid, seasonId, mapId, keystoneLevel](QueryResult history)
+        {
+            if (!history)
+                return;
+
+            Field* fields = history->Fetch();
+            uint64 const totalRuns = fields[0].Get<uint64>() + 1;
+            uint64 const recentRuns = fields[1].Get<uint64>() + 1;
+            std::set<uint32> maps2 = ParseMapList(fields[2]);
+            std::set<uint32> maps5 = ParseMapList(fields[3]);
+            std::set<uint32> maps10 = ParseMapList(fields[4]);
+            uint64 const seasonScore = fields[5].Get<uint64>();
+            uint64 const playersAhead = fields[6].Get<uint64>();
+
+            if (keystoneLevel >= 2)
+                maps2.insert(mapId);
+            if (keystoneLevel >= 5)
+                maps5.insert(mapId);
+            if (keystoneLevel >= 10)
+                maps10.insert(mapId);
+
+            DCAddon::EnqueueQueryCallback(WorldDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT map_id FROM dc_mplus_featured_dungeons WHERE season_id = {}", seasonId))
+                .WithCallback([=](QueryResult featuredResult) mutable
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player)
+                    return;
+
+                if (recentRuns >= SPEED_DEMON_RUNS)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_SPEED_DEMON);
+                if (totalRuns >= CENTURY_CLUB_RUNS)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_CENTURY_CLUB);
+                if (totalRuns >= VETERAN_RUNS)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_VETERAN);
+                if (seasonScore > 0 && playersAhead < CONQUEROR_RANK)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_CONQUEROR);
+
+                std::set<uint32> featured;
+                if (featuredResult)
+                {
+                    do
+                        featured.insert(featuredResult->Fetch()[0].Get<uint32>());
+                    while (featuredResult->NextRow());
+                }
+
+                std::size_t const required = std::min<std::size_t>(FEATURED_DUNGEONS_REQUIRED, featured.size());
+                if (!required)
+                    return;
+
+                auto featuredCount = [&featured](std::set<uint32> const& maps)
+                {
+                    std::size_t count = 0;
+                    for (uint32 map : maps)
+                        if (featured.count(map))
+                            ++count;
+                    return count;
+                };
+
+                if (featuredCount(maps2) >= required)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_CHALLENGER);
+                if (featuredCount(maps5) >= required)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_CONTENDER);
+                if (featuredCount(maps10) >= required)
+                    GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_KEYSTONE_MASTER);
+            }));
+        }));
+    }
+}
+
 void MythicPlusRunManager::ProcessAchievements(InstanceState* state, Player* player, bool success)
 {
     if (!state || !player || !success)
@@ -2452,6 +2597,21 @@ void MythicPlusRunManager::ProcessAchievements(InstanceState* state, Player* pla
 
     // Track dungeon completion (using raid completion as proxy for mythic dungeons)
     player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_RAID, state->mapId);
+
+    // Mythic+ achievements (Achievement.dbc 60001-60010). They also feed the
+    // prestige talent challenges (world.dc_prestige_talent_challenges).
+    // Single-run milestones are decided here...
+    if (state->keystoneLevel >= 2)
+        GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_INITIATE);
+    if (state->deaths == 0 && state->keystoneLevel >= 5)
+        GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_FLAWLESS_VICTORY);
+    if (state->deaths == 0 && state->keystoneLevel >= 10)
+        GrantMythicAchievement(player, ACHIEVEMENT_MYTHIC_PLUS_DEATHLESS_ASCENT);
+
+    // ...the history-based ones (run counts, season dungeons, top 100) asynchronously.
+    // Bot participants are skipped: the queries would run for every bot group run.
+    if (!state->bots.count(player->GetGUID().GetCounter()))
+        CheckMythicHistoryAchievements(player->GetGUID(), state->seasonId, state->mapId, state->keystoneLevel);
 
     // Special tracking for flawless completions
     if (state->deaths == 0)
@@ -3775,6 +3935,72 @@ namespace DCMythicPlusBots
     void GetRemainingBossEntries(Map* map, std::vector<uint32>& out)
     {
         sMythicRuns->GetRemainingBossEntries(map, out);
+    }
+
+    // The week a vault claim targets: last week, the grace window
+    // GreatVaultMgr::ClaimVaultItemReward uses. 0 when there is none.
+    static uint32 GetVaultClaimWeekStart()
+    {
+        uint32 const currentWeekStart = sMythicRuns->GetWeekStartTimestamp();
+        return currentWeekStart >= DarkChaos::Seasons::SECONDS_PER_WEEK
+            ? currentWeekStart - DarkChaos::Seasons::SECONDS_PER_WEEK : 0;
+    }
+
+    void GetBotVaultCandidates(std::vector<uint32>& outGuids)
+    {
+        outGuids.clear();
+
+        uint32 const weekStart = GetVaultClaimWeekStart();
+        if (!weekStart)
+            return;
+
+        uint32 const seasonId = sMythicRuns->GetCurrentSeasonId();
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT DISTINCT r.character_guid FROM dc_mplus_runs r "
+            "LEFT JOIN dc_weekly_vault v ON v.character_guid = r.character_guid "
+            "AND v.season_id = r.season_id AND v.week_start = {} "
+            "WHERE r.is_bot = 1 AND r.success = 1 AND r.season_id = {} "
+            "AND r.completed_at >= FROM_UNIXTIME({}) AND r.completed_at < FROM_UNIXTIME({}) "
+            "AND (v.reward_claimed IS NULL OR v.reward_claimed = 0)",
+            weekStart, seasonId, weekStart, weekStart + DarkChaos::Seasons::SECONDS_PER_WEEK);
+
+        if (!result)
+            return;
+
+        do
+        {
+            outGuids.push_back((*result)[0].Get<uint32>());
+        } while (result->NextRow());
+    }
+
+    void GetBotVaultChoices(Player* bot, std::vector<std::pair<uint8, uint32>>& out)
+    {
+        out.clear();
+        if (!bot)
+            return;
+
+        uint32 const weekStart = GetVaultClaimWeekStart();
+        if (!weekStart)
+            return;
+
+        ObjectGuid::LowType const guidLow = bot->GetGUID().GetCounter();
+        uint32 const seasonId = sMythicRuns->GetCurrentSeasonId();
+
+        // Adds only the slots not rolled yet, so a repeat call is cheap and
+        // never rerolls what the pool already offers.
+        sGreatVault->GenerateVaultRewardPool(guidLow, seasonId, weekStart);
+
+        for (auto const& [slot, itemId, itemLevel] : sGreatVault->GetVaultRewardPool(guidLow, seasonId, weekStart))
+        {
+            (void)itemLevel;
+            if (itemId)
+                out.emplace_back(slot, itemId);
+        }
+    }
+
+    bool ClaimBotVaultReward(Player* bot, uint8 slot, uint32 itemId)
+    {
+        return sGreatVault->ClaimVaultItemReward(bot, slot, itemId);
     }
 }
 

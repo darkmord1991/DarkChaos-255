@@ -678,6 +678,14 @@ struct npc_dark_iron_guzzler : public ScriptedAI
         for (uint8 i = 0; i < 3; ++i)
             if (Creature* cr = me->FindNearestCreature(shuffled[i], 100.0f))
             {
+                // The grid searcher filters on entry, alive, range and phase but never on
+                // IsInWorld, and a keg stays linked in the grid after RemoveFromWorld() until
+                // Map::RemoveFromMap() deletes it - the whole of CleanupBeforeRemoveFromMap()
+                // runs in between. Following a keg caught in that window registers this guzzler
+                // on a unit that is about to be freed. Take the next keg instead.
+                if (!cr->IsInWorld())
+                    continue;
+
                 cr->SetWalk(true);
                 me->GetMotionMaster()->MoveFollow(cr, 1.0f, cr->GetAngle(me));
                 targetGUID = cr->GetGUID();

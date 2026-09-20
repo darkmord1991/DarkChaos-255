@@ -362,13 +362,22 @@ function DCCF:BuildUpgrades()
         end)
     end
 
+    local function RefreshFromUpgradeCache()
+        if PaperDollFrame:IsShown() then
+            DCCF:RefreshUpgradesPane()
+            DCCF:UpdateAllSlotOverlays()
+            DCCF:UpdateItemLevelDisplay()
+        end
+    end
+
     if type(DarkChaos_ItemUpgrade_HandleJsonItemInfo) == "function" then
-        hooksecurefunc("DarkChaos_ItemUpgrade_HandleJsonItemInfo", function()
-            if PaperDollFrame:IsShown() then
-                DCCF:RefreshUpgradesPane()
-                DCCF:UpdateAllSlotOverlays()
-                DCCF:UpdateItemLevelDisplay()
-            end
-        end)
+        hooksecurefunc("DarkChaos_ItemUpgrade_HandleJsonItemInfo", RefreshFromUpgradeCache)
+    end
+
+    -- A successful upgrade changes the cache without an item-info response, so
+    -- hooking only the handler above left this pane one purchase behind: it kept
+    -- showing e.g. "298  14/15" for an item that was already 15/15.
+    if type(DarkChaos_ItemUpgrade_OnUpgradeCacheChanged) == "function" then
+        hooksecurefunc("DarkChaos_ItemUpgrade_OnUpgradeCacheChanged", RefreshFromUpgradeCache)
     end
 end

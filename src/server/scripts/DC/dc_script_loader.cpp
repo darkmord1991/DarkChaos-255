@@ -152,6 +152,7 @@ void AddSC_dc_prestige_spells();              // Progression/Prestige/dc_prestig
 void AddSC_dc_prestige_alt_bonus();           // Progression/Prestige/dc_prestige_alt_bonus.cpp
 void AddSC_dc_prestige_challenges();          // Progression/Prestige/dc_prestige_challenges.cpp
 void AddSC_spell_prestige_alt_bonus_aura();   // Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
+void AddSC_dc_prestige_talents();             // Progression/Prestige/dc_prestige_talents.cpp
 
 // --- Challenge mode system ---
 void AddSC_dc_challenge_modes();              // Progression/ChallengeMode/dc_challenge_modes_customized.cpp
@@ -457,6 +458,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_prestige_alt_bonus);
     DC_LOAD(AddSC_dc_prestige_challenges);
     DC_LOAD(AddSC_spell_prestige_alt_bonus_aura);
+    DC_LOAD(AddSC_dc_prestige_talents);
 
     LogSection("Custom Achievements System");
     DC_LOAD(AddSC_dc_achievements);

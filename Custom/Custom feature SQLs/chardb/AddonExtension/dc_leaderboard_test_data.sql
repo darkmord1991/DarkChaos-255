@@ -29,32 +29,88 @@ SET @player3 = (SELECT guid FROM characters ORDER BY guid LIMIT 1 OFFSET 2);
 SELECT 'Found players' AS step, @player1 AS p1, @player2 AS p2, @player3 AS p3;
 
 -- ============================================================================
--- STEP 3: Insert HLBG Seasonal Data (for leaderboards)
+-- STEP 3: Insert HLBG Unified Match Data (for seasonal leaderboards)
 -- ============================================================================
 
--- Insert/Update HLBG seasonal stats for test players
-INSERT INTO dc_hlbg_player_season_data 
-    (player_guid, season_id, joined_at, rating, completed_games, wins, losses, highest_rating, lowest_rating, total_score, average_score)
-SELECT 
-    guid, 1, UNIX_TIMESTAMP(), 
-    1500 + FLOOR(RAND() * 500),  -- Random rating 1500-2000
-    FLOOR(RAND() * 50) + 10,     -- 10-60 games
-    FLOOR(RAND() * 30) + 5,      -- 5-35 wins  
-    FLOOR(RAND() * 20),          -- 0-20 losses
-    1500 + FLOOR(RAND() * 600),  -- Highest rating
-    1400 + FLOOR(RAND() * 200),  -- Lowest rating
-    FLOOR(RAND() * 100000),      -- Total score
-    FLOOR(RAND() * 2000)         -- Average score
-FROM characters
-WHERE guid IN (SELECT guid FROM characters LIMIT 5)
-ON DUPLICATE KEY UPDATE
-    rating = VALUES(rating),
-    completed_games = VALUES(completed_games),
-    wins = VALUES(wins),
-    losses = VALUES(losses);
+INSERT INTO dc_hlbg_winner_history
+    (season, occurred_at, duration_seconds, zone_id, map_id, winner_tid, win_reason, score_alliance, score_horde, affix, weather, weather_intensity)
+VALUES
+    (1, NOW() - INTERVAL 7 DAY, 1020, 26, 1411, 0, 'depletion', 1600, 1220, 1, 0, 0.00),
+    (1, NOW() - INTERVAL 6 DAY, 1105, 26, 1411, 1, 'tiebreaker', 1410, 1600, 4, 3, 0.45),
+    (1, NOW() - INTERVAL 5 DAY, 980, 26, 1411, 0, 'manual', 1600, 1180, 2, 1, 0.25);
 
-SELECT 'HLBG Seasonal Data' AS step, COUNT(*) AS rows_in_dc_hlbg_player_season_data 
-FROM dc_hlbg_player_season_data;
+SET @hlbg_match_1 = LAST_INSERT_ID() - 2;
+SET @hlbg_match_2 = LAST_INSERT_ID() - 1;
+SET @hlbg_match_3 = LAST_INSERT_ID();
+
+INSERT INTO dc_hlbg_match_participants
+    (match_id, guid, player_name, account_id, account_name, team, season_id, match_date, kills, deaths, healing_done, damage_done, resources_captured, flags_returned, objectives_completed, rating_change)
+SELECT
+    @hlbg_match_1,
+    c.guid,
+    c.name,
+    c.account,
+    CONCAT('account_', c.account),
+    CASE WHEN MOD(c.guid, 2) = 0 THEN 0 ELSE 1 END,
+    1,
+    NOW() - INTERVAL 7 DAY,
+    8 + FLOOR(RAND() * 12),
+    1 + FLOOR(RAND() * 6),
+    FLOOR(RAND() * 25000),
+    10000 + FLOOR(RAND() * 25000),
+    150 + FLOOR(RAND() * 600),
+    FLOOR(RAND() * 3),
+    FLOOR(RAND() * 4),
+    CASE WHEN MOD(c.guid, 2) = 0 THEN 18 + FLOOR(RAND() * 12) ELSE -15 - FLOOR(RAND() * 10) END
+FROM characters c
+WHERE c.guid IN (SELECT guid FROM characters LIMIT 5);
+
+INSERT INTO dc_hlbg_match_participants
+    (match_id, guid, player_name, account_id, account_name, team, season_id, match_date, kills, deaths, healing_done, damage_done, resources_captured, flags_returned, objectives_completed, rating_change)
+SELECT
+    @hlbg_match_2,
+    c.guid,
+    c.name,
+    c.account,
+    CONCAT('account_', c.account),
+    CASE WHEN MOD(c.guid, 2) = 0 THEN 0 ELSE 1 END,
+    1,
+    NOW() - INTERVAL 6 DAY,
+    6 + FLOOR(RAND() * 10),
+    2 + FLOOR(RAND() * 7),
+    FLOOR(RAND() * 22000),
+    9000 + FLOOR(RAND() * 22000),
+    120 + FLOOR(RAND() * 500),
+    FLOOR(RAND() * 3),
+    FLOOR(RAND() * 4),
+    CASE WHEN MOD(c.guid, 2) = 1 THEN 16 + FLOOR(RAND() * 10) ELSE -12 - FLOOR(RAND() * 8) END
+FROM characters c
+WHERE c.guid IN (SELECT guid FROM characters LIMIT 5);
+
+INSERT INTO dc_hlbg_match_participants
+    (match_id, guid, player_name, account_id, account_name, team, season_id, match_date, kills, deaths, healing_done, damage_done, resources_captured, flags_returned, objectives_completed, rating_change)
+SELECT
+    @hlbg_match_3,
+    c.guid,
+    c.name,
+    c.account,
+    CONCAT('account_', c.account),
+    CASE WHEN MOD(c.guid, 2) = 0 THEN 0 ELSE 1 END,
+    1,
+    NOW() - INTERVAL 5 DAY,
+    7 + FLOOR(RAND() * 11),
+    1 + FLOOR(RAND() * 5),
+    FLOOR(RAND() * 24000),
+    9500 + FLOOR(RAND() * 26000),
+    140 + FLOOR(RAND() * 550),
+    FLOOR(RAND() * 3),
+    FLOOR(RAND() * 4),
+    CASE WHEN MOD(c.guid, 2) = 0 THEN 14 + FLOOR(RAND() * 10) ELSE -10 - FLOOR(RAND() * 8) END
+FROM characters c
+WHERE c.guid IN (SELECT guid FROM characters LIMIT 5);
+
+SELECT 'HLBG Unified Match Data' AS step, COUNT(*) AS rows_in_dc_hlbg_match_participants
+FROM dc_hlbg_match_participants;
 
 -- ============================================================================
 -- STEP 4: Insert HLBG All-time Stats (for all-time leaderboards)
@@ -178,7 +234,7 @@ FROM dc_player_achievements;
 SELECT 
     'FINAL SUMMARY' AS report,
     (SELECT COUNT(*) FROM dc_hlbg_seasons WHERE is_active = 1) AS active_hlbg_seasons,
-    (SELECT COUNT(*) FROM dc_hlbg_player_season_data) AS hlbg_seasonal_players,
+    (SELECT COUNT(*) FROM v_hlbg_player_seasonal_stats WHERE season_id = 1) AS hlbg_seasonal_players,
     (SELECT COUNT(*) FROM dc_hlbg_player_stats) AS hlbg_alltime_players,
     (SELECT COUNT(*) FROM dc_aoeloot_detailed_stats) AS aoe_loot_players,
     (SELECT COUNT(*) FROM dc_character_prestige WHERE prestige_level > 0) AS prestige_players,

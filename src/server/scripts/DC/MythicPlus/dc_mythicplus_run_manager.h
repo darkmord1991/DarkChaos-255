@@ -19,6 +19,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 class Creature;
@@ -473,6 +474,15 @@ namespace DCMythicPlusBots
     bool AbortRun(Map* map, std::string const& reason);
     uint8 GetRunPhase(Map* map);
     void GetRemainingBossEntries(Map* map, std::vector<uint32>& out);
+
+    // Great Vault for bots, which have no vault panel. All three work on the
+    // claim week (last week, see GreatVaultMgr::ClaimVaultItemReward).
+    // Candidates: characters with a successful bot Mythic+ run that week and no
+    // claim recorded for it - online or not, players filtered by the caller.
+    void GetBotVaultCandidates(std::vector<uint32>& outGuids);
+    // Builds the bot's reward pool if needed and returns it as (slot, itemId).
+    void GetBotVaultChoices(Player* bot, std::vector<std::pair<uint8, uint32>>& out);
+    bool ClaimBotVaultReward(Player* bot, uint8 slot, uint32 itemId);
 }
 
 #endif // DC_MYTHICPLUS_RUN_MANAGER_H

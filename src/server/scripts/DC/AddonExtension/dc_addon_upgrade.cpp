@@ -26,7 +26,9 @@
 #include "StringFormat.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
+#include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
+#include <algorithm>
 #include <mutex>
 
 namespace DCAddon
@@ -279,6 +281,26 @@ namespace Upgrade
                     JsonValue(DarkChaos::ItemUpgrade::GetCurrencyItemId(tierCurrency)));
                 row.Set("isArtifact", JsonValue(def->is_artifact));
                 row.Set("enabled", JsonValue(1u));
+
+                // Per-level item-level steps, index 0 = level 1. Sent per level,
+                // not as one "per level" rate, because that is how the cost table
+                // stores it and nothing forces the steps to be uniform.
+                //
+                // The addon used to carry its own table (+1/+1/+1.5/+2/+2.5 per
+                // level for tiers 1-5) and it had already drifted from the data:
+                // Hyjal tiers 4/5 are +3 and +2 per level here, so the upgrade
+                // window showed the wrong item level for every Hyjal item.
+                JsonValue ilvlIncreases;
+                ilvlIncreases.SetArray(static_cast<size_t>(def->max_upgrade_level));
+                // uint32 counter: a uint8 one can never exceed a max level of 255
+                // and would hang the login that triggered this send.
+                for (uint32 level = 1; level <= def->max_upgrade_level; ++level)
+                {
+                    ilvlIncreases.Push(JsonValue(static_cast<uint32>(
+                        mgr->GetIlvlIncrease(tierId, static_cast<uint8>(level)))));
+                }
+                row.Set("ilvlIncreases", std::move(ilvlIncreases));
+
                 tiers.Push(std::move(row));
 
                 mixRevision(static_cast<uint32>(tierId));
@@ -291,6 +313,13 @@ namespace Upgrade
                 mixRevision(static_cast<uint32>(tierCurrency));
                 mixRevision(static_cast<uint32>(
                     (def->stat_multiplier_max * 10000.0f) + 0.5f));
+                // Without these a retuned ilvl_increase would leave the client on
+                // its cached tier config, showing the old item levels.
+                for (uint32 level = 1; level <= def->max_upgrade_level; ++level)
+                {
+                    mixRevision(static_cast<uint32>(
+                        mgr->GetIlvlIncrease(tierId, static_cast<uint8>(level))));
+                }
             }
         }
 
@@ -502,6 +531,50 @@ namespace Upgrade
             }
         }
 
+        // Proc preview: the scaling Equip:/Use:/Chance-on-hit sentences rendered
+        // for every level from the current one up to the tier's max, so the window
+        // can show "current" against whatever target the player picks without
+        // re-implementing the description renderer in Lua. procLines[1] is the
+        // current level, procLines[n] is current + n - 1.
+        //
+        // Capped: a tier with a very deep level range must not turn one item
+        // click into a multi-kilobyte response.
+        constexpr uint32 MAX_PROC_PREVIEW_LEVELS = 20;
+
+        JsonValue procLines;
+        procLines.SetArray();
+        {
+            uint32 const lastLevel = std::min<uint32>(maxLevel,
+                upgradeLevel + MAX_PROC_PREVIEW_LEVELS - 1);
+            for (uint32 level = upgradeLevel; level <= lastLevel; ++level)
+            {
+                float const levelMultiplier = (level == upgradeLevel)
+                    ? statMultiplier
+                    : DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                        static_cast<uint8>(level), tier);
+
+                // Random-enchant stats first, then the procs -- the order the
+                // tooltip prints them in.
+                std::vector<std::string> lines =
+                    DarkChaos::ItemUpgrade::BuildScaledRandomEnchantLines(item,
+                        levelMultiplier);
+                for (std::string& procLine :
+                    DarkChaos::ItemUpgrade::BuildScaledItemProcLines(player,
+                        baseEntry, levelMultiplier))
+                {
+                    lines.push_back(std::move(procLine));
+                }
+                if (lines.empty())
+                    break;
+
+                JsonValue levelLines;
+                levelLines.SetArray(lines.size());
+                for (std::string const& line : lines)
+                    levelLines.Push(JsonValue(line));
+                procLines.Push(std::move(levelLines));
+            }
+        }
+
         // Send response
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
             .SetRequestId(msg.GetRequestId())
@@ -518,6 +591,7 @@ namespace Upgrade
             .Set("baseIlvl", baseItemLevel)
             .Set("upgradedIlvl", upgradedIlvl)
             .Set("statMultiplier", statMultiplier)
+            .Set("procLines", std::move(procLines))
             .Send(player);
     }
 

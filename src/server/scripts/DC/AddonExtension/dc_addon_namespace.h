@@ -288,10 +288,22 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_GET_INFO          = 0x01;
             constexpr uint8 CMSG_GET_BONUSES       = 0x02;
+            constexpr uint8 CMSG_GET_TALENTS       = 0x03;
+            constexpr uint8 CMSG_LEARN_TALENT      = 0x04; // {id}
+            constexpr uint8 CMSG_RESET_TALENTS     = 0x05;
+            constexpr uint8 CMSG_GET_CHALLENGES    = 0x06;
+            constexpr uint8 CMSG_GET_REWARDS       = 0x07;
+            constexpr uint8 CMSG_CLAIM_REWARD      = 0x08; // {threshold}
+            constexpr uint8 CMSG_APPLY_TALENTS     = 0x09; // {ranks:[{id,rank}]}
 
             constexpr uint8 SMSG_INFO              = 0x10;
             constexpr uint8 SMSG_BONUSES           = 0x11;
             constexpr uint8 SMSG_LEVEL_UP          = 0x12;
+            constexpr uint8 SMSG_TALENTS           = 0x13;
+            constexpr uint8 SMSG_TALENT_RESULT     = 0x14; // {ok, action, error}
+            constexpr uint8 SMSG_CHALLENGES        = 0x15;
+            constexpr uint8 SMSG_REWARDS           = 0x16;
+            constexpr uint8 SMSG_CHALLENGE_EARNED  = 0x17; // {id, points, accountPoints}
         }
 
         // Seasonal opcodes

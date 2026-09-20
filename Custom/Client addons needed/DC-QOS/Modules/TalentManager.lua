@@ -2686,9 +2686,21 @@ function TalentManager:CreateMainFrame()
     end)
     frame.loadoutButton = loadoutBtn
 
-    -- Header row 2 (right): search + spec switch + glyphs
+    -- Header row 2 (right): search + spec switch + glyphs + prestige
+    local prestigeBtn = CreateFlatButton(frame, "Prestige", 64, 22)
+    prestigeBtn:SetPoint("TOPRIGHT", -34, -38)
+    prestigeBtn:SetScript("OnClick", function() TalentManager:OpenPrestigeTalents() end)
+    prestigeBtn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Prestige Talents")
+        GameTooltip:AddLine("Account-wide prestige perks, challenges and the reward track.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    prestigeBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.prestigeButton = prestigeBtn
+
     local glyphBtn = CreateFlatButton(frame, "Glyphs", 58, 22)
-    glyphBtn:SetPoint("TOPRIGHT", -34, -38)
+    glyphBtn:SetPoint("RIGHT", prestigeBtn, "LEFT", -4, 0)
     glyphBtn:SetScript("OnClick", function() TalentManager:ToggleGlyphFrame() end)
     frame.glyphButton = glyphBtn
 
@@ -3552,6 +3564,18 @@ function TalentManager:UpdateGlyphDisplay()
     glyphFrame.availText:SetText(#lines > 0 and table.concat(lines, "\n") or "|cFF666666None|r")
 end
 
+-- Prestige talents live in DC-Welcome (PrestigeTalents.lua); resolved at
+-- click time so addon load order does not matter.
+function TalentManager:OpenPrestigeTalents()
+    local welcome = rawget(_G, "DCWelcome")
+    local prestige = welcome and welcome.PrestigeTalents
+    if prestige and prestige.Open then
+        prestige:Open(3)
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffd200[DC-QoS]|r Prestige Talents need the DC-Welcome addon.")
+    end
+end
+
 function TalentManager:ToggleGlyphFrame()
     self:EnsureGlyphUI()
     local frame = self:CreateGlyphFrame()
@@ -3876,6 +3900,44 @@ hookFrame:SetScript("OnEvent", function(self, event, addonName)
 
         TalentManager:PositionTalentFrameButton(dcBtn)
         dcBtn:Show()
+
+        local prestigeBtn = CreateFrame("Button", "DCQoS_PrestigeTalentButton", PlayerTalentFrame)
+        prestigeBtn:SetSize(36, 36)
+        prestigeBtn:SetFrameStrata("HIGH")
+        prestigeBtn:SetFrameLevel(dcBtn:GetFrameLevel())
+        prestigeBtn:SetPoint("TOP", dcBtn, "BOTTOM", 0, -14)
+
+        local prestigeSlot = prestigeBtn:CreateTexture(nil, "BACKGROUND")
+        prestigeSlot:SetSize(50, 50)
+        prestigeSlot:SetPoint("CENTER")
+        prestigeSlot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+
+        local prestigeIcon = prestigeBtn:CreateTexture(nil, "ARTWORK")
+        prestigeIcon:SetSize(32, 32)
+        prestigeIcon:SetPoint("CENTER")
+        prestigeIcon:SetTexture("Interface\\Icons\\Achievement_Level_80")
+        prestigeIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        local prestigeBorder = prestigeBtn:CreateTexture(nil, "OVERLAY")
+        prestigeBorder:SetSize(52, 52)
+        prestigeBorder:SetPoint("CENTER")
+        prestigeBorder:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+        prestigeBorder:SetBlendMode("ADD")
+        prestigeBorder:SetVertexColor(1.0, 0.82, 0.0)  -- gold for prestige
+
+        local prestigeHighlight = prestigeBtn:CreateTexture(nil, "HIGHLIGHT")
+        prestigeHighlight:SetAllPoints()
+        prestigeHighlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        prestigeHighlight:SetBlendMode("ADD")
+
+        prestigeBtn:SetScript("OnClick", function() TalentManager:OpenPrestigeTalents() end)
+        prestigeBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Prestige Talents")
+            GameTooltip:Show()
+        end)
+        prestigeBtn:SetScript("OnLeave", GameTooltip_Hide)
+        prestigeBtn:Show()
         if PlayerTalentFrame.HookScript then
             PlayerTalentFrame:HookScript("OnShow", function()
                 TalentManager:PositionTalentFrameButton(dcBtn)

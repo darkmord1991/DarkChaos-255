@@ -48,6 +48,7 @@
 #include "Map.h"
 #include "DC/AddonExtension/dc_addon_spell_template.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <atomic>
 #include <chrono>
@@ -58,6 +59,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <set>
 #include <mutex>
 #include <unordered_map>
@@ -812,8 +814,15 @@ namespace DCQoS
     };
 
     static std::string GetSpellDescriptionTemplate(uint32 spellId);
+    // valueMultiplier scales the magnitude tokens ($s/$m/$M/$b/$o and ${} results)
+    // so an item-upgrade proc prints the value it actually deals. 1.0f = verbatim.
+    // colorizeValues wraps substituted values in white (|cffffffff...|r). That is
+    // the look the SPELL tooltip enrichment wants, and wrong inside an item
+    // tooltip: stock draws Equip:/Use: sentences in one uniform green, so a white
+    // "2576" next to a green "322" on the line above reads as a rendering bug.
     static std::string RenderSpellDescriptionTemplate(Player* player,
-        SpellInfo const* spellInfo, std::string const& sourceTemplate);
+        SpellInfo const* spellInfo, std::string const& sourceTemplate,
+        float valueMultiplier = 1.0f, bool colorizeValues = true);
 
     static void AppendItemTooltipSnapshotRow(
         std::vector<ItemTooltipSnapshotRow>& rows,
@@ -983,6 +992,86 @@ namespace DCQoS
         }
     }
 
+    // The stock tooltip draws only the primary stats (and flat mana/health) as
+    // white "+N Stat" lines. Ratings, attack/spell power, regen, penetration and
+    // block value are drawn further down as green "Equip: ..." sentences, in with
+    // the item's spell lines. Returns nullptr for the white ones. Wording follows
+    // the 3.3.5 ITEM_MOD_* global strings.
+    static char const* GetEquipStatSentence(uint32 statType)
+    {
+        switch (statType)
+        {
+            case ITEM_MOD_DEFENSE_SKILL_RATING:
+                return "Increases defense rating by {}.";
+            case ITEM_MOD_DODGE_RATING:
+                return "Increases your dodge rating by {}.";
+            case ITEM_MOD_PARRY_RATING:
+                return "Increases your parry rating by {}.";
+            case ITEM_MOD_BLOCK_RATING:
+                return "Increases your shield block rating by {}.";
+            case ITEM_MOD_HIT_MELEE_RATING:
+                return "Improves melee hit rating by {}.";
+            case ITEM_MOD_HIT_RANGED_RATING:
+                return "Improves ranged hit rating by {}.";
+            case ITEM_MOD_HIT_SPELL_RATING:
+                return "Improves spell hit rating by {}.";
+            case ITEM_MOD_CRIT_MELEE_RATING:
+                return "Improves melee critical strike rating by {}.";
+            case ITEM_MOD_CRIT_RANGED_RATING:
+                return "Improves ranged critical strike rating by {}.";
+            case ITEM_MOD_CRIT_SPELL_RATING:
+                return "Improves spell critical strike rating by {}.";
+            case ITEM_MOD_HASTE_MELEE_RATING:
+                return "Improves melee haste rating by {}.";
+            case ITEM_MOD_HASTE_RANGED_RATING:
+                return "Improves ranged haste rating by {}.";
+            case ITEM_MOD_HASTE_SPELL_RATING:
+                return "Improves spell haste rating by {}.";
+            case ITEM_MOD_HIT_RATING:
+                return "Improves hit rating by {}.";
+            case ITEM_MOD_CRIT_RATING:
+                return "Improves critical strike rating by {}.";
+            case ITEM_MOD_RESILIENCE_RATING:
+                return "Improves your resilience rating by {}.";
+            case ITEM_MOD_HASTE_RATING:
+                return "Improves haste rating by {}.";
+            case ITEM_MOD_EXPERTISE_RATING:
+                return "Increases your expertise rating by {}.";
+            case ITEM_MOD_ATTACK_POWER:
+                return "Increases attack power by {}.";
+            case ITEM_MOD_RANGED_ATTACK_POWER:
+                return "Increases ranged attack power by {}.";
+            case ITEM_MOD_MANA_REGENERATION:
+                return "Restores {} mana per 5 sec.";
+            case ITEM_MOD_ARMOR_PENETRATION_RATING:
+                return "Increases your armor penetration rating by {}.";
+            case ITEM_MOD_SPELL_POWER:
+                return "Increases spell power by {}.";
+            case ITEM_MOD_HEALTH_REGEN:
+                return "Restores {} health per 5 sec.";
+            case ITEM_MOD_SPELL_PENETRATION:
+                return "Increases spell penetration by {}.";
+            case ITEM_MOD_BLOCK_VALUE:
+                return "Increases the block value of your shield by {}.";
+            default:
+                return nullptr;
+        }
+    }
+
+    static std::string FormatEquipItemStat(int32 value, uint32 statType)
+    {
+        char const* sentence = GetEquipStatSentence(statType);
+        if (!sentence || value == 0)
+            return "";
+
+        std::string text = sentence;
+        std::size_t const placeholder = text.find("{}");
+        if (placeholder != std::string::npos)
+            text.replace(placeholder, 2, std::to_string(value));
+
+        return "Equip: " + text;
+    }
+
     static std::string FormatSignedItemStat(int32 value, char const* label)
     {
         if (!label || value == 0)
@@ -1037,6 +1126,10 @@ namespace DCQoS
         }
     }
 
+    // The stock client draws a socketed gem as the gem's STAT text ("+16 Agility"),
+    // not as the gem's item name. Returning the name lost the stats entirely once
+    // the native path took over rendering, so prefer the enchant description and
+    // keep the item name only as a fallback for gems whose row has no description.
     static std::string GetSocketGemName(Item* item,
         EnchantmentSlot socketSlot)
     {
@@ -1052,6 +1145,9 @@ namespace DCQoS
         if (!enchant || !enchant->GemID)
             return "";
 
+        if (enchant->description[0] && *enchant->description[0])
+            return enchant->description[0];
+
         if (ItemTemplate const* gemTemplate =
                 sObjectMgr->GetItemTemplate(enchant->GemID))
         {
@@ -1059,6 +1155,220 @@ namespace DCQoS
         }
 
         return "";
+    }
+
+    // Mirrors Player::ApplyEnchantment's ITEM_ENCHANTMENT_TYPE_STAT branch: the
+    // enchant row's own amount wins, and a zero amount means the magnitude comes
+    // from the item's random-suffix allocation scaled by its suffix factor.
+    static uint32 ResolveEnchantmentStatAmount(Item* item,
+        SpellItemEnchantmentEntry const* enchant, uint32 effectIndex)
+    {
+        if (!enchant)
+            return 0;
+
+        uint32 amount = enchant->amount[effectIndex];
+        if (amount != 0 || !item)
+            return amount;
+
+        ItemRandomSuffixEntry const* suffix = sItemRandomSuffixStore.LookupEntry(
+            static_cast<uint32>(std::abs(item->GetItemRandomPropertyId())));
+        if (!suffix)
+            return 0;
+
+        for (uint32 k = 0; k < MAX_ITEM_ENCHANTMENT_EFFECTS; ++k)
+        {
+            if (suffix->Enchantment[k] != enchant->ID)
+                continue;
+
+            return uint32((suffix->AllocationPct[k]
+                * item->GetItemSuffixFactor()) / 10000);
+        }
+
+        return 0;
+    }
+
+    // One line per enchantment, the way the stock client draws it: the enchant's own
+    // description when it has one, otherwise the stat lines it grants. Random
+    // suffixes land in the second case -- their DBC rows carry no description and
+    // their magnitude only exists once the item's suffix factor is applied.
+    //
+    // These are deliberately NOT scaled by the upgrade multiplier. The DC stat hooks
+    // only touch _ApplyItemMods values sourced from item_template, and nothing
+    // implements OnPlayerApplyEnchantmentItemModsBefore, so enchant stats are
+    // applied verbatim at runtime and have to be printed verbatim here.
+    static void AppendEnchantmentTooltipRows(
+        std::vector<ItemTooltipSnapshotRow>& rows, Item* item, uint32 enchantId,
+        char const* classification)
+    {
+        if (!enchantId)
+            return;
+
+        SpellItemEnchantmentEntry const* enchant =
+            sSpellItemEnchantmentStore.LookupEntry(enchantId);
+        if (!enchant)
+            return;
+
+        if (enchant->description[0] && *enchant->description[0])
+        {
+            AppendItemTooltipSnapshotRow(rows, enchant->description[0], "",
+                "append-body", classification);
+            return;
+        }
+
+        for (uint32 effectIndex = 0;
+             effectIndex < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++effectIndex)
+        {
+            if (enchant->type[effectIndex] != ITEM_ENCHANTMENT_TYPE_STAT)
+                continue;
+
+            uint32 const amount =
+                ResolveEnchantmentStatAmount(item, enchant, effectIndex);
+            if (amount == 0)
+                continue;
+
+            char const* label = GetItemStatLabel(enchant->spellid[effectIndex]);
+            if (!label)
+                continue;
+
+            std::string line =
+                FormatSignedItemStat(static_cast<int32>(amount), label);
+            if (!line.empty())
+                AppendItemTooltipSnapshotRow(rows, line, "", "append-body",
+                    classification);
+        }
+    }
+
+    // Rounds exactly like the runtime hooks (lround of value * multiplier).
+    static uint32 ScaleEnchantAmount(uint32 amount, double multiplier)
+    {
+        if (amount == 0 || multiplier <= 1.0)
+            return amount;
+
+        return static_cast<uint32>(std::max<int64>(0, static_cast<int64>(
+            std::lround(static_cast<double>(amount) * multiplier))));
+    }
+
+    // Scales every "+<number>" in an enchant description. Only the '+'-prefixed
+    // numbers: "+8 mana every 5 sec." must not turn into "every 9 sec.".
+    static std::string ScalePlusNumbersInText(std::string const& text, double multiplier)
+    {
+        if (multiplier <= 1.0)
+            return text;
+
+        std::string scaled;
+        scaled.reserve(text.size() + 8);
+
+        std::size_t i = 0;
+        while (i < text.size())
+        {
+            if (text[i] == '+' && i + 1 < text.size()
+                && std::isdigit(static_cast<unsigned char>(text[i + 1])))
+            {
+                std::size_t end = i + 1;
+                while (end < text.size() && (end - i) <= 9
+                    && std::isdigit(static_cast<unsigned char>(text[end])))
+                {
+                    ++end;
+                }
+
+                uint32 const value = static_cast<uint32>(
+                    std::stoul(text.substr(i + 1, end - (i + 1))));
+                scaled.push_back('+');
+                scaled += std::to_string(ScaleEnchantAmount(value, multiplier));
+                i = end;
+                continue;
+            }
+
+            scaled.push_back(text[i]);
+            ++i;
+        }
+
+        return scaled;
+    }
+
+    // The lines an item's random-enchant slots contribute, at `multiplier`.
+    //
+    // Upgrades scale what was rolled INTO the item (these slots) and leave alone what
+    // the player added (permanent enchant, gems). How a line is produced follows what
+    // the runtime can actually scale, so the text never promises more than is applied:
+    //
+    //   all effects STAT        -> generated "+N Stat" lines, N scaled
+    //                              (ItemUpgradeStatApplication's enchant hook)
+    //   all effects EQUIP_SPELL -> the description with its "+N" scaled, but only if
+    //     with a scalable aura     every spell is one ItemUpgradeProcScaling scales
+    //   anything else           -> the description verbatim (weapon-damage and
+    //                              resistance enchants have no hook; mixed rows are
+    //                              rare enough to under-state rather than guess)
+    static std::vector<std::string> BuildRandomEnchantLines(Item* item, double multiplier)
+    {
+        std::vector<std::string> lines;
+        if (!item)
+            return lines;
+
+        for (uint32 propIndex = 0; propIndex < MAX_ITEM_ENCHANTMENT_EFFECTS; ++propIndex)
+        {
+            SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(
+                item->GetEnchantmentId(EnchantmentSlot(PROP_ENCHANTMENT_SLOT_0 + propIndex)));
+            if (!enchant)
+                continue;
+
+            uint32 statEffects = 0;
+            uint32 scalableSpellEffects = 0;
+            uint32 otherEffects = 0;
+            for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+            {
+                switch (enchant->type[i])
+                {
+                    case ITEM_ENCHANTMENT_TYPE_NONE:
+                        break;
+                    case ITEM_ENCHANTMENT_TYPE_STAT:
+                        ++statEffects;
+                        break;
+                    case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
+                        if (DarkChaos::ItemUpgrade::IsUpgradeScaledEquipSpell(enchant->spellid[i]))
+                            ++scalableSpellEffects;
+                        else
+                            ++otherEffects;
+                        break;
+                    default:
+                        ++otherEffects;
+                        break;
+                }
+            }
+
+            bool const hasDescription = enchant->description[0] && *enchant->description[0];
+
+            if (statEffects > 0 && scalableSpellEffects == 0 && otherEffects == 0)
+            {
+                for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+                {
+                    if (enchant->type[i] != ITEM_ENCHANTMENT_TYPE_STAT)
+                        continue;
+
+                    uint32 const amount = ScaleEnchantAmount(
+                        ResolveEnchantmentStatAmount(item, enchant, i), multiplier);
+                    char const* label = GetItemStatLabel(enchant->spellid[i]);
+                    if (amount == 0 || !label)
+                        continue;
+
+                    std::string line = FormatSignedItemStat(static_cast<int32>(amount), label);
+                    if (!line.empty())
+                        lines.push_back(std::move(line));
+                }
+                continue;
+            }
+
+            if (!hasDescription)
+                continue;
+
+            bool const descriptionScales =
+                scalableSpellEffects > 0 && statEffects == 0 && otherEffects == 0;
+            lines.push_back(descriptionScales
+                ? ScalePlusNumbersInText(enchant->description[0], multiplier)
+                : std::string(enchant->description[0]));
+        }
+
+        return lines;
     }
 
     static char const* GetItemSpellTriggerPrefix(uint32 trigger)
@@ -1080,8 +1390,11 @@ namespace DCQoS
         }
     }
 
+    // valueMultiplier is the item-upgrade proc multiplier for this spell. Pass 1.0f
+    // for spells the proc hooks never touch (item-set bonuses), so their numbers are
+    // not inflated by an unrelated equipped upgrade.
     static std::string BuildItemSpellTooltipText(Player* player,
-        int32 spellId, uint32 trigger)
+        int32 spellId, uint32 trigger, float valueMultiplier = 1.0f)
     {
         if (spellId <= 0)
             return "";
@@ -1091,7 +1404,8 @@ namespace DCQoS
             return "";
 
         std::string rendered = RenderSpellDescriptionTemplate(player,
-            spellInfo, GetSpellDescriptionTemplate(uint32(spellId)));
+            spellInfo, GetSpellDescriptionTemplate(uint32(spellId)),
+            valueMultiplier, /*colorizeValues=*/false);
         if (rendered.empty() && spellInfo->SpellName[0]
             && *spellInfo->SpellName[0])
         {
@@ -1143,17 +1457,25 @@ namespace DCQoS
         return totalPieces;
     }
 
+    // Only the display name lives here now. The STATS a package grants are read
+    // from the SpellItemEnchantment row that is actually applied to the item (see
+    // AppendHeirloomPackageTooltipRows) rather than recomputed from a parallel
+    // table: the old hand-written budget table disagreed with the DBC by 1-3 points
+    // at standard levels 5/6/7/9/13, mis-split 3-stat packages, was 4x low for the
+    // Frontier (tier 10) range it knew nothing about, and labelled packages 5/6
+    // "Spell Crit"/"Spell Haste"/"Spell Hit" when the DBC applies plain
+    // Crit/Haste/Hit rating.
     struct HeirloomPackageDefinition
     {
         char const* name;
-        char const* statNames[3];
-        uint8 statCount;
     };
 
     struct HeirloomPackageTooltipState
     {
         uint32 packageId = 0;
         uint32 upgradeLevel = 0;
+        // The enchant row actually applied to the item; 0 when none was decoded.
+        uint32 enchantId = 0;
     };
 
     static bool TryGetHeirloomPackageDefinition(uint32 packageId,
@@ -1164,56 +1486,26 @@ namespace DCQoS
         static HeirloomPackageDefinition const definitions[
             HEIRLOOM_MAX_PACKAGE_ID + 1] =
         {
-            { "", { nullptr, nullptr, nullptr }, 0 },
-            { "Fury", { "Crit Rating", "Haste Rating", nullptr }, 2 },
-            { "Precision", { "Hit Rating", "Expertise Rating", nullptr }, 2 },
-            { "Devastation", { "Crit Rating", "Armor Pen", nullptr }, 2 },
-            { "Swiftblade", { "Haste Rating", "Armor Pen", nullptr }, 2 },
-            { "Spellfire", { "Spell Crit", "Spell Haste", "Spell Power" }, 3 },
-            { "Arcane", { "Spell Hit", "Spell Haste", "Spell Power" }, 3 },
-            { "Bulwark", { "Dodge Rating", "Parry Rating", "Block Rating" }, 3 },
-            { "Fortress", { "Defense Rating", "Block Rating", "Stamina" }, 3 },
-            { "Survivor", { "Dodge Rating", "Stamina", nullptr }, 2 },
-            { "Gladiator", { "Resilience", "Crit Rating", nullptr }, 2 },
-            { "Warlord", { "Resilience", "Stamina", nullptr }, 2 },
-            { "Balanced", { "Crit Rating", "Hit Rating", "Haste Rating" }, 3 },
+            { "" },
+            { "Fury" },
+            { "Precision" },
+            { "Devastation" },
+            { "Swiftblade" },
+            { "Spellfire" },
+            { "Arcane" },
+            { "Bulwark" },
+            { "Fortress" },
+            { "Survivor" },
+            { "Gladiator" },
+            { "Warlord" },
+            { "Balanced" },
         };
 
         if (packageId == 0 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
             return false;
 
         out = definitions[packageId];
-        return out.name && *out.name && out.statCount > 0;
-    }
-
-    static uint32 GetHeirloomPackageBudget(uint32 upgradeLevel)
-    {
-        using namespace DarkChaos::ItemUpgrade::UI;
-
-        static uint32 const budgets[HEIRLOOM_MAX_LEVEL + 1] =
-        {
-            0,
-            6,
-            14,
-            22,
-            32,
-            43,
-            55,
-            67,
-            80,
-            95,
-            110,
-            126,
-            142,
-            157,
-            168,
-            168,
-        };
-
-        if (upgradeLevel == 0 || upgradeLevel > HEIRLOOM_MAX_LEVEL)
-            return 0;
-
-        return budgets[upgradeLevel];
+        return out.name && *out.name;
     }
 
     static HeirloomPackageTooltipState ResolveHeirloomPackageTooltipState(
@@ -1247,6 +1539,7 @@ namespace DCQoS
             {
                 state.packageId = packageId;
                 state.upgradeLevel = upgradeLevel;
+                state.enchantId = enchantId;
                 return state;
             }
         }
@@ -1271,24 +1564,48 @@ namespace DCQoS
             return;
         }
 
-        uint32 totalBudget = GetHeirloomPackageBudget(state.upgradeLevel);
-        if (totalBudget == 0)
+        // Single source of truth: the enchant row Player::ApplyEnchantment is
+        // applying. Anything else is a second model that can drift out of step
+        // with the stats the character actually has.
+        SpellItemEnchantmentEntry const* enchant = state.enchantId
+            ? sSpellItemEnchantmentStore.LookupEntry(state.enchantId)
+            : nullptr;
+
+        if (!enchant)
+        {
+            // No DBC row means ApplyEnchantment granted nothing, so printing any
+            // stat line here would invent numbers the player does not have. This
+            // is a deployment fault (SpellItemEnchantment.dbc out of date on the
+            // server), not a tooltip fault -- say nothing and leave a trace.
+            LOG_DEBUG("dc.addon",
+                "Heirloom package tooltip: enchant {} (package {}, level {}) has no "
+                "SpellItemEnchantment row; no stat rows emitted.",
+                state.enchantId, state.packageId, state.upgradeLevel);
             return;
+        }
 
         AppendItemTooltipSnapshotRow(rows, "Package", definition.name,
             "append-body", "set-name");
         AppendItemTooltipSnapshotRow(rows, "-- Package Stats --", "",
             "append-body", "meta");
 
-        uint32 perStat = totalBudget / definition.statCount;
-        uint32 remainder = totalBudget - (perStat * definition.statCount);
-
-        for (uint32 statIndex = 0; statIndex < definition.statCount;
-             ++statIndex)
+        for (uint32 effectIndex = 0;
+             effectIndex < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++effectIndex)
         {
-            uint32 value = perStat + (statIndex < remainder ? 1u : 0u);
-            std::string line = FormatSignedItemStat(static_cast<int32>(value),
-                definition.statNames[statIndex]);
+            if (enchant->type[effectIndex] != ITEM_ENCHANTMENT_TYPE_STAT)
+                continue;
+
+            if (enchant->amount[effectIndex] == 0)
+                continue;
+
+            // For ITEM_ENCHANTMENT_TYPE_STAT the DBC's effectArg column (spellid[])
+            // carries the ItemModType, and effectPointsMin (amount[]) the value.
+            char const* label = GetItemStatLabel(enchant->spellid[effectIndex]);
+            if (!label)
+                continue;
+
+            std::string line = FormatSignedItemStat(
+                static_cast<int32>(enchant->amount[effectIndex]), label);
             if (!line.empty())
                 AppendItemTooltipSnapshotRow(rows, line, "",
                     "append-body", "stat");
@@ -1339,15 +1656,78 @@ namespace DCQoS
         double multiplier =
             static_cast<double>(snapshot.stat_multiplier_basis_points) / 10000.0;
 
-        if (snapshot.upgraded_ilvl > 0)
+        // Emitted unconditionally, with fallbacks, because everything below this
+        // point is "append-body" content that the baseline client ALSO draws
+        // (sockets, durability, requirements, spells, description, sell price, and
+        // the enchant/suffix rows added further down). The DLL only takes over
+        // rendering -- and therefore only stops the client drawing its own copy --
+        // when it sees at least one "replace-stat" row. Leaving this row out for an
+        // upgraded item with no ilvl recorded would double every one of those lines.
+        uint32 displayItemLevel = snapshot.upgraded_ilvl;
+        if (displayItemLevel == 0)
+            displayItemLevel = snapshot.base_ilvl;
+        if (displayItemLevel == 0 && itemTemplate)
+            displayItemLevel = itemTemplate->ItemLevel;
+
+        // Stock order is: damage, armor/block, white stats, resistances, enchants,
+        // sockets, durability, requirements, "Item Level", then the green Equip:
+        // lines (rating stats first, item spells after), the set block, flavour
+        // text. Rows that belong further down are parked in these and spliced in
+        // at the right point below.
+        bool itemLevelRowEmitted = false;
+        auto emitItemLevelRow = [&]()
         {
+            if (itemLevelRowEmitted || displayItemLevel == 0)
+                return;
+
+            itemLevelRowEmitted = true;
             AppendItemTooltipSnapshotRow(rows, "Item Level",
-                std::to_string(snapshot.upgraded_ilvl), "replace-stat",
+                std::to_string(displayItemLevel), "replace-stat",
                 "item-level");
-        }
+        };
+        std::vector<ItemTooltipSnapshotRow> equipStatRows;
 
         if (itemTemplate)
         {
+            double scaledDamageSum = 0.0;
+            for (uint32 damageIndex = 0;
+                 damageIndex < MAX_ITEM_PROTO_DAMAGES; ++damageIndex)
+            {
+                _Damage const& damage = itemTemplate->Damage[damageIndex];
+                if (damage.DamageMax <= 0.0f)
+                    continue;
+
+                int32 scaledMin = static_cast<int32>(std::lround(
+                    static_cast<double>(damage.DamageMin) * multiplier));
+                int32 scaledMax = static_cast<int32>(std::lround(
+                    static_cast<double>(damage.DamageMax) * multiplier));
+
+                std::ostringstream left;
+                left << scaledMin << " - " << scaledMax << " Damage";
+
+                std::ostringstream right;
+                if (itemTemplate->Delay > 0)
+                    right << "Speed " << std::fixed << std::setprecision(2)
+                        << (static_cast<double>(itemTemplate->Delay) / 1000.0);
+
+                AppendItemTooltipSnapshotRow(rows, left.str(), right.str(),
+                    "replace-stat", "weapon-damage");
+
+                scaledDamageSum += (static_cast<double>(damage.DamageMin)
+                    + static_cast<double>(damage.DamageMax)) * 0.5 * multiplier;
+            }
+
+            if (scaledDamageSum > 0.0 && itemTemplate->Delay > 0)
+            {
+                std::ostringstream dps;
+                dps << '(' << std::fixed << std::setprecision(1)
+                    << (scaledDamageSum
+                        / (static_cast<double>(itemTemplate->Delay) / 1000.0))
+                    << " damage per second)";
+                AppendItemTooltipSnapshotRow(rows, dps.str(), "",
+                    "replace-stat", "weapon-dps");
+            }
+
             if (itemTemplate->Armor > 0)
             {
                 uint32 scaledArmor = static_cast<uint32>(std::max<int64>(0,
@@ -1366,6 +1746,36 @@ namespace DCQoS
                 AppendItemTooltipSnapshotRow(rows,
                     std::to_string(scaledBlock) + " Block", "",
                     "replace-stat", "armor");
+            }
+
+            uint32 statCount =
+                std::min<uint32>(itemTemplate->StatsCount, MAX_ITEM_PROTO_STATS);
+            for (uint32 statIndex = 0; statIndex < statCount; ++statIndex)
+            {
+                _ItemStat const& stat = itemTemplate->ItemStat[statIndex];
+                if (stat.ItemStatValue == 0)
+                    continue;
+
+                char const* label = GetItemStatLabel(stat.ItemStatType);
+                if (!label)
+                    continue;
+
+                int32 scaledValue = static_cast<int32>(std::lround(
+                    static_cast<double>(stat.ItemStatValue) * multiplier));
+
+                std::string equipLine =
+                    FormatEquipItemStat(scaledValue, stat.ItemStatType);
+                if (!equipLine.empty())
+                {
+                    AppendItemTooltipSnapshotRow(equipStatRows, equipLine, "",
+                        "replace-stat", "stat-equip");
+                    continue;
+                }
+
+                std::string line = FormatSignedItemStat(scaledValue, label);
+                if (!line.empty())
+                    AppendItemTooltipSnapshotRow(rows, line, "",
+                        "replace-stat", "stat");
             }
 
             struct ResistanceRow
@@ -1398,48 +1808,30 @@ namespace DCQoS
                         "replace-stat", "resistance");
             }
 
-            for (uint32 damageIndex = 0;
-                 damageIndex < MAX_ITEM_PROTO_DAMAGES; ++damageIndex)
+            // Random-property / random-suffix stats. These live in enchantment
+            // slots, not in item_template, so the stat loop above cannot see them --
+            // an upgraded "of the Bear" item used to lose its suffix stats entirely
+            // once the native path took over the body.
+            // Classified "enchant" rather than "stat": these come from enchantment
+            // rows and the baseline client draws them green, like any enchant.
+            //
+            // Scaled by the item's multiplier: upgrades carry what was rolled into the
+            // item, and BuildRandomEnchantLines only scales what the runtime hooks do.
+            for (std::string const& enchantLine : BuildRandomEnchantLines(item, multiplier))
             {
-                _Damage const& damage = itemTemplate->Damage[damageIndex];
-                if (damage.DamageMax <= 0.0f)
-                    continue;
-
-                int32 scaledMin = static_cast<int32>(std::lround(
-                    static_cast<double>(damage.DamageMin) * multiplier));
-                int32 scaledMax = static_cast<int32>(std::lround(
-                    static_cast<double>(damage.DamageMax) * multiplier));
-
-                std::ostringstream left;
-                left << scaledMin << " - " << scaledMax << " Damage";
-
-                std::ostringstream right;
-                if (itemTemplate->Delay > 0)
-                    right << "Speed " << std::fixed << std::setprecision(2)
-                        << (static_cast<double>(itemTemplate->Delay) / 1000.0);
-
-                AppendItemTooltipSnapshotRow(rows, left.str(), right.str(),
-                    "replace-stat", "weapon-damage");
+                AppendItemTooltipSnapshotRow(rows, enchantLine, "", "append-body",
+                    "enchant");
             }
 
-            uint32 statCount =
-                std::min<uint32>(itemTemplate->StatsCount, MAX_ITEM_PROTO_STATS);
-            for (uint32 statIndex = 0; statIndex < statCount; ++statIndex)
+            // The permanent enchant ("+22 Agility", "Crusader", ...). Skipped when it
+            // IS the heirloom stat package -- that occupies the same slot and
+            // AppendHeirloomPackageTooltipRows already reports it in full.
+            uint32 const permEnchantId =
+                item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT);
+            if (permEnchantId != 0
+                && permEnchantId != heirloomPackageState.enchantId)
             {
-                _ItemStat const& stat = itemTemplate->ItemStat[statIndex];
-                if (stat.ItemStatValue == 0)
-                    continue;
-
-                char const* label = GetItemStatLabel(stat.ItemStatType);
-                if (!label)
-                    continue;
-
-                int32 scaledValue = static_cast<int32>(std::lround(
-                    static_cast<double>(stat.ItemStatValue) * multiplier));
-                std::string line = FormatSignedItemStat(scaledValue, label);
-                if (!line.empty())
-                    AppendItemTooltipSnapshotRow(rows, line, "",
-                        "replace-stat", "stat");
+                AppendEnchantmentTooltipRows(rows, item, permEnchantId, "enchant");
             }
 
             AppendHeirloomPackageTooltipRows(rows, heirloomPackageState);
@@ -1614,6 +2006,65 @@ namespace DCQoS
                         : "requirement-unmet");
             }
 
+            // Everything above is the white/requirement half of the tooltip. The
+            // item level closes it, and the green Equip: section opens with the
+            // rating stats parked earlier.
+            emitItemLevelRow();
+            for (ItemTooltipSnapshotRow const& equipRow : equipStatRows)
+                rows.push_back(equipRow);
+
+            for (uint32 spellIndex = 0; spellIndex < MAX_ITEM_PROTO_SPELLS;
+                 ++spellIndex)
+            {
+                _Spell const& itemSpell = itemTemplate->Spells[spellIndex];
+                if (itemSpell.SpellId <= 0
+                    || itemSpell.SpellTrigger >= MAX_ITEM_SPELLTRIGGER)
+                {
+                    continue;
+                }
+
+                // The runtime hooks in ItemUpgradeProcScaling scale this spell's
+                // damage/healing/aura amounts by the source item's upgrade
+                // multiplier, so the tooltip has to print the scaled value or it
+                // contradicts the combat log. The registry answers whether the
+                // spell is scaled for THIS entry; the magnitude is this item's own
+                // multiplier, already resolved into the snapshot.
+                float const procMultiplier =
+                    DarkChaos::ItemUpgrade::IsProcScalingIndexed(item->GetEntry(),
+                        uint32(itemSpell.SpellId))
+                    ? static_cast<float>(multiplier)
+                    : 1.0f;
+
+                std::string text = BuildItemSpellTooltipText(player,
+                    itemSpell.SpellId, itemSpell.SpellTrigger, procMultiplier);
+                if (text.empty())
+                    continue;
+
+                char const* classification = "spell";
+                switch (itemSpell.SpellTrigger)
+                {
+                    case ITEM_SPELLTRIGGER_ON_USE:
+                    case ITEM_SPELLTRIGGER_ON_NO_DELAY_USE:
+                    case ITEM_SPELLTRIGGER_SOULSTONE:
+                        classification = "spell-use";
+                        break;
+                    case ITEM_SPELLTRIGGER_ON_EQUIP:
+                        classification = "spell-equip";
+                        break;
+                    case ITEM_SPELLTRIGGER_CHANCE_ON_HIT:
+                        classification = "spell-proc";
+                        break;
+                    case ITEM_SPELLTRIGGER_LEARN_SPELL_ID:
+                        classification = "spell-learn";
+                        break;
+                    default:
+                        break;
+                }
+
+                AppendItemTooltipSnapshotRow(rows, text, "", "append-body",
+                    classification);
+            }
+
             if (itemTemplate->ItemSet != 0)
             {
                 ItemSetEntry const* itemSet =
@@ -1663,46 +2114,6 @@ namespace DCQoS
                 }
             }
 
-            for (uint32 spellIndex = 0; spellIndex < MAX_ITEM_PROTO_SPELLS;
-                 ++spellIndex)
-            {
-                _Spell const& itemSpell = itemTemplate->Spells[spellIndex];
-                if (itemSpell.SpellId <= 0
-                    || itemSpell.SpellTrigger >= MAX_ITEM_SPELLTRIGGER)
-                {
-                    continue;
-                }
-
-                std::string text = BuildItemSpellTooltipText(player,
-                    itemSpell.SpellId, itemSpell.SpellTrigger);
-                if (text.empty())
-                    continue;
-
-                char const* classification = "spell";
-                switch (itemSpell.SpellTrigger)
-                {
-                    case ITEM_SPELLTRIGGER_ON_USE:
-                    case ITEM_SPELLTRIGGER_ON_NO_DELAY_USE:
-                    case ITEM_SPELLTRIGGER_SOULSTONE:
-                        classification = "spell-use";
-                        break;
-                    case ITEM_SPELLTRIGGER_ON_EQUIP:
-                        classification = "spell-equip";
-                        break;
-                    case ITEM_SPELLTRIGGER_CHANCE_ON_HIT:
-                        classification = "spell-proc";
-                        break;
-                    case ITEM_SPELLTRIGGER_LEARN_SPELL_ID:
-                        classification = "spell-learn";
-                        break;
-                    default:
-                        break;
-                }
-
-                AppendItemTooltipSnapshotRow(rows, text, "", "append-body",
-                    classification);
-            }
-
             if (!itemTemplate->Description.empty())
             {
                 AppendItemTooltipSnapshotRow(rows,
@@ -1717,6 +2128,9 @@ namespace DCQoS
                     "append-body", "sell-price");
             }
         }
+
+        // No-op when the template branch above already placed it.
+        emitItemLevelRow();
 
         if (displayMaxUpgrade > 0)
         {
@@ -3555,10 +3969,27 @@ namespace DCQoS
         return "";
     }
 
+    // Applies an item-upgrade proc multiplier to a tooltip magnitude. Kept to the
+    // same lround-of-double shape the combat hooks use so the printed number
+    // matches the damage/heal the player actually sees.
+    static TooltipAmountRange ScaleTooltipAmountRange(TooltipAmountRange range,
+                                                     float valueMultiplier)
+    {
+        if (valueMultiplier <= 1.0f)
+            return range;
+
+        range.Min = static_cast<int32>(std::lround(
+            static_cast<double>(range.Min) * static_cast<double>(valueMultiplier)));
+        range.Max = static_cast<int32>(std::lround(
+            static_cast<double>(range.Max) * static_cast<double>(valueMultiplier)));
+        return range;
+    }
+
     static std::string ReplaceSpellTemplateToken(Player* player,
                                                  SpellInfo const* spellInfo,
                                                  char token,
-                                                 uint32 effectNumber)
+                                                 uint32 effectNumber,
+                                                 float valueMultiplier = 1.0f)
     {
         if (!spellInfo)
             return "";
@@ -3601,6 +4032,12 @@ namespace DCQoS
             return "0";
 
         TooltipAmountRange baseAmount = GetTooltipAmountRange(player, spellInfo, *effect);
+
+        // Magnitude tokens only. Durations ($d/$t), radius ($r/$a), the spell name
+        // ($n) and combo points ($u) are untouched by proc scaling at runtime, so
+        // scaling them here would print numbers the server never applies.
+        amount = ScaleTooltipAmountRange(amount, valueMultiplier);
+        baseAmount = ScaleTooltipAmountRange(baseAmount, valueMultiplier);
 
         switch (token)
         {
@@ -3659,7 +4096,8 @@ namespace DCQoS
     static bool TryEvaluateTemplateOperand(Player* player,
                                            SpellInfo const* spellInfo,
                                            std::string const& operand,
-                                           double& out)
+                                           double& out,
+                                           float valueMultiplier = 1.0f)
     {
         std::string trimmed = TrimTemplateText(operand);
         if (trimmed.empty())
@@ -3714,14 +4152,16 @@ namespace DCQoS
         }
 
         std::string replacement =
-            ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber);
+            ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber,
+                                      valueMultiplier);
         return TryParseLeadingDouble(replacement, out);
     }
 
     static bool TryEvaluateSimpleTemplateExpression(Player* player,
                                                     SpellInfo const* spellInfo,
                                                     std::string const& expression,
-                                                    std::string& out)
+                                                    std::string& out,
+                                                    float valueMultiplier = 1.0f)
     {
         std::string expr = TrimTemplateText(expression);
         if (expr.empty())
@@ -3756,7 +4196,8 @@ namespace DCQoS
         for (std::string const& operandText : operands)
         {
             double value = 0.0;
-            if (!TryEvaluateTemplateOperand(player, spellInfo, operandText, value))
+            if (!TryEvaluateTemplateOperand(player, spellInfo, operandText, value,
+                                            valueMultiplier))
                 return false;
 
             values.push_back(value);
@@ -3816,10 +4257,17 @@ namespace DCQoS
 
     static std::string RenderSpellDescriptionTemplate(Player* player,
                                                       SpellInfo const* spellInfo,
-                                                      std::string const& sourceTemplate)
+                                                      std::string const& sourceTemplate,
+                                                      float valueMultiplier,
+                                                      bool colorizeValues)
     {
         if (!spellInfo || sourceTemplate.empty())
             return "";
+
+        auto const colorize = [colorizeValues](std::string const& value)
+        {
+            return colorizeValues ? ColorizeTooltipValue(value) : value;
+        };
 
         std::string rendered;
         rendered.reserve(sourceTemplate.size() + 32);
@@ -3862,9 +4310,10 @@ namespace DCQoS
                     if (TryEvaluateSimpleTemplateExpression(player,
                                                             spellInfo,
                                                             expression,
-                                                            expressionValue))
+                                                            expressionValue,
+                                                            valueMultiplier))
                     {
-                        rendered += ColorizeTooltipValue(expressionValue);
+                        rendered += colorize(expressionValue);
                     }
                     else
                     {
@@ -3913,6 +4362,57 @@ namespace DCQoS
                     ++indexEnd;
                 }
 
+                // "$<spellId><token>[effect]" points into ANOTHER spell:
+                // $75456s1 is effect 1 of spell 75456, $75456d its duration. Item
+                // procs are written this way almost universally -- the equip aura
+                // describes the buff it triggers -- and without this branch the
+                // digits were read as an effect number, the lookup failed and the
+                // raw "$75456s1" text went out to the client.
+                if (indexEnd < sourceTemplate.size()
+                    && (indexEnd - (i + 1)) <= 9
+                    && std::isalpha(
+                        static_cast<unsigned char>(sourceTemplate[indexEnd])))
+                {
+                    uint32 const referencedSpellId = static_cast<uint32>(
+                        std::stoul(sourceTemplate.substr(i + 1,
+                                                         indexEnd - (i + 1))));
+                    char const referencedToken = sourceTemplate[indexEnd];
+
+                    std::size_t effectStart = indexEnd + 1;
+                    std::size_t effectEnd = effectStart;
+                    while (effectEnd < sourceTemplate.size()
+                        && (effectEnd - effectStart) < 2
+                        && std::isdigit(static_cast<unsigned char>(
+                            sourceTemplate[effectEnd])))
+                    {
+                        ++effectEnd;
+                    }
+
+                    uint32 referencedEffect = 0;
+                    if (effectEnd > effectStart)
+                    {
+                        referencedEffect = static_cast<uint32>(std::stoul(
+                            sourceTemplate.substr(effectStart,
+                                                  effectEnd - effectStart)));
+                    }
+
+                    if (SpellInfo const* referencedSpell =
+                            sSpellMgr->GetSpellInfo(referencedSpellId))
+                    {
+                        std::string referencedValue = ReplaceSpellTemplateToken(
+                            player, referencedSpell, referencedToken,
+                            referencedEffect, valueMultiplier);
+                        if (!referencedValue.empty())
+                        {
+                            rendered += (referencedToken == 'n')
+                                ? referencedValue
+                                : colorize(referencedValue);
+                            i = effectEnd;
+                            continue;
+                        }
+                    }
+                }
+
                 uint32 effectNumber = static_cast<uint32>(
                     std::stoul(sourceTemplate.substr(i + 1,
                                                      indexEnd - (i + 1))));
@@ -3920,10 +4420,11 @@ namespace DCQoS
                 std::string replacement = ReplaceSpellTemplateToken(player,
                                                                     spellInfo,
                                                                     's',
-                                                                    effectNumber);
+                                                                    effectNumber,
+                                                                    valueMultiplier);
                 if (!replacement.empty())
                 {
-                    rendered += ColorizeTooltipValue(replacement);
+                    rendered += colorize(replacement);
                     i = indexEnd;
                     continue;
                 }
@@ -3940,7 +4441,7 @@ namespace DCQoS
                 std::string namedReplacement = ReplaceNamedSpellTemplateToken(player, spellInfo, namedToken);
                 if (!namedReplacement.empty())
                 {
-                    rendered += ColorizeTooltipValue(namedReplacement);
+                    rendered += colorize(namedReplacement);
                     i += 3;
                     continue;
                 }
@@ -3966,7 +4467,7 @@ namespace DCQoS
                 continue;
             }
 
-            std::string replacement = ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber);
+            std::string replacement = ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber, valueMultiplier);
             if (replacement.empty())
             {
                 rendered.append(sourceTemplate, i, indexEnd - i);
@@ -3975,7 +4476,7 @@ namespace DCQoS
             {
                 // $n resolves to the spell NAME -- never color it.
                 rendered += (token == 'n') ? replacement
-                    : ColorizeTooltipValue(replacement);
+                    : colorize(replacement);
             }
 
             i = indexEnd;
@@ -5711,6 +6212,81 @@ namespace DCAddon
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT, HandleRequestSpellTooltipEnrichment);
     }
 }
+
+namespace DarkChaos
+{
+namespace ItemUpgrade
+{
+    std::vector<std::string> BuildScaledRandomEnchantLines(Item* item, float multiplier)
+    {
+        std::vector<std::string> changing;
+
+        // The window previews what an upgrade CHANGES; a weapon-damage enchant that
+        // reads the same at every level is left to the tooltip. The line structure
+        // does not depend on the multiplier, so the three builds line up by index.
+        std::vector<std::string> const base = DCQoS::BuildRandomEnchantLines(item, 1.0);
+        std::vector<std::string> const probe = DCQoS::BuildRandomEnchantLines(item, 2.0);
+        std::vector<std::string> const scaled =
+            DCQoS::BuildRandomEnchantLines(item, static_cast<double>(multiplier));
+        if (base.size() != probe.size() || base.size() != scaled.size())
+            return changing;
+
+        for (std::size_t i = 0; i < base.size(); ++i)
+        {
+            if (base[i] != probe[i])
+                changing.push_back(scaled[i]);
+        }
+
+        return changing;
+    }
+
+    std::vector<std::string> BuildScaledItemProcLines(Player* player,
+        uint32 itemEntry, float multiplier)
+    {
+        std::vector<std::string> lines;
+
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry);
+        if (!itemTemplate)
+            return lines;
+
+        for (uint32 spellIndex = 0; spellIndex < MAX_ITEM_PROTO_SPELLS; ++spellIndex)
+        {
+            _Spell const& itemSpell = itemTemplate->Spells[spellIndex];
+            if (itemSpell.SpellId <= 0
+                || itemSpell.SpellTrigger >= MAX_ITEM_SPELLTRIGGER
+                || itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+            {
+                continue;
+            }
+
+            // Same gate the tooltip uses: no registry entry, no runtime scaling.
+            if (!IsProcScalingIndexed(itemEntry, uint32(itemSpell.SpellId)))
+                continue;
+
+            std::string const baseText = DCQoS::BuildItemSpellTooltipText(player,
+                itemSpell.SpellId, itemSpell.SpellTrigger, 1.0f);
+            if (baseText.empty())
+                continue;
+
+            // A description without magnitude tokens reads the same at every level;
+            // previewing it would only add noise. 2.0f is just "any multiplier that
+            // would move a number if there were one".
+            if (DCQoS::BuildItemSpellTooltipText(player, itemSpell.SpellId,
+                    itemSpell.SpellTrigger, 2.0f) == baseText)
+            {
+                continue;
+            }
+
+            lines.push_back(multiplier > 1.0f
+                ? DCQoS::BuildItemSpellTooltipText(player, itemSpell.SpellId,
+                    itemSpell.SpellTrigger, multiplier)
+                : baseText);
+        }
+
+        return lines;
+    }
+} // namespace ItemUpgrade
+} // namespace DarkChaos
 
 void AddDCQoSScripts()
 {

@@ -27,28 +27,32 @@ DC.STAT_PACKAGES = {
 	},
 	[3] = {
 		name = "Devastation",
-		stats = { "Crit Rating", "Armor Pen" },
+		stats = { "Crit Rating", "Armor Penetration Rating" },
 		icon = "Interface\\Icons\\Ability_Warrior_Devastate",
 		description = "Critical Strike and Armor Penetration for physical DPS.",
 		color = { r = 0.9, g = 0.3, b = 0.1 },
 	},
 	[4] = {
 		name = "Swiftblade",
-		stats = { "Haste Rating", "Armor Pen" },
+		stats = { "Haste Rating", "Armor Penetration Rating" },
 		icon = "Interface\\Icons\\Ability_Rogue_CuttingToTheChase",
 		description = "Haste and Armor Penetration for sustained damage.",
 		color = { r = 0.5, g = 0.8, b = 0.5 },
 	},
 	[5] = {
+		-- SpellItemEnchantment 9005xx applies effectArg 32/36/45 = plain Crit
+		-- Rating / Haste Rating / Spell Power. It has never granted "spell crit"
+		-- or "spell haste" as distinct stats; those labels were invented here.
 		name = "Spellfire",
-		stats = { "Spell Crit", "Spell Haste", "Spell Power" },
+		stats = { "Crit Rating", "Haste Rating", "Spell Power" },
 		icon = "Interface\\Icons\\Spell_Fire_Fireball02",
 		description = "Crit, Haste and Spell Power for caster DPS.",
 		color = { r = 1.0, g = 0.5, b = 0.0 },
 	},
 	[6] = {
+		-- effectArg 31/36/45 = Hit Rating / Haste Rating / Spell Power.
 		name = "Arcane",
-		stats = { "Spell Hit", "Spell Haste", "Spell Power" },
+		stats = { "Hit Rating", "Haste Rating", "Spell Power" },
 		icon = "Interface\\Icons\\Spell_Arcane_Blast",
 		description = "Hit, Haste and Spell Power for consistent casting.",
 		color = { r = 0.5, g = 0.5, b = 1.0 },
@@ -76,14 +80,14 @@ DC.STAT_PACKAGES = {
 	},
 	[10] = {
 		name = "Gladiator",
-		stats = { "Resilience", "Crit Rating" },
+		stats = { "Resilience Rating", "Crit Rating" },
 		icon = "Interface\\Icons\\Achievement_Arena_2v2_1",
 		description = "Resilience and Crit for aggressive PvP.",
 		color = { r = 0.8, g = 0.2, b = 0.8 },
 	},
 	[11] = {
 		name = "Warlord",
-		stats = { "Resilience", "Stamina" },
+		stats = { "Resilience Rating", "Stamina" },
 		icon = "Interface\\Icons\\Achievement_Arena_5v5_7",
 		description = "Resilience and Stamina for survivability in PvP.",
 		color = { r = 0.6, g = 0.2, b = 0.2 },
@@ -99,34 +103,34 @@ DC.STAT_PACKAGES = {
 
 --[[=====================================================
 	STAT VALUE SCALING BY LEVEL
-	Total secondary stats budget at each upgrade level
+
+	PER-STAT values, transcribed from the SpellItemEnchantment.dbc rows the
+	server actually applies (900000/920000 + packageId*100 + level). Every stat
+	in a package gets the SAME value there, so there is no split to compute.
+
+	This replaced a TOTAL-budget model plus a floor-divide-and-distribute-the-
+	remainder step. That model disagreed with the DBC at standard levels 5, 6, 7,
+	9 and 13 (totals 43/55/67/95/157 vs the DBC's 44/56/68/96/156) and handed the
+	remainder to the first stats, printing e.g. 14/14/15 where the server applies
+	14/14/14. Keep these tables in step with the DBC; do not re-derive them.
 =======================================================]]
 
-DC.STAT_PACKAGE_LEVEL_VALUES = {
-	[1] = 6,     -- Level 1: 6 total secondary stats
-	[2] = 14,    -- Level 2: 14 total
-	[3] = 22,    -- Level 3: 22 total
-	[4] = 32,    -- Level 4: 32 total
-	[5] = 43,    -- Level 5: 43 total
-	[6] = 55,    -- Level 6: 55 total
-	[7] = 67,    -- Level 7: 67 total
-	[8] = 80,    -- Level 8: 80 total
-	[9] = 95,    -- Level 9: 95 total
-	[10] = 110,  -- Level 10: 110 total
-	[11] = 126,  -- Level 11: 126 total
-	[12] = 142,  -- Level 12: 142 total
-	[13] = 157,  -- Level 13: 157 total
-	[14] = 168,  -- Level 14: 168 total
-	[15] = 168,  -- Level 15: 168 total (max, same as 14)
+-- Standard heirlooms, enchant range 900xxx, levels 1-15.
+DC.STAT_PACKAGE_PER_STAT_VALUES = {
+	[2] = { 3, 7, 11, 16, 22, 28, 34, 40, 48, 55, 63, 71, 78, 84, 84 },
+	[3] = { 2, 5,  7, 11, 14, 18, 22, 27, 32, 37, 42, 47, 52, 56, 56 },
 };
 
--- Frontier Heirloom (tier 10, 5-level items) use different per-stat budgets.
--- Two-stat packages have totals [40,72,104,144,180]; three-stat [42,72,105,144,180].
-DC.FRONTIER_HEIRLOOM_BUDGETS = {
-	[2] = { [1]=40,  [2]=72,  [3]=104, [4]=144, [5]=180 },
-	[3] = { [1]=42,  [2]=72,  [3]=105, [4]=144, [5]=180 },
+-- Frontier heirlooms (tier 10), enchant range 920xxx, levels 1-5 only.
+DC.FRONTIER_HEIRLOOM_PER_STAT_VALUES = {
+	[2] = { 20, 36, 52, 72, 90 },
+	[3] = { 14, 24, 35, 48, 60 },
 };
--- Item entries that use FRONTIER_HEIRLOOM_BUDGETS instead of STAT_PACKAGE_LEVEL_VALUES.
+
+-- Item entries that use FRONTIER_HEIRLOOM_PER_STAT_VALUES. Server-side truth is
+-- dc_item_upgrade_item_overrides.tier_id = 10; this mirror only needs to cover
+-- items the upgrade FRAME previews, so add an entry here whenever a tier-10
+-- heirloom is added.
 DC.FRONTIER_HEIRLOOM_ENTRIES = { [300412] = true };
 
 -- Currently selected stat package
@@ -753,35 +757,37 @@ end
 	STAT CALCULATION
 =======================================================]]
 
-function DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, level)
+-- itemEntry is optional: pass it when the caller knows which item the stats are
+-- for. It falls back to DC.currentItem (the item open in the upgrade frame),
+-- which is right for the frame's own preview but wrong for anything else -- a
+-- tooltip used to inherit the frame's item and pick the wrong budget table.
+function DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, level, itemEntry)
 	local pkg = DC.STAT_PACKAGES[packageId];
 	if not pkg then return nil end
 
 	local numStats = #pkg.stats;
 	if numStats == 0 then return {} end
 
-	local totalBudget;
-	local itemEntry = DC.currentItem
-		and (tonumber(DC.currentItem.itemEntry) or tonumber(DC.currentItem.itemID));
-	if itemEntry and DC.FRONTIER_HEIRLOOM_ENTRIES and DC.FRONTIER_HEIRLOOM_ENTRIES[itemEntry] then
-		local tbl = DC.FRONTIER_HEIRLOOM_BUDGETS[numStats] or DC.FRONTIER_HEIRLOOM_BUDGETS[2];
-		totalBudget = tbl[level] or 0;
-	else
-		totalBudget = DC.STAT_PACKAGE_LEVEL_VALUES[level] or 0;
+	itemEntry = tonumber(itemEntry);
+	if not itemEntry and DC.currentItem then
+		itemEntry = tonumber(DC.currentItem.itemEntry) or tonumber(DC.currentItem.itemID);
 	end
-	
-	local perStat = math.floor(totalBudget / numStats);
-	local remainder = totalBudget - (perStat * numStats);
-	
+
+	local source;
+	if itemEntry and DC.FRONTIER_HEIRLOOM_ENTRIES and DC.FRONTIER_HEIRLOOM_ENTRIES[itemEntry] then
+		source = DC.FRONTIER_HEIRLOOM_PER_STAT_VALUES;
+	else
+		source = DC.STAT_PACKAGE_PER_STAT_VALUES;
+	end
+
+	local perStatByLevel = source[numStats] or source[2];
+	local value = perStatByLevel and perStatByLevel[level] or 0;
+
 	local result = {};
-	for i, statName in ipairs(pkg.stats) do
-		local value = perStat;
-		if i <= remainder then
-			value = value + 1;
-		end
+	for _, statName in ipairs(pkg.stats) do
 		table.insert(result, { name = statName, value = value });
 	end
-	
+
 	return result;
 end
 

@@ -60,6 +60,14 @@ public:
             { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Console::No }
         };
 
+        // Talent subcommands (.prestige talents [learn|reset])
+        static ChatCommandTable talentCommandTable =
+        {
+            { "",      HandleTalentListCommand,  SEC_PLAYER, Console::No },
+            { "learn", HandleTalentLearnCommand, SEC_PLAYER, Console::No },
+            { "reset", HandleTalentResetCommand, SEC_PLAYER, Console::No }
+        };
+
         // Main prestige command table
         static ChatCommandTable prestigeCommandTable =
         {
@@ -70,6 +78,7 @@ public:
             // Subtables
             { "challenge", challengeCommandTable },
             { "altbonus",  altBonusCommandTable },
+            { "talents",   talentCommandTable },
             // Admin commands
             { "disable",   HandlePrestigeDisableCommand, SEC_ADMINISTRATOR, Console::No },
             { "admin",     HandlePrestigeAdminCommand,   SEC_ADMINISTRATOR, Console::No }
@@ -244,6 +253,104 @@ public:
         }
 
         handler->SendSysMessage("Usage: .prestige admin set <player> <level>");
+        return true;
+    }
+
+    // ============================================================
+    // Talent Commands (from dc_prestige_talents.cpp)
+    // ============================================================
+
+    static bool HandleTalentListCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        if (!PrestigeAPI::IsTalentsEnabled())
+        {
+            handler->SendSysMessage("Prestige talents are currently disabled.");
+            return true;
+        }
+
+        PrestigeAPI::PrestigeTalentSnapshot snapshot = PrestigeAPI::GetTalentSnapshot(player);
+        if (!snapshot.loaded)
+        {
+            handler->SendSysMessage(PrestigeAPI::GetTalentResultText(PrestigeAPI::PrestigeTalentResult::NotLoaded));
+            return true;
+        }
+
+        handler->PSendSysMessage("=== Prestige Talents ===");
+        handler->PSendSysMessage("Account points: {} ({} from prestige, {} from challenges) | Spendable on this character: {} | Spent: {} | Unspent: {}",
+            snapshot.accountPoints, snapshot.prestigePoints, snapshot.challengePoints,
+            snapshot.spendCap, snapshot.spent, snapshot.spendCap - snapshot.spent);
+
+        for (uint8 tree = 0; tree < PrestigeAPI::MAX_PRESTIGE_TREES; ++tree)
+        {
+            handler->PSendSysMessage("|cFFFFD700{}|r ({} points)", PrestigeAPI::GetTalentTreeName(tree), snapshot.treeSpent[tree]);
+
+            for (PrestigeAPI::PrestigeTalentDef const& def : PrestigeAPI::GetTalentDefinitions())
+            {
+                if (def.tree != tree)
+                    continue;
+
+                uint8 rank = 0;
+                for (auto const& [id, r] : snapshot.ranks)
+                    if (id == def.id)
+                        rank = r;
+
+                std::string prereqText;
+                for (uint16 prereq : def.prereqs)
+                    if (prereq)
+                        prereqText += (prereqText.empty() ? "" : " or ") + std::to_string(prereq);
+
+                handler->PSendSysMessage("  [{}] {} {}/{} - {:g} per rank{}",
+                    def.id, def.name, rank, def.maxRank, def.valuePerRank,
+                    prereqText.empty() ? std::string() : " (needs " + prereqText + " maxed)");
+            }
+        }
+
+        handler->SendSysMessage("Use .prestige talents learn <id> to spend a point, .prestige talents reset to refund.");
+        return true;
+    }
+
+    static bool HandleTalentLearnCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        Optional<uint16> talentId = (args && *args) ? Acore::StringTo<uint16>(args) : std::nullopt;
+        if (!talentId)
+        {
+            handler->SendSysMessage("Usage: .prestige talents learn <id>");
+            return true;
+        }
+
+        PrestigeAPI::PrestigeTalentResult result = PrestigeAPI::LearnTalent(player, *talentId);
+        if (result != PrestigeAPI::PrestigeTalentResult::Ok)
+        {
+            handler->SendSysMessage(PrestigeAPI::GetTalentResultText(result));
+            return true;
+        }
+
+        handler->PSendSysMessage("|cFF00FF00Prestige talent {} learned.|r", *talentId);
+        return true;
+    }
+
+    static bool HandleTalentResetCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        PrestigeAPI::PrestigeTalentResult result = PrestigeAPI::ResetTalents(player);
+        if (result != PrestigeAPI::PrestigeTalentResult::Ok)
+        {
+            handler->SendSysMessage(PrestigeAPI::GetTalentResultText(result));
+            return true;
+        }
+
+        handler->SendSysMessage("|cFF00FF00Your prestige talent points have been refunded.|r");
         return true;
     }
 

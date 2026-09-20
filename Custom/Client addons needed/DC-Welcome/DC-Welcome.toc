@@ -14,6 +14,7 @@ ProgressPanel.lua
 EndgameDirector.lua
 WelcomeFrame.lua
 ChallengePrestigeUI.lua
+PrestigeTalents.lua
 FAQ.lua
 MinimapButton.lua
 ## MicroMenu.lua

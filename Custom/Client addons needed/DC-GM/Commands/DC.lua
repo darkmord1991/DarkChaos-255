@@ -111,7 +111,7 @@ local function OpenCollectionUI(tabName)
 end
 
 local function OpenLeaderboardsUI(category)
-  local leaderboards = rawget(_G, "LB")
+  local leaderboards = rawget(_G, "DCLeaderboards")
 
   if type(leaderboards) == "table" then
     if category and type(leaderboards.Show) == "function"

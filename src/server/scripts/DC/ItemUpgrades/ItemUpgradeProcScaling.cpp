@@ -23,6 +23,8 @@
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "SpellAuraEffects.h"
+#include "SpellAuras.h"
+#include "DBCStores.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Unit.h"
@@ -38,6 +40,10 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <sstream>
 #include <iomanip>
 
@@ -52,14 +58,22 @@ namespace ItemUpgrade
 
     class ProcSpellRegistry
     {
-    private:
-        // Map: SpellID -> List of ItemIDs that use this spell
-        static std::unordered_map<uint32, std::vector<uint32>> _procSpellMap;
-        static bool _initialized;
+    public:
+        // SpellID -> the item entries that can produce it.
+        using SpellItemMap = std::unordered_map<uint32, std::vector<uint32>>;
 
-        static bool AddSpellAssociation(uint32 spellId, uint32 itemId)
+    private:
+        // Published as an immutable snapshot behind a shared_ptr. The combat hooks
+        // read it from map-update worker threads while a season rollover can
+        // republish it from the world thread; readers copy the shared_ptr under a
+        // shared lock and then work off their own reference, so a republish can
+        // never pull the map out from under an in-flight lookup.
+        static std::shared_mutex _mapMutex;
+        static std::shared_ptr<SpellItemMap const> _publishedMap;
+
+        static bool AddSpellAssociation(SpellItemMap& map, uint32 spellId, uint32 itemId)
         {
-            std::vector<uint32>& items = _procSpellMap[spellId];
+            std::vector<uint32>& items = map[spellId];
             if (std::find(items.begin(), items.end(), itemId) != items.end())
                 return false;
 
@@ -93,13 +107,13 @@ namespace ItemUpgrade
             }
         }
 
-        static void IndexSpellPayloads(uint32 spellId, uint32 itemId, uint32& count,
-            std::unordered_set<uint32>& visited)
+        static void IndexSpellPayloads(SpellItemMap& map, uint32 spellId, uint32 itemId,
+            uint32& count, std::unordered_set<uint32>& visited)
         {
             if (spellId == 0 || !visited.insert(spellId).second)
                 return;
 
-            if (AddSpellAssociation(spellId, itemId))
+            if (AddSpellAssociation(map, spellId, itemId))
                 ++count;
 
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -111,102 +125,136 @@ namespace ItemUpgrade
                 if (!effect.TriggerSpell || !ShouldFollowTriggeredSpell(effect))
                     continue;
 
-                IndexSpellPayloads(effect.TriggerSpell, itemId, count, visited);
+                IndexSpellPayloads(map, effect.TriggerSpell, itemId, count, visited);
             }
         }
 
-    public:
-        static void Initialize()
+        // The upgrade system's own eligibility test, mirrored: the tier comes from
+        // the item's level via dc_item_upgrade_tiers (UpgradeManager::GetItemTier),
+        // and only weapons/armor of uncommon or better can be upgraded at all.
+        //
+        // This deliberately does NOT read dc_item_upgrade_item_overrides. That table
+        // is a per-item tier PIN, not an eligibility list -- it held 2 rows, so
+        // sourcing eligibility from it left the registry with a single association
+        // while ~890 distinct upgraded item entries carried procs.
+        static bool IsProcScalingEligible(UpgradeManager* mgr,
+            ItemTemplate const& itemTemplate)
         {
-            if (_initialized)
-                return;
-
-            LOG_INFO("scripts.dc", "ItemUpgrade: Initializing Proc Spell Registry...");
-            uint32 count = 0;
-            uint32 indexedItems = 0;
-
-            uint32 season = GetCurrentSeasonId();
-            std::vector<uint32> eligibleEntries;
-            QueryResult eligibleResult = WorldDatabase.Query(
-                "SELECT item_id FROM dc_item_upgrade_item_overrides "
-                "WHERE season = {} AND is_active = 1",
-                season);
-
-            if (eligibleResult)
+            if (itemTemplate.Class != ITEM_CLASS_WEAPON
+                && itemTemplate.Class != ITEM_CLASS_ARMOR)
             {
-                do
+                return false;
+            }
+
+            if (itemTemplate.Quality < ITEM_QUALITY_UNCOMMON)
+                return false;
+
+            return mgr->GetItemTier(itemTemplate.ItemId) != TIER_INVALID;
+        }
+
+        static bool HasIndexableSpell(ItemTemplate const& itemTemplate)
+        {
+            for (auto const& itemSpell : itemTemplate.Spells)
+            {
+                if (itemSpell.SpellId > 0
+                    && itemSpell.SpellTrigger != ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
                 {
-                    Field* fields = eligibleResult->Fetch();
-                    eligibleEntries.push_back(fields[0].Get<uint32>());
-                } while (eligibleResult->NextRow());
-            }
-
-            if (eligibleEntries.empty())
-            {
-                _initialized = true;
-                LOG_WARN("scripts.dc", "ItemUpgrade: No upgrade-eligible base items found for season {}; proc registry remains empty.", season);
-                return;
-            }
-
-            // Index only the upgrade-eligible base item templates.
-            ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
-            if (!items)
-            {
-                _initialized = true;
-                LOG_WARN("scripts.dc", "ItemUpgrade: ItemTemplate store unavailable; proc registry remains empty.");
-                return;
-            }
-
-            for (uint32 itemId : eligibleEntries)
-            {
-                auto itemItr = items->find(itemId);
-                if (itemItr == items->end())
-                    continue;
-
-                ItemTemplate const& itemTemplate = itemItr->second;
-                indexedItems++;
-
-                // Check all 5 possible item spells
-                for (auto const& itemSpell : itemTemplate.Spells)
-                {
-                    if (itemSpell.SpellId > 0)
-                    {
-                        // We care about:
-                        // - ITEM_SPELLTRIGGER_ON_USE (Use:)
-                        // - ITEM_SPELLTRIGGER_ON_EQUIP (Equip:) - usually passive auras, but can be procs
-                        // - ITEM_SPELLTRIGGER_CHANCE_ON_HIT (Chance on hit:)
-                        // - ITEM_SPELLTRIGGER_SOULSTONE (Soulstone)
-                        // - ITEM_SPELLTRIGGER_ON_NO_DELAY_USE (Use with no delay)
-                        // - ITEM_SPELLTRIGGER_LEARN_SPELL_ID (Learn) - Ignored
-
-                        if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                            continue;
-
-                        std::unordered_set<uint32> visited;
-                        IndexSpellPayloads(itemSpell.SpellId, itemTemplate.ItemId, count, visited);
-                    }
+                    return true;
                 }
             }
 
-            _initialized = true;
-            LOG_INFO("scripts.dc", "ItemUpgrade: Indexed {} upgrade-eligible base items and mapped {} proc associations.", indexedItems, count);
+            return false;
         }
 
-        static std::vector<uint32> const* GetItemsForSpell(uint32 spellId)
+    public:
+        // Rebuild from the current ItemTemplate store and tier definitions, then
+        // publish. Safe to call again -- a season rollover changes which tiers an
+        // ilvl maps to, so the eligible set can change without the item data moving.
+        static void Rebuild()
         {
-            if (!_initialized)
-                Initialize();
+            LOG_INFO("scripts.dc", "ItemUpgrade: Building Proc Spell Registry...");
 
-            auto it = _procSpellMap.find(spellId);
-            if (it != _procSpellMap.end())
-                return &it->second;
+            auto map = std::make_shared<SpellItemMap>();
+            uint32 count = 0;
+            uint32 indexedItems = 0;
+            uint32 candidates = 0;
 
-            return nullptr;
+            UpgradeManager* mgr = GetUpgradeManager();
+            ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
+
+            if (!mgr || !items)
+            {
+                Publish(std::move(map));
+                LOG_WARN("scripts.dc",
+                    "ItemUpgrade: {} unavailable; proc registry published empty.",
+                    mgr ? "ItemTemplate store" : "UpgradeManager");
+                return;
+            }
+
+            for (auto const& itemPair : *items)
+            {
+                ItemTemplate const& itemTemplate = itemPair.second;
+
+                // Spell check first: it is a handful of integer compares and it
+                // discards ~99% of the store, so GetItemTier (which walks the tier
+                // definitions) only runs on the few thousand items that could ever
+                // contribute an association.
+                if (!HasIndexableSpell(itemTemplate))
+                    continue;
+
+                ++candidates;
+
+                if (!IsProcScalingEligible(mgr, itemTemplate))
+                    continue;
+
+                ++indexedItems;
+
+                for (auto const& itemSpell : itemTemplate.Spells)
+                {
+                    if (itemSpell.SpellId <= 0)
+                        continue;
+
+                    // Every trigger except Learn can carry a scalable payload:
+                    // On Use, On Equip, Chance on Hit, Soulstone, Use-no-delay.
+                    if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+                        continue;
+
+                    std::unordered_set<uint32> visited;
+                    IndexSpellPayloads(*map, itemSpell.SpellId, itemTemplate.ItemId,
+                        count, visited);
+                }
+            }
+
+            std::size_t const spellCount = map->size();
+            Publish(std::move(map));
+
+            LOG_INFO("scripts.dc",
+                "ItemUpgrade: Indexed {} upgrade-eligible base items of {} spell-bearing "
+                "candidates; mapped {} proc associations across {} spells.",
+                indexedItems, candidates, count, spellCount);
+        }
+
+        static std::shared_ptr<SpellItemMap const> GetSnapshot()
+        {
+            std::shared_lock<std::shared_mutex> lock(_mapMutex);
+            return _publishedMap;
+        }
+
+    private:
+        static void Publish(std::shared_ptr<SpellItemMap>&& map)
+        {
+            std::unique_lock<std::shared_mutex> lock(_mapMutex);
+            _publishedMap = std::move(map);
         }
     };
 
-    std::unordered_map<uint32, std::vector<uint32>> ProcSpellRegistry::_procSpellMap;
-    bool ProcSpellRegistry::_initialized = false;
+    std::shared_mutex ProcSpellRegistry::_mapMutex;
+    std::shared_ptr<ProcSpellRegistry::SpellItemMap const> ProcSpellRegistry::_publishedMap;
+
+    void RebuildProcSpellRegistry()
+    {
+        ProcSpellRegistry::Rebuild();
+    }
 
     // =====================================================================
     // Helper: Find Source Item
@@ -214,9 +262,18 @@ namespace ItemUpgrade
 
     static Item* FindSourceItem(Player* player, uint32 spellId)
     {
-        std::vector<uint32> const* potentialItems = ProcSpellRegistry::GetItemsForSpell(spellId);
-        if (!potentialItems)
+        // The snapshot is kept alive for the whole lookup by this local
+        // shared_ptr, so a concurrent republish cannot invalidate potentialItems.
+        std::shared_ptr<ProcSpellRegistry::SpellItemMap const> snapshot =
+            ProcSpellRegistry::GetSnapshot();
+        if (!snapshot)
             return nullptr;
+
+        auto itr = snapshot->find(spellId);
+        if (itr == snapshot->end())
+            return nullptr;
+
+        std::vector<uint32> const& potentialItems = itr->second;
 
         // Check equipped items
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
@@ -226,7 +283,7 @@ namespace ItemUpgrade
                 continue;
 
             // Does this equipped item match one of the source IDs for the spell?
-            for (uint32 sourceId : *potentialItems)
+            for (uint32 sourceId : potentialItems)
             {
                 if (item->GetEntry() == sourceId)
                     return item;
@@ -305,9 +362,106 @@ namespace ItemUpgrade
         }
     }
 
+    // Random enchants whose effect is an EQUIP SPELL rather than a flat stat --
+    // "+33 Frost Spell Damage" is enchant 2253 casting passive spell 17895. The stat
+    // hook in ItemUpgradeStatApplication.cpp cannot reach those (the core only fires
+    // it for ITEM_ENCHANTMENT_TYPE_STAT), so their aura amount is scaled here.
+    //
+    // Identified by provenance, not by spell id: the aura has to have been cast by an
+    // item this player has equipped, and that item has to carry the spell in one of
+    // its random-enchant slots. That keeps a player-applied enchant or a gem that
+    // happens to use the same spell out of it.
+    static float GetRandomEnchantAuraMultiplier(Player* player, AuraEffect const* aurEff)
+    {
+        Aura const* aura = aurEff->GetBase();
+        if (!aura)
+            return 1.0f;
+
+        ObjectGuid const castItemGuid = aura->GetCastItemGUID();
+        if (!castItemGuid)
+            return 1.0f;
+
+        Item* item = player->GetItemByGuid(castItemGuid);
+        if (!item || !item->IsEquipped())
+            return 1.0f;
+
+        uint32 const spellId = aurEff->GetId();
+        bool fromRandomEnchant = false;
+        for (uint32 slot = PROP_ENCHANTMENT_SLOT_0;
+             slot <= PROP_ENCHANTMENT_SLOT_4 && !fromRandomEnchant; ++slot)
+        {
+            SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(
+                item->GetEnchantmentId(EnchantmentSlot(slot)));
+            if (!enchant)
+                continue;
+
+            for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+            {
+                if (enchant->type[i] == ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL
+                    && enchant->spellid[i] == spellId)
+                {
+                    fromRandomEnchant = true;
+                    break;
+                }
+            }
+        }
+
+        if (!fromRandomEnchant)
+            return 1.0f;
+
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+            return 1.0f;
+
+        // Cache-only, same contract as GetProcScalingMultiplier. A cold miss at login
+        // applies the aura unscaled; ForcePlayerStatUpdate then removes and re-casts
+        // every equip spell with the cache warm, so it corrects itself.
+        ItemUpgradeState* state = mgr->GetCachedItemUpgradeState(item->GetGUID().GetCounter());
+        if (!state || state->upgrade_level == 0 || state->stat_multiplier <= 1.0f)
+            return 1.0f;
+
+        return state->stat_multiplier;
+    }
+
     // =====================================================================
     // Public API
     // =====================================================================
+
+    bool IsUpgradeScaledEquipSpell(uint32 spellId)
+    {
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
+            return false;
+
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            if (effect.ApplyAuraName != SPELL_AURA_NONE
+                && !IsDirectProcAura(AuraType(effect.ApplyAuraName)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool IsProcScalingIndexed(uint32 itemEntry, uint32 spellId)
+    {
+        if (!itemEntry || !spellId)
+            return false;
+
+        std::shared_ptr<ProcSpellRegistry::SpellItemMap const> snapshot =
+            ProcSpellRegistry::GetSnapshot();
+        if (!snapshot)
+            return false;
+
+        auto itr = snapshot->find(spellId);
+        if (itr == snapshot->end())
+            return false;
+
+        std::vector<uint32> const& sources = itr->second;
+        return std::find(sources.begin(), sources.end(), itemEntry) != sources.end();
+    }
 
     std::string GetPlayerProcScalingInfo(Player* player)
     {
@@ -444,8 +598,15 @@ namespace ItemUpgrade
                 return;
 
             float multiplier = GetProcScalingMultiplier(player, aurEff->GetId());
+            if (multiplier <= 1.0f)
+                multiplier = GetRandomEnchantAuraMultiplier(player, aurEff);
+
+            // lround, not truncation: these are stat auras the player can read off the
+            // character sheet, and the tooltip rounds the same value. Truncating here
+            // showed "+38 Frost Spell Damage" on an item that granted 37.
             if (multiplier > 1.0f)
-                amount = static_cast<int32>(amount * multiplier);
+                amount = static_cast<int32>(std::lround(
+                    static_cast<double>(amount) * static_cast<double>(multiplier)));
         }
     };
 
@@ -562,8 +723,10 @@ namespace ItemUpgrade
 
         void OnStartup() override
         {
-            // Initialize the registry when the server starts
-            ProcSpellRegistry::Initialize();
+            // Runs after ItemUpgradeInitWorldScript (registered earlier in
+            // dc_script_loader.cpp) has loaded the tier definitions, which
+            // GetItemTier needs to classify anything.
+            ProcSpellRegistry::Rebuild();
         }
     };
 

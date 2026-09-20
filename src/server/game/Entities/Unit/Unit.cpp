@@ -458,6 +458,15 @@ Unit::Unit() : WorldObject(),
 // Methods of class Unit
 Unit::~Unit()
 {
+    // Sever every follower that still points here. RemoveAllFollowers() otherwise runs
+    // only from RemoveFromWorld(), whose whole body sits behind if (IsInWorld()), and
+    // CleanupBeforeRemoveFromMap() likewise only calls RemoveFromWorld() while in world.
+    // So a follower registered on a unit that is already out of world -- AbstractFollower
+    // and MotionMaster::MoveFollow() never check -- survives that unit's deletion holding
+    // a dangling _target, and crashes here later in ~AbstractFollower -> SetTarget(nullptr)
+    // -> _target->FollowerRemoved(this), erasing from an m_followingMe that no longer exists.
+    RemoveAllFollowers();
+
     // set current spells as deletable
     for (uint8 i = 0; i < CURRENT_MAX_SPELL; ++i)
         if (m_currentSpells[i])

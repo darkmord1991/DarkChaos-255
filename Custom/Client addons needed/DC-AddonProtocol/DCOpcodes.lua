@@ -171,9 +171,21 @@ DC.Opcode = {
     Prestige = {
         CMSG_GET_INFO = 0x01,
         CMSG_GET_BONUSES = 0x02,
+        CMSG_GET_TALENTS = 0x03,
+        CMSG_LEARN_TALENT = 0x04,
+        CMSG_RESET_TALENTS = 0x05,
+        CMSG_GET_CHALLENGES = 0x06,
+        CMSG_GET_REWARDS = 0x07,
+        CMSG_CLAIM_REWARD = 0x08,
+        CMSG_APPLY_TALENTS = 0x09,
         SMSG_INFO = 0x10,
         SMSG_BONUSES = 0x11,
         SMSG_LEVEL_UP = 0x12,
+        SMSG_TALENTS = 0x13,
+        SMSG_TALENT_RESULT = 0x14,
+        SMSG_CHALLENGES = 0x15,
+        SMSG_REWARDS = 0x16,
+        SMSG_CHALLENGE_EARNED = 0x17,
     },
     Season = {
         CMSG_GET_CURRENT = 0x01,
@@ -400,6 +412,14 @@ DC.Duel = {
 DC.Prestige = {
     GetInfo = function() DC:Request("PRES", 0x01, {}) end,
     GetBonuses = function() DC:Request("PRES", 0x02, {}) end,
+    GetTalents = function() DC:Request("PRES", 0x03, {}) end,
+    LearnTalent = function(id) DC:Request("PRES", 0x04, { id = id }) end,
+    ResetTalents = function() DC:Request("PRES", 0x05, {}) end,
+    GetChallenges = function() DC:Request("PRES", 0x06, {}) end,
+    GetRewards = function() DC:Request("PRES", 0x07, {}) end,
+    ClaimReward = function(threshold) DC:Request("PRES", 0x08, { threshold = threshold }) end,
+    -- ranks = { { id = 101, rank = 3 }, ... }: staged target ranks, committed in one go
+    ApplyTalents = function(ranks) DC:Request("PRES", 0x09, { ranks = ranks }) end,
 }
 
 -- Unified Leaderboard API
