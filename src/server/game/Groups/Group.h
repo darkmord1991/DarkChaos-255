@@ -281,9 +281,6 @@ public:
     void RemoveUniqueGroupMemberFlag(GroupMemberFlags flag);
     [[nodiscard]] ObjectGuid GetTargetIcon(uint8 id) const { return id < TARGETICONCOUNT ? m_targetIcons[id] : ObjectGuid::Empty; }
 
-    //mod_playerbots
-    ObjectGuid const GetTargetIcon(uint8 id) const { return m_targetIcons[id]; }
-
     Difficulty GetDifficulty(bool isRaid) const;
     Difficulty GetDungeonDifficulty() const;
     Difficulty GetRaidDifficulty() const;

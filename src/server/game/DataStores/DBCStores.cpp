@@ -29,6 +29,10 @@
 #include "World.h"
 #include <map>
 
+// Upstream dropped these with its area-flag cleanup; the fork still fills and reads them
+// through GetAreaFlagByAreaID() / GetAreaFlagByMapId() below.
+typedef std::map<uint16, uint32> AreaFlagByAreaID;
+typedef std::map<uint32, uint32> AreaFlagByMapID;
 typedef std::tuple<int16, int8, int32> WMOAreaTableKey;
 typedef std::map<WMOAreaTableKey, WMOAreaTableEntry const*> WMOAreaInfoByTripple;
 
