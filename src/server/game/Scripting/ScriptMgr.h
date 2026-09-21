@@ -100,7 +100,6 @@ namespace Acore::ChatCommands
 /*
     TODO: Add more script type classes.
 
-    SessionScript
     CollisionScript
     ArenaTeamScript
 
@@ -180,6 +179,10 @@ public: /* ServerScript */
     bool CanPacketReceive(WorldSession* session, WorldPacket const& packet);
     void OnPacketReceived(WorldSession* session, WorldPacket const& packet);
     bool CanPacketSend(WorldSession* session, WorldPacket const& packet);
+    void OnPacketSent(WorldSession* session, WorldPacket const& packet);
+
+public: /* SessionScript */
+    void OnSessionUpdate(WorldSession* session, uint32 diff);
 
 public: /* WorldScript */
     void OnLoadCustomDatabaseTable();
@@ -326,6 +329,7 @@ public: /* PlayerScript */
     void OnPlayerCreatureKill(Player* killer, Creature* killed);
     void OnPlayerCreatureKilledByPet(Player* petOwner, Creature* killed);
     void OnPlayerKilledByCreature(Creature* killer, Player* killed);
+    void OnPlayerCreatureKillCredit(Player* player, Creature* killed);
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel);
     void OnPlayerFreeTalentPointsChanged(Player* player, uint32 newPoints);
     void OnPlayerTalentsReset(Player* player, bool noCost);
@@ -417,6 +421,7 @@ public: /* PlayerScript */
     bool OnPlayerCanSendMail(Player* player, ObjectGuid receiverGuid, ObjectGuid mailbox, std::string& subject, std::string& body, uint32 money, uint32 COD, Item* item);
     void OnPlayerPetitionBuy(Player* player, Creature* creature, uint32& charterid, uint32& cost, uint32& type);
     void OnPlayerPetitionShowList(Player* player, Creature* creature, uint32& CharterEntry, uint32& CharterDispayID, uint32& CharterCost);
+    void OnPlayerBeforePetitionSign(Player* player, ObjectGuid petitionGuid, bool& alreadySignedByAccount);
     void OnPlayerRewardKillRewarder(Player* player, KillRewarder* rewarder, bool isDungeon, float& rate);
     bool OnPlayerCanGiveMailRewardAtGiveLevel(Player* player, uint8 level);
     void OnPlayerDeleteFromDB(CharacterDatabaseTransaction trans, uint32 guid);
@@ -570,6 +575,7 @@ public: /* GlobalScript */
     void OnInstanceIdRemoved(uint32 instanceId);
     void OnBeforeSetBossState(uint32 id, EncounterState newState, EncounterState oldState, Map* instance);
     void AfterInstanceGameObjectCreate(Map* instance, GameObject* go);
+    bool CanCreateLfgProposal(lfg::Lfg5Guids const& guids);
 
 public: /* Scheduled scripts */
     uint32 IncreaseScheduledScriptsCount() { return ++_scheduledScripts; }
@@ -618,6 +624,7 @@ public: /* AllGameobjectScript */
 public: /* AllMapScript */
     void OnBeforeCreateInstanceScript(InstanceMap* instanceMap, InstanceScript** instanceData, bool load, std::string data, uint32 completedEncounterMask);
     void OnDestroyInstance(MapInstanced* mapInstanced, Map* map);
+    bool CanSendObjectUpdatesToPlayer(Map* map, Player* player);
 
 public: /* BattlefieldScript */
     void OnBattlefieldPlayerEnterZone(Battlefield* bf, Player* player);

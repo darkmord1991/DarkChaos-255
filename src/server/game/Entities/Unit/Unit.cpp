@@ -458,13 +458,12 @@ Unit::Unit() : WorldObject(),
 // Methods of class Unit
 Unit::~Unit()
 {
-    // Sever every follower that still points here. RemoveAllFollowers() otherwise runs
-    // only from RemoveFromWorld(), whose whole body sits behind if (IsInWorld()), and
-    // CleanupBeforeRemoveFromMap() likewise only calls RemoveFromWorld() while in world.
-    // So a follower registered on a unit that is already out of world -- AbstractFollower
-    // and MotionMaster::MoveFollow() never check -- survives that unit's deletion holding
-    // a dangling _target, and crashes here later in ~AbstractFollower -> SetTarget(nullptr)
-    // -> _target->FollowerRemoved(this), erasing from an m_followingMe that no longer exists.
+    // Detach any AbstractFollowers still targeting this unit (e.g. a summoned pet/guardian/totem's
+    // FollowMovementGenerator) before it is destroyed. RemoveAllFollowers() is otherwise only called
+    // from RemoveFromWorld(), itself skipped entirely if this unit was already out of world -- so a
+    // unit destroyed without going through that path can leave a follower holding a dangling _target,
+    // crashing later in AbstractFollower::SetTarget when it tries to unregister itself. No-op/safe if
+    // m_followingMe is already empty.
     RemoveAllFollowers();
 
     // set current spells as deletable
@@ -6995,6 +6994,8 @@ ReputationRank Unit::GetFactionReactionTo(FactionTemplateEntry const* factionTem
 
 ReputationRank Unit::GetFactionReactionTo(FactionTemplateEntry const* factionTemplateEntry, FactionTemplateEntry const* targetFactionTemplateEntry)
 {
+    if (!factionTemplateEntry || !targetFactionTemplateEntry)
+        return REP_NEUTRAL;
     // common faction based check
     if (factionTemplateEntry->IsHostileTo(*targetFactionTemplateEntry))
         return REP_HOSTILE;
@@ -13802,6 +13803,9 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
         }
 
         sScriptMgr->OnPlayerbotCheckKillTask(player, victim);
+
+        if (player)
+            sScriptMgr->OnPlayerCreatureKillCredit(player, creature);
 
         // Dungeon specific stuff, only applies to players killing creatures
         if (creature->GetInstanceId())

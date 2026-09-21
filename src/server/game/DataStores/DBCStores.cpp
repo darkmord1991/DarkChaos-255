@@ -29,9 +29,6 @@
 #include "World.h"
 #include <map>
 
-typedef std::map<uint16, uint32> AreaFlagByAreaID;
-typedef std::map<uint32, uint32> AreaFlagByMapID;
-
 typedef std::tuple<int16, int8, int32> WMOAreaTableKey;
 typedef std::map<WMOAreaTableKey, WMOAreaTableEntry const*> WMOAreaInfoByTripple;
 
@@ -319,7 +316,7 @@ void LoadDBCStores(std::string const& dataPath)
     LOAD_DBC(sDurabilityQualityStore,               "DurabilityQuality.dbc",                "durabilityquality_dbc");
     LOAD_DBC(sEmotesStore,                          "Emotes.dbc",                           "emotes_dbc");
     LOAD_DBC(sEmotesTextStore,                      "EmotesText.dbc",                       "emotestext_dbc");
-    LOAD_DBC(sEmotesTextSoundStore,                 "EmotesTextSound.dbc",                  "emotetextsound_dbc");
+    LOAD_DBC(sEmotesTextSoundStore,                 "EmotesTextSound.dbc",                  "emotestextsound_dbc");
     LOAD_DBC(sFactionStore,                         "Faction.dbc",                          "faction_dbc");
     LOAD_DBC(sFactionTemplateStore,                 "FactionTemplate.dbc",                  "factiontemplate_dbc");
     LOAD_DBC(sGameObjectArtKitStore,                "GameObjectArtKit.dbc",                 "gameobjectartkit_dbc");
@@ -447,7 +444,10 @@ void LoadDBCStores(std::string const& dataPath)
     }
 
     for (EmotesTextSoundEntry const* emoteTextSound : sEmotesTextSoundStore)
-        sEmotesTextSoundMap[EmotesTextSoundKey(emoteTextSound->EmotesTextId, emoteTextSound->RaceId, emoteTextSound->SexId)] = emoteTextSound;
+    {
+        EmotesTextSoundKey key(emoteTextSound->EmotesTextId, emoteTextSound->RaceId, emoteTextSound->SexId);
+        sEmotesTextSoundMap[key] = emoteTextSound;
+    }
 
     // fill data
     for (MapDifficultyEntry const* entry : sMapDifficultyStore)

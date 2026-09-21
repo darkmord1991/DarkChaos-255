@@ -314,6 +314,7 @@ void WorldSession::SendPacket(WorldPacket const* packet)
     }
 
     sScriptMgr->OnPlayerbotPacketSent(GetPlayer(), packet);
+    sScriptMgr->OnPacketSent(this, *packet);
 
     if (!m_Socket)
         return;
@@ -614,6 +615,7 @@ bool WorldSession::Update(uint32 diff, PacketFilter& updater)
     if (updater.ProcessUnsafe())
     {
         sScriptMgr->OnPlayerbotUpdateSessions(GetPlayer());
+        sScriptMgr->OnSessionUpdate(this, diff);
 
         if (m_Socket && m_Socket->IsOpen() && _warden)
         {

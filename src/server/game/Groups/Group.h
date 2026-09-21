@@ -279,6 +279,7 @@ public:
     void SetTargetIcon(uint8 id, ObjectGuid whoGuid, ObjectGuid targetGuid);
     void SetGroupMemberFlag(ObjectGuid guid, bool apply, GroupMemberFlags flag);
     void RemoveUniqueGroupMemberFlag(GroupMemberFlags flag);
+    [[nodiscard]] ObjectGuid GetTargetIcon(uint8 id) const { return id < TARGETICONCOUNT ? m_targetIcons[id] : ObjectGuid::Empty; }
 
     //mod_playerbots
     ObjectGuid const GetTargetIcon(uint8 id) const { return m_targetIcons[id]; }
