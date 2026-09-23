@@ -5299,6 +5299,15 @@ void SpellMgr::LoadSpellInfoCorrections()
         spellInfo->Effects[EFFECT_0].BasePoints = int32(spellInfo->Id - 800009);
     });
 
+    // Heroic Strike
+    ApplySpellFix({
+        45026,
+        29426
+        }, [](SpellInfo* spellInfo)
+    {
+        spellInfo->SpellLevel = 10;
+    });
+
     for (uint32 i = 0; i < GetSpellInfoStoreSize(); ++i)
     {
         SpellInfo* spellInfo = mSpellInfoMap[i];
