@@ -53,7 +53,6 @@ void PointMovementGenerator<T>::DoInitialize(T* unit)
     i_recalculateSpeed = false;
     Movement::MoveSplineInit init(unit);
 
-
     if (_reverseOrientation)
         init.SetOrientationInversed();
 
