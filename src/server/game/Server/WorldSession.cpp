@@ -145,7 +145,8 @@ WorldSession::WorldSession(uint32 id, std::string&& name, uint32 accountFlags, s
     _timeSyncClockDelta(0),
     _pendingTimeSyncRequests(),
     _orderCounter(0),
-    _isBot(isBot)
+    _isBot(isBot),
+    _headless(!sock)
 {
     memset(m_Tutorials, 0, sizeof(m_Tutorials));
 
@@ -165,12 +166,15 @@ WorldSession::WorldSession(uint32 id, std::string&& name, uint32 accountFlags, s
     {
         m_Address = "bot";
     }
+    else
+        m_Address = "headless";
 }
 
 /// WorldSession destructor
 WorldSession::~WorldSession()
 {
-    LoginDatabase.Execute("UPDATE account SET totaltime = {} WHERE id = {}", GetTotalTime(), GetAccountId());
+    if (!_headless)
+        LoginDatabase.Execute("UPDATE account SET totaltime = {} WHERE id = {}", GetTotalTime(), GetAccountId());
 
     ///- unload player if not unloaded
     if (_player)
@@ -190,7 +194,8 @@ WorldSession::~WorldSession()
     while (_recvQueue.next(packet))
         delete packet;
 
-    LoginDatabase.Execute("UPDATE account SET online = 0 WHERE id = {};", GetAccountId());     // One-time query
+    if (!_headless)
+        LoginDatabase.Execute("UPDATE account SET online = 0 WHERE id = {};", GetAccountId());     // One-time query
 }
 
 void WorldSession::UpdateAccountFlag(uint32 flag, bool remove /*= flase*/)
@@ -868,6 +873,8 @@ void WorldSession::LogoutPlayer(bool save, bool redirecting)
         uint32 statementParam = GetAccountId();
         sScriptMgr->OnDatabaseSelectIndexLogout(_player, statementIndex, statementParam);
 
+        ObjectGuid const playerGuid = _player->GetGUID();
+
         //! Remove the player from the world
         // the player may not be in the world when logging out
         // e.g if he got disconnected during a transfer to another map
@@ -886,8 +893,8 @@ void WorldSession::LogoutPlayer(bool save, bool redirecting)
         SendPacket(WorldPackets::Character::LogoutComplete().Write());
         LOG_DEBUG("network", "SESSION: Sent SMSG_LOGOUT_COMPLETE Message");
 
-        //! Since each account can only have one online character at any given time, ensure all characters for active account are marked as offline
-        if (!redirecting)
+        //! Mark all characters of the account offline, unless a script running several per account handles it instead
+        if (!redirecting && sScriptMgr->OnPlayerCanMarkAccountOffline(playerGuid, GetAccountId()))
         {
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CharacterDatabaseStatements(statementIndex));
             stmt->SetData(0, statementParam);
@@ -1682,6 +1689,15 @@ void WorldSession::SetPacketLogging(bool state)
 LockedQueue<WorldPacket*>& WorldSession::GetPacketQueue()
 {
     return _recvQueue;
+}
+
+std::unique_ptr<WorldPacket> WorldSession::NextQueuedPacket()
+{
+    WorldPacket* packet = nullptr;
+    if (!_recvQueue.next(packet))
+        return nullptr;
+
+    return std::unique_ptr<WorldPacket>(packet);
 }
 
 void WorldSession::LoadPermissions()

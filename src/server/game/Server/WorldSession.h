@@ -32,6 +32,7 @@
 #include "GossipDef.h"
 #include "QueryHolder.h"
 #include "Packet.h"
+#include "QueryHolder.h"
 #include "SharedDefines.h"
 #include "World.h"
 #include <map>
@@ -292,16 +293,16 @@ enum CharterTypes
 
 class LoginQueryHolder : public CharacterDatabaseQueryHolder
 {
-    private:
-        uint32 m_accountId;
-        ObjectGuid m_guid;
+public:
+    LoginQueryHolder(uint32 accountId, ObjectGuid guid);
 
-    public:
-        LoginQueryHolder(uint32 accountId, ObjectGuid guid);
+    ObjectGuid GetGuid() const { return _guid; }
+    uint32 GetAccountId() const { return _accountId; }
+    bool Initialize();
 
-        ObjectGuid GetGuid() const { return m_guid; }
-        uint32 GetAccountId() const { return m_accountId; }
-        bool Initialize();
+private:
+    uint32 _accountId;
+    ObjectGuid _guid;
 };
 
 constexpr Seconds PLAY_TIME_LIMIT_APPROACHING_PARTIAL = Hours(2) + Minutes(30);
@@ -363,9 +364,11 @@ class CharacterCreateInfo
     friend class Player;
 
 public:
-    CharacterCreateInfo(std::string const name = "", uint8 _race = 0, uint8 _class = 0, uint8 gender = 0, uint8 skin = 0, uint8 face = 0,
-        uint8 hairStyle = 0, uint8 hairColor = 0, uint8 facialHair = 0)
-        : Name(name), Race(_race), Class(_class), Gender(gender), Skin(skin), Face(face), HairStyle(hairStyle), HairColor(hairColor), FacialHair(facialHair) { }
+    explicit CharacterCreateInfo(std::string name = "", uint8 race = 0, uint8 playerClass = 0,
+        uint8 gender = GENDER_NONE, uint8 skin = 0, uint8 face = 0, uint8 hairStyle = 0, uint8 hairColor = 0,
+        uint8 facialHair = 0)
+        : Name(std::move(name)), Race(race), Class(playerClass), Gender(gender), Skin(skin), Face(face),
+        HairStyle(hairStyle), HairColor(hairColor), FacialHair(facialHair) { }
 
 protected:
     /// User specified variables
@@ -1227,6 +1230,7 @@ public:                                                 // opcodes handlers
     QueryCallbackProcessor& GetQueryProcessor() { return _queryProcessor; }
     TransactionCallback& AddTransactionCallback(TransactionCallback&& callback);
     SQLQueryHolderCallback& AddQueryHolderCallback(SQLQueryHolderCallback&& callback);
+    void ProcessQueryCallbacks();
 
     void InitializeSession();
     void InitializeSessionCallback(CharacterDatabaseQueryHolder const& realmHolder, uint32 clientCacheVersion);
@@ -1234,15 +1238,16 @@ public:                                                 // opcodes handlers
     void SetPacketLogging(bool state);
 
     LockedQueue<WorldPacket*>& GetPacketQueue();
+    std::unique_ptr<WorldPacket> NextQueuedPacket();
 
     [[nodiscard]] bool IsBot() const
     {
         return _isBot;
     }
 
-private:
-    void ProcessQueryCallbacks();
+    [[nodiscard]] bool IsHeadless() const { return _headless; }
 
+private:
     QueryCallbackProcessor _queryProcessor;
     AsyncCallbackProcessor<TransactionCallback> _transactionCallbacks;
     AsyncCallbackProcessor<SQLQueryHolderCallback> _queryHolderProcessor;
@@ -1357,6 +1362,7 @@ private:
     uint32 _orderCounter;
 
     bool _isBot;
+    bool const _headless;
 
     WorldSession(WorldSession const& right) = delete;
     WorldSession& operator=(WorldSession const& right) = delete;
