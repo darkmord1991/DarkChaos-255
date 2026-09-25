@@ -2746,6 +2746,8 @@ public:
     bool CanRequestSpellCast(SpellInfo const* spellInfo);
 
 protected:
+    Unit* SelectCharmedAIGroupTarget(float distance) const;
+
     // Gamemaster whisper whitelist
     WhisperListContainer WhisperList;
 
