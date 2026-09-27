@@ -137,8 +137,23 @@ bool Acore::Hyperlinks::LinkTags::item::StoreTo(ItemLinkData& val, std::string_v
     int32 randomPropertyId;
     if (!(val.Item && t.TryConsumeTo(val.EnchantId) && t.TryConsumeTo(val.GemEnchantId[0]) && t.TryConsumeTo(val.GemEnchantId[1]) &&
         t.TryConsumeTo(val.GemEnchantId[2]) && t.TryConsumeTo(dummy) && t.TryConsumeTo(randomPropertyId) && t.TryConsumeTo(val.RandomSuffixBaseAmount) &&
-        t.TryConsumeTo(val.RenderLevel) && t.IsEmpty() && !dummy))
+        t.TryConsumeTo(val.RenderLevel) && !dummy))
         return false;
+
+    // DarkChaos: the server appends ":<ownerGuidLow>:<itemGuidLow>" to item links
+    // whose tooltip the link alone cannot describe (item upgrades, RandomEnchants
+    // rolls; see DCQoSItemLinkScript), so other clients can ask for the real
+    // tooltip. The 3.3.5 client ignores fields past the level, and a player who
+    // re-links such a link sends them back -- accept exactly that shape. The chat
+    // script strips and re-derives them on every message, so they are never
+    // trusted from the client.
+    if (!t.IsEmpty())
+    {
+        uint32 ownerGuidLow = 0;
+        uint32 itemGuidLow = 0;
+        if (!(t.TryConsumeTo(ownerGuidLow) && t.TryConsumeTo(itemGuidLow) && t.IsEmpty()))
+            return false;
+    }
 
     if ((static_cast<int32>(std::numeric_limits<int16>::max()) < randomPropertyId) && (randomPropertyId <= std::numeric_limits<uint16>::max()))
     { // this is the bug case, the id we received is actually static_cast<uint16>(i16RandomPropertyId)

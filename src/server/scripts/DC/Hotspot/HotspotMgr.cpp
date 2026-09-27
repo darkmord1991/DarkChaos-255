@@ -1135,8 +1135,11 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
     ObjectGuid const playerGuid = player->GetGUID();
     // Snapshot copy: this runs on a map-worker thread; a pointer into the grid
     // could dangle when the world thread removes an expired hotspot.
+    // A flightmaster taxi passing over a hotspot is not a visit: treat it as
+    // outside so the buff/notification are not granted, and an existing buff
+    // is dropped for the flight like any other departure.
     Hotspot hotspotCopy;
-    bool const inHotspot = GetPlayerHotspotSnapshot(player, hotspotCopy);
+    bool const inHotspot = !player->IsInFlight() && GetPlayerHotspotSnapshot(player, hotspotCopy);
     Hotspot const* hotspot = inHotspot ? &hotspotCopy : nullptr;
 
     if (!hotspot)

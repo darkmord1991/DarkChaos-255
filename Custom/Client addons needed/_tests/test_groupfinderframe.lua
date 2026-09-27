@@ -36,6 +36,16 @@ function Methods:HookScript(k, fn)
     self._scripts[k] = function(...) if prev then prev(...) end; fn(...) end
 end
 function TexMethods:GetTexture() return self._tex and self._tex[1] end
+-- Record each texture's draw layer and owner: the layering tests below need
+-- them (3.3.5 has no sublevels, so the layer is the whole draw order).
+local simCreateTexture = Methods.CreateTexture
+function Methods:CreateTexture(name, layer, ...)
+    local tex = simCreateTexture(self, name, layer, ...)
+    tex._layer, tex._owner = layer, self
+    self._textures = self._textures or {}
+    table.insert(self._textures, tex)
+    return tex
+end
 
 local simCreateFrame = CreateFrame
 _G.CreateFrame = function(ftype, name, parent, tmpl)
@@ -139,6 +149,28 @@ ok(frame ~= nil and GF.mainFrame == frame, "main frame built")
 ok(GF.FRAME_WIDTH == 620 and GF.FRAME_HEIGHT == 500, "window is 620x500 (retail PVEFrame proportions, one size up)")
 ok(frame.Portrait ~= nil and frame.TitleText ~= nil, "portrait + title present")
 ok(GF.navInset ~= nil and GF.contentInset ~= nil and GF.contentPane ~= nil, "nav inset + content inset + pane")
+local canvas = GF.navInset.bgTiles[1]._owner
+ok(canvas ~= frame and canvas._level == math.max(frame:GetFrameLevel() - 1, 0),
+    "background paint sits on a canvas one level under the window")
+local canvasLayers, tilesInRange = {}, true
+for _, tex in ipairs(canvas._textures or {}) do
+    canvasLayers[tex._layer] = (canvasLayers[tex._layer] or 0) + 1
+    if tex._layer ~= "ARTWORK" then
+        for _, c in ipairs(tex._texcoord or { 2 }) do
+            if c < 0 or c > 1 then tilesInRange = false end
+        end
+    end
+end
+ok(canvasLayers.BACKGROUND == 6 and canvasLayers.BORDER == 6 and canvasLayers.ARTWORK == 2,
+    "canvas: 6 rock tiles, 6 marble tiles, then nav panel + content shade")
+ok(tilesInRange, "fill tiles keep texcoords inside 0..1 (no sampler wrap)")
+local discLayer
+for _, tex in ipairs(frame._textures or {}) do
+    if tex._point and tex._point[2] == frame.Portrait then discLayer = tex._layer end
+end
+ok(frame.Portrait._layer == "OVERLAY" and discLayer == "ARTWORK", "eye draws a layer above its dark disc")
+ok(GF.retailNavButtons.dungeon.icon._layer == "ARTWORK" and GF.retailNavButtons.dungeon.ring._layer == "OVERLAY",
+    "nav icon sits a layer under its gold ring")
 local navCount = 0
 for _ in pairs(GF.retailNavButtons or {}) do navCount = navCount + 1 end
 ok(navCount == 4, "4 nav buttons (got " .. navCount .. ")")

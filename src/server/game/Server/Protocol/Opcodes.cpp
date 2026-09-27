@@ -1441,39 +1441,42 @@ void OpcodeTable::Initialize()
     /*0x51E*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_MULTIPLE_MOVES, STATUS_NEVER);
     /*0x51F*/ DEFINE_HANDLER(TC9_CMSG_PREPARE_FOR_REDIRECT,                                         STATUS_AUTHED,     PROCESS_THREADUNSAFE,   &WorldSession::HandleTC9PrepareForRedirect              );
     /*0x520*/ DEFINE_HANDLER(CMSG_TELEPORT_GRAVEYARD_REQUEST,                                       STATUS_UNHANDLED,  PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
-    /*0x521*/ DEFINE_HANDLER(CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    // DC addon-protocol requests (0x521-0x541) are consumed by CanPacketReceive hooks in
+    // scripts/DC/AddonExtension. Those handlers share state with the chat transport, which
+    // runs on the world thread, so they must not run inside Map::Update (MapUpdate.Threads).
+    /*0x521*/ DEFINE_HANDLER(CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,                                 STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x522*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SPELL_TOOLTIP_ENRICHMENT,                           STATUS_NEVER);
     /*0x523*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_BREAKING_NEWS,                                      STATUS_NEVER);
-    /*0x524*/ DEFINE_HANDLER(CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP,                                     STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x524*/ DEFINE_HANDLER(CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP,                                     STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x525*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_ITEM_UPGRADE_TOOLTIP,                               STATUS_NEVER);
-    /*0x526*/ DEFINE_HANDLER(CMSG_REQUEST_NPC_TOOLTIP_INFO,                                         STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x526*/ DEFINE_HANDLER(CMSG_REQUEST_NPC_TOOLTIP_INFO,                                         STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x527*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_NPC_TOOLTIP_INFO,                                   STATUS_NEVER);
-    /*0x528*/ DEFINE_HANDLER(CMSG_REQUEST_MPLUS_HUD_SNAPSHOT,                                       STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x528*/ DEFINE_HANDLER(CMSG_REQUEST_MPLUS_HUD_SNAPSHOT,                                       STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x529*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_MPLUS_HUD_SNAPSHOT,                                 STATUS_NEVER);
-    /*0x52A*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_TRANSMOG_STATE,                                STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x52A*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_TRANSMOG_STATE,                                STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x52B*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COLLECTION_TRANSMOG_STATE,                          STATUS_NEVER);
-    /*0x52C*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_ITEM_SETS,                                     STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x52C*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_ITEM_SETS,                                     STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x52D*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COLLECTION_ITEM_SETS,                               STATUS_NEVER);
-    /*0x52E*/ DEFINE_HANDLER(CMSG_REQUEST_QOS_PING_RELAY,                                           STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x52E*/ DEFINE_HANDLER(CMSG_REQUEST_QOS_PING_RELAY,                                           STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x52F*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_QOS_PING_RELAY,                                     STATUS_NEVER);
-    /*0x530*/ DEFINE_HANDLER(CMSG_REQUEST_HLBG_LIVE_SNAPSHOT,                                       STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x530*/ DEFINE_HANDLER(CMSG_REQUEST_HLBG_LIVE_SNAPSHOT,                                       STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x531*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_HLBG_LIVE_SNAPSHOT,                                 STATUS_NEVER);
-    /*0x532*/ DEFINE_HANDLER(CMSG_REQUEST_SPECTATOR_LIVE_SNAPSHOT,                                  STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x532*/ DEFINE_HANDLER(CMSG_REQUEST_SPECTATOR_LIVE_SNAPSHOT,                                  STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x533*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SPECTATOR_LIVE_SNAPSHOT,                            STATUS_NEVER);
-    /*0x534*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_WAVE1,                                         STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x534*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_WAVE1,                                         STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x535*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COLLECTION_WAVE1,                                   STATUS_NEVER);
     /*0x536*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_NATIVE_ENVELOPE,                                 STATUS_NEVER);
-    /*0x537*/ DEFINE_HANDLER(CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT,                                    STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x537*/ DEFINE_HANDLER(CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT,                                    STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x538*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_ITEM_TOOLTIP_SNAPSHOT,                              STATUS_NEVER);
-    /*0x539*/ DEFINE_HANDLER(CMSG_REQUEST_SEASONAL,                                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x539*/ DEFINE_HANDLER(CMSG_REQUEST_SEASONAL,                                                 STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x53A*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SEASONAL,                                           STATUS_NEVER);
-    /*0x53B*/ DEFINE_HANDLER(CMSG_REQUEST_HOTSPOT,                                                  STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x53B*/ DEFINE_HANDLER(CMSG_REQUEST_HOTSPOT,                                                  STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x53C*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_HOTSPOT,                                            STATUS_NEVER);
-    /*0x53D*/ DEFINE_HANDLER(CMSG_REQUEST_PRESTIGE,                                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x53D*/ DEFINE_HANDLER(CMSG_REQUEST_PRESTIGE,                                                 STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x53E*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_PRESTIGE,                                           STATUS_NEVER);
-    /*0x53F*/ DEFINE_HANDLER(CMSG_REQUEST_WORLD_CONTENT,                                            STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x53F*/ DEFINE_HANDLER(CMSG_REQUEST_WORLD_CONTENT,                                            STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x540*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_WORLD_CONTENT,                                      STATUS_NEVER);
-    /*0x541*/ DEFINE_HANDLER(CMSG_DC_NATIVE_REQUEST,                                                STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x541*/ DEFINE_HANDLER(CMSG_DC_NATIVE_REQUEST,                                                STATUS_LOGGEDIN,   PROCESS_THREADUNSAFE,   &WorldSession::Handle_NULL                              );
     /*0x542*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_NATIVE_MESSAGE,                                  STATUS_NEVER);
     /*0x543*/ DEFINE_SERVER_OPCODE_HANDLER(TC9_SMSG_READY_FOR_REDIRECT,                             STATUS_NEVER);
 

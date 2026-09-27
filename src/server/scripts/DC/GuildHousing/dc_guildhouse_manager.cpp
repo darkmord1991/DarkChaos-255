@@ -15,11 +15,20 @@
 #include "TemporarySummon.h"
 
 #include <cmath>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
+// GetGuildHouseData is reached from the map threads (the repop hook for every guilded player who dies,
+// the Dalaran guard AI), which read and fill these caches concurrently. An unguarded unordered_map
+// filled from several threads can corrupt its buckets and spin forever inside find().
+static std::mutex s_guildHouseCacheMutex;
 static std::unordered_map<uint32, GuildHouseData> s_guildHouseCache;
+// Guilds found to have no house. Without it every repop of a member of such a guild - the bot guilds
+// included - ran a blocking query on the dying player's map thread.
+static std::unordered_set<uint32> s_guildHouseMissing;
 
 namespace
 {
@@ -76,12 +85,9 @@ namespace
 
     bool HasGuildHouseLevelColumn()
     {
-        static std::optional<bool> cached;
-        if (cached.has_value())
-            return cached.value();
-
-        cached = DC::DbSchema::CharacterColumnExists("dc_guild_house", "guildhouse_level");
-        return cached.value();
+        // A magic static: GetGuildHouseData can make the first call from several map threads at once.
+        static bool const hasColumn = DC::DbSchema::CharacterColumnExists("dc_guild_house", "guildhouse_level");
+        return hasColumn;
     }
 }
 
@@ -173,11 +179,17 @@ void GuildHouseManager::ReloadGuildHouseLocations()
 GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
 {
     // Check Cache
-    auto it = s_guildHouseCache.find(guildId);
-    if (it != s_guildHouseCache.end())
-        return &it->second;
+    {
+        std::lock_guard<std::mutex> lock(s_guildHouseCacheMutex);
+        auto it = s_guildHouseCache.find(guildId);
+        if (it != s_guildHouseCache.end())
+            return &it->second;
 
-    // Load from DB
+        if (s_guildHouseMissing.count(guildId))
+            return nullptr;
+    }
+
+    // Load from DB (outside the lock, so a slow round trip does not hold up the other map threads)
     QueryResult result;
     if (HasGuildHouseLevelColumn())
     {
@@ -195,7 +207,14 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
     }
 
     if (!result)
+    {
+        std::lock_guard<std::mutex> lock(s_guildHouseCacheMutex);
+        // A house bought while the query ran is already cached; only a guild still unknown is marked.
+        if (!s_guildHouseCache.count(guildId))
+            s_guildHouseMissing.insert(guildId);
+
         return nullptr;
+    }
 
     Field* fields = result->Fetch();
     uint32 phase = fields[0].Get<uint32>();
@@ -236,20 +255,25 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
             phase, posX, posY, posZ, ori, guildId);
     }
 
-    // Store in Cache
-    GuildHouseData& data = s_guildHouseCache[guildId];
-    data = GuildHouseData(phase, map, posX, posY, posZ, ori, level);
-    return &data;
+    // Store in Cache. An entry written meanwhile (another thread's load, or a move) is newer than this row.
+    std::lock_guard<std::mutex> lock(s_guildHouseCacheMutex);
+    auto const it = s_guildHouseCache.try_emplace(guildId, phase, map, posX, posY, posZ, ori, level).first;
+    s_guildHouseMissing.erase(guildId);
+    return &it->second;
 }
 
 void GuildHouseManager::UpdateGuildHouseData(uint32 guildId, GuildHouseData const& data)
 {
+    std::lock_guard<std::mutex> lock(s_guildHouseCacheMutex);
     s_guildHouseCache[guildId] = data;
+    s_guildHouseMissing.erase(guildId);
 }
 
 void GuildHouseManager::RemoveGuildHouseData(uint32 guildId)
 {
+    std::lock_guard<std::mutex> lock(s_guildHouseCacheMutex);
     s_guildHouseCache.erase(guildId);
+    s_guildHouseMissing.erase(guildId);
 }
 
 uint8 GuildHouseManager::GetGuildHouseLevel(uint32 guildId)

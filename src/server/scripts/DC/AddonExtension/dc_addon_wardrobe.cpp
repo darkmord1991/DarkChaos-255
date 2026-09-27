@@ -772,6 +772,12 @@ namespace DCCollection
     void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer)
     {
         if (!player || !player->GetSession() || !proto) return;
+
+        // Playerbots have no wardrobe to show it in. Every item a bot is geared with or loots came
+        // through here: a blocking read of the account's appearance list the first time (often on a
+        // map thread) and an INSERT per new appearance.
+        if (DCAddon::IsBotRecipient(player)) return;
+
         if (!IsItemEligibleForTransmogUnlock(proto)) return;
 
         uint32 minQuality = sConfigMgr->GetOption<uint32>(TRANSMOG_MIN_QUALITY, 0);

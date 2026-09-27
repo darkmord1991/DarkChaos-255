@@ -457,11 +457,49 @@ function addon:GetChatFrameByWindowName(windowName)
     return _G["ChatFrame" .. index]
 end
 
+-- FCF_OpenNewWindow subscribes every new tab to stock's default chat set. DC tabs
+-- (DCDebug, Loot) are single-purpose, and keeping that set duplicated guild, party
+-- and whisper chat into each of them.
+local STOCK_NEW_WINDOW_GROUPS = { "SAY", "YELL", "GUILD", "WHISPER", "BN_WHISPER", "PARTY", "PARTY_LEADER", "CHANNEL" }
+local STOCK_NEW_WINDOW_SIGNATURE = { "SAY", "YELL", "GUILD", "WHISPER", "PARTY" }
+local chatWindowDefaultsChecked = {}
+
+local function ClearChatWindowSubscriptions(frame)
+    if type(ChatFrame_RemoveAllMessageGroups) == "function" then
+        pcall(ChatFrame_RemoveAllMessageGroups, frame)
+    end
+    if type(ChatFrame_RemoveAllChannels) == "function" then
+        pcall(ChatFrame_RemoveAllChannels, frame)
+    end
+end
+
+-- Tabs created before the fix above still carry the default set. Strip it only
+-- while all of it is present, so groups a player added by hand are left alone.
+local function ReleaseStockNewWindowGroups(frame)
+    if chatWindowDefaultsChecked[frame] then return end
+    chatWindowDefaultsChecked[frame] = true
+    if type(GetChatWindowMessages) ~= "function" or type(ChatFrame_RemoveMessageGroup) ~= "function" then return end
+
+    local present = {}
+    for _, group in ipairs({ GetChatWindowMessages(frame:GetID()) }) do
+        present[strupper(group)] = true
+    end
+    for _, group in ipairs(STOCK_NEW_WINDOW_SIGNATURE) do
+        if not present[group] then return end
+    end
+    for _, group in ipairs(STOCK_NEW_WINDOW_GROUPS) do
+        if present[group] then
+            pcall(ChatFrame_RemoveMessageGroup, frame, group)
+        end
+    end
+end
+
 function addon:EnsureChatWindow(windowName)
     if not windowName or windowName == "" then return nil end
 
     local frame = self:GetChatFrameByWindowName(windowName)
     if frame then
+        ReleaseStockNewWindowGroups(frame)
         return frame
     end
 
@@ -470,7 +508,12 @@ function addon:EnsureChatWindow(windowName)
         pcall(FCF_OpenNewWindow, windowName)
     end
 
-    return self:GetChatFrameByWindowName(windowName)
+    frame = self:GetChatFrameByWindowName(windowName)
+    if frame then
+        ClearChatWindowSubscriptions(frame)
+        chatWindowDefaultsChecked[frame] = true
+    end
+    return frame
 end
 
 function addon:RenameChatWindow(oldName, newName)

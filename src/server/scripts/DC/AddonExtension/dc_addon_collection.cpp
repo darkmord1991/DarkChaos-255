@@ -8703,6 +8703,15 @@ namespace DCCollection
 
             CacheMountedState(player);
 
+            // Playerbots have no client, so account-wide collections and transmog mean nothing to them.
+            // Seeding them cost about 73 INSERTs plus blocking reads per bot login (248,873 rows while
+            // 3,400 bots logged in), queued on the character database ahead of real players' logins.
+            if (DCAddon::IsBotRecipient(player))
+            {
+                UpdateMountSpeedBonus(player);
+                return;
+            }
+
             // Seed account-wide collections from already-known mounts/pets/titles.
             ImportExistingCollections(player);
 
@@ -8798,6 +8807,10 @@ namespace DCCollection
             if (!IsModuleEnabled())
                 return;
 
+            // Bots learn mounts and pets whenever they are geared; no client ever reads their collection.
+            if (DCAddon::IsBotRecipient(player))
+                return;
+
             // Check if this is a mount or pet spell
             // Auto-add to collection if it's a mount/pet
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -8854,6 +8867,11 @@ namespace DCCollection
         {
             // Apply transmog appearance by overriding the visible item entry.
             if (!player || !player->GetSession())
+                return;
+
+            // Bots have no transmog. For them the only effect here was the first cache lookup, a blocking
+            // read of dc_character_transmog while their inventory loads.
+            if (DCAddon::IsBotRecipient(player))
                 return;
 
             // Only for equipment slots that use visible item fields.

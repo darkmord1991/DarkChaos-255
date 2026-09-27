@@ -32,12 +32,6 @@ local MOUNT_PREFIX = "dc:mount"
 local PET_PREFIX = "dc:pet"
 local MAX_LINK_NAME = 60
 
-local MOUNT_TYPE_NAMES = {
-    [1] = "Ground",
-    [2] = "Flying",
-    [3] = "Aquatic",
-}
-
 -- ============================================================================
 -- HELPERS
 -- ============================================================================
@@ -508,8 +502,8 @@ function DC:ShowCollectionLinkTooltip(anchor, linkData)
     GameTooltip:AddLine(displayName, (color and color.r) or 1, (color and color.g) or 1, (color and color.b) or 1)
 
     if collType == "mounts" then
-        local mountType = tonumber(def and (def.mountType or def.mount_type))
-        local typeName = mountType and MOUNT_TYPE_NAMES[mountType]
+        local typeName = def and type(self.GetMountTypeName) == "function"
+            and self:GetMountTypeName(def.mountType or def.mount_type)
         GameTooltip:AddLine(typeName and (typeName .. " Mount") or "Mount", 1, 1, 1)
     else
         GameTooltip:AddLine("Companion Pet", 1, 1, 1)

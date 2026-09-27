@@ -198,46 +198,6 @@ std::string DBUpdater<CharacterDatabaseConnection>::GetDBModuleName()
     return "characters";
 }
 
-#ifdef MOD_PLAYERBOTS
-// Playerbots Database
-template<>
-std::string DBUpdater<PlayerbotsDatabaseConnection>::GetConfigEntry()
-{
-    return "Updates.Playerbots";
-}
-
-template<>
-std::string DBUpdater<PlayerbotsDatabaseConnection>::GetTableName()
-{
-    return "Playerbots";
-}
-
-template<>
-std::string DBUpdater<PlayerbotsDatabaseConnection>::GetSourceDirectory()
-{
-    return BuiltInConfig::GetSourceDirectory() + "/modules/mod-playerbots";
-}
-
-template<>
-std::string DBUpdater<PlayerbotsDatabaseConnection>::GetBaseFilesDirectory()
-{
-    return DBUpdater<PlayerbotsDatabaseConnection>::GetSourceDirectory() + "/data/sql/playerbots/base/";
-}
-
-template<>
-bool DBUpdater<PlayerbotsDatabaseConnection>::IsEnabled(uint32 const updateMask)
-{
-    // This way silences warnings under msvc
-    return (updateMask & DatabaseLoader::DATABASE_PLAYERBOTS) ? true : false;
-}
-
-template<>
-std::string DBUpdater<PlayerbotsDatabaseConnection>::GetDBModuleName()
-{
-    return "db_playerbot";
-}
-#endif
-
 // All
 template<class T>
 BaseLocation DBUpdater<T>::GetBaseLocationType()
@@ -676,7 +636,3 @@ bool ModuleDBUpdater::Populate(DatabaseUpdatePool& pool, DBUpdaterInfo const& in
 template class AC_DATABASE_API DBUpdater<LoginDatabaseConnection>;
 template class AC_DATABASE_API DBUpdater<WorldDatabaseConnection>;
 template class AC_DATABASE_API DBUpdater<CharacterDatabaseConnection>;
-
-#ifdef MOD_PLAYERBOTS
-template class AC_DATABASE_API DBUpdater<PlayerbotsDatabaseConnection>;
-#endif

@@ -88,6 +88,7 @@ namespace DCFirstStart
         // Bags
         constexpr char const* BAGS_DEFAULT = "DCFirstStart.Bags.Default";
         constexpr char const* BAGS_HUNTER = "DCFirstStart.Bags.Hunter";
+        constexpr char const* BAGS_HUNTER_GUN = "DCFirstStart.Bags.HunterGun";
         constexpr char const* BAGS_WARLOCK = "DCFirstStart.Bags.Warlock";
         constexpr char const* BAGS_ROGUE = "DCFirstStart.Bags.Rogue";
 
@@ -417,11 +418,60 @@ namespace DCFirstStart
             LOG_INFO("module.dc", "[DCFirstStart] Granted free dual spec to {}", player->GetName());
     }
 
+    // A quiver holds only arrows and an ammo pouch only bullets, so the hunter's
+    // container follows the ranged weapon from the starting outfit.
+    uint32 GetHunterBagId(Player* player)
+    {
+        Item const* ranged = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+        if (!ranged)
+            return 0;
+
+        switch (ranged->GetTemplate()->SubClass)
+        {
+            case ITEM_SUBCLASS_WEAPON_BOW:
+            case ITEM_SUBCLASS_WEAPON_CROSSBOW:
+                return sConfigMgr->GetOption<uint32>(Config::BAGS_HUNTER, 0);
+            case ITEM_SUBCLASS_WEAPON_GUN:
+                return sConfigMgr->GetOption<uint32>(Config::BAGS_HUNTER_GUN, 0);
+            default:
+                return 0;
+        }
+    }
+
     // Grant starting bags
     void GrantBags(Player* player, bool debug)
     {
         std::string defaultBags = sConfigMgr->GetOption<std::string>(Config::BAGS_DEFAULT, "");
         auto bagIds = ParseIdList(defaultBags);
+
+        // Class-specific bag
+        uint32 classBagId = 0;
+        switch (player->getClass())
+        {
+            case CLASS_HUNTER:
+                classBagId = GetHunterBagId(player);
+                break;
+            case CLASS_WARLOCK:
+                classBagId = sConfigMgr->GetOption<uint32>(Config::BAGS_WARLOCK, 0);
+                break;
+            case CLASS_ROGUE:
+                classBagId = sConfigMgr->GetOption<uint32>(Config::BAGS_ROGUE, 0);
+                break;
+            default:
+                break;
+        }
+
+        if (classBagId && !sObjectMgr->GetItemTemplate(classBagId))
+        {
+            LOG_ERROR("module.dc", "[DCFirstStart] Class bag {} for class {} does not exist", classBagId,
+                player->getClass());
+            classBagId = 0;
+        }
+
+        // The class bag replaces one default bag, so the slot kept free for the
+        // Welcome quest's heirloom bag stays free.
+        if (classBagId && !bagIds.empty())
+            bagIds.pop_back();
 
         int slot = 19;  // Bag slots 19-22
         for (uint32 bagId : bagIds)
@@ -439,23 +489,6 @@ namespace DCFirstStart
                 }
             }
             slot++;
-        }
-
-        // Class-specific bag
-        uint32 classBagId = 0;
-        switch (player->getClass())
-        {
-            case CLASS_HUNTER:
-                classBagId = sConfigMgr->GetOption<uint32>(Config::BAGS_HUNTER, 0);
-                break;
-            case CLASS_WARLOCK:
-                classBagId = sConfigMgr->GetOption<uint32>(Config::BAGS_WARLOCK, 0);
-                break;
-            case CLASS_ROGUE:
-                classBagId = sConfigMgr->GetOption<uint32>(Config::BAGS_ROGUE, 0);
-                break;
-            default:
-                break;
         }
 
         if (classBagId > 0)

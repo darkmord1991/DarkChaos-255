@@ -816,6 +816,52 @@ local function SetupHideSocialButtons()
 end
 
 -- ============================================================
+-- Chat Tab Fixes (stock 3.3.5a)
+-- ============================================================
+local chatTabFixesInstalled = false
+
+local function SetupChatTabFixes()
+    if chatTabFixesInstalled then return end
+    chatTabFixesInstalled = true
+
+    -- The tab menu only offers "Close Chat Window" when GetChatWindowInfo reports
+    -- the window shown, but the dock hides every docked frame except the selected
+    -- one, which clears that flag. Right-clicking an inactive tab therefore had no
+    -- close option. Select the tab first, like a left-click, so its frame is shown.
+    if type(FCF_Tab_OnClick) == "function" and type(FCF_SelectDockFrame) == "function" then
+        local origTabOnClick = FCF_Tab_OnClick
+        FCF_Tab_OnClick = function(self, button, ...)
+            if button == "RightButton" and GENERAL_CHAT_DOCK then
+                local chatFrame = _G["ChatFrame" .. self:GetID()]
+                if chatFrame and chatFrame.isDocked and FCFDock_GetSelectedWindow(GENERAL_CHAT_DOCK) ~= chatFrame then
+                    SELECTED_CHAT_FRAME = chatFrame
+                    FCF_SelectDockFrame(chatFrame)
+                end
+            end
+            return origTabOnClick(self, button, ...)
+        end
+    end
+
+    -- "Move to New Window" removes the channel from the frame SetItemRef was given.
+    -- A SetItemRef hook that drops that argument makes the pop-out error after the
+    -- new tab is opened, leaving a clone while General keeps the channel.
+    if type(ChatChannelDropDown_Show) == "function" then
+        local origChannelDropDownShow = ChatChannelDropDown_Show
+        ChatChannelDropDown_Show = function(chatFrame, ...)
+            if not chatFrame then
+                local focus = GetMouseFocus and GetMouseFocus()
+                if focus and focus.messageTypeList then
+                    chatFrame = focus
+                else
+                    chatFrame = SELECTED_CHAT_FRAME or DEFAULT_CHAT_FRAME
+                end
+            end
+            return origChannelDropDownShow(chatFrame, ...)
+        end
+    end
+end
+
+-- ============================================================
 -- Chat Copy Feature
 -- ============================================================
 local copyFrame = nil
@@ -1010,6 +1056,7 @@ function Chat.OnEnable()
     SetupLootRewardsRoutingWatcher()
     SetupChatLines()
     SetupHideSocialButtons()
+    SetupChatTabFixes()
     SetupSimpleCopyBox()
     SetupChatCopyButtons()
 end

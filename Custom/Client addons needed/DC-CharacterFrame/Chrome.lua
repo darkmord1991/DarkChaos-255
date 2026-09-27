@@ -31,9 +31,15 @@ local INNER_V_LEFT   = { 5, 0.0625, 0.375 }
 local INNER_V_RIGHT  = { 5, 0.5, 0.8125 }
 
 -- Retail SetPaperDollBackground overlay alpha per race file name.
+-- Black overlay over the greyed race art, per race, derived from each background's own brightness
+-- so every race lands near the same display brightness (~30/255, what Human/Dwarf had at 0.7):
+-- alpha = 1 - 30 / mean. A fixed alpha buried the dark night scenes -- Night Elf showed black at 0.6.
+-- Regenerate with retroport_tools/_dressup_backgrounds/tune_overlay.py when art changes.
+-- Races 3.3.5 never had art for ship the retail DressUpBackground-<Race>1..4 in patch-5.
 local RACE_OVERLAY = {
-    BLOODELF = 0.8, NIGHTELF = 0.6, SCOURGE = 0.3, TROLL = 0.6, ORC = 0.6,
-    WORGEN = 0.5, GOBLIN = 0.6,
+    HUMAN = 0.75, ORC = 0.55, DWARF = 0.75, NIGHTELF = 0, SCOURGE = 0, TAUREN = 0.65,
+    GNOME = 0.65, TROLL = 0.7, BLOODELF = 0.8, DRAENEI = 0.75, GOBLIN = 0.7, WORGEN = 0.45,
+    PANDAREN = 0.65, VULPERA = 0.7, ZANDALARITROLL = 0.4, KULTIRAN = 0.65, DARKIRONDWARF = 0.55,
 }
 
 -- Weapon row: 3 slots (37 wide, 5 apart) centred in the 328px inset; the

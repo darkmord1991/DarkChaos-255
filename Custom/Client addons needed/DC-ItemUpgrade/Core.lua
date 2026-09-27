@@ -1376,14 +1376,6 @@ function DC.RegisterDCProtocolHandlers()
 		end
 	end);
 	
-	-- Extension point: called after the per-entry upgrade cache changes for a
-	-- reason other than an item-info response (today: a successful upgrade).
-	-- Deliberately an empty global so other addons can hooksecurefunc it, the
-	-- same way they already hook DarkChaos_ItemUpgrade_HandleJsonItemInfo.
-	if not DarkChaos_ItemUpgrade_OnUpgradeCacheChanged then
-		function DarkChaos_ItemUpgrade_OnUpgradeCacheChanged(itemId) end
-	end
-
 	-- SMSG_UPGRADE_RESULT (0x11) - Upgrade success/failure notification
 	DCProtocol:RegisterHandler("UPG", 0x11, function(data)
 		if type(data) ~= "table" then return; end
@@ -2196,6 +2188,17 @@ function DC.RequestBatchItemInfo(itemIds)
 	end
 end
 
+
+-- Extension point: called after the per-entry upgrade cache changes for a
+-- reason other than an item-info response (today: a successful upgrade).
+-- Deliberately an empty global so other addons can hooksecurefunc it, the same
+-- way they already hook DarkChaos_ItemUpgrade_HandleJsonItemInfo. Defined at file
+-- level, not inside RegisterDCProtocolHandlers, so it exists as soon as this file
+-- has loaded -- that function returns early when DCAddonProtocol is missing, and
+-- DC-CharacterFrame / DC-QOS look for this global to decide whether to hook it.
+if not DarkChaos_ItemUpgrade_OnUpgradeCacheChanged then
+	function DarkChaos_ItemUpgrade_OnUpgradeCacheChanged(itemId) end
+end
 
 -- Initialize DC protocol handlers and communication panel
 DC.RegisterDCProtocolHandlers()

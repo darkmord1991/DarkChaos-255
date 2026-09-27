@@ -84,13 +84,18 @@ local SERVER_PROFILE_PRESETS = {
         applyQualityPreset = false,
         nameplateDistance = 20,
     },
+    -- WORLD and BATTLEGROUND were trimmed 2026-09-26: the effective doodad distance is base x
+    -- environmentDetail (WotLKExtensions EffectiveDoodadDistance), so 1250 x 2.0 drew every size class
+    -- -- grass tufts and pebbles included, vanilla 30 yd -- out to ~2500 yd, and every one of those is a
+    -- draw call on the single render thread. Large/huge doodads keep the horizon; small ones stop where
+    -- they are sub-pixel anyway. Effective at 1.5: ~300 / 600 / 1050 / 1500 / 1875 yd.
     WORLD = {
-        farclip = 2200,
+        farclip = 1800,
         cameraDistance = 120,
-        horizonScale = 8.0,
-        environmentDetail = 2.0,
+        horizonScale = 6.0,
+        environmentDetail = 1.5,
         doodadFade = 1250,
-        doodadFadeCategories = { 1250, 1250, 1250, 1250, 1250 },
+        doodadFadeCategories = { 200, 400, 700, 1000, 1250 },
         fogOverride = false,
         applyQualityPreset = true,
         nameplateDistance = 41,
@@ -107,12 +112,12 @@ local SERVER_PROFILE_PRESETS = {
         nameplateDistance = 35,
     },
     BATTLEGROUND = {
-        farclip = 2600,
+        farclip = 2200,
         cameraDistance = 150,
-        horizonScale = 7.0,
-        environmentDetail = 2.4,
+        horizonScale = 6.0,
+        environmentDetail = 1.8,
         doodadFade = 1250,
-        doodadFadeCategories = { 1250, 1250, 1250, 1250, 1250 },
+        doodadFadeCategories = { 200, 400, 700, 1000, 1250 },
         fogOverride = false,
         applyQualityPreset = true,
         nameplateDistance = 41,

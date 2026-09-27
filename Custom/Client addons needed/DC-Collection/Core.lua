@@ -582,7 +582,14 @@ function DC:EnsureChatWindow(windowName)
         -- Protect against FrameXML errors inside FCF_OpenNewWindow/FCF_FadeInChatFrame.
         pcall(FCF_OpenNewWindow, windowName)
     end
-    return self:GetChatFrameByWindowName(windowName)
+    frame = self:GetChatFrameByWindowName(windowName)
+    -- A new tab gets stock's default chat set (Say, Guild, Party, ...); a debug tab
+    -- must not duplicate that chat.
+    if frame and ChatFrame_RemoveAllMessageGroups and ChatFrame_RemoveAllChannels then
+        pcall(ChatFrame_RemoveAllMessageGroups, frame)
+        pcall(ChatFrame_RemoveAllChannels, frame)
+    end
+    return frame
 end
 
 function DC:GetDcDebugChatFrame()
@@ -2214,9 +2221,10 @@ function events:COMPANION_LEARNED()
     DC:RequestCollectionUpdate(DC.CollectionType.PET)
 end
 
-function events:COMPANION_UPDATE(companionType)
-    DC:Debug("COMPANION_UPDATE: " .. tostring(companionType))
-end
+-- COMPANION_UPDATE is deliberately not handled. The client fires it far more
+-- often than mounts actually change (about once a second in a populated area),
+-- and the handler here only logged it, so debug mode drowned in
+-- "COMPANION_UPDATE: MOUNT" lines. COMPANION_LEARNED above covers new mounts.
 
 function events:KNOWN_TITLES_UPDATE()
     DC:Debug("KNOWN_TITLES_UPDATE event")

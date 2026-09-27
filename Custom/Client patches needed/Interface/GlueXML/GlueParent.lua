@@ -30,12 +30,16 @@ CharModelFogInfo["SCOURGE"] = { r=0, g=0.22, b=0.22, far=26 };
 CharModelFogInfo["CHARACTERSELECT"] = { r=0.8, g=0.65, b=0.73, far=222 };
 CharModelFogInfo["GOBLIN"] = { r=0.5, g=0.5, b=0.5, far=270 };
 CharModelFogInfo["WORGEN"] = { r=0.25, g=0.25, b=0.35, far=300 };
+-- Dark Iron's own scene reuses the Dwarf backdrop art (ui_dwarf_bg01-06, Ironforge snow), so it keeps
+-- the Dwarf fog it rendered under while it borrowed that scene.
+CharModelFogInfo["DARKIRONDWARF"] = { r=0.85, g=0.88, b=1.0, far=500 };
 
 CharModelGlowInfo = { };
 CharModelGlowInfo["WORGEN"] = 0.0;
 CharModelGlowInfo["GOBLIN"] = 0.0;
 CharModelGlowInfo["HUMAN"] = 0.15;
 CharModelGlowInfo["DWARF"] = 0.15;
+CharModelGlowInfo["DARKIRONDWARF"] = 0.15;
 CharModelGlowInfo["CHARACTERSELECT"] = 0.3;
 
 GlueAmbienceTracks = { };
@@ -79,9 +83,8 @@ DC_GLUE_SCENE_SUBSTITUTE = {
 	-- ChrRaces ClientFileString is ZandalariTroll. Mapping the name here is cheaper than
 	-- renaming the .m2/.skin files, whose texture paths point back into ui_zandalari.
 	["ZANDALARITROLL"] = "Zandalari",
-	-- Dark Iron: retail HAS a ui_darkirondwarf scene; it is not downported yet, so for now
-	-- the race borrows its parent's.
-	["DARKIRONDWARF"] = "Dwarf",
+	-- Dark Iron has its own scene since 2026-09-26: retail UI_DarkIronDwarf, downported to
+	-- v264 and packed into patch-5, so it no longer borrows the Dwarf one.
 };
 
 -- RaceLights[] duplicates the 3.2.2 color values in the models. Henceforth, the models no longer contain directional lights
@@ -125,6 +128,12 @@ RaceLights = {
         {1,     0,  0.000000,       0.000000,       -1.000000,   1.0,   0.27,       0.27,       .27,        1.0,    0,          0,          0},
         {1,     0,  -0.45756075,    -0.58900136,    -0.66611975, 1.0,   0.000000,   0.000000,   0.000000,   1.0,    0.19882353, 0.34921569, 0.43588236 },
         {1,     0,  -0.64623469,    0.57582057,     -0.50081086, 1.0,   0.000000,   0.000000,   0.000000,   2.0,    0.52196085, 0.44,       0.29764709 },
+    },
+    -- Dark Iron: the DWARF set it rendered under while it borrowed the Dwarf scene, kept so its
+    -- own UI_DarkIronDwarf scene cannot come in unlit. Retune against the forge backdrop.
+    DARKIRONDWARF = {
+        {1,     0,  -0.00000,       -0.00000,       -1.00000,   1.0,    0.30000,    0.30000,    0.30000,    0.0,    0.00000,    0.00000,    0.00000},
+        {1,     0,  -0.88314,       0.42916,        -0.18945,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.44706,    0.67451,    0.760785},
     },
     PANDAREN = {
         {1,     0,  -0.48073,       0.71827,        -0.50297,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.65,       0.397645,   0.2727},

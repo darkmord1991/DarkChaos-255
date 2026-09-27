@@ -458,6 +458,35 @@ local function SizePanels()
 	classPanel:SetWidth(classGridWidth + PANEL_PADDING * 2)
 end
 
+-- Stock labels the random-name button "Randomize", same as the appearance one - two identical
+-- buttons on one screen. Retail's answer: a dice icon beside the name box. Only the look changes;
+-- the stock OnClick (SetText(GetRandomName())) and ApplyStage's show/hide are untouched.
+local function StyleRandomNameButton()
+	local button = Frame("CharacterCreateRandomName")
+	local nameEdit = Frame("CharacterCreateNameEdit")
+	if not (button and nameEdit) then
+		return
+	end
+	button:SetText("")
+	button:SetWidth(32)
+	button:SetHeight(32)
+	button:ClearAllPoints()
+	button:SetPoint("LEFT", nameEdit, "RIGHT", 2, 0)
+	button:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Dice-Up")
+	button:SetPushedTexture("Interface\\Buttons\\UI-GroupLoot-Dice-Down")
+	button:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Dice-Highlight", "ADD")
+	-- The XML OnUpdate is CharacterCreate_DeathKnightSwap, which re-skins the button as a panel
+	-- button the moment Death Knight is picked.
+	button:SetScript("OnUpdate", nil)
+	button:SetScript("OnEnter", function(self)
+		GlueTooltip_SetOwner(self, CharacterCreateTooltip, -3, -5)
+		GlueTooltip_SetText("Random Name", CharacterCreateTooltip)
+	end)
+	button:SetScript("OnLeave", function()
+		CharacterCreateTooltip:Hide()
+	end)
+end
+
 -- ---------------------------------------------------------------------------------- stages
 
 local function SetRaceAndClassShown(shown)
@@ -485,12 +514,20 @@ local function SetRaceAndClassShown(shown)
 	SetShown(classPanel, shown)
 end
 
+-- Stock only turns the random-name button on in enUS's GlueLocalization.lua; enGB is just as
+-- English and never touches the flag, so enable it here for every locale.
+ALLOW_RANDOM_NAME_BUTTON = true
+
 local function ApplyStage()
 	local choosing = (stage == STAGE_CHOOSE)
 
 	SetRaceAndClassShown(choosing)
 	SetShown(Frame("DCCharCustomizePanel"), not choosing)
 	SetShown(Frame("CharacterCreateNameEdit"), not choosing)
+	-- The random-name button fills the name box, so it lives in the same stage: left alone, stock
+	-- OnShow parked it over stage 1 where each click wrote a name into the HIDDEN box, i.e. a
+	-- "Randomize" that visibly did nothing.
+	SetShown(Frame("CharacterCreateRandomName"), not choosing and ALLOW_RANDOM_NAME_BUTTON)
 	SetShown(Frame("CharCreateRandomizeButton"), not choosing)
 
 	local okay = Frame("CharCreateOkayButton")
@@ -589,15 +626,19 @@ if LayoutRaceButtons() > 0 then
 	SizePanels()
 	BuildVignette()
 	BuildFactionIcons()
+	StyleRandomNameButton()
 
 	-- Customization moves to the right, where the race/class panels sat in stage 1.
 	-- Anchored BELOW the WoW logo rather than at a guessed offset from the top: the logo lives in
-	-- that corner and a fixed -110 put the panel straight through it.
+	-- that corner and a fixed -110 put the panel straight through it. The gap also has to hold the
+	-- Race/Randomize row (26 tall, 6 above the panel): the logo art ends 6 units above its frame
+	-- (Glues-WoW-WotLKLogo alpha stops at row 244 of 256), and -16 let the row reach 10 units into
+	-- it. -30 leaves a 4-unit gap.
 	local panel = Frame("DCCharCustomizePanel")
 	local logo = Frame("CharacterCreateWoWLogo")
 	panel:ClearAllPoints()
 	if logo then
-		panel:SetPoint("TOPRIGHT", logo, "BOTTOMRIGHT", 0, -16)
+		panel:SetPoint("TOPRIGHT", logo, "BOTTOMRIGHT", 0, -30)
 	else
 		panel:SetPoint("TOPRIGHT", CharacterCreate, "TOPRIGHT", -40, -200)
 	end
@@ -702,6 +743,24 @@ if LayoutRaceButtons() > 0 then
 			flyout:Show()
 		end
 	end)
+
+	-- Appearance Randomize sits beside Race, over the panel it drives, instead of stock's far
+	-- bottom-left corner. The stock slider stack hangs off this button, so pin its bottom frame to
+	-- the button's old spot first: Deactivate's fallback sliders then appear where they always did
+	-- rather than climbing out of the top of the panel.
+	local randomize = Frame("CharCreateRandomizeButton")
+	if randomize then
+		local sliders = Frame("CharacterCustomizationButtonFrame5")
+		local config = Frame("CharacterCreateConfigurationFrame")
+		if sliders and config then
+			sliders:ClearAllPoints()
+			sliders:SetPoint("BOTTOM", config, "BOTTOM", -6, 43)
+		end
+		randomize:ClearAllPoints()
+		randomize:SetWidth(110)
+		randomize:SetHeight(26)
+		randomize:SetPoint("LEFT", changeRace, "RIGHT", 6, 0)
+	end
 
 	ApplyStage()
 end

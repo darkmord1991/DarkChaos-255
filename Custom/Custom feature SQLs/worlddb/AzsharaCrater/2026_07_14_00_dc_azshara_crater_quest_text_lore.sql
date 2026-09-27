@@ -1,3 +1,10 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only. Its text UPDATEs overwrite every crater quest with the
+-- July wording, reverting later text changes: 300300/300407
+-- (2026_09_11_04), 300407 again (rev_1790332520350276500), and 300306, which is
+-- the zone 3 -> zone 4 hand-off to Kol'gar since rev_1790333198153102700 (this
+-- file sends the player back to Thalindra).
+--
 -- ============================================================================
 -- Azshara Crater - Quest Text Lore Pass (classic-WoW voice + title cleanup)
 -- Date: 2026-07-14

@@ -46,6 +46,7 @@
 #include "ItemTemplate.h"
 #include "Group.h"
 #include "Map.h"
+#include "RaceMgr.h"
 #include "DC/AddonExtension/dc_addon_spell_template.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
@@ -54,9 +55,11 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -162,7 +165,7 @@ namespace DCQoS
     };
 
     static CreatureData const* ResolveNpcTooltipSpawnData(Player* player,
-        ObjectGuid const& guid, uint32 entry, uint32& spawnId);
+        ObjectGuid const& guid, uint32& spawnId);
     static void HandleItemUpgradeTooltipNativeRequest(Player* player,
         uint8 bag, uint8 slot);
     static void HandleItemTooltipSnapshotNativeRequest(Player* player,
@@ -707,6 +710,9 @@ namespace DCQoS
         data << int32(requestId);
         data << int32(spellId);
         data << int32(contextHash);
+        // int32, not uint8: WotLKExtensions r18+ reads GetInt32. Older DLLs read
+        // int8, misparse and reject every reply -- which keeps them from
+        // drawing their duplicate "Server: ..." row, so do not "fix" this.
         data << int32(status);
         data << line;
 
@@ -870,11 +876,16 @@ namespace DCQoS
         return price.str();
     }
 
+    // Mirrors the stock client: the "Classes:" line is shown only when some playable
+    // class is EXCLUDED. Comparing the mask for equality with CLASSMASK_ALL_PLAYABLE
+    // missed every item whose mask has extra bits -- Blackhorn Bludgeon carries 0x7FFF
+    // (bit 10 = a class that does not exist in 3.3.5), which printed all ten classes
+    // plus "Class 10" on one unwrapped line and stretched the tooltip across the screen.
     static bool BuildAllowableClassText(uint32 allowableClass,
         std::string& outText)
     {
-        if (allowableClass == 0 || allowableClass == uint32(-1)
-            || allowableClass == CLASSMASK_ALL_PLAYABLE)
+        if (allowableClass == 0
+            || (allowableClass & CLASSMASK_ALL_PLAYABLE) == CLASSMASK_ALL_PLAYABLE)
         {
             return false;
         }
@@ -889,16 +900,20 @@ namespace DCQoS
             if ((allowableClass & classMask) == 0)
                 continue;
 
+            // Only classes a player can be: a mask bit with no playable class
+            // behind it restricts nobody and has nothing to be named.
+            if ((CLASSMASK_ALL_PLAYABLE & classMask) == 0)
+                continue;
+
             ChrClassesEntry const* classEntry =
                 sChrClassesStore.LookupEntry(classId);
+            if (!classEntry || !classEntry->name[0] || !*classEntry->name[0])
+                continue;
+
             if (foundAny)
                 text << ", ";
 
-            if (classEntry && classEntry->name[0] && *classEntry->name[0])
-                text << classEntry->name[0];
-            else
-                text << "Class " << classId;
-
+            text << classEntry->name[0];
             foundAny = true;
         }
 
@@ -909,10 +924,16 @@ namespace DCQoS
         return true;
     }
 
+    // Same rule as the class line, against the server's playable races (RaceMgr,
+    // which includes the DC custom races) rather than the stock eleven.
     static bool BuildAllowableRaceText(uint32 allowableRace,
         std::string& outText)
     {
         if (allowableRace == 0 || allowableRace == uint32(-1))
+            return false;
+
+        uint32 const playableRaces = RaceMgr::GetPlayableRaceMask();
+        if (playableRaces != 0 && (allowableRace & playableRaces) == playableRaces)
             return false;
 
         std::ostringstream text;
@@ -926,6 +947,9 @@ namespace DCQoS
 
             uint32 raceMask = 1u << (raceEntry->RaceID - 1);
             if ((allowableRace & raceMask) == 0)
+                continue;
+
+            if (playableRaces != 0 && (playableRaces & raceMask) == 0)
                 continue;
 
             if (foundAny)
@@ -1393,8 +1417,10 @@ namespace DCQoS
     // valueMultiplier is the item-upgrade proc multiplier for this spell. Pass 1.0f
     // for spells the proc hooks never touch (item-set bonuses), so their numbers are
     // not inflated by an unrelated equipped upgrade.
-    static std::string BuildItemSpellTooltipText(Player* player,
-        int32 spellId, uint32 trigger, float valueMultiplier = 1.0f)
+    // The spell's description as an item tooltip prints it: tokens resolved, no
+    // value colouring, the spell name when the description is empty.
+    static std::string BuildItemSpellDescriptionText(Player* player,
+        int32 spellId, float valueMultiplier = 1.0f)
     {
         if (spellId <= 0)
             return "";
@@ -1412,6 +1438,14 @@ namespace DCQoS
             rendered = spellInfo->SpellName[0];
         }
 
+        return rendered;
+    }
+
+    static std::string BuildItemSpellTooltipText(Player* player,
+        int32 spellId, uint32 trigger, float valueMultiplier = 1.0f)
+    {
+        std::string rendered =
+            BuildItemSpellDescriptionText(player, spellId, valueMultiplier);
         if (rendered.empty())
             return "";
 
@@ -1455,6 +1489,161 @@ namespace DCQoS
         }
 
         return totalPieces;
+    }
+
+    // The item-set block in the stock layout (CGTooltip::SetItem, 0x62C972 to
+    // 0x62CDA8 in Wow.exe): a blank line; "Name (worn/total)"; the set's required
+    // skill, if any; every piece indented, light yellow when worn and grey when
+    // not; another blank line; then the bonuses sorted by piece count. An active
+    // bonus reads "Set: <text>", an inactive one "(N) Set: <text>". The text is
+    // the bare spell description -- stock never prefixes "Equip: " -- and is not
+    // scaled: set spells are not item procs, so no upgrade touches them.
+    static void AppendItemSetTooltipRows(
+        std::vector<ItemTooltipSnapshotRow>& rows, Player* player,
+        uint32 itemSetId, ItemSetEntry const* itemSet)
+    {
+        if (!itemSet)
+            return;
+
+        uint32 const equippedPieces =
+            CountItemSetPiecesEquipped(player, itemSetId);
+        uint32 const totalPieces = CountItemSetPieces(itemSet);
+
+        std::ostringstream setName;
+        if (itemSet->name[0] && *itemSet->name[0])
+            setName << itemSet->name[0];
+        else
+            setName << "Item Set";
+        setName << " (" << equippedPieces << '/' << totalPieces << ')';
+
+        // Rows with no text are dropped on the client, so a blank line is " ".
+        AppendItemTooltipSnapshotRow(rows, " ", "", "append-body", "spacer");
+        AppendItemTooltipSnapshotRow(rows, setName.str(), "", "append-body",
+            "set-name");
+
+        if (itemSet->required_skill_id != 0 && itemSet->required_skill_value > 0)
+        {
+            std::ostringstream requirement;
+            requirement << "Requires ";
+
+            SkillLineEntry const* skill =
+                sSkillLineStore.LookupEntry(itemSet->required_skill_id);
+            if (skill && skill->name[0] && *skill->name[0])
+                requirement << skill->name[0];
+            else
+                requirement << "Skill " << itemSet->required_skill_id;
+
+            requirement << " (" << itemSet->required_skill_value << ')';
+            AppendItemTooltipSnapshotRow(rows, requirement.str(), "",
+                "append-body",
+                (!player || player->GetSkillValue(itemSet->required_skill_id)
+                        >= itemSet->required_skill_value)
+                    ? "requirement"
+                    : "requirement-unmet");
+        }
+
+        // Which worn item stands in for each listed piece, matched the way the
+        // client does it (0x6276E0): first the exact item ids, then any other worn
+        // item of this set fills a still-open piece of the same inventory type
+        // (chest and robe count as one) and lends it its NAME. DC's upgraded
+        // clones (Sanctified 300160-300164) are set 890 without being in its
+        // 51742-51746 list; matched by id alone every piece read grey at 5/5.
+        std::array<ItemTemplate const*, MAX_ITEM_SET_ITEMS> wornFor{};
+        std::array<bool, EQUIPMENT_SLOT_END> slotTaken{};
+        auto const sameInventoryType = [](uint32 a, uint32 b)
+        {
+            return a == b
+                || (a == INVTYPE_CHEST && b == INVTYPE_ROBE)
+                || (a == INVTYPE_ROBE && b == INVTYPE_CHEST);
+        };
+
+        for (uint8 pass = 0; player && pass < 2; ++pass)
+        {
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END;
+                 ++slot)
+            {
+                Item* worn = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                ItemTemplate const* wornTemplate = worn ? worn->GetTemplate() : nullptr;
+                if (slotTaken[slot] || !wornTemplate
+                    || wornTemplate->ItemSet != itemSetId)
+                {
+                    continue;
+                }
+
+                for (uint8 index = 0; index < MAX_ITEM_SET_ITEMS; ++index)
+                {
+                    uint32 const pieceId = itemSet->itemId[index];
+                    if (!pieceId || wornFor[index])
+                        continue;
+
+                    bool matches = pieceId == wornTemplate->ItemId;
+                    if (!matches && pass == 1)
+                    {
+                        ItemTemplate const* piece =
+                            sObjectMgr->GetItemTemplate(pieceId);
+                        matches = piece && sameInventoryType(
+                            piece->InventoryType, wornTemplate->InventoryType);
+                    }
+
+                    if (matches)
+                    {
+                        wornFor[index] = wornTemplate;
+                        slotTaken[slot] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (uint8 index = 0; index < MAX_ITEM_SET_ITEMS; ++index)
+        {
+            uint32 const pieceId = itemSet->itemId[index];
+            ItemTemplate const* piece =
+                pieceId ? sObjectMgr->GetItemTemplate(pieceId) : nullptr;
+            if (!piece)
+                continue;
+
+            ItemTemplate const* shown = wornFor[index] ? wornFor[index] : piece;
+            AppendItemTooltipSnapshotRow(rows, "  " + shown->Name1, "",
+                "append-body",
+                wornFor[index] ? "set-piece-equipped" : "set-piece-missing");
+        }
+
+        AppendItemTooltipSnapshotRow(rows, " ", "", "append-body", "spacer");
+
+        // Ascending piece count, DBC order on ties -- the client's qsort
+        // comparator (0x61A600) orders exactly this way.
+        std::array<uint8, MAX_ITEM_SET_SPELLS> order{};
+        for (uint8 index = 0; index < MAX_ITEM_SET_SPELLS; ++index)
+            order[index] = index;
+        std::stable_sort(order.begin(), order.end(),
+            [itemSet](uint8 a, uint8 b)
+            {
+                return itemSet->items_to_triggerspell[a]
+                    < itemSet->items_to_triggerspell[b];
+            });
+
+        for (uint8 index : order)
+        {
+            uint32 const spellId = itemSet->spells[index];
+            uint32 const threshold = itemSet->items_to_triggerspell[index];
+            if (spellId == 0 || threshold == 0)
+                continue;
+
+            std::string const text =
+                BuildItemSpellDescriptionText(player, int32(spellId));
+            if (text.empty())
+                continue;
+
+            bool const active = equippedPieces >= threshold;
+            std::ostringstream bonus;
+            if (!active)
+                bonus << '(' << threshold << ") ";
+            bonus << "Set: " << text;
+
+            AppendItemTooltipSnapshotRow(rows, bonus.str(), "", "append-body",
+                active ? "set-bonus-active" : "set-bonus-inactive");
+        }
     }
 
     // Only the display name lives here now. The STATS a package grants are read
@@ -2067,51 +2256,8 @@ namespace DCQoS
 
             if (itemTemplate->ItemSet != 0)
             {
-                ItemSetEntry const* itemSet =
-                    sItemSetStore.LookupEntry(itemTemplate->ItemSet);
-                if (itemSet)
-                {
-                    uint32 equippedPieces =
-                        CountItemSetPiecesEquipped(player, itemTemplate->ItemSet);
-                    uint32 totalPieces = CountItemSetPieces(itemSet);
-
-                    std::string setName = "Item Set";
-                    if (itemSet->name[0] && *itemSet->name[0])
-                        setName = itemSet->name[0];
-
-                    std::string setCount;
-                    if (totalPieces > 0)
-                    {
-                        setCount = std::to_string(equippedPieces) + "/"
-                            + std::to_string(totalPieces);
-                    }
-
-                    AppendItemTooltipSnapshotRow(rows, setName, setCount,
-                        "append-body", "set-name");
-
-                    for (uint32 setIndex = 0; setIndex < MAX_ITEM_SET_SPELLS;
-                         ++setIndex)
-                    {
-                        uint32 spellId = itemSet->spells[setIndex];
-                        uint32 threshold =
-                            itemSet->items_to_triggerspell[setIndex];
-                        if (spellId == 0 || threshold == 0)
-                            continue;
-
-                        std::string text = BuildItemSpellTooltipText(player,
-                            int32(spellId), ITEM_SPELLTRIGGER_ON_EQUIP);
-                        if (text.empty())
-                            continue;
-
-                        std::ostringstream bonus;
-                        bonus << '(' << threshold << ") Set: " << text;
-                        AppendItemTooltipSnapshotRow(rows, bonus.str(), "",
-                            "append-body",
-                            equippedPieces >= threshold
-                                ? "set-bonus-active"
-                                : "set-bonus-inactive");
-                    }
-                }
+                AppendItemSetTooltipRows(rows, player, itemTemplate->ItemSet,
+                    sItemSetStore.LookupEntry(itemTemplate->ItemSet));
             }
 
             if (!itemTemplate->Description.empty())
@@ -2264,6 +2410,32 @@ namespace DCQoS
             return nullptr;
         }
 
+        // A chat link names someone else's item by owner + item guid (see
+        // ExtendChatItemLinks). The link is public, so is what it points at --
+        // but only what that player carries (equipped, bags, bank; never their
+        // mail), and only the item the link is actually for.
+        if (request.contextKind == ItemTooltipSnapshotContextKind::LINK
+            && request.ownerGuidLow != 0
+            && request.ownerGuidLow != player->GetGUID().GetCounter())
+        {
+            Player* owner = ResolveItemTooltipSnapshotOwner(player, request,
+                outStatus);
+            if (!owner)
+                return nullptr;
+
+            Item* item = request.itemGuidLow
+                ? owner->GetItemByGuid(
+                    ObjectGuid::Create<HighGuid::Item>(request.itemGuidLow))
+                : nullptr;
+            if (!item || item->GetEntry() != request.itemEntry)
+            {
+                outStatus = ItemTooltipSnapshotStatus::ITEM_NOT_FOUND;
+                return nullptr;
+            }
+
+            return item;
+        }
+
         if (Item* item = ResolveItemTooltipSnapshotTradeItem(player, request))
             return item;
 
@@ -2293,6 +2465,194 @@ namespace DCQoS
                 outStatus = ItemTooltipSnapshotStatus::UNSUPPORTED_CONTEXT;
                 return nullptr;
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Chat item links that carry the item, not just the template
+    // ------------------------------------------------------------------
+    // A 3.3.5 item link is item:id:enchant:gem1:gem2:gem3:gem4:suffix:seed:level --
+    // it names a template, so an upgraded item or DC RandomEnchants rolls looked
+    // like a fresh drop to everyone who clicked it. For such items the link is
+    // extended to ...:level:<ownerGuidLow>:<itemGuidLow>; WotLK-Extensions reads
+    // the two fields and asks for the snapshot of that item (LINK context above).
+    // The stock client stops parsing after the level (0x50F630), so it is
+    // unaffected, and HyperlinkTags accepts the extended shape on re-link.
+
+    // Whether the item's tooltip says more than its link can: anything the
+    // upgrade system can raise, or random-enchant stats in the property slots of
+    // an item whose link carries no random property id.
+    static bool ItemTooltipExceedsLink(Item* item)
+    {
+        ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+        if (!proto)
+            return false;
+
+        if (item->GetItemRandomPropertyId() == 0)
+        {
+            for (uint8 slot = PROP_ENCHANTMENT_SLOT_0; slot <= PROP_ENCHANTMENT_SLOT_4;
+                 ++slot)
+            {
+                if (item->GetEnchantmentId(EnchantmentSlot(slot)))
+                    return true;
+            }
+        }
+
+        if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR)
+            return false;
+
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+            DarkChaos::ItemUpgrade::GetUpgradeManager();
+        return mgr
+            && mgr->GetItemTier(proto->ItemId) != DarkChaos::ItemUpgrade::TIER_INVALID;
+    }
+
+    // The sender's copy the link was made from: same entry, enchant, gems and
+    // random property. Equipped first, then bags, then bank.
+    static Item* FindLinkedItem(Player* player, uint32 entry, uint32 enchantId,
+        std::array<uint32, 3> const& gemEnchantIds, int32 randomPropertyId)
+    {
+        auto const matches = [&](Item* item)
+        {
+            if (!item || item->GetEntry() != entry
+                || item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT) != enchantId
+                || item->GetItemRandomPropertyId() != randomPropertyId)
+            {
+                return false;
+            }
+
+            for (uint8 i = 0; i < gemEnchantIds.size(); ++i)
+            {
+                if (item->GetEnchantmentId(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + i))
+                    != gemEnchantIds[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        auto const searchBag = [&](uint8 bagSlot) -> Item*
+        {
+            if (Bag* bag = player->GetBagByPos(bagSlot))
+            {
+                for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                {
+                    if (Item* item = bag->GetItemByPos(uint8(i)); matches(item))
+                        return item;
+                }
+            }
+            return nullptr;
+        };
+
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        {
+            if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot); matches(item))
+                return item;
+        }
+
+        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+        {
+            if (Item* item = searchBag(slot))
+                return item;
+        }
+
+        for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+        {
+            if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot); matches(item))
+                return item;
+        }
+
+        for (uint8 slot = BANK_SLOT_BAG_START; slot < BANK_SLOT_BAG_END; ++slot)
+        {
+            if (Item* item = searchBag(slot))
+                return item;
+        }
+
+        return nullptr;
+    }
+
+    // Rewrites every |Hitem:...|h link in `msg`: drops whatever the client sent
+    // past the ninth field, then appends the sender's owner/item guids when the
+    // sender carries that exact item and its tooltip exceeds the link. Tokens are
+    // never passed through, so nobody can present another player's upgraded
+    // item as their own.
+    static void ExtendChatItemLinks(Player* sender, std::string& msg)
+    {
+        static std::string const kLinkStart = "|Hitem:";
+        // The client accepts long chat lines, but stay well clear of anything
+        // that could reach a fixed-size buffer on the way.
+        static constexpr std::size_t kMaxRewrittenLength = 1000;
+
+        std::string out;
+        out.reserve(msg.size() + 32);
+
+        std::size_t cursor = 0;
+        bool changed = false;
+        while (true)
+        {
+            std::size_t const start = msg.find(kLinkStart, cursor);
+            if (start == std::string::npos)
+                break;
+
+            std::size_t const dataStart = start + kLinkStart.size();
+            std::size_t const dataEnd = msg.find('|', dataStart);
+            if (dataEnd == std::string::npos)
+                break;
+
+            std::vector<std::string_view> fields;
+            std::string_view const data(msg.data() + dataStart, dataEnd - dataStart);
+            for (std::size_t pos = 0; pos <= data.size();)
+            {
+                std::size_t const colon = data.find(':', pos);
+                std::size_t const end = colon == std::string_view::npos ? data.size() : colon;
+                fields.push_back(data.substr(pos, end - pos));
+                pos = end + 1;
+            }
+
+            out.append(msg, cursor, dataStart - cursor);
+            cursor = dataEnd;
+
+            constexpr std::size_t kStandardFields = 9;
+            if (fields.size() < kStandardFields)
+            {
+                out.append(data);
+                continue;
+            }
+
+            std::string_view const standard = data.substr(0,
+                fields[kStandardFields - 1].data() + fields[kStandardFields - 1].size()
+                    - data.data());
+            out.append(standard);
+            changed = changed || fields.size() != kStandardFields;
+
+            auto const toUInt = [](std::string_view text)
+            {
+                return static_cast<uint32>(std::strtoul(std::string(text).c_str(), nullptr, 10));
+            };
+
+            uint32 const entry = toUInt(fields[0]);
+            std::array<uint32, 3> const gems = { toUInt(fields[2]), toUInt(fields[3]), toUInt(fields[4]) };
+            int32 const randomPropertyId = static_cast<int32>(
+                std::strtol(std::string(fields[6]).c_str(), nullptr, 10));
+
+            Item* item = FindLinkedItem(sender, entry, toUInt(fields[1]), gems, randomPropertyId);
+            if (!item || !ItemTooltipExceedsLink(item))
+                continue;
+
+            out += ':';
+            out += std::to_string(sender->GetGUID().GetCounter());
+            out += ':';
+            out += std::to_string(item->GetGUID().GetCounter());
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
+        out.append(msg, cursor, std::string::npos);
+        if (out.size() <= kMaxRewrittenLength)
+            msg = std::move(out);
     }
 
     static void SendItemTooltipSnapshotNative(Player* player,
@@ -2352,6 +2712,69 @@ namespace DCQoS
             true, 0);
     }
 
+    // Stats an item grants that its item LINK cannot carry, so a client scoring
+    // items from links never sees them:
+    //
+    //  * DC RandomEnchants rolls. They sit in PROP_ENCHANTMENT_SLOT_0..4 with the
+    //    random-property id left at 0, and a link only encodes that id. Scaled by
+    //    the upgrade multiplier, exactly like the runtime enchant hook does.
+    //    Skipped when the item has a real random property/suffix: then those
+    //    slots hold the suffix, which the link DOES carry (double count).
+    //  * The heirloom stat package. It is a permanent enchant and so is in the
+    //    link, but its description is "Fury 15/15" -- nothing a stat parser can
+    //    read. Not scaled: heirloom packages are not multiplied.
+    //
+    // STAT-type effects only. Equip-spell rolls such as "+33 Frost Spell Damage"
+    // are school-specific and have no generic stat to be scored as.
+    struct LinkInvisibleEnchantStat
+    {
+        uint32 statType;
+        uint32 value;
+    };
+
+    static std::vector<LinkInvisibleEnchantStat> CollectLinkInvisibleEnchantStats(
+        Item* item, DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot const& snapshot)
+    {
+        std::vector<LinkInvisibleEnchantStat> stats;
+        if (!item)
+            return stats;
+
+        auto collect = [&](SpellItemEnchantmentEntry const* enchant, double multiplier)
+        {
+            if (!enchant)
+                return;
+
+            for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+            {
+                if (enchant->type[i] != ITEM_ENCHANTMENT_TYPE_STAT)
+                    continue;
+
+                uint32 const amount = ScaleEnchantAmount(
+                    ResolveEnchantmentStatAmount(item, enchant, i), multiplier);
+                if (amount != 0)
+                    stats.push_back({ enchant->spellid[i], amount });
+            }
+        };
+
+        if (item->GetItemRandomPropertyId() == 0)
+        {
+            double const multiplier =
+                static_cast<double>(snapshot.stat_multiplier_basis_points) / 10000.0;
+            for (uint32 propIndex = 0; propIndex < MAX_ITEM_ENCHANTMENT_EFFECTS; ++propIndex)
+            {
+                collect(sSpellItemEnchantmentStore.LookupEntry(item->GetEnchantmentId(
+                    EnchantmentSlot(PROP_ENCHANTMENT_SLOT_0 + propIndex))), multiplier);
+            }
+        }
+
+        HeirloomPackageTooltipState const package =
+            ResolveHeirloomPackageTooltipState(item, snapshot);
+        if (package.enchantId)
+            collect(sSpellItemEnchantmentStore.LookupEntry(package.enchantId), 1.0);
+
+        return stats;
+    }
+
     static void SendItemUpgradeInfoNative(Player* player, Item* item,
         uint8 bag, uint8 slot)
     {
@@ -2374,6 +2797,23 @@ namespace DCQoS
         data << int32(snapshot.base_ilvl);
         data << int32(snapshot.upgraded_ilvl);
         data << std::string();
+
+        // Appended after the error string on purpose: a client DLL that predates
+        // this field stops reading at the string and never sees it.
+        // Layout: int32 count, then count x (int32 ItemModType, int32 value).
+        constexpr std::size_t MAX_LINK_INVISIBLE_STATS = 16;
+        std::vector<LinkInvisibleEnchantStat> bonusStats =
+            CollectLinkInvisibleEnchantStats(item, snapshot);
+        if (bonusStats.size() > MAX_LINK_INVISIBLE_STATS)
+            bonusStats.resize(MAX_LINK_INVISIBLE_STATS);
+
+        data << int32(bonusStats.size());
+        for (LinkInvisibleEnchantStat const& stat : bonusStats)
+        {
+            data << int32(stat.statType);
+            data << int32(stat.value);
+        }
+
         player->GetSession()->SendPacket(&data);
         std::string preview = "bag=" + std::to_string(bag)
             + "|slot=" + std::to_string(slot)
@@ -2384,6 +2824,21 @@ namespace DCQoS
         DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_ITEM_INFO,
             BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP, data.size(), preview,
             true, 0);
+    }
+
+    // A pet GUID (HighGuid::Pet) carries the pet number where a creature GUID
+    // carries the entry, so GetEntry() on it names no creature_template row --
+    // every hover on a hunter/warlock pet came back "Creature template not
+    // found". Take the entry from the live pet instead (0 if not visible).
+    static uint32 ResolveNpcTooltipEntry(Player* player, ObjectGuid const& guid)
+    {
+        if (!guid.IsPet())
+            return guid.GetEntry();
+
+        Creature* pet = player
+            ? ObjectAccessor::GetCreatureOrPetOrVehicle(*player, guid)
+            : nullptr;
+        return pet ? pet->GetEntry() : 0;
     }
 
     static void SendNpcTooltipInfoNativeError(Player* player,
@@ -2425,7 +2880,7 @@ namespace DCQoS
             return;
         }
 
-        uint32 entry = guid.GetEntry();
+        uint32 entry = ResolveNpcTooltipEntry(player, guid);
         CreatureTemplate const* creatureTemplate =
             sObjectMgr->GetCreatureTemplate(entry);
         if (!creatureTemplate)
@@ -2435,9 +2890,19 @@ namespace DCQoS
             return;
         }
 
+        // Pets have no DB spawn; they keep the success reply so the client
+        // gets their real entry (the GUID only carries the pet number).
         uint32 spawnId = 0;
-        CreatureData const* spawnData = ResolveNpcTooltipSpawnData(player,
-            guid, entry, spawnId);
+        CreatureData const* spawnData = guid.IsPet() ? nullptr
+            : ResolveNpcTooltipSpawnData(player, guid, spawnId);
+        if (!guid.IsPet() && !spawnData && spawnId == 0)
+        {
+            // Summons and event spawns: say so, rather than an all-zero reply
+            // the client reads as "not resolved yet" and re-asks for.
+            SendNpcTooltipInfoNativeError(player, guidStr, "No DB spawn");
+            return;
+        }
+
         uint32 dbGuid = 0;
         if (spawnData)
             dbGuid = spawnData->spawnId;
@@ -3301,21 +3766,12 @@ namespace DCQoS
         msg.Send(player);
     }
 
-    static CreatureData const* FindCachedCreatureSpawnData(uint32 entry)
-    {
-        for (auto const& pair : sObjectMgr->GetAllCreatureData())
-        {
-            CreatureData const& creatureData = pair.second;
-            if (creatureData.id == entry || creatureData.id2 == entry || creatureData.id3 == entry)
-                return &creatureData;
-        }
-
-        return nullptr;
-    }
-
+    // No by-entry fallback when the creature has no spawn of its own (temp
+    // summons, event spawns): there used to be one that scanned every creature
+    // spawn row per request and then reported the first spawn sharing the
+    // entry -- another creature's DB guid.
     static CreatureData const* ResolveNpcTooltipSpawnData(Player* player,
         ObjectGuid const& guid,
-        uint32 entry,
         uint32& spawnId)
     {
         if (player && guid.IsCreatureOrVehicle())
@@ -3333,14 +3789,6 @@ namespace DCQoS
                         return creatureData;
                 }
             }
-        }
-
-        if (CreatureData const* creatureData = FindCachedCreatureSpawnData(entry))
-        {
-            if (spawnId == 0)
-                spawnId = creatureData->spawnId;
-
-            return creatureData;
         }
 
         return nullptr;
@@ -3371,7 +3819,7 @@ namespace DCQoS
             return;
         }
 
-        uint32 entry = guid.GetEntry();
+        uint32 entry = ResolveNpcTooltipEntry(player, guid);
 
         CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry);
         if (!creatureTemplate)
@@ -3396,7 +3844,8 @@ namespace DCQoS
         msg.Set("unitClass", creatureTemplate->unit_class);
         msg.Set("type", creatureTemplate->type);
         uint32 spawnId = 0;
-        CreatureData const* spawnData = ResolveNpcTooltipSpawnData(player, guid, entry, spawnId);
+        CreatureData const* spawnData = guid.IsPet() ? nullptr
+            : ResolveNpcTooltipSpawnData(player, guid, spawnId);
 
         // Include spawn ID if available (used by DC-Welcome addon for tooltips)
         if (spawnId > 0)
@@ -3994,12 +4443,18 @@ namespace DCQoS
         if (!spellInfo)
             return "";
 
+        // Spell-level counts. Read against Spell.dbc text: "$h% chance" is the proc
+        // chance, "after it has struck $n times" the proc charges, "Stacks up to $u
+        // times" the stack limit. $n used to print the spell NAME and $u the
+        // per-combo-point value, so set bonuses read "stacking up to 0 times".
+        if (token == 'h')
+            return std::to_string(spellInfo->ProcChance);
+
         if (token == 'n')
-        {
-            if (spellInfo->SpellName[0] && *spellInfo->SpellName[0])
-                return spellInfo->SpellName[0];
-            return "";
-        }
+            return std::to_string(spellInfo->ProcCharges);
+
+        if (token == 'u')
+            return std::to_string(spellInfo->StackAmount);
 
         if (token == 'r')
         {
@@ -4027,17 +4482,26 @@ namespace DCQoS
         if (!GetTemplateEffect(spellInfo, effectNumber, effect))
             return "";
 
+        // "Affects $x1 total targets."
+        if (token == 'x')
+            return std::to_string(effect->ChainTarget);
+
+        // Per combo point ("1 point: ${$m1+$b1*1}"), a magnitude like $s, so it
+        // takes the proc multiplier too.
+        if (token == 'b')
+        {
+            return std::to_string(std::lround(std::fabs(effect->PointsPerComboPoint)
+                * valueMultiplier));
+        }
+
         TooltipAmountRange amount = GetTemplateScaledAmountRange(player, spellInfo, *effect);
         if (!amount.IsValid())
             return "0";
 
-        TooltipAmountRange baseAmount = GetTooltipAmountRange(player, spellInfo, *effect);
-
-        // Magnitude tokens only. Durations ($d/$t), radius ($r/$a), the spell name
-        // ($n) and combo points ($u) are untouched by proc scaling at runtime, so
-        // scaling them here would print numbers the server never applies.
+        // Magnitude tokens only. Durations ($d/$t), radius ($r/$a), counts ($h/$n/
+        // $u/$x) are untouched by proc scaling at runtime, so scaling them here
+        // would print numbers the server never applies.
         amount = ScaleTooltipAmountRange(amount, valueMultiplier);
-        baseAmount = ScaleTooltipAmountRange(baseAmount, valueMultiplier);
 
         switch (token)
         {
@@ -4047,8 +4511,6 @@ namespace DCQoS
                 return std::to_string(std::abs(amount.Min));
             case 'M':
                 return std::to_string(std::abs(amount.Max));
-            case 'b':
-                return baseAmount.IsValid() ? FormatSignedAmountRange(baseAmount, true) : std::string("0");
             case 'o':
             {
                 uint32 ticks = GetTooltipTickCount(spellInfo, *effect);
@@ -4074,16 +4536,6 @@ namespace DCQoS
 
                 std::ostringstream out;
                 out << std::fixed << std::setprecision(0) << radius;
-                return out.str();
-            }
-            case 'u':
-            {
-                float combo = effect->PointsPerComboPoint;
-                if (combo == 0.0f)
-                    return "0";
-
-                std::ostringstream out;
-                out << std::fixed << std::setprecision(0) << std::abs(combo);
                 return out.str();
             }
             default:
@@ -4404,9 +4856,7 @@ namespace DCQoS
                             referencedEffect, valueMultiplier);
                         if (!referencedValue.empty())
                         {
-                            rendered += (referencedToken == 'n')
-                                ? referencedValue
-                                : colorize(referencedValue);
+                            rendered += colorize(referencedValue);
                             i = effectEnd;
                             continue;
                         }
@@ -4459,7 +4909,8 @@ namespace DCQoS
             bool tokenSupported = (token == 'd') || (token == 'n') || (token == 'r')
                 || (token == 's') || (token == 'm') || (token == 'M')
                 || (token == 'b') || (token == 'o') || (token == 't')
-                || (token == 'a') || (token == 'u');
+                || (token == 'a') || (token == 'u') || (token == 'h')
+                || (token == 'x');
             if (!tokenSupported)
             {
                 rendered.push_back('$');
@@ -4469,15 +4920,9 @@ namespace DCQoS
 
             std::string replacement = ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber, valueMultiplier);
             if (replacement.empty())
-            {
                 rendered.append(sourceTemplate, i, indexEnd - i);
-            }
             else
-            {
-                // $n resolves to the spell NAME -- never color it.
-                rendered += (token == 'n') ? replacement
-                    : colorize(replacement);
-            }
+                rendered += colorize(replacement);
 
             i = indexEnd;
         }
@@ -5410,6 +5855,19 @@ namespace DCQoS
                 return;
             }
 
+            // A chat link is usually someone else's item the viewer has never
+            // seen, so its item record is still in flight: CMSG_ITEM_QUERY_SINGLE
+            // is answered on the map tick, which under bot load took seconds
+            // longer than this snapshot. The client could not draw the snapshot
+            // without the record and sat on "Retrieving item information". Send
+            // the record first; it is filed into the item cache unsolicited, as
+            // for the vendor priming in dc_vendor_item_cache_prime.cpp.
+            if (snapshotRequest.contextKind == ItemTooltipSnapshotContextKind::LINK)
+            {
+                if (WorldSession* session = player->GetSession())
+                    session->SendItemQueryResponse(item->GetEntry());
+            }
+
             SendItemTooltipSnapshotNative(player, snapshotRequest, &snapshot,
                 BuildItemTooltipSnapshotRows(player, item, snapshot),
                 ItemTooltipSnapshotStatus::OK, "");
@@ -5787,6 +6245,31 @@ public:
 
 private:
     ObjectGuid _guid;
+};
+
+// Extends item links in outgoing chat so other clients can show the linked
+// item's real tooltip; see DCQoS::ExtendChatItemLinks. Runs after the core has
+// validated the links (ChatHandler), before the message is dispatched to any
+// channel, so every chat type -- and the sender's own echo -- carries the result.
+class DCQoSItemLinkScript : public PlayerScript
+{
+public:
+    DCQoSItemLinkScript() : PlayerScript("DCQoSItemLinkScript",
+    {
+        PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE
+    }) {}
+
+    void OnPlayerBeforeSendChatMessage(Player* player, uint32& /*type*/,
+        uint32& lang, std::string& msg) override
+    {
+        if (!DCQoS::IsEnabled() || !player || lang == LANG_ADDON
+            || msg.find("|Hitem:") == std::string::npos)
+        {
+            return;
+        }
+
+        DCQoS::ExtendChatItemLinks(player, msg);
+    }
 };
 
 class DCQoSPlayerScript : public PlayerScript
@@ -6313,6 +6796,7 @@ void AddDCQoSScripts()
     }
 
     new DCQoSPlayerScript();
+    new DCQoSItemLinkScript();
     new DCQoSGroupScript();
     new DCQoSServerScript();
 }

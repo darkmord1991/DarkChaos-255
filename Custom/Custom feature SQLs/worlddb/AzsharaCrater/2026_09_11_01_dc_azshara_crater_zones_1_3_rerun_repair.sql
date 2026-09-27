@@ -1,3 +1,9 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- One-time repair, applied 2026-09-11. It replays the zone 1-3 quest state as of that
+-- morning, so a second run reverts everything changed since: 300300
+-- (2026_09_11_04) and 300306, which is the zone 3 -> zone 4 hand-off to Kol'gar
+-- since rev_1790333198153102700 (this file sends the player back to Thalindra).
+--
 -- ---------------------------------------------------------------------------
 -- Azshara Crater (map 37) -- REPAIR after 2026_01_09_00_..._zones_1_3.sql was re-run
 -- ---------------------------------------------------------------------------

@@ -50,6 +50,7 @@ class QueryCallback;
 #include <cstdlib>
 #include <limits>
 #include <map>
+#include <source_location>
 #include <utility>
 
 namespace DCAddon
@@ -766,6 +767,12 @@ namespace DCAddon
             constexpr uint32 ASYNC_QUERIES  = 0x00000010;  // Async DB query responses
             constexpr uint32 DELTA_SYNC     = 0x00000020;  // Delta sync for collections
             constexpr uint32 HOT_RELOAD     = 0x00000040;  // Module hot-reload support
+            // Generic-bridge modules added 2026-09-23 (WRLD pushes, MPOI, DECO,
+            // DENC, QNAV, GRVY, BEAST). Advertised by the Lua library (no DLL bit),
+            // so both sides only route these natively when the peer is new
+            // enough: an older server drops generic requests for modules it does
+            // not know, and a client without this bit keeps getting them by chat.
+            constexpr uint32 NATIVE_MODULES_EXT = 0x00000080;
             constexpr uint32 TOOLTIP_NATIVE_RESPONSE = 0x00000100; // Native SMSG tooltip enrichment bridge
             constexpr uint32 BREAKING_NEWS_NATIVE = 0x00000200; // Native Glue breaking-news payload bridge
             constexpr uint32 ITEM_UPGRADE_NATIVE = 0x00000400; // Native item-upgrade tooltip bridge
@@ -804,7 +811,8 @@ namespace DCAddon
                 HOTSPOT_NATIVE |
                 PRESTIGE_NATIVE |
                 WORLD_NATIVE |
-                GENERIC_MESSAGE_NATIVE;
+                GENERIC_MESSAGE_NATIVE |
+                NATIVE_MODULES_EXT;
         }
 
         // Version info structure for handshake
@@ -1418,7 +1426,9 @@ namespace DCAddon
     // which the addon WorldScript ticks every update. Example:
     //   DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
     //       .WithCallback([guid](QueryResult r) { /* build + send response */ }));
-    void EnqueueQueryCallback(QueryCallback&& callback);
+    // `site` records the caller, so a slow tick of continuations can name the code that queued them.
+    void EnqueueQueryCallback(QueryCallback&& callback,
+        std::source_location site = std::source_location::current());
     void ProcessPendingQueryCallbacks();
 
     bool IsS2CProtocolLoggingEnabled();
@@ -2174,25 +2184,41 @@ namespace DCAddon
         static JsonValue Parse(std::string const& json)
         {
             size_t pos = 0;
-            return ParseValue(json, pos);
+            return ParseValue(json, pos, 0);
         }
 
     private:
+        // Inbound payloads come straight from the client, so nesting is capped
+        // the same as the outbound validator (MAX_DEPTH in dc_addon_utils.h).
+        // Without it a 512 KB chunked "[[[[..." recurses until the stack runs out.
+        static constexpr uint32 MAX_PARSE_DEPTH = 64;
+
         static void SkipWhitespace(std::string const& s, size_t& pos)
         {
             while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\n' || s[pos] == '\r'))
                 ++pos;
         }
 
-        static JsonValue ParseValue(std::string const& s, size_t& pos)
+        // Returns Null WITHOUT advancing pos on a token it does not recognise
+        // (e.g. "nan", "x"); the array/object loops rely on that to stop.
+        static JsonValue ParseValue(std::string const& s, size_t& pos, uint32 depth)
         {
             SkipWhitespace(s, pos);
             if (pos >= s.size()) return JsonValue();
 
             char c = s[pos];
             if (c == '"') return ParseString(s, pos);
-            if (c == '{') return ParseObject(s, pos);
-            if (c == '[') return ParseArray(s, pos);
+            if (c == '{' || c == '[')
+            {
+                if (depth >= MAX_PARSE_DEPTH)
+                {
+                    // Consume the rest so every enclosing loop terminates too.
+                    pos = s.size();
+                    return JsonValue();
+                }
+
+                return (c == '{') ? ParseObject(s, pos, depth + 1) : ParseArray(s, pos, depth + 1);
+            }
             if (c == 't' && s.compare(pos, 4, "true") == 0) { pos += 4; return JsonValue(true); }
             if (c == 'f' && s.compare(pos, 5, "false") == 0) { pos += 5; return JsonValue(false); }
             if (c == 'n' && s.compare(pos, 4, "null") == 0) { pos += 4; return JsonValue(); }
@@ -2285,7 +2311,11 @@ namespace DCAddon
             return JsonValue(std::strtod(s.c_str() + start, nullptr));
         }
 
-        static JsonValue ParseArray(std::string const& s, size_t& pos)
+        // Every loop iteration must either consume a ',' or leave the loop:
+        // ParseValue does not advance on an unknown token, so continuing on
+        // anything else (the old behaviour) spun forever pushing Nulls --
+        // one "[x]" in a client whisper hung the world thread.
+        static JsonValue ParseArray(std::string const& s, size_t& pos, uint32 depth)
         {
             if (s[pos] != '[') return JsonValue();
             ++pos;
@@ -2294,16 +2324,17 @@ namespace DCAddon
             SkipWhitespace(s, pos);
             if (pos < s.size() && s[pos] == ']') { ++pos; return arr; }
             while (pos < s.size()) {
-                arr.Push(ParseValue(s, pos));
+                arr.Push(ParseValue(s, pos, depth));
                 SkipWhitespace(s, pos);
                 if (pos >= s.size()) break;
                 if (s[pos] == ']') { ++pos; break; }
-                if (s[pos] == ',') ++pos;
+                if (s[pos] != ',') break;
+                ++pos;
             }
             return arr;
         }
 
-        static JsonValue ParseObject(std::string const& s, size_t& pos)
+        static JsonValue ParseObject(std::string const& s, size_t& pos, uint32 depth)
         {
             if (s[pos] != '{') return JsonValue();
             ++pos;
@@ -2318,11 +2349,12 @@ namespace DCAddon
                 SkipWhitespace(s, pos);
                 if (pos >= s.size() || s[pos] != ':') break;
                 ++pos;
-                obj.Set(keyVal.AsString(), ParseValue(s, pos));
+                obj.Set(keyVal.AsString(), ParseValue(s, pos, depth));
                 SkipWhitespace(s, pos);
                 if (pos >= s.size()) break;
                 if (s[pos] == '}') { ++pos; break; }
-                if (s[pos] == ',') ++pos;
+                if (s[pos] != ',') break;
+                ++pos;
             }
             return obj;
         }
@@ -2445,6 +2477,12 @@ namespace DCAddon
         void Send(Player* player) const
         {
             if (!player || !player->GetSession())
+                return;
+
+            // Same gate as Message::Send. Bots have no client, and without it
+            // each send ran the transport probe (a capability warm-up query on
+            // a registry miss) and a JSON encode before SendRaw dropped it.
+            if (IsBotRecipient(player))
                 return;
 
             // Generic native bridge: route over the dedicated native opcode when

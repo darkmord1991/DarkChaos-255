@@ -362,6 +362,10 @@ end
 -- newcomer (a mail icon that just appeared, or the button the player just
 -- dropped) is the one that moves.
 --
+-- The instance difficulty badge is the exception. It hangs on the map itself,
+-- and a button in its way steps aside only while it is shown, keeping its
+-- saved angle (see DockBadge).
+--
 -- The track is LibDBIcon's: radius 80 from the map centre, pulled onto a
 -- bevelled square when GetMinimapShape() is SQUARE. DC-Welcome, the queue eye
 -- and GOMove use the same math, so an owner repositioning its own button
@@ -415,10 +419,6 @@ local STOCK_RING_BUTTONS = {
     { name = "GameTimeFrame", angle = 20, hiddenBy = "hideCalendar", diameter = 34 },
     { name = "MinimapZoomIn", angle = 310, hiddenBy = "hideZoom" },
     { name = "MinimapZoomOut", angle = 290, hiddenBy = "hideZoom" },
-    -- Not a button (no mouse, so not draggable), but it sits on the ring in
-    -- stock and nothing may cover it. It only shows inside instances, so like
-    -- any newcomer it takes a free spot rather than displacing a button.
-    { name = "MiniMapInstanceDifficulty", angle = 140, fixed = true, diameter = 44 },
 }
 
 -- DC buttons that save their own angle and position themselves on the same
@@ -492,6 +492,15 @@ local RING_RESERVED_FRAMES = {
     "TimeManagerClockButton",
     "DCInfoBarFrame",
 }
+
+-- The dungeon/raid difficulty banner. Its top-left corner is pinned this far
+-- from the map's top-left corner. 2 up puts the banner's hanging bar on the DC
+-- frame's top border. 9 in keeps it clear of the buttons on the left edge of
+-- the square track: centred 80 out, radius up to 17 (the calendar), plus half
+-- the default gap.
+local DIFFICULTY_BADGE = "MiniMapInstanceDifficulty"
+local BADGE_DOCK_X = 9
+local BADGE_DOCK_Y = 2
 
 local KNOWN_RING_FRAMES = {}
 for _, def in ipairs(STOCK_RING_BUTTONS) do
@@ -743,7 +752,6 @@ function ButtonRing:AddItem(key, frame, def)
         getAngle = def.get,
         setAngle = def.set,
         restore = def.restore,
-        fixed = def.fixed,
         hiddenBy = def.hiddenBy,
         stock = def.stock,
         generic = def.generic,
@@ -767,20 +775,17 @@ function ButtonRing:Rescan(full)
             local item = self:AddItem(name, frame, {
                 angle = def.angle,
                 diameter = def.diameter,
-                fixed = def.fixed,
                 hiddenBy = def.hiddenBy,
                 stock = true,
                 handle = def.handle and _G[def.handle] or nil,
                 get = function()
                     return StockAngleStore()[name]
                 end,
-                set = not def.fixed and function(angle)
+                set = function(angle)
                     StockAngleStore()[name] = angle
-                end or nil,
+                end,
             })
-            if not item.fixed then
-                InstallStockDrag(item)
-            end
+            InstallStockDrag(item)
         end
     end
 
@@ -928,10 +933,19 @@ function ButtonRing:BuildEnvironment(mx, my)
         end
     end
 
+    -- The badge comes and goes with instances, so Layout lets a button step
+    -- aside for it without giving up its spot.
+    local badge = rectOf(_G[DIFFICULTY_BADGE])
+    if badge then
+        badge.transient = true
+        table.insert(env.rects, badge)
+    end
+
     return env
 end
 
-local function SpotIsFree(x, y, radius, placed, env)
+-- ignoreTransient: whether the spot would be free if the badge were hidden.
+local function SpotIsFree(x, y, radius, placed, env, ignoreTransient)
     local bounds = env.bounds
     if bounds and (x - radius < bounds.l or x + radius > bounds.r
         or y - radius < bounds.b or y + radius > bounds.t) then
@@ -941,10 +955,12 @@ local function SpotIsFree(x, y, radius, placed, env)
     local pad = radius + env.gap / 2
     for i = 1, #env.rects do
         local rect = env.rects[i]
-        local dx = x - math.max(rect.l, math.min(x, rect.r))
-        local dy = y - math.max(rect.b, math.min(y, rect.t))
-        if dx * dx + dy * dy < pad * pad then
-            return false
+        if not (ignoreTransient and rect.transient) then
+            local dx = x - math.max(rect.l, math.min(x, rect.r))
+            local dy = y - math.max(rect.b, math.min(y, rect.t))
+            if dx * dx + dy * dy < pad * pad then
+                return false
+            end
         end
     end
 
@@ -1034,8 +1050,15 @@ function ButtonRing:Layout()
                 preferred = PreferredAngle(item, wasMoved and item.generic),
             }
             if last and not wasMoved then
-                -- Possibly on an outer track, which no saved angle can express.
-                entry.x, entry.y = last.x, last.y
+                if last.homeX then
+                    -- Standing aside for the badge: back home once it is gone,
+                    -- and until then stay where it is.
+                    entry.x, entry.y = last.homeX, last.homeY
+                    entry.asideX, entry.asideY = last.x, last.y
+                else
+                    -- Possibly on an outer track, which no saved angle can express.
+                    entry.x, entry.y = last.x, last.y
+                end
                 table.insert(settled, entry)
             else
                 entry.x, entry.y = RingOffset(entry.preferred, 0, env.quadrants)
@@ -1058,13 +1081,16 @@ function ButtonRing:Layout()
         end
 
         table.insert(placed, { x = x, y = y, radius = item.diameter / 2 })
-        nextPlaced[item.key] = { x = x, y = y }
+        nextPlaced[item.key] = { x = x, y = y, homeX = entry.homeX, homeY = entry.homeY }
 
         local last = self.lastPlaced[item.key]
         if not last or last.x ~= x or last.y ~= y then
             changed = true
         end
-        if item.setAngle and math.abs(AngleDelta(angle, entry.preferred)) >= 0.5 then
+        -- A button standing aside for the badge keeps its saved angle: that
+        -- is where it goes back to.
+        if item.setAngle and not entry.homeX
+            and math.abs(AngleDelta(angle, entry.preferred)) >= 0.5 then
             item.setAngle(angle)
         end
     end
@@ -1084,10 +1110,20 @@ function ButtonRing:Layout()
     for _, group in ipairs({ settled, arrivals, moved }) do
         for i = 1, #group do
             local entry = group[i]
-            if SpotIsFree(entry.x, entry.y, entry.item.diameter / 2, placed, env) then
+            local radius = entry.item.diameter / 2
+            if SpotIsFree(entry.x, entry.y, radius, placed, env) then
                 commit(entry, entry.preferred, entry.x, entry.y)
             else
-                table.insert(displaced, entry)
+                if SpotIsFree(entry.x, entry.y, radius, placed, env, true) then
+                    -- Only the badge is in the way: this stays the button's spot.
+                    entry.homeX, entry.homeY = entry.x, entry.y
+                end
+                if entry.homeX and entry.asideX
+                    and SpotIsFree(entry.asideX, entry.asideY, radius, placed, env) then
+                    commit(entry, entry.preferred, entry.asideX, entry.asideY)
+                else
+                    table.insert(displaced, entry)
+                end
             end
         end
     end
@@ -1184,9 +1220,31 @@ end)
 ringDriver:RegisterEvent("UI_SCALE_CHANGED")
 ringDriver:RegisterEvent("DISPLAY_SIZE_CHANGED")
 
+-- The badge is too big for the track's free spots: the left edge is usually
+-- full, and the zone text, the screen edge and the cluster's bottom close the
+-- others. As a ring newcomer it was pushed onto an outer track, away from the
+-- map. So it hangs inside the map's top-left corner instead, and the ring
+-- routes around it (BuildEnvironment). Stock never moves it again; if another
+-- addon does, the ring routes around it wherever it ends up.
+function ButtonRing:DockBadge()
+    local badge = _G[DIFFICULTY_BADGE]
+    if not badge or not Minimap then
+        return
+    end
+    if not self.badgePoints then
+        self.badgePoints = CapturePoints(badge)
+    end
+    HookRingFrame(badge)
+    self.applying = true
+    badge:ClearAllPoints()
+    badge:SetPoint("TOPLEFT", Minimap, "TOPLEFT", BADGE_DOCK_X, BADGE_DOCK_Y)
+    self.applying = false
+end
+
 function ButtonRing:Activate()
     self.active = true
     self:Rescan(true)
+    self:DockBadge()
     if Minimap and not Minimap._dcqosRingHooked then
         Minimap._dcqosRingHooked = true
         Minimap:HookScript("OnShow", MarkRingDirty)
@@ -1214,6 +1272,12 @@ function ButtonRing:Deactivate()
             end
         end
     end
+
+    local badge = _G[DIFFICULTY_BADGE]
+    if badge and self.badgePoints then
+        RestorePoints(badge, self.badgePoints)
+    end
+    self.badgePoints = nil
 end
 
 -- With the ring gone, let each addon put its button back on its own math

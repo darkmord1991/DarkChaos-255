@@ -12,8 +12,11 @@
 -- tracker, every owner's saved angle reproduces the spot the ring chose, a
 -- settled layout is stable, a newcomer moves instead of the buttons already on
 -- screen, a dropped button snaps to a free spot without shoving its neighbours,
--- a full ring spills onto the outer track rather than overlapping, and turning
--- the module off puts the stock buttons back on their original anchors.
+-- a full ring spills onto the outer track rather than overlapping, the instance
+-- difficulty badge hangs inside the map's top-left corner (a full left edge
+-- used to push it out onto an outer track) and a button in its way steps aside
+-- only while it shows, and turning the module off puts the stock buttons and the
+-- badge back on their original anchors.
 
 dofile("wowsim.lua")
 local ROOT = [[K:\Dark-Chaos\DarkChaos-255-Master\Custom\Client addons needed\]]
@@ -23,7 +26,7 @@ local function ok(c, m) if c then pass = pass + 1; print("  PASS " .. m) else fa
 local unpack = table.unpack or unpack
 
 -- ------------------------------------------------------------------
--- Geometry frames: CENTER-to-CENTER anchors resolve to real coordinates.
+-- Geometry frames: single-point anchors resolve to real coordinates.
 -- ------------------------------------------------------------------
 local Geo = {}
 Geo.__index = Geo
@@ -78,12 +81,22 @@ function Geo:GetPoint(i)
     local p = self._points[i]
     if p then return unpack(p) end
 end
+-- Anchor points as fractions of a frame's size, measured from its centre.
+local POINT_OFFSETS = {
+    CENTER = { 0, 0 }, TOP = { 0, 0.5 }, BOTTOM = { 0, -0.5 }, LEFT = { -0.5, 0 }, RIGHT = { 0.5, 0 },
+    TOPLEFT = { -0.5, 0.5 }, TOPRIGHT = { 0.5, 0.5 }, BOTTOMLEFT = { -0.5, -0.5 }, BOTTOMRIGHT = { 0.5, -0.5 },
+}
+
 function Geo:GetCenter()
     if self._fixed then return self._fixed[1], self._fixed[2] end
     local p = self._points[1]
-    if p and #self._points == 1 and p[1] == "CENTER" and p[3] == "CENTER" then
+    if p and #self._points == 1 then
+        local own, rel = POINT_OFFSETS[p[1]], POINT_OFFSETS[p[3]]
         local rx, ry = p[2]:GetCenter()
-        if rx then return rx + p[4], ry + p[5] end
+        if own and rel and rx then
+            return rx + rel[1] * p[2]._w + p[4] - own[1] * self._w,
+                ry + rel[2] * p[2]._h + p[5] - own[2] * self._h
+        end
     end
     return nil
 end
@@ -186,6 +199,10 @@ mail._shown = false
 local worldMap = newFrame("MiniMapWorldMapButton", 33, 33, MinimapBackdrop)
 worldMap:SetPoint("TOPRIGHT", MinimapBackdrop, "TOPRIGHT", -21, -1)
 worldMap:SetAlpha(0)
+-- The instance difficulty badge, on its stock anchor; it only shows inside instances.
+local badge = newFrame("MiniMapInstanceDifficulty", 38, 46, MinimapCluster, nil, "Frame")
+badge:SetPoint("TOPLEFT", MinimapCluster, "TOPLEFT", 22, -17)
+badge._shown = false
 
 -- ------------------------------------------------------------------
 -- DC-QOS
@@ -351,17 +368,15 @@ ok(othersKept, "buttons already on screen keep their place when mail appears")
 ok(#overlappingPairs(ringFrames) == 0, "mail is placed without overlapping")
 ok((DCQOS.fired.MINIMAP_BUTTONS_LAYOUT or 0) > firedBefore, "layout event fires so the buffs re-measure")
 
--- 5b. The instance difficulty badge shows up inside a dungeon: it takes a free
---     spot like any newcomer instead of displacing (and re-saving) a button.
-local badge = newFrame("MiniMapInstanceDifficulty", 38, 46, MinimapCluster, nil, "Frame")
-badge:SetPoint("TOPLEFT", MinimapCluster, "TOPLEFT", 22, -17)
-badge._shown = false
-ring:RequestRescan()
-ring:Layout()
+-- 5b. The instance difficulty badge shows up inside a dungeon. The left edge is
+--     full, so as a ring newcomer it used to land two tracks out, 80 units
+--     left of the map. It hangs inside the map's top-left corner instead, and
+--     on the square track nothing is in its way: no button moves or re-saves.
 before = snapshot(ringFrames)
 local savedBefore = { weakAuras.db.minimapPos, azerothAdmin.db.minimapPos, bugSack.db.minimapPos,
     DCWelcomeDB.minimapButton.angle, DCMythicPlusHUDDB.minimapQueue.angle }
 badge:Show()
+ok(ring.dirty == true, "the badge showing up marks the ring dirty")
 ring:Layout()
 after = snapshot(ringFrames)
 othersKept = true
@@ -369,15 +384,17 @@ for name, pos in pairs(before) do
     if not samePlace(pos, after[name]) then othersKept = false end
 end
 ok(othersKept, "the difficulty badge does not displace a button")
-ok(savedBefore[1] == weakAuras.db.minimapPos and savedBefore[4] == DCWelcomeDB.minimapButton.angle
+ok(savedBefore[1] == weakAuras.db.minimapPos and savedBefore[2] == azerothAdmin.db.minimapPos
+    and savedBefore[3] == bugSack.db.minimapPos and savedBefore[4] == DCWelcomeDB.minimapButton.angle
     and savedBefore[5] == DCMythicPlusHUDDB.minimapQueue.angle, "nobody's saved angle changes for the badge")
-local bx, by = badge:GetCenter()
-local badgeClear = bx ~= nil
+local mx0, my0 = Minimap:GetCenter()
+local bl, br = badge:GetLeft() - mx0, badge:GetRight() - mx0
+local bb, bt = badge:GetBottom() - my0, badge:GetTop() - my0
+ok(bl >= -70 and bl <= -55 and bt >= 65 and bt <= 75 and br < 0 and bb > 0,
+    string.format("the badge hangs inside the map's top-left corner (l %.0f r %.0f b %.0f t %.0f)", bl, br, bb, bt))
+local badgeClear = true
 for _, f in ipairs(ringFrames) do
-    if f:IsVisible() then
-        local fx, fy = f:GetCenter()
-        if math.sqrt((fx - bx) ^ 2 + (fy - by) ^ 2) < 15 + 22 + GAP - 0.01 then badgeClear = false end
-    end
+    if f:IsVisible() and circleHitsRect(f, badge) then badgeClear = false end
 end
 ok(badgeClear, "the badge sits clear of every button")
 ok(badge:GetScript("OnDragStart") == nil, "the badge is not draggable")
@@ -466,11 +483,52 @@ ok(#overlappingPairs(ringFrames) == 0, "stock drop snaps clear of the other butt
 local saved = DCQOS.settings.minimap.buttonAngles.MiniMapMailFrame
 ok(saved and ownerAgrees(mail, saved), "stock button angle is saved in minimap.buttonAngles")
 
--- 10. Turning the module off hands the stock buttons back.
+-- 10. The round track crosses the badge's corner. A button standing there steps
+--     aside while the badge shows, keeps its saved angle, and goes back when
+--     the badge hides.
+azerothAdmin.db.minimapPos = 140
+placeByOwner(azerothAdmin, 140)
+ring:Layout()
+local home = { offsetOf(azerothAdmin) }
+ok(azerothAdmin.db.minimapPos == 140 and ownerAgrees(azerothAdmin, 140), "AzerothAdmin sits at 140 degrees on the round ring")
+ok(circleHitsRect(azerothAdmin, badge), "which is where the badge hangs")
+before = snapshot(ringFrames)
+firedBefore = DCQOS.fired.MINIMAP_BUTTONS_LAYOUT or 0
+badge:Show()
+ring:Layout()
+after = snapshot(ringFrames)
+ok(not circleHitsRect(azerothAdmin, badge), "AzerothAdmin steps aside for the badge")
+ok(azerothAdmin.db.minimapPos == 140, "AzerothAdmin's saved angle is untouched while it stands aside")
+ok(#overlappingPairs(ringFrames) == 0, "it stands aside on a free spot")
+local othersStay = true
+for name, pos in pairs(before) do
+    if name ~= azerothAdmin:GetName() and not samePlace(pos, after[name]) then othersStay = false end
+end
+ok(othersStay, "no other button moves for the badge")
+ok((DCQOS.fired.MINIMAP_BUTTONS_LAYOUT or 0) > firedBefore, "layout event fires when it steps aside")
+local aside = { offsetOf(azerothAdmin) }
+firedBefore = DCQOS.fired.MINIMAP_BUTTONS_LAYOUT or 0
+ring:Layout()
+ok(samePlace(aside, { offsetOf(azerothAdmin) }) and (DCQOS.fired.MINIMAP_BUTTONS_LAYOUT or 0) == firedBefore,
+    "it stays aside on the next pass")
+placeByOwner(azerothAdmin, 140)
+ring:Layout()
+ok(samePlace(aside, { offsetOf(azerothAdmin) }) and azerothAdmin.db.minimapPos == 140,
+    "LibDBIcon putting it back on its saved angle does not win it the badge's spot")
+badge:Hide()
+ring:Layout()
+ok(samePlace(home, { offsetOf(azerothAdmin) }), "AzerothAdmin goes back to its spot when the badge hides")
+ok(azerothAdmin.db.minimapPos == 140 and ownerAgrees(azerothAdmin, 140), "and its saved angle still matches it")
+ok(#overlappingPairs(ringFrames) == 0, "no overlaps once it is back")
+
+-- 11. Turning the module off hands the stock buttons and the badge back.
 ring:Deactivate()
 local point, rel, relPoint, x, y = mail:GetPoint(1)
 ok(point == "TOPRIGHT" and rel == Minimap and x == 21 and y == -53, "mail frame is back on its stock anchor")
 ok(mail:GetScript("OnDragStart") == nil, "stock drag handlers are removed")
+point, rel, relPoint, x, y = badge:GetPoint(1)
+ok(badge:GetNumPoints() == 1 and point == "TOPLEFT" and rel == MinimapCluster and relPoint == "TOPLEFT"
+    and x == 22 and y == -17, "the badge is back on its stock anchor")
 
 print(string.format("RESULT: %d passed, %d failed", pass, fail))
 if fail > 0 then os.exit(1) end

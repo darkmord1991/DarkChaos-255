@@ -65,10 +65,11 @@ RACE_ICON_TCOORDS = {
 	["KULTIRAN_FEMALE"]		= {0.4375, 0.5, 0.5, 0.75},
 	["VULPERA_MALE"]		= {0.4375, 0.5, 0.25, 0.5},
 	["VULPERA_FEMALE"]		= {0.4375, 0.5, 0.75, 1.0},
-	-- Dark Iron Dwarf takes atlas column 9. The cell is currently the DWARF art: the race
-	-- is a dwarf reskin and its own portrait has not been composited in yet.
-	["DARKIRONDWARF_MALE"]	= {0.0625, 0.125, 0, 0.25},
-	["DARKIRONDWARF_FEMALE"]	= {0.0625, 0.125, 0.5, 0.75},
+	-- col9 = Dark Iron Dwarf (A): the retail temporaryportrait-<sex>-darkirondwarf laid into
+	-- the bevel frame at the same 54px/(5,5) placement as col 7 (retroport_tools/
+	-- _darkiron_icon/gen_darkiron_race_icons.py). Rows 1/3 of col 9 are still free.
+	["DARKIRONDWARF_MALE"]	= {0.5625, 0.625, 0, 0.25},
+	["DARKIRONDWARF_FEMALE"]	= {0.5625, 0.625, 0.5, 0.75},
 
 	["ZANDALARITROLL_MALE"]	= {0.5, 0.5625, 0.25, 0.5},
 	["ZANDALARITROLL_FEMALE"]	= {0.5, 0.5625, 0.75, 1.0},

@@ -48,6 +48,7 @@ L.FILTER_USABLE = "Usable"
 L.MOUNT_GROUND = "Ground"
 L.MOUNT_FLYING = "Flying"
 L.MOUNT_AQUATIC = "Aquatic"
+L.MOUNT_ALL = "Ground + Flying"
 
 -- Factions
 L.FACTION_ALL = "All Factions"
@@ -83,6 +84,17 @@ L.ACTION_SET_TITLE = "Set Title"
 L.ACTION_ADD_WISHLIST = "Add to Wishlist"
 L.ACTION_REMOVE_WISHLIST = "Remove from Wishlist"
 L.ACTION_SUMMON_HEIRLOOM = "Summon to Bag"
+
+-- Preview animations (mounts / pets)
+L.ANIM_IDLE = "Idle"
+L.ANIM_WALK = "Walk"
+L.ANIM_RUN = "Run"
+L.ANIM_FLY = "Fly"
+L.ANIM_SWIM = "Swim"
+L.ANIM_JUMP = "Jump"
+L.ANIM_ATTACK = "Attack"
+L.ANIM_SPECIAL = "Special"
+L.ANIM_SPECIAL_TIP = "What a mount does when you jump while standing still."
 
 -- Shop
 L.SHOP_TITLE = "Collection Shop"
@@ -168,10 +180,21 @@ if GetLocale() == "deDE" then
     L.MOUNT_GROUND = "Boden"
     L.MOUNT_FLYING = "Fliegend"
     L.MOUNT_AQUATIC = "Wasser"
+    L.MOUNT_ALL = "Boden + Fliegend"
     
     L.ACTION_SUMMON = "Beschwören"
     L.ACTION_FAVORITE = "Favorit"
     L.ACTION_PREVIEW = "Vorschau"
+
+    L.ANIM_IDLE = "Stehen"
+    L.ANIM_WALK = "Gehen"
+    L.ANIM_RUN = "Rennen"
+    L.ANIM_FLY = "Fliegen"
+    L.ANIM_SWIM = "Schwimmen"
+    L.ANIM_JUMP = "Springen"
+    L.ANIM_ATTACK = "Angriff"
+    L.ANIM_SPECIAL = "Spezial"
+    L.ANIM_SPECIAL_TIP = "Was ein Reittier tut, wenn du im Stehen springst."
     
     L.SHOP_TITLE = "Sammler-Shop"
     L.SHOP_BUY = "Kaufen"

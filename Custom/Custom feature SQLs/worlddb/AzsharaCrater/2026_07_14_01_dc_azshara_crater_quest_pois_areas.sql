@@ -1,3 +1,11 @@
+-- !!! DO NOT RE-APPLY THIS FILE TO A LIVE DATABASE !!!
+-- Historical record only. It deletes EVERY crater quest POI (300100-300966) and
+-- rebuilds them as of July, which undoes later corrections:
+-- 2026_09_11_05 (item quests mark their drop sources) and pending
+-- rev_1790332520350276500.sql (item objectives use ObjectiveIndex 4; markers for
+-- 300405, 300407 and 300820-300822). To refresh one quest's markers, write a
+-- file that rebuilds only that quest, like 2026_09_11_05.
+--
 -- ============================================================================
 -- Azshara Crater - Quest POIs regenerated as AREAS (rectangles) from live spawns
 -- Date: 2026-07-14

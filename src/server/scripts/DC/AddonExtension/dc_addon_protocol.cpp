@@ -35,9 +35,12 @@
 #include <unordered_set>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <iomanip>
+#include <iterator>
 #include <memory>
 #include <sstream>
+#include <string_view>
 #include <ctime>
 #include "dc_update_profiler.h"
 
@@ -897,6 +900,13 @@ namespace
     // async fallback in TryGetSessionCapabilityState against enqueueing one
     // query per consumer message during the logout->handshake window.
     std::unordered_set<uint32> s_CapabilityWarmInFlight;
+    // Accounts whose warm-up found no persisted row (bots, clients that never
+    // ran the addon) -> getMSTime() of that miss. Without it every send to such
+    // a session queued a fresh SELECT, since a miss left nothing in the
+    // registry. A real handshake still wins at once: it fills the registry,
+    // which is checked first. Cleared with the registry entry on logout.
+    std::unordered_map<uint32, uint32> s_CapabilityWarmMissAtMs;
+    constexpr uint32 CAPABILITY_WARM_MISS_TTL_MS = 5 * MINUTE * IN_MILLISECONDS;
 
     uint32 GetSessionCapabilityRegistryKey(WorldSession* session)
     {
@@ -1104,6 +1114,15 @@ namespace DCAddon
             std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
             if (s_SessionCapabilityRegistry.find(accountId) != s_SessionCapabilityRegistry.end())
                 return;
+
+            auto miss = s_CapabilityWarmMissAtMs.find(accountId);
+            if (miss != s_CapabilityWarmMissAtMs.end())
+            {
+                if (getMSTimeDiff(miss->second, getMSTime()) < CAPABILITY_WARM_MISS_TTL_MS)
+                    return; // no persisted row a moment ago; don't ask again yet
+                s_CapabilityWarmMissAtMs.erase(miss);
+            }
+
             if (!s_CapabilityWarmInFlight.insert(accountId).second)
                 return; // a warm-up query is already running for this account
         }
@@ -1119,7 +1138,10 @@ namespace DCAddon
                 std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
                 s_CapabilityWarmInFlight.erase(accountId);
                 if (!result)
+                {
+                    s_CapabilityWarmMissAtMs[accountId] = getMSTime();
                     return;
+                }
 
                 // try_emplace: never clobber a real handshake result that may
                 // have landed (via SetSessionCapabilityState) while this
@@ -1189,6 +1211,7 @@ namespace DCAddon
 
         std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
         s_SessionCapabilityRegistry.erase(key);
+        s_CapabilityWarmMissAtMs.erase(key);
     }
 
     void WarmSessionCapabilityStateAsync(Player* player)
@@ -2634,28 +2657,42 @@ namespace DCAddon
         return false;
     }
 
+    // Modules routed over the generic native message bridge -> any capability
+    // the session must have negotiated IN ADDITION to GENERIC_MESSAGE_NATIVE
+    // (0 = none). All share the one client mechanism. Keep in sync with
+    // DCAddonProtocol.lua DC._nativeBridges. Modules with their own dedicated
+    // bridge (HUD/live snapshots) are unaffected: those send via direct
+    // WorldPacket and never reach JsonMessage/Message::Send.
+    static std::unordered_map<std::string, uint32> const& GetGenericNativeModules()
+    {
+        constexpr uint32 EXT = ProtocolVersion::Capability::NATIVE_MODULES_EXT;
+        static std::unordered_map<std::string, uint32> const s_map = {
+            { Module::GROUP_FINDER, 0 }, { Module::UPGRADE, 0 },
+            { Module::AOE_LOOT, 0 },     { Module::MYTHIC_PLUS, 0 },
+            { Module::TELEPORTS, 0 },    { Module::EVENTS, 0 },
+            { Module::PHASED_DUELS, 0 }, { Module::LEADERBOARD, 0 },
+            { Module::WELCOME, 0 },      { Module::SPECTATOR, 0 },
+            { Module::GOMOVE, 0 },       { Module::NPCMOVE, 0 },
+            // Modules with their own dedicated bridge for hot flows (ping relay,
+            // collection wave1, HLBG live snapshot, world-content requests).
+            // Those send via direct WorldPacket and bypass JsonMessage/
+            // Message::Send; only their request/response *remainder* and
+            // pushes (bare sends) route here.
+            { Module::QOS, 0 },          { Module::COLLECTION, 0 },
+            { Module::HINTERLAND, 0 },   { Module::QUEST_POPUPS, 0 },
+            // Added later: gated on NATIVE_MODULES_EXT, see its comment.
+            { Module::WORLD, EXT },      { Module::MAP_POI, EXT },
+            { Module::DECORATION, EXT }, { Module::ENCOUNTERS, EXT },
+            { Module::QUEST_NAV, EXT },  { Module::GRAVEYARD, EXT },
+            { Module::BEASTMASTER, EXT },
+        };
+        return s_map;
+    }
+
     uint32 GetModuleNativeCapability(std::string const& module)
     {
-        // Modules routed over the generic native message bridge. All share the
-        // single GENERIC_MESSAGE_NATIVE capability (one client mechanism). Keep
-        // in sync with DCAddonProtocol.lua DC._nativeBridges. Modules with their
-        // own dedicated bridge (HUD/live snapshots) are unaffected: those send
-        // via direct WorldPacket and never reach JsonMessage/Message::Send.
-        static std::unordered_map<std::string, uint32> const s_map = {
-            { Module::GROUP_FINDER, 1 }, { Module::UPGRADE, 1 },
-            { Module::AOE_LOOT, 1 },     { Module::MYTHIC_PLUS, 1 },
-            { Module::TELEPORTS, 1 },    { Module::EVENTS, 1 },
-            { Module::PHASED_DUELS, 1 }, { Module::LEADERBOARD, 1 },
-            { Module::WELCOME, 1 },      { Module::SPECTATOR, 1 },
-            { Module::GOMOVE, 1 },       { Module::NPCMOVE, 1 },
-            // Modules with their own dedicated bridge for hot flows (ping relay,
-            // collection wave1, HLBG live snapshot). Those send via direct
-            // WorldPacket and bypass JsonMessage/Message::Send; only their
-            // request/response *remainder* (bare sends) routes here.
-            { Module::QOS, 1 },          { Module::COLLECTION, 1 },
-            { Module::HINTERLAND, 1 },   { Module::QUEST_POPUPS, 1 },
-        };
-        return s_map.find(module) != s_map.end()
+        auto const& modules = GetGenericNativeModules();
+        return modules.find(module) != modules.end()
             ? ProtocolVersion::Capability::GENERIC_MESSAGE_NATIVE : 0;
     }
 
@@ -2664,14 +2701,23 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return false;
 
-        uint32 capability = GetModuleNativeCapability(module);
-        if (capability == 0)
+        auto const& modules = GetGenericNativeModules();
+        auto const itr = modules.find(module);
+        if (itr == modules.end())
             return false;
 
         TransportPolicyRequest request;
         request.featureName = module.c_str();
-        request.nativeCapability = capability;
-        return ResolveTransportPolicy(player, request).UsesNative();
+        request.nativeCapability =
+            ProtocolVersion::Capability::GENERIC_MESSAGE_NATIVE;
+        TransportPolicyDecision const decision =
+            ResolveTransportPolicy(player, request);
+        if (!decision.UsesNative())
+            return false;
+
+        uint32 const required = itr->second;
+        return required == 0
+            || (decision.capabilityState.negotiatedCapabilities & required) == required;
     }
 
     bool TrySendModuleNativeMessage(Player* player, std::string const& module,
@@ -3398,6 +3444,10 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
+        // Bots never handshake and have no persisted row to warm from.
+        if (DCAddon::IsBotRecipient(player))
+            return;
+
         // Warm the live capability registry from the DB asynchronously so
         // any transport-policy decision that runs before the client's addon
         // handshake completes hits a cache instead of a blocking query.
@@ -3460,7 +3510,25 @@ public:
 class DCAddonMessageRouterScript : public PlayerScript
 {
 public:
-    DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript", { PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE }) {}
+    DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript", {
+        PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE,
+        PLAYERHOOK_CAN_PLAYER_USE_PRIVATE_CHAT
+    }) {}
+
+    using PlayerScript::OnPlayerCanUseChat;  // keep the base overloads visible
+
+    // A client addon message is a whisper to itself. After the hook below has
+    // consumed a DC frame (msg cleared), the core still delivered that whisper
+    // back to the sender -- an empty packet per frame and per chunk -- and a
+    // frame no handler took came back verbatim into the client's own
+    // CHAT_MSG_ADDON handler. Player-to-player addon whispers are untouched.
+    bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 lang, std::string& msg, Player* receiver) override
+    {
+        if (lang != LANG_ADDON || type != CHAT_MSG_WHISPER || receiver != player)
+            return true;
+
+        return !msg.empty() && msg.rfind("DC\t", 0) != 0;
+    }
 
     // Try to parse a message as a chunked message. Returns true if it's a chunk.
     // If complete, sets outPayload to the reassembled message. Otherwise clears it.
@@ -3833,35 +3901,124 @@ namespace
     // continuation (see QueryCallback::~QueryCallback), so handlers route their
     // callbacks here. EnqueueQueryCallback() may be called from any thread (the
     // addon message handlers guard their session state with mutexes for the
-    // same reason); the processor itself is only ever touched on the world
-    // thread inside ProcessPendingQueryCallbacks().
-    QueryCallbackProcessor s_DCAddonQueryProcessor;
-    std::vector<QueryCallback> s_DCAddonPendingQueries;
+    // same reason); the active list is only ever touched on the world thread
+    // inside ProcessPendingQueryCallbacks().
+    //
+    // Each callback keeps the place that queued it: a real player's login cost
+    // one 0.5-1.0 s tick in here, and nothing could say which continuation it was.
+    struct AddonQueryCallback
+    {
+        QueryCallback callback;
+        std::source_location site;
+    };
+
+    struct AddonQueryCost
+    {
+        std::source_location site;
+        bool finished = false;
+        int64 us = 0;
+    };
+
+    std::vector<AddonQueryCallback> s_DCAddonActiveQueries;
+    std::vector<AddonQueryCallback> s_DCAddonPendingQueries;
     std::mutex s_DCAddonPendingQueriesMutex;
+
+    // The same bar as the MessageRouter's slow-handler warning.
+    constexpr int64 SLOW_QUERY_CALLBACKS_WARN_MS = 100;
+
+    // Names the enqueue sites a slow tick went to, busiest first. One site can queue many callbacks
+    // that complete together, so the time is summed per site.
+    void LogSlowQueryCallbacks(int64 totalMs, std::vector<AddonQueryCost> const& costs)
+    {
+        struct SiteCost
+        {
+            std::source_location site;
+            uint32 finished = 0;
+            int64 us = 0;
+        };
+
+        std::vector<SiteCost> sites;
+        for (AddonQueryCost const& cost : costs)
+        {
+            auto it = std::find_if(sites.begin(), sites.end(), [&cost](SiteCost const& entry)
+            {
+                return entry.site.line() == cost.site.line() &&
+                    std::string_view(entry.site.file_name()) == cost.site.file_name();
+            });
+
+            if (it == sites.end())
+                it = sites.insert(sites.end(), SiteCost{ cost.site });
+
+            it->finished += cost.finished ? 1 : 0;
+            it->us += cost.us;
+        }
+
+        std::sort(sites.begin(), sites.end(), [](SiteCost const& a, SiteCost const& b) { return a.us > b.us; });
+
+        std::string detail;
+        for (std::size_t i = 0; i < sites.size() && i < 5; ++i)
+        {
+            std::string_view file = sites[i].site.file_name();
+            std::size_t const slash = file.find_last_of("/\\");
+            if (slash != std::string_view::npos)
+                file.remove_prefix(slash + 1);
+
+            detail += Acore::StringFormat(" | {:.1f} ms, {} finished, queued at {}:{} ({})",
+                sites[i].us / 1000.0, sites[i].finished, file, sites[i].site.line(), sites[i].site.function_name());
+        }
+
+        LOG_WARN("module.dc", "[AddonQueries] SLOW tick: continuations took {} ms{}", totalMs, detail);
+    }
 }
 
 namespace DCAddon
 {
-    void EnqueueQueryCallback(QueryCallback&& callback)
+    void EnqueueQueryCallback(QueryCallback&& callback, std::source_location site)
     {
         std::lock_guard<std::mutex> lock(s_DCAddonPendingQueriesMutex);
-        s_DCAddonPendingQueries.emplace_back(std::move(callback));
+        s_DCAddonPendingQueries.push_back({ std::move(callback), site });
     }
 
     void ProcessPendingQueryCallbacks()
     {
-        // World thread only. Move any queued callbacks into the processor,
-        // then invoke those whose results are ready.
-        std::vector<QueryCallback> pending;
+        // World thread only. Adopt what was queued since the last tick, then invoke the callbacks whose
+        // results are ready. A continuation that queues a follow-up query adds it to the pending list,
+        // so the list walked here never changes underneath the loop.
         {
             std::lock_guard<std::mutex> lock(s_DCAddonPendingQueriesMutex);
-            pending.swap(s_DCAddonPendingQueries);
+            std::move(s_DCAddonPendingQueries.begin(), s_DCAddonPendingQueries.end(),
+                std::back_inserter(s_DCAddonActiveQueries));
+            s_DCAddonPendingQueries.clear();
         }
 
-        for (QueryCallback& cb : pending)
-            s_DCAddonQueryProcessor.AddCallback(std::move(cb));
+        if (s_DCAddonActiveQueries.empty())
+            return;
 
-        s_DCAddonQueryProcessor.ProcessReadyCallbacks();
+        std::vector<AddonQueryCallback> active;
+        active.swap(s_DCAddonActiveQueries);
+
+        std::vector<AddonQueryCost> costs;
+        auto const tickStart = std::chrono::steady_clock::now();
+
+        for (AddonQueryCallback& query : active)
+        {
+            auto const start = std::chrono::steady_clock::now();
+            bool const finished = query.callback.InvokeIfReady();
+            int64 const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start).count();
+
+            // A result that is not ready yet costs well under 10 us; anything above ran a continuation.
+            if (finished || us >= 10)
+                costs.push_back({ query.site, finished, us });
+
+            if (!finished)
+                s_DCAddonActiveQueries.push_back(std::move(query));
+        }
+
+        int64 const totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - tickStart).count();
+        if (totalMs >= SLOW_QUERY_CALLBACKS_WARN_MS)
+            LogSlowQueryCallbacks(totalMs, costs);
     }
 }
 
@@ -3915,12 +4072,18 @@ public:
             return;
 
         _statsFlushTimer = 0;
-        FlushStats();
+        {
+            DarkChaos::ScopedUpdateProfiler _flushProf("AddonProtocol.StatsFlush");
+            FlushStats();
+        }
 
         // One batch per stats flush (30s). A backlog drains over a few minutes
         // instead of stalling the world thread on a single huge DELETE.
         if (s_AddonConfig.EnableProtocolLogging)
+        {
+            DarkChaos::ScopedUpdateProfiler _pruneProf("AddonProtocol.LogPrune");
             PruneProtocolLogs();
+        }
     }
 
     void OnShutdown() override

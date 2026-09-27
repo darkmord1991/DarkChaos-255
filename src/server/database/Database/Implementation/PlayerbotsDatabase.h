@@ -15,7 +15,12 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifdef MOD_PLAYERBOTS
+// Superseded by modules/mod-playerbots/src/Db/PlayerbotsDatabase.{h,cpp}: since module PR #2793
+// the module owns the playerbots database through ModuleDatabasePool. Compiling this copy too
+// would define PlayerbotsDatabaseConnection and PlayerbotsDatabaseStatements twice, so it is
+// held out of the build. The playerbots core fork deletes both files outright
+// ("Strip Playerbot database core changes"); do the same here once confirmed.
+#ifdef AC_CORE_OWNS_PLAYERBOTS_DB
 
 #ifndef _PlayerbotsDatabase_H
 #define _PlayerbotsDatabase_H

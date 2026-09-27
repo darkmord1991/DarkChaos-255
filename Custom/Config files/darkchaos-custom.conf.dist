@@ -3957,9 +3957,19 @@ DCFirstStart.StartingProfessions.List = "129,185,356"
 # Bags
 # -----------------------------------------------------------------------------
 
-DCFirstStart.Bags.Default = "21841,21841,21841,21841"
-DCFirstStart.Bags.Hunter = 0
-DCFirstStart.Bags.Warlock = 0
+# Three bags, not four: the fourth bag slot is left free for the Heirloom
+# Adventurer's Haversack (300366) from the "Welcome" quest (820056).
+# A class bag (0 = none) replaces one of the default bags:
+#   Hunter    - quiver, given when the starting ranged weapon is a bow or crossbow
+#   HunterGun - ammo pouch, given when the starting ranged weapon is a gun
+#   Warlock   - soul bag
+#   Rogue     - 3.3.5 has no rogue bag type, so any bag set here is a normal bag
+# 8217 and 8218 need RequiredLevel 0 in item_template (pending_db_world); with the
+# stock level 40 the bag is unequipped and mailed away on the hunter's next login.
+DCFirstStart.Bags.Default = "21841,21841,21841"
+DCFirstStart.Bags.Hunter = 8217
+DCFirstStart.Bags.HunterGun = 8218
+DCFirstStart.Bags.Warlock = 22244
 DCFirstStart.Bags.Rogue = 0
 
 # -----------------------------------------------------------------------------

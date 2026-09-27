@@ -437,6 +437,13 @@ function Beastmaster:CreateModelPreview(parent)
     infoFrame.source:SetTextColor(0.7, 0.7, 0.7)
 
     modelFrame.infoFrame = infoFrame
+
+    -- Idle / Walk / Run / Fly / Swim / Jump / Attack / Special along the bottom of the
+    -- preview. Stays nil on a WotLKExtensions DLL without the model animation natives.
+    if type(DC.CreateModelAnimationBar) == "function" then
+        modelFrame.animBar = DC:CreateModelAnimationBar(modelFrame, model, "beast")
+    end
+
     parent.modelFrame = modelFrame
 end
 
@@ -634,6 +641,7 @@ function Beastmaster:SelectPet(petData)
 
     local infoFrame = self.frame.modelFrame.infoFrame
     local model = self.frame.modelFrame.model
+    local animBar = self.frame.modelFrame.animBar
 
     infoFrame.name:SetText(petData.name or "Unknown")
     local r, g, b = GetRarityColor(petData.rarity)
@@ -826,7 +834,10 @@ function Beastmaster:SelectPet(petData)
         return false
     end
 
-    ApplyNextAttempt()
+    local modelShown = ApplyNextAttempt()
+    if animBar then
+        animBar:ModelChanged(modelShown)
+    end
 
     local verifyToken = (self._modelVerifyToken or 0) + 1
     self._modelVerifyToken = verifyToken
@@ -853,7 +864,10 @@ function Beastmaster:SelectPet(petData)
         end
 
         if attemptIndex <= #attempts then
-            ApplyNextAttempt()
+            local advanced = ApplyNextAttempt()
+            if animBar then
+                animBar:ModelChanged(advanced)
+            end
             if DC and type(DC.After) == "function" then
                 DC.After(0.2, function()
                     VerifyModelLoaded(1)
@@ -868,6 +882,9 @@ function Beastmaster:SelectPet(petData)
         -- dressed player model.
         if type(model.ClearModel) == "function" then
             model:ClearModel()
+        end
+        if animBar then
+            animBar:ModelChanged(false)
         end
     end
 

@@ -86,6 +86,11 @@ namespace
         if (!session)
             return false;
 
+        // Bots never collect heirlooms account-wide, and this runs from CanBeSeen on the map threads for
+        // every bot that comes near a cache, each miss a blocking query on that map's update.
+        if (session->IsBot())
+            return false;
+
         uint32 const accountId = session->GetAccountId();
         if (!accountId)
             return false;

@@ -30,6 +30,7 @@
 // --- Core AC scripts ---
 void AddSC_ac_guard_npc();                    // AC/ac_guard_npc.cpp
 void AddSC_dc_worgoblin();                    // Races/dc_worgoblin.cpp
+void AddSC_dc_dark_iron();                    // Races/dc_dark_iron.cpp
 void AddSC_dc_login_announce();               // Progression/FirstStart/dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009();             // AC/ac_quest_npc_800009.cpp
 void AddSC_flightmasters();                   // AC/ac_flightmasters.cpp
@@ -128,6 +129,7 @@ void AddSC_dc_questgiver_status_override_qol(); // QOL/dc_questgiver_status_over
 void AddSC_dc_looter_pet_qol();               // QOL/dc_looter_pet.cpp
 void AddSC_dc_breaking_news_qol();           // QOL/dc_breaking_news_qol.cpp
 void AddSC_dc_vendor_item_cache_prime_qol();   // QOL/dc_vendor_item_cache_prime.cpp
+void AddSC_dc_paged_collection_vendor_qol();   // QOL/dc_paged_collection_vendor.cpp
 
 // --- Rare respawn announcer (maps 750 / 37) ---
 void AddSC_dc_rare_spawn_announce();          // RareSpawns/dc_rare_spawn_announce.cpp
@@ -323,6 +325,7 @@ void AddDCScripts()
 
     LogSection("DC Core Services");
     DC_LOAD(AddSC_dc_worgoblin);
+    DC_LOAD(AddSC_dc_dark_iron);
     DC_LOAD(AddSC_dc_login_announce);
     DC_LOAD(AddSC_dc_teleporter);
 
@@ -419,6 +422,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_looter_pet_qol);
     DC_LOAD(AddSC_dc_breaking_news_qol);
     DC_LOAD(AddSC_dc_vendor_item_cache_prime_qol);
+    DC_LOAD(AddSC_dc_paged_collection_vendor_qol);
 
     LogSection("Rare Respawn Announcer");
     DC_LOAD(AddSC_dc_rare_spawn_announce);

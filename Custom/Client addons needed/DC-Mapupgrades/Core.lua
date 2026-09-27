@@ -1459,9 +1459,20 @@ function Core:HandleWorldContent(data, skipDeaths)
     end
 
     -- Hotspots can also be included in WRLD snapshots; process if present.
+    -- WRLD updates tag each record with an action (HotspotJson.cpp: "spawn" /
+    -- "expire"). An expire record carries only the id; upserting it re-added
+    -- the hotspot as a coordinate-less ghost (announced as new if we had
+    -- already dropped it) instead of removing it.
     if type(data.hotspots) == "table" then
         for _, hs in ipairs(data.hotspots) do
-            Core:ProcessHotspotPayload(hs)
+            if type(hs) == "table" and hs.action == "expire" then
+                local id = NormalizeNumber(hs.i or hs.id)
+                if id then
+                    Core:RemoveHotspot(id, "expire")
+                end
+            else
+                Core:ProcessHotspotPayload(hs)
+            end
         end
         if Pins and Pins.Refresh then
             Pins:Refresh()

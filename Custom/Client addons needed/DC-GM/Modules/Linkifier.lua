@@ -156,7 +156,9 @@ function MangLinkifier_Link(orgtxt, id, type)
   return link
 end
 
-function MangLinkifier_SetItemRef(link, text, button)
+-- chatFrame must be forwarded: stock channel links (right-click "[Guild]" ->
+-- Move to New Window) use it as the frame to remove the channel from.
+function MangLinkifier_SetItemRef(link, text, button, chatFrame)
   ----------====~~Target Command Functions ~~====----------
   if ( strsub(link, 1, 9) == "targidadd" ) then
     SendChatMessage(".gobject add "..strsub(link, 11), say, nil, nil)
@@ -285,5 +287,5 @@ function MangLinkifier_SetItemRef(link, text, button)
     SendChatMessage(".tele del "..strsub(link, 18), say, nil, nil)
     return;
   end
-  MangLinkifier_SetItemRef_Original(link, text, button);
+  return MangLinkifier_SetItemRef_Original(link, text, button, chatFrame);
 end

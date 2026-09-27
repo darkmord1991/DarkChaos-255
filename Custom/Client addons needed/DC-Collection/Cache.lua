@@ -13,6 +13,41 @@ local DC = DCCollection
 local L = DC.L
 
 -- ============================================================================
+-- DEFINITION ICONS
+-- ============================================================================
+-- The local collection CDBC carries full icon paths for every mount and pet. The
+-- server's definitions do not: dc_pet_definitions.icon holds a bare file name
+-- ("inv_pet_sleepywilly"), which is not a texture path and draws nothing, and
+-- dc_mount_definitions.icon is empty for the downported mounts, whose real icons
+-- were only ever baked into the CDBC -- so they fall back to the generic spell
+-- icon. The CDBC icons are therefore kept in an index of their own that outlives
+-- the catalog losing its authority, and every server definition is filled from it.
+
+local function NormalizeIconPath(icon)
+    if type(icon) ~= "string" or icon == "" then
+        return nil
+    end
+    if string.find(icon, "[\\/]") then
+        return icon
+    end
+    return "Interface\\Icons\\" .. icon
+end
+
+function DC:NormalizeIconPath(icon)
+    return NormalizeIconPath(icon)
+end
+
+-- Full icon path the local CDBC has for this entry, or nil.
+function DC:GetLocalCollectionIcon(collectionType, id)
+    local icons = self._localCollectionIcons
+    local byId = type(icons) == "table" and icons[collectionType]
+    if type(byId) ~= "table" then
+        return nil
+    end
+    return byId[tonumber(id) or id]
+end
+
+-- ============================================================================
 -- REVISION TRACKING (UI performance)
 -- ============================================================================
 -- A cheap way for UI code to know whether definitions/collections changed
@@ -483,6 +518,12 @@ function DC:LoadCache()
                     self.definitions[collType] = packedDefs
                 end
             else
+                -- Server-shaped entries saved before icons were normalised.
+                for _, def in pairs(defs) do
+                    if type(def) == "table" then
+                        def.icon = NormalizeIconPath(def.icon)
+                    end
+                end
                 self.definitions[collType] = defs
             end
         end
@@ -1308,8 +1349,14 @@ function DC:ApplyCollectionDataFeaturePolicies()
                 state.definitionTypes[typeName] == true and
                 nativeEligible
 
-            if sourcesPolicy.state ~= "OK_NATIVE_DBC" then
-                ClearLocalDefinitionType(self, state, typeName)
+            if sourcesPolicy.state ~= "OK_NATIVE_DBC" and
+               ClearLocalDefinitionType(self, state, typeName) and
+               type(self.LogNetEvent) == "function" then
+                self:LogNetEvent("warn", "cdbc", string.format(
+                    "Local catalog dropped for %s: server says %s (%s), client revision %d, server %d",
+                    typeName, tostring(sourcesPolicy.state), tostring(sourcesPolicy.reason),
+                    tonumber(sourcesPolicy.installedRevision) or 0,
+                    tonumber(sourcesPolicy.requiredRevision) or 0))
             end
         end
 
@@ -1551,6 +1598,12 @@ function DC:BootstrapLocalCollectionCDBC(force)
                 titles = {},
             }
             local localDefinitionsChanged = false
+            local icons = {
+                mounts = {},
+                pets = {},
+                heirlooms = {},
+                titles = {},
+            }
             local signatures = {
                 mounts = 5381,
                 pets = 5381,
@@ -1569,9 +1622,8 @@ function DC:BootstrapLocalCollectionCDBC(force)
                     if type(row.name) == "string" and row.name ~= "" then
                         def.name = row.name
                     end
-                    if type(row.icon) == "string" and row.icon ~= "" then
-                        def.icon = row.icon
-                    end
+                    def.icon = NormalizeIconPath(row.icon)
+                    icons[typeName][entryId] = def.icon
 
                     local rarity = tonumber(row.rarity or row.Rarity)
                     if rarity and rarity > 0 then
@@ -1706,6 +1758,10 @@ function DC:BootstrapLocalCollectionCDBC(force)
                     state.signatures[typeName] = signatures[typeName]
                 end
             end
+
+            -- Kept outside `state` on purpose: a feature policy that clears the
+            -- local definitions must not take the icons with them.
+            self._localCollectionIcons = icons
 
             state.sourcesLoaded = next(state.definitionTypes) ~= nil
             state.available = state.available or state.sourcesLoaded
@@ -2149,18 +2205,29 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
 
     local state = self._localCollectionCDBC
     if type(state) == "table" and type(state.definitionSources) == "table" then
+        if state.definitionSources[typeName] == "local-cdbc" and
+           type(self.LogNetEvent) == "function" then
+            self:LogNetEvent("warn", "cdbc",
+                "Server definitions replaced the local catalog for " .. typeName)
+        end
         state.definitionSources[typeName] = "runtime"
     end
-    
+
     local added = 0
     for itemId, defData in pairs(definitions) do
         local normalizedId = NormalizeId(itemId)
-        if not self.definitions[typeName][normalizedId] then
+        local existing = self.definitions[typeName][normalizedId]
+        if not existing then
             added = added + 1
         end
         if typeName == "transmog" then
             self.definitions[typeName][normalizedId] = PackTransmogDefinition(defData)
         else
+            if type(defData) == "table" then
+                defData.icon = NormalizeIconPath(defData.icon)
+                    or (type(existing) == "table" and NormalizeIconPath(existing.icon))
+                    or self:GetLocalCollectionIcon(typeName, normalizedId)
+            end
             self.definitions[typeName][normalizedId] = defData
         end
     end

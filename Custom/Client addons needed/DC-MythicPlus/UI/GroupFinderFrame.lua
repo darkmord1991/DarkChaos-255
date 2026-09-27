@@ -261,6 +261,28 @@ local function ChromeStripV(parent, layer, file, def, totalH, sublevel)
     return segs
 end
 
+-- Patterned fill of a fixed w x h area from 256px tiles whose texcoords stay
+-- inside 0..1, anchored to `anchor`'s TOPLEFT at (x, y). A tiled backdrop
+-- leaves the repeat to the sampler, and on this client only the first row of
+-- tiles survives: past 256px the last texel row smears down in streaks.
+local function ChromeTileFill(parent, layer, file, anchor, x, y, w, h)
+    local tiles = {}
+    for row = 0, math.ceil(h / 256) - 1 do
+        local th = math.min(256, h - row * 256)
+        for col = 0, math.ceil(w / 256) - 1 do
+            local tw = math.min(256, w - col * 256)
+            local tex = parent:CreateTexture(nil, layer)
+            tex:SetTexture(file)
+            tex:SetWidth(tw)
+            tex:SetHeight(th)
+            tex:SetTexCoord(0, tw / 256, 0, th / 256)
+            tex:SetPoint("TOPLEFT", anchor, "TOPLEFT", x + col * 256, y - row * 256)
+            table.insert(tiles, tex)
+        end
+    end
+    return tiles
+end
+
 -- Retail InsetFrameTemplate border: 6px corners joined by 3px tiles.
 local function AddInsetBorder(frame, layer)
     layer = layer or "BORDER"
@@ -287,22 +309,31 @@ local function AddInsetBorder(frame, layer)
     right:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT")
 end
 
--- Marble inset with the metal border, at an explicit frame level so the
--- portrait ring (OVERLAY on the parent) still draws over its corner.
-local function CreateInset(parent, level)
+-- Inset with the metal border, at an explicit frame level so the portrait
+-- ring (OVERLAY on the parent) still draws over its corner. Its w x h marble
+-- is painted on the window's paint canvas (see BuildPortraitChrome), not on
+-- the inset: at the window's own level the rock would draw over it.
+local function CreateInset(parent, level, canvas, w, h)
     local inset = CreateFrame("Frame", nil, parent)
     if level then
         inset:SetFrameLevel(level)
     end
-    inset:SetBackdrop({ bgFile = TEX_MARBLE, tile = true, tileSize = 256 })
+    inset.bgTiles = ChromeTileFill(canvas, "BORDER", TEX_MARBLE, inset, 0, 0, w, h)
     AddInsetBorder(inset, "BORDER")
     return inset
 end
 namespace.CreateInsetFrame = CreateInset
 
--- The outer PortraitFrame art on a W x H frame: rock backdrop, title tile,
+-- The outer PortraitFrame art on a W x H frame: rock fill, title tile,
 -- portrait ring, edge tiles and bottom corners. Returns the portrait texture
--- (60x60 inside the ring) and the ring so callers can anchor to them.
+-- (60x60 inside the ring), the ring, and the paint canvas.
+--
+-- 3.3.5 has no texture sublevels (CreateTexture ignores the 4th argument),
+-- so draw order comes from layers and frame levels only, and frames sharing
+-- a level mix their layers in one batch. Every opaque fill therefore lives
+-- on one canvas a level under the window, in layer order: rock BACKGROUND,
+-- inset marble BORDER, tinted panels ARTWORK. The borders, the portrait and
+-- the insets' metal edges at the window's level all draw over it.
 local function BuildPortraitChrome(frame, W, H)
     local P, TH, TV = FRAME_PIECES, FRAME_TILES_H, FRAME_TILES_V
     local ringW, ringH = P.Portrait[1], P.Portrait[2]
@@ -310,11 +341,19 @@ local function BuildPortraitChrome(frame, W, H)
     local botLeftW, botLeftH = P.BotCornerLeft[1], P.BotCornerLeft[2]
     local botRightW, botRightH = P.BotCornerRight[1], P.BotCornerRight[2]
 
-    frame:SetBackdrop({ bgFile = TEX_ROCK, tile = true, tileSize = 256,
-        insets = { left = 2, right = 2, top = 21, bottom = 2 } })
+    local canvas = CreateFrame("Frame", nil, frame)
+    canvas:SetAllPoints()
+    canvas:SetFrameLevel(math.max(frame:GetFrameLevel() - 1, 0))
+    ChromeTileFill(canvas, "BACKGROUND", TEX_ROCK, frame, 2, -21, W - 4, H - 23)
 
     local titleBg = ChromeStripH(frame, "BACKGROUND", TEX_FRAME_H, TH.TitleTileBG, W - 2 - 25)
     titleBg[1]:SetPoint("TOPLEFT", 2, -3)
+
+    -- The portrait shares OVERLAY with the ring and is created first, so the
+    -- ring's inner edge draws over it (retail: portrait at OVERLAY -1).
+    local portrait = frame:CreateTexture(nil, "OVERLAY")
+    portrait:SetSize(60, 60)
+    portrait:SetPoint("TOPLEFT", -6, 7)
 
     local ring = ChromeTex(frame, "OVERLAY", TEX_FRAME, P.Portrait)
     ring:SetPoint("TOPLEFT", -14, 11)
@@ -340,11 +379,7 @@ local function BuildPortraitChrome(frame, W, H)
         (H + 5 - botRightH) - (topRightH - 1))
     right[1]:SetPoint("TOPRIGHT", topRight, "BOTTOMRIGHT", 1, 0)
 
-    local portrait = frame:CreateTexture(nil, "ARTWORK")
-    portrait:SetSize(60, 60)
-    portrait:SetPoint("TOPLEFT", -6, 7)
-
-    return { ring = ring, portrait = portrait }
+    return { ring = ring, portrait = portrait, canvas = canvas }
 end
 namespace.BuildPortraitChrome = BuildPortraitChrome
 
@@ -2472,8 +2507,9 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
 
     -- Gold ring on the left with the category icon inside (retail: 95x96
     -- ring at LEFT -12,-1; the icon sits under the ring so its square
-    -- corners hide behind the metal band).
-    local ring = button:CreateTexture(nil, "ARTWORK", nil, 2)
+    -- corners hide behind the metal band). Separate layers, because 3.3.5
+    -- ignores texture sublevels.
+    local ring = button:CreateTexture(nil, "OVERLAY")
     ring:SetSize(95, 96)
     ring:SetPoint("LEFT", -12, -1)
     SetTextureOrFallback(ring, BLUEMENU_RING, RETAIL_BLUE_MENU_RING)
@@ -2481,7 +2517,7 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
         BLUEMENU_RING_COORDS[3], BLUEMENU_RING_COORDS[4])
     button.ring = ring
 
-    local icon = button:CreateTexture(nil, "ARTWORK", nil, 1)
+    local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetSize(62, 62)
     icon:SetPoint("CENTER", ring, "CENTER", 0, 0)
     ApplyTextureCandidates(icon, iconTexture, "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -2616,11 +2652,14 @@ function GF:CreateCompactMainFrame()
     -- Retail PortraitFrame chrome with the Dungeon Finder eye in the ring.
     -- The eye plays the stock LFG-Eye flipbook (the animation the minimap
     -- eye runs while queued) over a dark disc; the static portrait only
-    -- stands in when the flipbook helper is unavailable.
+    -- stands in when the flipbook helper is unavailable. The disc is ARTWORK
+    -- under the OVERLAY portrait: a sublevel would be ignored, and the disc,
+    -- created last, covered the eye.
     local chrome = BuildPortraitChrome(frame, W, H)
+    local canvas = chrome.canvas
     local portrait = chrome.portrait
     if namespace.SetLFGEyeFrame then
-        local disc = frame:CreateTexture(nil, "ARTWORK", nil, -1)
+        local disc = frame:CreateTexture(nil, "ARTWORK")
         disc:SetSize(56, 56)
         disc:SetPoint("CENTER", portrait, "CENTER", 0, 0)
         SetTextureOrFallback(disc, "Interface\\Minimap\\UI-Minimap-Background",
@@ -2686,17 +2725,18 @@ function GF:CreateCompactMainFrame()
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
     -- Left inset: the retail bluemenu nav (blue panel + four big buttons).
-    local navInset = CreateInset(frame, level)
+    local navInset = CreateInset(frame, level, canvas, self.NAV_INSET_WIDTH, H - 28)
     navInset:SetPoint("TOPLEFT", 4, -24)
     navInset:SetPoint("BOTTOMLEFT", 4, 4)
     navInset:SetWidth(self.NAV_INSET_WIDTH)
     self.navInset = navInset
 
     -- Retail draws this 209x399 in its 428-tall frame; the plain gradient
-    -- panel stretches to whatever height the inset has.
-    local navBg = navInset:CreateTexture(nil, "BACKGROUND", nil, 1)
+    -- panel stretches to whatever height the inset has. Painted on the
+    -- canvas above the inset's marble.
+    local navBg = canvas:CreateTexture(nil, "ARTWORK")
     navBg:SetSize(209, H - 29)
-    navBg:SetPoint("TOPLEFT", 3, 1)
+    navBg:SetPoint("TOPLEFT", navInset, "TOPLEFT", 3, 1)
     SetTextureOrFallback(navBg, BLUEMENU_MAIN, RETAIL_BLUEMENU_MAIN)
     navBg:SetTexCoord(BLUEMENU_BG_COORDS[1], BLUEMENU_BG_COORDS[2],
         BLUEMENU_BG_COORDS[3], BLUEMENU_BG_COORDS[4])
@@ -2733,15 +2773,16 @@ function GF:CreateCompactMainFrame()
     contentPane:SetFrameLevel(level)
     self.contentPane = contentPane
 
-    local contentInset = CreateInset(contentPane, level)
+    local contentInset = CreateInset(contentPane, level, canvas,
+        W - self.CONTENT_LEFT - 10, H - self.CONTENT_INSET_TOP - self.CONTENT_INSET_BOTTOM)
     contentInset:SetPoint("TOPLEFT", 4, -self.CONTENT_INSET_TOP)
     contentInset:SetPoint("BOTTOMRIGHT", -6, self.CONTENT_INSET_BOTTOM)
     self.contentInset = contentInset
 
     -- Marble reads pale under white text; retail darkens its list areas the
     -- same way (the quest-paper art), so shade the whole inset a little.
-    local shade = contentInset:CreateTexture(nil, "BACKGROUND", nil, 1)
-    shade:SetAllPoints()
+    local shade = canvas:CreateTexture(nil, "ARTWORK")
+    shade:SetAllPoints(contentInset)
     SetSolidTexture(shade, 0, 0, 0, 0.30)
 
     local contentTitle = contentPane:CreateFontString(nil, "OVERLAY", "GameFontNormal")

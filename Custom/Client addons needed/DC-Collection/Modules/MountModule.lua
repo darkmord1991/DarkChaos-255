@@ -15,17 +15,36 @@ local L = DC.L
 -- MOUNT TYPE CONSTANTS
 -- ============================================================================
 
+-- dc_mount_definitions.mount_type, as the server sends it and the collection
+-- CDBC's MountType column carries it: 0 ground, 1 flying, 2 aquatic, 3 all
+-- (ground and air). This is the one place the addon spells that out.
 DC.MOUNT_TYPES = {
-    GROUND = 1,
-    FLYING = 2,
-    AQUATIC = 3,
+    GROUND = 0,
+    FLYING = 1,
+    AQUATIC = 2,
+    ALL = 3,
 }
 
 local MOUNT_TYPE_NAMES = {
-    [1] = "Ground",
-    [2] = "Flying", 
-    [3] = "Aquatic",
+    [DC.MOUNT_TYPES.GROUND] = { key = "MOUNT_GROUND", text = "Ground" },
+    [DC.MOUNT_TYPES.FLYING] = { key = "MOUNT_FLYING", text = "Flying" },
+    [DC.MOUNT_TYPES.AQUATIC] = { key = "MOUNT_AQUATIC", text = "Aquatic" },
+    [DC.MOUNT_TYPES.ALL] = { key = "MOUNT_ALL", text = "Ground + Flying" },
 }
+
+-- Display name of a mount type, or nil for a value outside the list.
+function DC:GetMountTypeName(mountType)
+    local entry = MOUNT_TYPE_NAMES[tonumber(mountType)]
+    if not entry then
+        return nil
+    end
+
+    local text = L and L[entry.key]
+    if type(text) == "string" and text ~= "" then
+        return text
+    end
+    return entry.text
+end
 
 -- ============================================================================
 -- MOUNT MODULE
@@ -225,7 +244,12 @@ end
 function MountModule:GetStats()
     local owned = 0
     local total = 0
-    local byType = { [1] = 0, [2] = 0, [3] = 0 }
+    local byType = {
+        [DC.MOUNT_TYPES.GROUND] = 0,
+        [DC.MOUNT_TYPES.FLYING] = 0,
+        [DC.MOUNT_TYPES.AQUATIC] = 0,
+        [DC.MOUNT_TYPES.ALL] = 0,
+    }
     local byRarity = {}
     
     local definitions = self:GetMountDefinitions()
@@ -237,7 +261,7 @@ function MountModule:GetStats()
         if collection[spellId] then
             owned = owned + 1
             
-            local mType = def.mountType or 1
+            local mType = def.mountType or DC.MOUNT_TYPES.GROUND
             byType[mType] = (byType[mType] or 0) + 1
         end
         

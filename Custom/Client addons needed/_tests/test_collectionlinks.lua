@@ -58,10 +58,13 @@ _G.UIDropDownMenu_SetText = function() end
 _G.hooksecurefunc = function() end
 
 -- ------------------------------------------------------------ stub DCCollection
+-- mountType uses the server's dc_mount_definitions encoding:
+-- 0 ground, 1 flying, 2 aquatic, 3 all.
 local MOUNT_DEFS = {
-    [60001] = {name = "Swift |cffff0000Gryphon|r: Fast", rarity = 4, itemId = 1234, mountType = 2,
+    [60001] = {name = "Swift |cffff0000Gryphon|r: Fast", rarity = 4, itemId = 1234, mountType = 1,
                source = "Vendor"},
-    [60002] = {name = "Brown Kodo", rarity = 2, mountType = 1},
+    [60002] = {name = "Brown Kodo", rarity = 2, mountType = 0},
+    [60003] = {name = "Red Drake", rarity = 4, mountType = 3},
 }
 local PET_DEFS = {
     [8485] = {name = "Mini Diablo", rarity = 3, spellId = 70001, creatureId = 2001},
@@ -148,6 +151,9 @@ DC.PetJournal = {
 }
 
 reset()
+-- The real mount-type names (DC:GetMountTypeName), so the tooltip is checked
+-- against the server's encoding rather than a stub of it.
+dofile(ROOT .. [[DC-Collection\Modules\MountModule.lua]])
 dofile(SRC)
 
 -- --------------------------------------------------------------------- tests
@@ -230,6 +236,13 @@ ok(tooltipLines[2] == "Flying Mount", "mount type line")
 local joined = table.concat(tooltipLines, "\n")
 ok(string.find(joined, "Source: Vendor", 1, true) ~= nil, "source line")
 ok(string.find(joined, "Collected", 1, true) ~= nil, "collected state for the viewer, not the sender")
+
+reset()
+DC:ShowCollectionLinkTooltip(nil, "dc:mount:1:60002:0:Brown Kodo")
+ok(tooltipLines[2] == "Ground Mount", "mount_type 0 reads as ground (it read as nothing before)")
+reset()
+DC:ShowCollectionLinkTooltip(nil, "dc:mount:1:60003:0:Red Drake")
+ok(tooltipLines[2] == "Ground + Flying Mount", "mount_type 3 reads as ground + flying, not aquatic")
 
 reset()
 DC:ShowCollectionLinkTooltip(nil, "dc:pet:1:8485:s70001:Mini Diablo")

@@ -39,6 +39,10 @@ DCAddonProtocol = {
     Capability = {
         JSON_MESSAGES = 0x00000001,
         BATCH_MESSAGES = 0x00000002,
+        -- Lua-advertised (no DLL bit): this client routes the later generic-
+        -- bridge modules (MPOI/DECO/DENC/QNAV/GRVY/BEAST, WRLD pushes) natively.
+        -- Negotiated only against a server that also knows them.
+        NATIVE_MODULES_EXT = 0x00000080,
         TOOLTIP_NATIVE_RESPONSE = 0x00000100,
         BREAKING_NEWS_NATIVE = 0x00000200,
         ITEM_UPGRADE_NATIVE = 0x00000400,
@@ -60,8 +64,9 @@ DCAddonProtocol = {
         GENERIC_MESSAGE_NATIVE = 0x04000000,
     },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
-    BASE_CAPABILITIES = 3,
-    CAPABILITIES = 3, -- Compatibility mirror; GetClientCapabilities() is authoritative.
+    -- JSON_MESSAGES | BATCH_MESSAGES | NATIVE_MODULES_EXT
+    BASE_CAPABILITIES = 0x83,
+    CAPABILITIES = 0x83, -- Compatibility mirror; GetClientCapabilities() is authoritative.
     _handlers = {},
     _debug = false,
     _connected = false,
@@ -784,6 +789,10 @@ function DC:DescribeCapabilities(mask)
         table.insert(parts, "NativeGenericMessage")
     end
     if HasCapabilityBit(capabilities,
+            self.Capability.NATIVE_MODULES_EXT) then
+        table.insert(parts, "NativeModulesExt")
+    end
+    if HasCapabilityBit(capabilities,
             self.Capability.GENERIC_NATIVE_ENVELOPE) then
         table.insert(parts, "GenericNativeEnvelope")
     end
@@ -1134,9 +1143,10 @@ function DC:_AttemptReconnect()
     
     self:LogNetEvent("info", "reconnect", "Attempting handshake (attempt " .. self._reconnectAttempts .. ")")
     self:SendHandshake("reconnect-attempt")
-    
-    -- Clear pending flag after a timeout (in case server doesn't respond)
-    -- This is handled in _CheckRequestTimeouts implicitly via the handshake request timing out
+
+    -- Only an ACK clears _handshakePending; if none arrives, the 1s tick in
+    -- the OnUpdate script expires it (HANDSHAKE_ACK_TIMEOUT_SEC) so the
+    -- backoff can retry.
 end
 
 function DC:_OnHandshakeSuccess()
@@ -1144,12 +1154,15 @@ function DC:_OnHandshakeSuccess()
     self._handshakePending = false
     self._reconnectAttempts = 0
     self:LogNetEvent("info", "handshake", "Connected successfully to server v" .. (self._serverVersion or "?"))
+    -- _serverCaps is set by now, so held requests take the negotiated bridge.
+    self:_ReleasePreHandshakeQueue("ack")
 end
 
 function DC:_OnHandshakeFailed(reason)
     self._connected = false
     self._handshakePending = false
     self:LogNetEvent("error", "handshake", "Handshake failed: " .. (reason or "unknown"))
+    self:_ReleasePreHandshakeQueue("handshake-failed")
 end
 
 function DC:EnsureConnected()
@@ -1350,10 +1363,15 @@ function DC:_CheckRequestTimeouts()
     end
 end
 
--- Maximum chunks allowed per message (security: prevent memory exhaustion)
-DC.MAX_CHUNKS_PER_MESSAGE = 2048  -- Supports large collection/transmog syncs
--- Maximum JSON payload size (security: prevent parsing abuse)
-DC.MAX_JSON_PAYLOAD_SIZE = 524288  -- 512KB (supports large collection/transmog syncs)
+-- Maximum chunks allowed per message (security: prevent memory exhaustion).
+-- Sized for the largest collection catalog with headroom: the pet definitions
+-- reached 576 KB / 2352 chunks (~245 bytes each) on 2026-09-26 and were
+-- rejected at the old 2048, which left the Pets tab showing only known pets.
+DC.MAX_CHUNKS_PER_MESSAGE = 8192  -- ~2 MB of chunk data
+-- Maximum JSON payload size (security: prevent parsing abuse). Must stay at or
+-- above MAX_CHUNKS_PER_MESSAGE worth of data, or a reassembled catalog that
+-- passed the chunk check is dropped here instead.
+DC.MAX_JSON_PAYLOAD_SIZE = 2097152  -- 2 MB
 
 function DC:_CleanupChunkBuffers()
     if not self._chunkBuffers then
@@ -2088,6 +2106,23 @@ DC._nativeBridges = {
       kind = "generic" },
     { module = "QPOP", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
       kind = "generic" },
+    -- Added 2026-09-23. `requires` gates them on NATIVE_MODULES_EXT as well: a
+    -- server built before these rows drops generic requests for modules it
+    -- does not know (no chat fallback), so only use them once it has said so.
+    -- Plain DC:Send calls (DENC request, GRVY return) stay on chat regardless;
+    -- the server's replies to all of them arrive natively either way.
+    { module = "MPOI", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    { module = "DECO", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    { module = "DENC", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    { module = "QNAV", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    { module = "GRVY", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    { module = "BEAST", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
 }
 
 -- Precomputed subset of _nativeBridges that own a dedicated poller (kind ~=
@@ -2136,7 +2171,11 @@ function DC:_ShouldUseNativeBridge(bridge)
     if not self:_NativeBridgeHasFns(bridge) then
         return false
     end
-    return HasCapabilityBit(tonumber(self._serverCaps) or 0, bridge.capability)
+    local serverCaps = tonumber(self._serverCaps) or 0
+    if bridge.requires and not HasCapabilityBit(serverCaps, bridge.requires) then
+        return false
+    end
+    return HasCapabilityBit(serverCaps, bridge.capability)
 end
 
 -- Try to send a JSON request over a native bridge. Returns true if it was sent
@@ -2399,6 +2438,62 @@ function DC:SendChunked(msg)
     return true
 end
 
+-- Requests made before the handshake ACK cannot know whether a native bridge
+-- was negotiated (_serverCaps is still 0), so the whole login burst used to go
+-- out over chat, trickling at the throttle rate. Hold the ones that could go
+-- native -- once per session, for at most PRE_HANDSHAKE_HOLD_SEC -- until the
+-- ACK (or its absence) decides the transport.
+local PRE_HANDSHAKE_HOLD_SEC = 3
+
+function DC:_ShouldHoldForHandshake(module)
+    if self._connected or self._preHandshakeHoldClosed or module == "CORE" then
+        return false
+    end
+
+    local bridge = self:_FindNativeBridge(module)
+    if not bridge or not self:_NativeBridgeHasFns(bridge) then
+        return false
+    end
+
+    local now = GetTime()
+    if not self._preHandshakeHoldUntil then
+        self._preHandshakeHoldUntil = now + PRE_HANDSHAKE_HOLD_SEC
+    end
+    return now < self._preHandshakeHoldUntil
+end
+
+-- Called on ACK, on handshake failure, and by the OnUpdate tick once the hold
+-- window has passed. Closes the window for the rest of the session.
+function DC:_ReleasePreHandshakeQueue(reason)
+    self._preHandshakeHoldClosed = true
+    local queue = self._preHandshakeQueue
+    self._preHandshakeQueue = nil
+    if not queue then
+        return
+    end
+
+    self:LogNetEvent("info", "handshake", string.format(
+        "releasing %d request(s) held for the handshake (%s)", #queue,
+        tostring(reason)))
+    for _, item in ipairs(queue) do
+        self:_SendEncodedJSON(item.module, item.opcode, item.json, item.msg)
+    end
+end
+
+function DC:_SendEncodedJSON(module, opcode, json, msg)
+    -- Prefer the native dedicated opcode when the module/server support it.
+    -- Responses arrive via DC:_PollNativeResponses and dispatch identically.
+    if self:_TryNativeSendJSON(module, opcode, json) then
+        if self._debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Routed " .. module .. " opcode=" .. tostring(opcode) .. " over native bridge")
+        end
+        return true
+    end
+
+    -- Use chunked sending for large messages
+    return self:SendChunked(msg)
+end
+
 function DC:SendJSON(module, opcode, data)
     local json = self:EncodeJSON(data)
     if type(json) ~= "string" then
@@ -2420,17 +2515,15 @@ function DC:SendJSON(module, opcode, data)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Data: " .. string.sub(json, 1, 200) .. (string.len(json) > 200 and "..." or ""))
     end
 
-    -- Prefer the native dedicated opcode when the module/server support it.
-    -- Responses arrive via DC:_PollNativeResponses and dispatch identically.
-    if self:_TryNativeSendJSON(module, opcode, json) then
-        if self._debug then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Routed " .. module .. " opcode=" .. tostring(opcode) .. " over native bridge")
-        end
+    if self:_ShouldHoldForHandshake(module) then
+        self._preHandshakeQueue = self._preHandshakeQueue or {}
+        table.insert(self._preHandshakeQueue, {
+            module = module, opcode = opcode, json = json, msg = msg,
+        })
         return true
     end
 
-    -- Use chunked sending for large messages
-    return self:SendChunked(msg)
+    return self:_SendEncodedJSON(module, opcode, json, msg)
 end
 
 -- Standard request method - uses JSON format by default
@@ -2755,6 +2848,10 @@ DC.JSON = { encode = function(v) return DC:EncodeJSON(v) end, decode = function(
 -- DCOpcodes.lua, loaded immediately after this file. They are referenced only
 -- from inside functions here, so definition order does not matter.
 
+-- How long a sent handshake may wait for its ACK before the OnUpdate tick
+-- gives up on it and lets the reconnect backoff send another.
+local HANDSHAKE_ACK_TIMEOUT_SEC = 10
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -2790,6 +2887,20 @@ frame:SetScript("OnUpdate", function(self, elapsed)
     end
     if type(DC._CleanupChunkBuffers) == "function" then
         DC:_CleanupChunkBuffers()
+    end
+    -- A handshake whose ACK never comes back (dropped by the server rate
+    -- limiter, protocol reloaded mid-flight) used to leave _handshakePending
+    -- set for good. Both reconnect paths require it clear, so the session
+    -- stayed on the chat transport with _serverCaps = 0 until /reload.
+    if DC._preHandshakeQueue and DC._preHandshakeHoldUntil
+        and GetTime() >= DC._preHandshakeHoldUntil then
+        DC:_ReleasePreHandshakeQueue("no-ack")
+    end
+    if DC._handshakePending and not DC._connected
+        and (time() - (DC._lastHandshakeTime or 0)) >= HANDSHAKE_ACK_TIMEOUT_SEC then
+        DC._handshakePending = false
+        DC:LogNetEvent("warn", "handshake", "No ACK within "
+            .. HANDSHAKE_ACK_TIMEOUT_SEC .. "s; handshake will be retried")
     end
     -- Auto-reconnect logic: if disconnected and haven't exceeded max attempts
     if not DC._connected and not DC._handshakePending then
@@ -2831,7 +2942,16 @@ frame:SetScript("OnEvent", function()
                     -- Security: Reject messages with too many chunks (memory protection)
                     local maxChunks = DC.MAX_CHUNKS_PER_MESSAGE or 100
                     if total > maxChunks then
-                        DC:LogNetEvent("error", "chunk", "Rejected chunked message: too many chunks (" .. total .. " > " .. maxChunks .. ")")
+                        -- Once per rejected message, not per chunk: every chunk of it lands
+                        -- here, and one line each flushed the whole net log.
+                        local rejectKey = tostring(arg4 or "_") .. "_" .. total
+                        local nowT = time()
+                        if DC._lastChunkRejectKey ~= rejectKey or
+                           (nowT - (DC._lastChunkRejectAt or 0)) > 10 then
+                            DC._lastChunkRejectKey = rejectKey
+                            DC._lastChunkRejectAt = nowT
+                            DC:LogNetEvent("error", "chunk", "Rejected chunked message: too many chunks (" .. total .. " > " .. maxChunks .. ")")
+                        end
                         return
                     end
                     
@@ -3618,6 +3738,9 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         DC:_OnHandshakeSuccess()
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Connected to server v" .. tostring(version))
     else
+        -- The caps were stored above; an incompatible server must not keep
+        -- steering requests onto native bridges while we report disconnected.
+        DC._serverCaps = 0
         DC:_OnHandshakeFailed("Version mismatch")
         DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC Protocol]|r Protocol version mismatch (client v" .. tostring(DC.VERSION) .. "). Please update your DC addons.")
         return

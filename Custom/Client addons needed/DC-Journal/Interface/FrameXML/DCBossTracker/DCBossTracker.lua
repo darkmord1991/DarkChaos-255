@@ -18,8 +18,9 @@
     Implemented by hooking WatchFrame:SetPoint - the stock manager re-anchors
     WatchFrame on every UIParent_ManageFramePositions, so the hook re-applies
     the split each time. If WatchFrame:IsUserPlaced() (stock drag or DC-QOS
-    FrameMover, which calls SetUserPlaced(true)), the manager never fires and
-    the block quietly falls back to sitting above WatchFrame's custom spot.
+    FrameMover, which calls SetUserPlaced(true)), the manager leaves it alone
+    and the block stacks on top of WatchFrame's custom spot instead. The block
+    has no position of its own: moving the tracker means moving WatchFrame.
 
     Protocol (module "DENC"), keyed by DungeonEncounter.dbc entry id:
         CMSG_REQUEST   0x01  ask for the current instance's list
@@ -337,16 +338,6 @@ function T.EnsureFrame()
     toggle:RegisterForClicks("LeftButtonUp")
     toggle:SetScript("OnClick", function() T.ToggleCollapsed() end)
 
-    -- The whole header doubles as the drag handle (right-drag).
-    header:EnableMouse(true)
-    frame:SetMovable(true)
-    header:RegisterForDrag("RightButton")
-    header:SetScript("OnDragStart", function() frame:StartMoving() end)
-    header:SetScript("OnDragStop", function()
-        frame:StopMovingOrSizing()
-        T.SavePosition()
-    end)
-
     frame.header     = header
     frame.headerText = headerText
     frame.toggle     = toggle
@@ -413,40 +404,53 @@ function T.EnsureFrame()
         T.OnUpdateTick(elapsed)
     end)
 
+    -- Parked while hidden; the first Layout docks it via T.UpdateColumn.
+    frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -240)
+
     T.frame = frame
     T.stage = stage
-    T.RestorePosition()
     return frame
 end
 
 -- ---------------------------------------------------------------------------
 -- Position: retail semantics - top of the tracker column, quests below
 -- ---------------------------------------------------------------------------
--- UIParent_ManageFramePositions anchors WatchFrame's TOPRIGHT to MinimapCluster
--- (offset by durability/vehicle/arena frames) unless it IsUserPlaced(). The
--- hook below runs after every such SetPoint: the tracker takes the manager's
--- point and WatchFrame's TOP anchor is replaced to hang below the tracker (its
--- BOTTOMRIGHT stretch anchor stays untouched, so quest text still fills down).
+-- The block and WatchFrame are one column and are never placed independently:
+--   * WatchFrame where UIParent_ManageFramePositions put it (TOPRIGHT on
+--     MinimapCluster, offset by durability/vehicle frames, not user placed):
+--     the block takes that point and WatchFrame's TOP anchor is replaced to
+--     hang below the block (its BOTTOMRIGHT stretch anchor keeps quest text
+--     filling down).
+--   * WatchFrame placed by anything else (DC-QOS FrameMover, a stock drag, the
+--     arena layout): that spot is not ours to move, so the block stacks on top
+--     of WatchFrame wherever it went.
+--
+-- The block used to be right-draggable, and a dragged position switched the
+-- claim off: WatchFrame snapped back to its stock spot - right where the block
+-- still sat - and "Raid (1/7)" painted over "Objectives (1)". Turning the camera
+-- is a right-drag too, so the header detached the block by accident. The
+-- tracker now moves as a whole through WatchFrame (DC-QOS /dcmove, "Quest
+-- Tracker") and the block follows it.
 T.anchoring = false
 
-function T.HasUserPosition()
-    return type(DCBossTrackerDB) == "table"
-        and type(DCBossTrackerDB.pos) == "table"
-        and DCBossTrackerDB.pos.point ~= nil
+-- WatchFrame's TOPRIGHT anchor as relTo, relPoint, x, y (nil when it has none).
+function T.WatchFrameTop()
+    local count = WatchFrame.GetNumPoints and WatchFrame:GetNumPoints() or 1
+    for index = 1, count do
+        local point, relTo, relPoint, x, y = WatchFrame:GetPoint(index)
+        if point == "TOPRIGHT" then
+            return relTo, relPoint, x, y
+        end
+    end
+    return nil
 end
 
-function T.ClaimColumnTop(point, relTo, relPoint, x, y)
-    if not T.frame then
-        return
-    end
-
-    T.SyncColumnWidth()
-
+function T.ClaimColumnTop(relPoint, x, y)
     T.anchoring = true
     T.frame:ClearAllPoints()
     -- COLUMN_OFFSET_X shifts the whole column (WatchFrame hangs below us, so
     -- the quest block moves with it) left of the manager's stock point.
-    T.frame:SetPoint(point, relTo, relPoint, (x or 0) + T.COLUMN_OFFSET_X, y)
+    T.frame:SetPoint("TOPRIGHT", MinimapCluster, relPoint or "BOTTOMRIGHT", (x or 0) + T.COLUMN_OFFSET_X, y or 0)
     -- Re-SetPoint with the same point name REPLACES only that anchor:
     -- WatchFrame keeps its BOTTOMRIGHT stretch anchor.
     WatchFrame:SetPoint("TOPRIGHT", T.frame, "BOTTOMRIGHT", 0, -6)
@@ -458,108 +462,89 @@ function T.ClaimColumnTop(point, relTo, relPoint, x, y)
     T.anchoring = false
 end
 
+function T.StackAboveWatchFrame()
+    local point, relTo = T.frame:GetPoint(1)
+    if point == "BOTTOMRIGHT" and relTo == WatchFrame then
+        return
+    end
+    T.frame:ClearAllPoints()
+    T.frame:SetPoint("BOTTOMRIGHT", WatchFrame, "TOPRIGHT", 0, 6)
+end
+
+-- Puts the block where the rules above say. Idempotent and cheap: it runs
+-- after every Layout and after every WatchFrame re-anchor.
+function T.UpdateColumn()
+    if T.anchoring or not (WatchFrame and T.frame) then
+        return
+    end
+
+    local relTo, relPoint, x, y = T.WatchFrameTop()
+    if relTo == T.frame then
+        -- WatchFrame hangs below us - normally because we claimed the column.
+        -- But a mover that saved WatchFrame's anchor while it hung here
+        -- (FrameMover records the first point) re-applies it wherever the
+        -- block happens to be: parked, or stacked on WatchFrame, which anchors
+        -- the two frames to each other (hidden or not). Either way the block
+        -- belongs on the column.
+        local _, blockRelTo = T.frame:GetPoint(1)
+        if blockRelTo == WatchFrame or (blockRelTo ~= MinimapCluster and T.frame:IsShown()) then
+            T.ClaimColumnTop("BOTTOMRIGHT", -(CONTAINER_OFFSET_X or 70), 20)
+        end
+    elseif not T.frame:IsShown() then
+        return
+    elseif relTo == MinimapCluster and not (WatchFrame.IsUserPlaced and WatchFrame:IsUserPlaced()) then
+        T.ClaimColumnTop(relPoint, x, y)
+    else
+        T.StackAboveWatchFrame()
+    end
+
+    -- Reads WatchFrame's size, so only once the two can no longer be
+    -- anchored to each other.
+    T.SyncColumnWidth()
+end
+
 function T.HookWatchFrame()
     if T.watchHooked or not WatchFrame then
         return
     end
 
-    hooksecurefunc(WatchFrame, "SetPoint", function(self, point, relTo, relPoint, x, y)
+    hooksecurefunc(WatchFrame, "SetPoint", function(_, point, relTo, _, x, y)
         if T.anchoring then
             return
         end
-        if not (T.frame and T.frame:IsShown()) then
+        -- The manager sets its BOTTOMRIGHT stretch anchor AFTER the TOPRIGHT
+        -- answered below, on every pass, overwriting the shifted copy
+        -- ClaimColumnTop made. Shift it again while WatchFrame hangs from us.
+        if point == "BOTTOMRIGHT" and (relTo == UIParent or relTo == "UIParent")
+            and T.frame and T.WatchFrameTop() == T.frame then
+            T.anchoring = true
+            WatchFrame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", (x or 0) + T.COLUMN_OFFSET_X, y or 0)
+            T.anchoring = false
             return
         end
-        if T.HasUserPosition() then
-            return
-        end
-        -- Only intercept the manager's column anchor, not the stretch anchor
-        -- or an arena-frames layout.
-        if point ~= "TOPRIGHT" then
-            return
-        end
-        if relTo ~= MinimapCluster and relTo ~= "MinimapCluster" then
-            return
-        end
+        T.UpdateColumn()
+    end)
 
-        T.ClaimColumnTop(point, relTo, relPoint or point, x or 0, y or 0)
+    -- FrameMover sets this before its own SetPoint, and clears it on "Reset
+    -- Position" without re-anchoring: claim or stack to match either way.
+    hooksecurefunc(WatchFrame, "SetUserPlaced", function()
+        T.UpdateColumn()
     end)
 
     T.watchHooked = true
 end
 
-function T.SavePosition()
-    if not T.frame then
-        return
-    end
-
-    local point, _, relPoint, x, y = T.frame:GetPoint()
-    DCBossTrackerDB = DCBossTrackerDB or {}
-    DCBossTrackerDB.pos = { point = point, relPoint = relPoint or point, x = x, y = y }
-    T.ReleaseWatchFrame()
-end
-
--- Give WatchFrame back to the stock manager (it re-anchors on the next
--- UIParent_ManageFramePositions; call it directly so the fix is immediate).
+-- The block went away: give WatchFrame back to the stock manager (it
+-- re-anchors on the next UIParent_ManageFramePositions; call it directly so
+-- the gap closes at once - the hook ignores that pass while we are hidden).
 function T.ReleaseWatchFrame()
-    if T.anchoring then
+    if not (WatchFrame and T.frame) or T.WatchFrameTop() ~= T.frame then
         return
     end
     if type(UIParent_ManageFramePositions) == "function" then
         local ok, err = pcall(UIParent_ManageFramePositions)
         -- Kept for /dcbosses debug: an error here is otherwise invisible.
         T.lastManagerError = (not ok) and tostring(err) or nil
-    end
-    T.EnsureColumnClaim()
-end
-
--- The claim normally rides the manager's own WatchFrame:SetPoint (the hook
--- above). Check the result as well: when a manager pass never reaches
--- WatchFrame (it errors part-way - ReleaseWatchFrame pcalls it) or ran while
--- the block was hidden, WatchFrame keeps its TOPRIGHT on MinimapCluster while
--- the block already sits in the column, and the two blocks paint over each
--- other ("Dungeon (0/3)" drawn across the quest list).
-function T.EnsureColumnClaim()
-    if T.anchoring or not (WatchFrame and T.frame and T.frame:IsShown()) or T.HasUserPosition() then
-        return
-    end
-    if WatchFrame.IsUserPlaced and WatchFrame:IsUserPlaced() then
-        return
-    end
-
-    local count = WatchFrame.GetNumPoints and WatchFrame:GetNumPoints() or 1
-    for index = 1, count do
-        local point, relTo, relPoint, x, y = WatchFrame:GetPoint(index)
-        if point == "TOPRIGHT" then
-            if relTo == MinimapCluster then
-                T.ClaimColumnTop(point, relTo, relPoint or point, x or 0, y or 0)
-            end
-            return
-        end
-    end
-end
-
-function T.RestorePosition()
-    if not T.frame then
-        return
-    end
-
-    if T.HasUserPosition() then
-        local saved = DCBossTrackerDB.pos
-        T.frame:ClearAllPoints()
-        T.frame:SetPoint(saved.point, UIParent, saved.relPoint, saved.x or 0, saved.y or 0)
-        return
-    end
-
-    -- Default: the manager's column spot. Nudge the manager to fire once so
-    -- the hook can claim it; until then sit above WatchFrame as a placeholder.
-    if WatchFrame then
-        T.frame:ClearAllPoints()
-        T.frame:SetPoint("BOTTOMRIGHT", WatchFrame, "TOPRIGHT", 0, 6)
-        T.ReleaseWatchFrame()
-    else
-        T.frame:ClearAllPoints()
-        T.frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -240)
     end
 end
 
@@ -990,14 +975,9 @@ function T.LayoutMythicPlus()
         end
     end
 
-    local wasShown = frame:IsShown()
     frame:SetHeight(height)
     frame:Show()
-
-    if not T.HasUserPosition() and (not wasShown or height ~= T.lastHeight) then
-        T.lastHeight = height
-        T.ReleaseWatchFrame()
-    end
+    T.UpdateColumn()
 end
 
 function T.Layout()
@@ -1083,16 +1063,11 @@ function T.Layout()
         end
     end
 
-    local wasShown = frame:IsShown()
     frame:SetHeight(height)
     frame:Show()
-
-    -- Height/visibility changes move WatchFrame's hang point; kick the manager
-    -- so the hook re-applies the split with the new geometry.
-    if not T.HasUserPosition() and (not wasShown or height ~= T.lastHeight) then
-        T.lastHeight = height
-        T.ReleaseWatchFrame()
-    end
+    -- WatchFrame hangs off our bottom edge, so a height change carries it
+    -- along by itself; only the first show has to dock the block.
+    T.UpdateColumn()
 end
 
 function T.ToggleCollapsed()
@@ -1235,6 +1210,8 @@ end
 function T.LoadSettings()
     DCBossTrackerDB = DCBossTrackerDB or {}
     T.state.collapsed = DCBossTrackerDB.collapsed == true
+    -- Left behind by the old right-drag; see the Position section.
+    DCBossTrackerDB.pos = nil
 end
 
 local events = CreateFrame("Frame")
@@ -1301,10 +1278,8 @@ SlashCmdList["DCBOSSES"] = function(msg)
     msg = (msg or ""):lower():match("^%s*(.-)%s*$")
 
     if msg == "reset" then
-        DCBossTrackerDB = DCBossTrackerDB or {}
-        DCBossTrackerDB.pos = nil
-        T.RestorePosition()
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker position reset to the tracker column.")
+        T.UpdateColumn()
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker re-docked on the quest tracker.")
         return
     end
 
@@ -1335,10 +1310,19 @@ SlashCmdList["DCBOSSES"] = function(msg)
             return #parts > 0 and table.concat(parts, " ") or "none"
         end
 
+        -- column: WatchFrame hangs below the block; stacked: the block sits on a
+        -- user-placed WatchFrame; detached: neither, i.e. the two can overlap.
+        local mode = "hidden"
+        if T.frame and T.frame:IsShown() and WatchFrame then
+            local _, blockRelTo = T.frame:GetPoint(1)
+            mode = (T.WatchFrameTop() == T.frame and "column")
+                or (blockRelTo == WatchFrame and "stacked")
+                or "detached"
+        end
+
         local out = DEFAULT_CHAT_FRAME
-        out:AddMessage(string.format("|cff00ff00[DC]|r Boss tracker: shown=%s savedPos=%s top=%s",
-            tostring(T.frame and T.frame:IsShown()), tostring(T.HasUserPosition()),
-            tostring(T.frame and T.frame:GetTop())))
+        out:AddMessage(string.format("|cff00ff00[DC]|r Boss tracker: mode=%s top=%s",
+            mode, tostring(T.frame and T.frame:GetTop())))
         out:AddMessage("  tracker anchors: " .. anchors(T.frame))
         out:AddMessage(string.format("  WatchFrame: userPlaced=%s top=%s anchors: %s",
             tostring(WatchFrame and WatchFrame.IsUserPlaced and WatchFrame:IsUserPlaced()),
@@ -1356,8 +1340,9 @@ SlashCmdList["DCBOSSES"] = function(msg)
         return
     end
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker: right-drag the header to move, click the button to collapse.")
-    DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses reset   - snap back to the objective-tracker column")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker: sits on top of the quest tracker, click the button to collapse.")
+    DEFAULT_CHAT_FRAME:AddMessage("  Move both together with /dcmove (Quest Tracker).")
+    DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses reset   - re-dock onto the quest tracker")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses refresh - ask the server for the list again")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses skin    - toggle the matching quest-tracker header skin")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses debug   - print the tracker and quest tracker anchors")

@@ -71,6 +71,9 @@ local function SetPreviewDisplay(model, displayId, onResult)
         if type(model.ClearModel) == "function" then
             pcall(model.ClearModel, model)
         end
+        if model.animBar then
+            model.animBar:ModelChanged(false)
+        end
         model:Hide()
         finish(false)
         return
@@ -196,6 +199,9 @@ local function SetPreviewDisplay(model, displayId, onResult)
     if not shown then
         shown = TrySetCreature(displayId)
     end
+    if model.animBar then
+        model.animBar:ModelChanged(shown)
+    end
 
     -- pcall-success does not prove a model loaded. Re-verify shortly after and
     -- report the real outcome so the caller can flag it as unavailable rather
@@ -212,7 +218,11 @@ local function SetPreviewDisplay(model, displayId, onResult)
         if not recovered then
             recovered = TrySetCreature(displayId)
         end
-        finish(recovered and HasLoadedModel())
+        local loaded = recovered and HasLoadedModel()
+        if model.animBar then
+            model.animBar:ModelChanged(loaded)
+        end
+        finish(loaded)
     end
     if DC and type(DC.After) == "function" then
         DC.After(0.12, VerifyLoaded)
@@ -338,6 +348,13 @@ function Forms:Build(host)
     local previewLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     previewLabel:SetPoint("BOTTOM", preview, "BOTTOM", 0, 8)
     frame.previewLabel = previewLabel
+
+    -- Idle / Walk / Run / Fly / Swim / Jump / Attack / Special, just above the form
+    -- name. Kept on the model so SetPreviewDisplay can tell it about each load.
+    -- Stays nil on a WotLKExtensions DLL without the model animation natives.
+    if type(DC.CreateModelAnimationBar) == "function" then
+        preview.animBar = DC:CreateModelAnimationBar(preview, preview, "form", { offsetY = 30 })
+    end
 
     -- Shown when the selected skin's model fails to load (e.g. a custom display
     -- id whose client model patch isn't installed) so the pane reads as

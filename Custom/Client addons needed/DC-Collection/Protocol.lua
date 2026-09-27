@@ -3496,6 +3496,17 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
                     local bucket = self.definitions[normalizedType] or self.definitions[serverType]
                     if type(bucket) == "table" and next(bucket) ~= nil then
                         hasCached = true
+                        -- A bucket far short of the static manifest is a fallback seed, not
+                        -- the catalog: the Pets tab seeds the player's own companions when no
+                        -- catalog arrived, and skipping here would pin that seed until the
+                        -- server version moves (2026-09-26: 11 of 1898 pets).
+                        local manifestEntry = type(self.GetLocalCollectionCompleteness) == "function"
+                            and self:GetLocalCollectionCompleteness(normalizedType) or nil
+                        local expected = type(manifestEntry) == "table"
+                            and tonumber(manifestEntry.expectedCount) or 0
+                        if expected > 0 and self:CountDefinitions(normalizedType) < expected / 2 then
+                            hasCached = false
+                        end
                     end
                 end
                 if localVer == serverVer and hasCached then

@@ -14,7 +14,15 @@ local npcInfoCache = {}       -- Cache server-provided NPC info
 local pendingNpcRequests = {} -- Track pending requests
 local NPC_INFO_CACHE_DURATION = 300
 local NPC_INFO_PENDING_TIMEOUT = 5.0
+-- A failed lookup is cached too; before, it was dropped and the next
+-- tooltip refresh (several per second while hovering) asked again.
+local NPC_INFO_ERROR_RETRY = 60
 local npcKillCountsByEntry = nil
+
+-- 3.3.5a pet GUIDs (high part 0xF140) have no DB spawn, ever.
+local function IsPetGuid(guid)
+    return type(guid) == "string" and string.upper(string.sub(guid, 1, 6)) == "0XF140"
+end
 local npcKillCountsByName = nil
 TT.killTrackerFrame = nil
 
@@ -219,7 +227,12 @@ local function RequestNpcInfo(guid)
     end
 
     local cached = npcInfoCache[guid]
-    local cacheTtl = (cached and cached.spawnMissing) and 15 or NPC_INFO_CACHE_DURATION
+    local cacheTtl = NPC_INFO_CACHE_DURATION
+    if cached and cached.failed then
+        cacheTtl = NPC_INFO_ERROR_RETRY
+    elseif cached and cached.spawnMissing then
+        cacheTtl = 15
+    end
     if cached and (now - (tonumber(cached.timestamp) or 0)) < cacheTtl then
         return
     end
@@ -298,18 +311,20 @@ local function OnNpcInfoReceived(npcData)
     pendingNpcRequests[guid] = nil
 
     if npcData.error then
-        npcInfoCache[guid] = nil
+        npcInfoCache[guid] = { timestamp = GetTime(), failed = true }
         return
     end
 
     local spawnIdNum = tonumber(npcData.spawnId) or 0
     local dbGuidNum  = tonumber(npcData.dbGuid)  or tonumber(npcData.spawnGuid) or 0
+    local isPet = IsPetGuid(guid)
     npcInfoCache[guid] = {
         timestamp    = GetTime(),
         spawnId      = npcData.spawnId,
         entry        = npcData.entry,
         dbGuid       = npcData.dbGuid or npcData.spawnGuid,
-        spawnMissing = spawnIdNum == 0 and dbGuidNum == 0,
+        isPet        = isPet,
+        spawnMissing = not isPet and spawnIdNum == 0 and dbGuidNum == 0,
     }
     
     -- Don't force refresh to avoid lag
@@ -372,6 +387,9 @@ local function AddNpcId(tooltip, unit, guidOverride)
     -- Show Spawn (from server or parsed)
     if dbGuid then
         tooltip:AddDoubleLine("Spawn:", "|cffffffff" .. dbGuid .. "|r", 0.5, 0.5, 0.5)
+    elseif cachedInfo and (cachedInfo.failed or cachedInfo.isPet) then
+        -- No spawn to show: pets are never DB-spawned, and a failed lookup
+        -- has nothing to add over the parsed GUID.
     elseif cachedInfo == nil or (cachedInfo and cachedInfo.spawnMissing) then
         -- No response yet, or server returned 0 (freshly spawned NPC without DB entry yet)
         tooltip:AddDoubleLine("Spawn:", "|cff888888Fetching...|r", 0.5, 0.5, 0.5)

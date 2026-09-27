@@ -518,7 +518,15 @@ local function ReportMountPreviewIssue(item, reason)
 end
 
 function DC:ResolveDefinitionIcon(collType, id, def)
-    if def and def.icon and def.icon ~= "" then
+    -- Stored icons can be bare file names (server-sent pet definitions), and
+    -- server mount definitions have none: see "DEFINITION ICONS" in Cache.lua.
+    if type(self.NormalizeIconPath) == "function" then
+        local icon = self:NormalizeIconPath(def and def.icon)
+            or self:GetLocalCollectionIcon(collType, id)
+        if icon then
+            return icon
+        end
+    elseif def and def.icon and def.icon ~= "" then
         return def.icon
     end
 
@@ -1427,7 +1435,13 @@ function DC:CreateContentArea(parent)
     mountPreview.info = infoFrame
     -- Make sure overlay UI is above the model (the model is mouse-enabled and can eat clicks).
     infoFrame:SetFrameLevel((mountPreview.model:GetFrameLevel() or (mountPreview:GetFrameLevel() + 1)) + 5)
-    
+
+    -- Idle / Walk / Run / Fly / Swim / Jump / Special along the bottom of the preview.
+    -- Stays nil on a WotLKExtensions DLL without the model animation natives.
+    if type(DC.CreateModelAnimationBar) == "function" then
+        mountPreview.animBar = DC:CreateModelAnimationBar(mountPreview, mountPreview.model, "mount")
+    end
+
     mountPreview.model:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             self.rotating = true
@@ -1719,6 +1733,9 @@ function DC:UpdateMountPreview(item)
         p.info.source:SetText("")
         p.info.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
         p.model:ClearModel()
+        if p.animBar then
+            p.animBar:ModelChanged(false)
+        end
         p.summonBtn:Disable()
         p.favBtn:Hide()
         self:UpdateSuggestionStrip(p.info, p.info.source, nil)
@@ -1944,6 +1961,9 @@ function DC:UpdateMountPreview(item)
             ReportMountPreviewIssue(item, "missing_model_data")
         end
     end
+    if p.animBar then
+        p.animBar:ModelChanged(modelShown)
+    end
 
     local verifyToken = p._modelVerifyToken
     local function VerifyModelLoaded()
@@ -1971,10 +1991,16 @@ function DC:UpdateMountPreview(item)
         local recovered = ApplyMountModel(displayId, creatureId, modelPath)
         if recovered then
             ConfigureCreatureZoom()
+            if p.animBar then
+                p.animBar:ModelChanged(true)
+            end
             return
         end
 
         p.model:ClearModel()
+        if p.animBar then
+            p.animBar:ModelChanged(false)
+        end
         if displayId or creatureId then
             ReportMountPreviewIssue(item, "model_async_load_failed")
         else
@@ -3928,8 +3954,7 @@ function DC:ShowItemTooltip(anchor, item)
     
     -- Type
     if item.definition and item.definition.mountType then
-        local mountTypes = { [1] = "Ground", [2] = "Flying", [3] = "Aquatic" }
-        GameTooltip:AddLine(mountTypes[item.definition.mountType] or "Mount", 1, 1, 1)
+        GameTooltip:AddLine(self:GetMountTypeName(item.definition.mountType) or "Mount", 1, 1, 1)
     end
     
     -- Source

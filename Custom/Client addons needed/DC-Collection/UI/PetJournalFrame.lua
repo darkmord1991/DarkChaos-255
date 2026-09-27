@@ -202,9 +202,16 @@ local function GetRarityColor(rarity)
     return c.r, c.g, c.b
 end
 
-local function GetPetIcon(spellId, def)
-    -- Try definition icon first
-    if def and def.icon and def.icon ~= "" then
+local function GetPetIcon(spellId, def, entryId)
+    -- Definition icon first, then the local catalog's. A server-sent pet icon is a
+    -- bare file name, which draws nothing until it is made a path (Cache.lua).
+    if type(DC.NormalizeIconPath) == "function" then
+        local icon = DC:NormalizeIconPath(def and def.icon)
+            or DC:GetLocalCollectionIcon("pets", entryId or (def and (def.itemId or def.item_id)))
+        if icon then
+            return icon
+        end
+    elseif def and def.icon and def.icon ~= "" then
         return def.icon
     end
 
@@ -486,6 +493,13 @@ function PetJournal:CreateModelPreview(parent)
     infoFrame.wishlistBtn = wishlistBtn
 
     modelFrame.infoFrame = infoFrame
+
+    -- Idle / Walk / Run / Fly / Jump / Attack / Special along the bottom of the preview.
+    -- Stays nil on a WotLKExtensions DLL without the model animation natives.
+    if type(DC.CreateModelAnimationBar) == "function" then
+        modelFrame.animBar = DC:CreateModelAnimationBar(modelFrame, model, "pet")
+    end
+
     parent.modelFrame = modelFrame
 end
 
@@ -878,7 +892,7 @@ function PetJournal:RefreshList()
         end
         btn.name:SetText(name or "Unknown")
 
-        btn.icon:SetTexture(GetPetIcon(pet.id, pet.definition))
+        btn.icon:SetTexture(GetPetIcon(pet.id, pet.definition, pet.id))
 
         local r, g, b = GetRarityColor(pet.rarity)
         btn.name:SetTextColor(r, g, b)
@@ -930,6 +944,7 @@ function PetJournal:SelectPet(petData)
 
     local infoFrame = self.frame.modelFrame.infoFrame
     local model = self.frame.modelFrame.model
+    local animBar = self.frame.modelFrame.animBar
 
     local def = petData.definition or {}
     if DC and DC.PetModule and type(DC.PetModule.GetPetDefinition) == "function" then
@@ -942,7 +957,7 @@ function PetJournal:SelectPet(petData)
             petData.definition = canonicalDef
         end
     end
-    infoFrame.icon:SetTexture(GetPetIcon(def.spellId or def.spell_id, def))
+    infoFrame.icon:SetTexture(GetPetIcon(def.spellId or def.spell_id, def, petData.id))
     infoFrame.name:SetText((petData.name and petData.name ~= "" and petData.name) or def.name or "Unknown")
 
     local r, g, b = GetRarityColor(petData.rarity)
@@ -1314,6 +1329,9 @@ function PetJournal:SelectPet(petData)
     end
 
     local modelShown = ApplyNextAttempt()
+    if animBar then
+        animBar:ModelChanged(modelShown)
+    end
 
     if not modelShown then
         ReportPetPreviewIssue(
@@ -1372,7 +1390,10 @@ function PetJournal:SelectPet(petData)
         -- Timed out on the current attempt; advance to the next fallback
         -- (e.g. the untextured SetModel(path), then SetDisplayInfo).
         if attemptIndex <= #attempts then
-            ApplyNextAttempt()
+            local advanced = ApplyNextAttempt()
+            if animBar then
+                animBar:ModelChanged(advanced)
+            end
             if DC and type(DC.After) == "function" then
                 DC.After(0.2, function()
                     VerifyModelLoaded(1)
@@ -1395,6 +1416,9 @@ function PetJournal:SelectPet(petData)
 
         if type(model.ClearModel) == "function" then
             model:ClearModel()
+        end
+        if animBar then
+            animBar:ModelChanged(false)
         end
     end
 

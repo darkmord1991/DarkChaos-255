@@ -80,6 +80,12 @@ function DCInfoBar:PrintToDcDebug(msg)
     if (not fallbackTarget) and type(FCF_OpenNewWindow) == "function" then
         pcall(FCF_OpenNewWindow, tabName)
         fallbackTarget = GetChatFrameByWindowName(tabName)
+        -- A new tab gets stock's default chat set (Say, Guild, Party, ...); a debug
+        -- tab must not duplicate that chat.
+        if fallbackTarget and ChatFrame_RemoveAllMessageGroups and ChatFrame_RemoveAllChannels then
+            pcall(ChatFrame_RemoveAllMessageGroups, fallbackTarget)
+            pcall(ChatFrame_RemoveAllChannels, fallbackTarget)
+        end
     end
 
     if fallbackTarget and fallbackTarget.AddMessage then

@@ -344,7 +344,13 @@ local UnitRace = UnitRace
 local GetInventoryItemLink = GetInventoryItemLink
 local GetTime = GetTime
 local HandSlotId = GetInventorySlotInfo("HandsSlot")
-local TT = ItemRefTooltip
+-- DarkChaos: a hidden tooltip of its own. Upstream borrowed ItemRefTooltip to
+-- make the client fetch item data, which replaced whatever chat link the player
+-- had open with "Retrieving item information" for one of the range-check items
+-- (31463, 34471, ...). This client keeps no item cache on disk, so the warm-up
+-- runs, and clobbered links, every session.
+local TT = CreateFrame("GameTooltip", "DCLibRangeCheckItemRequestTooltip", nil, "GameTooltipTemplate")
+TT:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 -- temporary stuff
 
@@ -430,6 +436,8 @@ end
 
 local function requestItemInfo(itemId)
     if not itemId then return end
+    -- A hidden tooltip loses its owner when it hides; re-anchor every time.
+    TT:SetOwner(WorldFrame, "ANCHOR_NONE")
     TT:SetHyperlink(string.format("item:%d", itemId))
 end
 
