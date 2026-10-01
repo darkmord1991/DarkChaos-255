@@ -95,8 +95,10 @@ namespace
 
         GameObject* go = map->SummonGameObject(
             info.entry, info.x, info.y, info.z, info.o, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+        // The saved scale is relative to the template size (retail decor carry
+        // Blizzard's InitialScale there), so 1.0 is the catalog default.
         if (go && info.scale > 0.0f && std::fabs(info.scale - 1.0f) > 0.001f)
-            go->SetObjectScale(info.scale);
+            go->SetObjectScale(go->GetGOInfo()->size * info.scale);
         return go;
     }
 
@@ -768,7 +770,8 @@ bool SetScale(Player* player, uint32 lowguid, float scale, std::string& error)
         return false;
     }
 
-    object->SetObjectScale(scale);
+    // Relative to the template size, as in SummonDeco.
+    object->SetObjectScale(object->GetGOInfo()->size * scale);
     // A live OBJECT_FIELD_SCALE_X change does not rescale an already-spawned
     // model on clients, so force a despawn/respawn for nearby players; the
     // recreated object is built at the new scale.

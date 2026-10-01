@@ -25715,7 +25715,7 @@
 500189,500121,0,0,1,255,drustmonster,armorreflect_rainbow,drustmonster_glow,,0,0,0,0,0,0
 500190,500122,0,0,1,255,ladyvashjshadowlands,armorreflect4,,,0,0,0,0,0,0
 500191,500123,0,0,1,255,lichlord,lichlord_glow,armorreflect4,,0,0,0,0,0,0
-500192,500124,0,0,1,255,maldraxxusskeleton_grey,maldraxxusskeleton_armor_copper,armorreflect_rainbow,,0,0,0,0,0,0
+500192,500124,0,0,1,255,maldraxxusskeleton_grey,maldraxxusskeleton_armor_copper,armorreflect_rainbow,,0,0,0,0,25,0
 500208,500205,0,0,1,255,falcosauros_black,,,,1,0,0,0,0,0
 500209,500205,0,0,1,255,falcosauros_green,,,,1,0,0,0,0,0
 500210,500205,0,0,1,255,falcosauros_red,,,,1,0,0,0,0,0
@@ -26398,7 +26398,7 @@
 501242,500942,0,0,1,255,corgi2,,,0,0,0,0,0,0,0
 501243,500943,0,0,2.5,255,whiteskin2,,,0,0,0,0,0,0,0
 501244,500944,0,0,1.5,255,fellord1_1,fellord2_1,,0,0,0,0,0,0,0
-501245,500945,0,0,1.35,255,ogre_draenor_grey,highogre_draenorgreen2,orge_helm_shoulders_blue,0,0,0,0,0,4369,0
+501245,500945,0,0,1.35,255,ogre_draenor_grey,highogre_draenorgreen2,orge_helm_shoulders_blue,0,0,0,0,0,5361,0
 501246,500946,0,0,0.75,255,worggray,,,0,0,0,0,0,0,0
 501247,500947,0,0,0.4,255,,,,0,0,0,0,0,0,0
 501248,500948,0,0,1.5,255,hozumonkeyred,helmhozuarmorclothpale,,0,0,0,0,0,3,0
@@ -29101,7 +29101,7 @@
 "503843","503805","0","0","1","255","viciouslightbloomboar_red","viciouslightbloomboar_glow_red","viciouslightbloomboar_fx_red","","0","0","0","0","0","0"
 "503844","503806","0","0","1","255","windserpent3mount_skeletal_green","windserpent3mount_skeletal_glow_green","windserpent3mount_skeletal_saddle_green","","0","0","0","0","0","0"
 "503845","503806","0","0","1","255","windserpent3mount_skeletal_red","windserpent3mount_skeletal_glow_red","windserpent3mount_skeletal_saddle_red","","0","0","0","0","0","0"
-"503847","503808","0","0","1","255","","","","","0","0","0","0","0","0"
+"503847","503808","0","0","1.2","255","","","","","0","0","0","0","0","0"
 "503848","503809","0","0","1","255","flyingserpentmount_purple","flyingserpentmount_feathers_purple","flyingserpentmount_iridescence_purple","","0","0","0","0","0","0"
 "503849","503810","0","0","2.25","255","gianteagle2_grey","","","","0","0","0","0","0","0"
 "503851","503812","0","0","1","255","","","","","0","0","0","0","0","0"
@@ -29916,3 +29916,19 @@
 505164,503901,0,503739,1,255,,,,,1,0,0,0,0,0
 505165,503901,0,503740,1,255,,,,,1,0,0,0,0,0
 505166,503901,0,503741,1,255,,,,,1,0,0,0,0,0
+"505167","506044","0","0","1","255","oldgodraymount_blue","oldgodraymount_blue_glow","oldgodraymount_fx_blue","","0","0","0","0","0","0"
+"505168","506044","0","0","1","255","oldgodraymount_purple","oldgodraymount_purple_glow","oldgodraymount_fx_purple","","0","0","0","0","0","0"
+"505169","506045","0","0","1.35","255","catskybornemount_blue","catskybornemount_saddle_blue","","","0","0","0","0","0","0"
+"505170","506046","0","0","1","255","crabtuskarrmount_blue","crabtuskarrmount_saddle_blue","","","0","0","0","0","0","0"
+"505171","506047","0","0","1","255","dwarfbearmount_green","dwarfbearmountsaddle_green","","","0","0","0","0","0","0"
+"505172","506048","0","0","0.85","255","encrypted05","","","","0","0","0","0","0","0"
+"505173","506049","0","0","1","255","","","","","0","0","0","0","0","0"
+"505174","506050","0","0","2","255","stormcrowmount_ink","stormcrowmount_ink_saddle","stormcrowmount_ink_fx","","0","0","0","0","0","0"
+"505175","506051","0","0","0.25","255","clockworkduck_8029661","","","","0","0","0","0","0","0"
+"505176","506051","0","0","0.25","255","clockworkduck_8029662","","","","0","0","0","0","0","0"
+"505177","506052","0","0","0.5","255","axolotlpet_8030673","axolotlpet_8030674","axolotlpet_8030675","","0","0","0","0","0","0"
+"505178","506053","0","0","1","255","babyfaeriedragon_pink","","","","0","0","0","0","0","0"
+"505179","506054","0","0","1","255","beaverpet_blue","","","","0","0","0","0","0","0"
+"505180","506055","0","0","1","255","encrypted15","","","","0","0","0","0","0","0"
+"505181","506056","0","0","1","255","encrypted17","encrypted17_eyeglow","","","0","0","0","0","0","0"
+"506057","500945","0","0","1.25","255","ogre_draenor_blue","ogre_draenorarmor_orange","","","0","0","0","0","4851","0"

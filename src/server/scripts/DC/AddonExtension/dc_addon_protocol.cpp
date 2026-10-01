@@ -2684,7 +2684,7 @@ namespace DCAddon
             { Module::WORLD, EXT },      { Module::MAP_POI, EXT },
             { Module::DECORATION, EXT }, { Module::ENCOUNTERS, EXT },
             { Module::QUEST_NAV, EXT },  { Module::GRAVEYARD, EXT },
-            { Module::BEASTMASTER, EXT },
+            { Module::BEASTMASTER, EXT }, { Module::TALENTS, EXT },
         };
         return s_map;
     }

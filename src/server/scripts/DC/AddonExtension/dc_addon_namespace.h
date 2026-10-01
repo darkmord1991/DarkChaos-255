@@ -103,6 +103,7 @@ namespace DCAddon
         constexpr char const* MAP_POI       = "MPOI";   // World-map POI markers (flight masters, ...)
         constexpr char const* QUEST_NAV     = "QNAV";   // Quest navigation data (kill-entry highlights, live coord resolve)
         constexpr char const* ENCOUNTERS    = "DENC";   // Dungeon/raid boss tracker (DungeonEncounter.dbc driven)
+        constexpr char const* TALENTS       = "TLNT";   // Talent builds (DC-Talents: free retail-style apply/respec)
     }
 
     // ========================================================================
@@ -587,6 +588,21 @@ namespace DCAddon
             constexpr uint8 SMSG_CLEAR     = 0x12; // {} nothing to track here - hide the block (JSON)
         }
 
+        // Talent build opcodes (DC-Talents; see dc_addon_talents.cpp). A build is sent
+        // whole - Talent.dbc id -> 1-based rank, unlisted = rank 0 - and applied at once:
+        // validated against Player::LearnTalent's own rules first, then learned as deltas,
+        // or relearned after a free reset of the active spec when it removes points.
+        namespace Talents
+        {
+            constexpr uint8 CMSG_HELLO            = 0x01; // {} does the server have TLNT, and what may a build do
+            constexpr uint8 CMSG_APPLY_BUILD      = 0x02; // {req, spec, t:[{id, r}]} build for the active spec
+            constexpr uint8 CMSG_APPLY_PET_BUILD  = 0x03; // {req, t:[{id, r}]} build for the current hunter pet
+
+            constexpr uint8 SMSG_HELLO            = 0x11; // {v, enabled, freeRespec, pet, max}
+            constexpr uint8 SMSG_APPLY_RESULT     = 0x12; // {req, ok, code, msg, spent, failed:[id]}
+            constexpr uint8 SMSG_APPLY_PET_RESULT = 0x13; // same shape as SMSG_APPLY_RESULT
+        }
+
         // Beastmaster opcodes (hunter pet catalog: browse, preview, adopt)
         namespace Beastmaster
         {
@@ -768,10 +784,11 @@ namespace DCAddon
             constexpr uint32 DELTA_SYNC     = 0x00000020;  // Delta sync for collections
             constexpr uint32 HOT_RELOAD     = 0x00000040;  // Module hot-reload support
             // Generic-bridge modules added 2026-09-23 (WRLD pushes, MPOI, DECO,
-            // DENC, QNAV, GRVY, BEAST). Advertised by the Lua library (no DLL bit),
-            // so both sides only route these natively when the peer is new
-            // enough: an older server drops generic requests for modules it does
-            // not know, and a client without this bit keeps getting them by chat.
+            // DENC, QNAV, GRVY, BEAST; TLNT joined 2026-09-30). Advertised by the
+            // Lua library (no DLL bit), so both sides only route these natively
+            // when the peer is new enough: an older server drops generic requests
+            // for modules it does not know, and a client without this bit keeps
+            // getting them by chat.
             constexpr uint32 NATIVE_MODULES_EXT = 0x00000080;
             constexpr uint32 TOOLTIP_NATIVE_RESPONSE = 0x00000100; // Native SMSG tooltip enrichment bridge
             constexpr uint32 BREAKING_NEWS_NATIVE = 0x00000200; // Native Glue breaking-news payload bridge

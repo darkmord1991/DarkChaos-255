@@ -40,7 +40,7 @@ DCAddonProtocol = {
         JSON_MESSAGES = 0x00000001,
         BATCH_MESSAGES = 0x00000002,
         -- Lua-advertised (no DLL bit): this client routes the later generic-
-        -- bridge modules (MPOI/DECO/DENC/QNAV/GRVY/BEAST, WRLD pushes) natively.
+        -- bridge modules (MPOI/DECO/DENC/QNAV/GRVY/BEAST/TLNT, WRLD pushes) natively.
         -- Negotiated only against a server that also knows them.
         NATIVE_MODULES_EXT = 0x00000080,
         TOOLTIP_NATIVE_RESPONSE = 0x00000100,
@@ -1487,6 +1487,7 @@ DC.ModuleNames = {
     MPOI = "Map POIs",
     QNAV = "Quest Navigation",
     DENC = "Boss Tracker",
+    TLNT = "Talents",
     EVNT = "Events",
     WRLD = "World",
     COLL = "Collection",
@@ -2122,6 +2123,9 @@ DC._nativeBridges = {
     { module = "GRVY", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
       kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
     { module = "BEAST", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    -- Added 2026-09-30 (DC-Talents), same gate as the rows above.
+    { module = "TLNT", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
       kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
 }
 

@@ -424,6 +424,39 @@ DC.AddonProtocol.QuestNav.Enable = 1
 #
 DC.AddonProtocol.Encounters.Enable = 1
 
+#
+#    DC.AddonProtocol.Talents.Enable
+#        Description: Enable talent builds (TLNT module) for the DC-Talents
+#                     addon. The client stages a whole build and sends it in
+#                     one message; the server checks it against the same rules
+#                     as a normal talent learn (points, tiers, prerequisites)
+#                     and applies all of it or nothing, out of combat and
+#                     outside battlegrounds, arenas and boss encounters. Covers
+#                     hunter pet talents as well. When disabled the module
+#                     still answers: HELLO reports enabled=false and every
+#                     build is refused with code DISABLED.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Talents.Enable = 1
+
+#
+#    DC.Talents.FreeRespec
+#        Description: Let TLNT builds take talent points back out, retail-style
+#                     and free of charge (player talents and hunter pet
+#                     talents). A build that lowers any rank resets the active
+#                     talent spec - or the pet's talents - at no cost and
+#                     relearns the whole build; the other dual-spec group is
+#                     never touched. A summoned pet is kept (parked and
+#                     summoned back), and an off-hand unequipped by the reset
+#                     (Titan's Grip, shaman Dual Wield) is equipped again.
+#                     When disabled, builds may only add points and one that
+#                     removes any is refused with code RESPEC_DISABLED;
+#                     removing points then needs a trainer or stable master,
+#                     as in stock WotLK.
+#        Default:     1 (Enabled)
+#
+DC.Talents.FreeRespec = 1
+
 # -----------------------------------------------------------------------------
 # Message Handling Settings
 # -----------------------------------------------------------------------------

@@ -52,7 +52,7 @@ ok(DC ~= nil, "DCAddonProtocol global exists")
 print("== the wire contract survived the split ==")
 ok(type(DC.Module) == "table" and DC.Module.CORE == "CORE", "DC.Module intact")
 local nmod = 0; for _ in pairs(DC.Module) do nmod = nmod + 1 end
-ok(nmod == 24, "all 24 module ids present (got "..nmod..")")
+ok(nmod == 25, "all 25 module ids present (got "..nmod..")")
 ok(type(DC.Opcode) == "table" and type(DC.Opcode.Core) == "table", "DC.Opcode.Core intact")
 for _, ns in ipairs({"AOE","Hotspot","Upgrade","Spectator","MythicPlus","Season",
                      "Hinterland","Duel","Prestige","Leaderboard","Welcome","GroupFinder"}) do

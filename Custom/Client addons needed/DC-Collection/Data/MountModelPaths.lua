@@ -1268,4 +1268,12 @@ DC.MountModelPaths = DC.MountModelPaths or {
     [503852] = "mountpreview\\serpentgolemmount\\serpentgolemmount_503852.m2",
     [503853] = "mountpreview\\serpentgolemmountnemesis\\serpentgolemmountnemesis_503853.m2",
     [503920] = "mountpreview\\oxhomemount\\oxhomemount_503920.m2",
+    [505167] = "mountpreview\\oldgodraymount\\oldgodraymount_505167.m2",
+    [505168] = "mountpreview\\oldgodraymount\\oldgodraymount_505168.m2",
+    [505169] = "mountpreview\\catskybornemount\\catskybornemount_505169.m2",
+    [505170] = "mountpreview\\crabtuskarrmount\\crabtuskarrmount_505170.m2",
+    [505171] = "mountpreview\\dwarfbearmount\\dwarfbearmount_505171.m2",
+    [505172] = "mountpreview\\encrypted05\\encrypted05_505172.m2",
+    [505173] = "mountpreview\\palanquinmount\\palanquinmount_505173.m2",
+    [505174] = "mountpreview\\stormcrowmount_ink\\stormcrowmount_ink_505174.m2",
 }

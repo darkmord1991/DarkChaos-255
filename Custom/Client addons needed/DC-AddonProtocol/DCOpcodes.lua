@@ -37,6 +37,7 @@ DC.Module = {
     MAP_POI = "MPOI",
     QUEST_NAV = "QNAV",
     ENCOUNTERS = "DENC",
+    TALENTS = "TLNT",
     EVENTS = "EVNT",
     WORLD = "WRLD",
     COLLECTION = "COLL",
@@ -268,6 +269,17 @@ DC.Opcode = {
         CMSG_COMPLETE_QUEST = 0x02,
         SMSG_OFFER = 0x10,
         SMSG_COMPLETE_READY = 0x11,
+    },
+    -- Talent builds (DC-Talents). Send with DC:Request (not DC:Send) so they take
+    -- the native bridge. t = { { id = talentId, r = rank }, ... } is the WHOLE
+    -- build: 1-based ranks, unlisted talents are rank 0.
+    Talents = {
+        CMSG_HELLO = 0x01,            -- {}
+        CMSG_APPLY_BUILD = 0x02,      -- { req, spec (1-based, must be active), t }
+        CMSG_APPLY_PET_BUILD = 0x03,  -- { req, t }
+        SMSG_HELLO = 0x11,            -- { v, enabled, freeRespec, pet, max }
+        SMSG_APPLY_RESULT = 0x12,     -- { req, ok, code, msg, spent, failed = { talentId, ... } }
+        SMSG_APPLY_PET_RESULT = 0x13, -- same shape as SMSG_APPLY_RESULT
     },
     World = {
         CMSG_GET_CONTENT = 0x01,

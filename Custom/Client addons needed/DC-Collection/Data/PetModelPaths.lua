@@ -1919,4 +1919,11 @@ DC.PetModelPaths = DC.PetModelPaths or {
     [504969] = "petpreview\\wisp\\wisp_504969.m2",
     [504970] = "petpreview\\woodpecker\\woodpecker_504970.m2",
     [504971] = "petpreview\\zandalaribattlesaur\\zandalaribattlesaur_504971.m2",
+    [505175] = "petpreview\\clockworkduck\\clockworkduck_505175.m2",
+    [505176] = "petpreview\\clockworkduck\\clockworkduck_505176.m2",
+    [505177] = "petpreview\\axolotlpet\\axolotlpet_505177.m2",
+    [505178] = "petpreview\\babyfaeriedragon_pink\\babyfaeriedragon_pink_505178.m2",
+    [505179] = "petpreview\\beaverpet\\beaverpet_505179.m2",
+    [505180] = "petpreview\\encrypted15\\encrypted15_505180.m2",
+    [505181] = "petpreview\\encrypted17\\encrypted17_505181.m2",
 }

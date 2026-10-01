@@ -38,6 +38,7 @@ void AddSC_dc_addon_beastmaster();
 void AddSC_dc_addon_mappois();
 void AddSC_dc_addon_questnav();
 void AddSC_dc_addon_encounters();
+void AddSC_dc_addon_talents();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -109,4 +110,7 @@ void AddDCAddonExtensionScripts()
     // Dungeon/raid boss tracker (DungeonEncounter.dbc driven checklist above
     // the quest tracker; drawn by DC-Journal)
     AddSC_dc_addon_encounters();
+
+    // Talent builds for DC-Talents (whole-build apply, free retail-style respec)
+    AddSC_dc_addon_talents();
 }
