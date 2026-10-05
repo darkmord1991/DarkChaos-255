@@ -687,10 +687,11 @@ end
 -- Single source of truth for client-side boss identity/metadata.
 -- mapId is the server zone ID (5006 = Giant Isles), nx/ny are normalized (0-1) coordinates for map pins.
 -- Coordinates calculated from spawn data: Oondasta (6054,1109), Thok (6095,1336), Nalak (6243,789)
+-- against WorldMapArea 1100 (MoP Isle of Giants art): Left 2004.17 Right 216.666 Top 6697.92 Bottom 5506.25
 DCInfoBar.DEFAULT_WORLD_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES or {
-    { entry = 400100, spawnId = 9000190, id = "oondasta", name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge",    mapId = 5006, nx = 0.637, ny = 0.447 },
-    { entry = 400101, spawnId = 9000189, id = "thok",     name = "Thok the Bloodthirsty",     zone = "Raptor Ridge",        mapId = 5006, nx = 0.579, ny = 0.240 },
-    { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks",    mapId = 5006, nx = 0.367, ny = 0.737 },
+    { entry = 400100, spawnId = 9000190, id = "oondasta", name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge",    mapId = 5006, nx = 0.501, ny = 0.540 },
+    { entry = 400101, spawnId = 9000189, id = "thok",     name = "Thok the Bloodthirsty",     zone = "Raptor Ridge",        mapId = 5006, nx = 0.374, ny = 0.506 },
+    { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks",    mapId = 5006, nx = 0.680, ny = 0.382 },
 }
 
 -- Centralized name normalization for boss/entity matching

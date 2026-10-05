@@ -421,7 +421,20 @@ namespace DCCollection
             bool const alreadyOwned = HasCollectionItem(accountId, type, entryId);
             std::string const sourceType = SanitizeSourceType(options.sourceType);
 
-            if (!alreadyOwned)
+            // The account has at most one session; prefer the caller's player so
+            // a grant issued from that character's own hook stays on it.
+            Player* target = known;
+            if (!target)
+                target = FindOnlinePlayerForAccount(accountId);
+
+            if (!alreadyOwned && type == CollectionType::TRANSMOG)
+            {
+                // Appearances are owned through the wardrobe table, which never read dc_collection_items.
+                uint32 const sourceItemId = sObjectMgr->GetItemTemplate(rawEntryId) ? rawEntryId : 0;
+                RecordTransmogAppearances(accountId,
+                    { { entryId, sourceItemId, target ? target->GetGUID().GetCounter() : 0 } }, sourceType);
+            }
+            else if (!alreadyOwned)
             {
                 std::string const sourceId = options.sourceId ? std::to_string(options.sourceId) : "NULL";
 
@@ -433,12 +446,6 @@ namespace DCCollection
                     itemsEntryCol, accountId, GetItemsCollectionTypeValueExpr(type), entryId,
                     sourceType, sourceId);
             }
-
-            // The account has at most one session; prefer the caller's player so
-            // a grant issued from that character's own hook stays on it.
-            Player* target = known;
-            if (!target)
-                target = FindOnlinePlayerForAccount(accountId);
 
             if (target)
             {
@@ -468,9 +475,6 @@ namespace DCCollection
                     }
                 }
             }
-
-            if (type == CollectionType::TRANSMOG && !alreadyOwned)
-                InvalidateAccountUnlockedTransmogAppearances(accountId);
 
             if (!alreadyOwned)
             {
@@ -544,7 +548,7 @@ namespace DCCollection
             accountId, BuildItemsCollectionTypeWhereClause("collection_type", type), entryFilter);
 
         if (type == CollectionType::TRANSMOG)
-            InvalidateAccountUnlockedTransmogAppearances(accountId);
+            RemoveTransmogAppearance(accountId, normalized);
 
         if (unlearn)
         {

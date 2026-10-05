@@ -12,7 +12,8 @@
  *
  *   1. normalises the entry to the id dc_collection_items stores for that type
  *   2. validates it actually resolves to something usable
- *   3. writes the account-wide unlock row (idempotent)
+ *   3. writes the account-wide unlock row (idempotent; appearances go to the
+ *      wardrobe table dc_transmog_collection instead of dc_collection_items)
  *   4. teaches the spell / applies the title on every online character of the
  *      account (offline characters pick it up from the login sync)
  *   5. refreshes mount-speed bonuses and transmog caches

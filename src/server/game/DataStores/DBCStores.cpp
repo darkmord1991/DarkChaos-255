@@ -423,8 +423,8 @@ void LoadDBCStores(std::string const& dataPath)
         sCharStartOutfitMap[outfit->Race | (outfit->Class << 8) | (outfit->Gender << 16)] = outfit;
 
     for (CharSectionsEntry const* charSection : sCharSectionsStore)
-        if (charSection->Race && ((1 << (charSection->Race - 1)) & sRaceMgr->GetPlayableRaceMask()) != 0) //ignore Nonplayable races
-            sCharSectionMap.insert({ charSection->GenType | (charSection->Gender << 8) | (charSection->Race << 16), charSection });
+        if (charSection->RaceID && ((1 << (charSection->RaceID - 1)) & sRaceMgr->GetPlayableRaceMask()) != 0) //ignore Nonplayable races
+            sCharSectionMap.insert({ charSection->BaseSection | (charSection->SexID << 8) | (charSection->RaceID << 16), charSection });
 
     for (FactionEntry const* faction : sFactionStore)
     {
@@ -926,7 +926,7 @@ CharSectionsEntry const* GetCharSectionEntry(uint8 race, CharSectionType genType
     std::pair<CharSectionsMap::const_iterator, CharSectionsMap::const_iterator> eqr = sCharSectionMap.equal_range(uint32(genType) | uint32(gender << 8) | uint32(race << 16));
     for (CharSectionsMap::const_iterator itr = eqr.first; itr != eqr.second; ++itr)
     {
-        if (itr->second->Type == type && itr->second->Color == color)
+        if (itr->second->VariationIndex == type && itr->second->ColorIndex == color)
             return itr->second;
     }
 

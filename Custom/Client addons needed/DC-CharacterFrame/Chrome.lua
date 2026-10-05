@@ -48,6 +48,12 @@ local WEAPON_ROW_X_NO_AMMO = 104
 local WEAPON_ROW_X_AMMO    = 83
 local WEAPON_ROW_Y         = 12
 
+-- Attic header (level + guild lines): centred over the left inset so the
+-- sidebar tab strip keeps its room; a line too wide for that is pushed right
+-- so it never runs under the portrait ring (ring right edge = -14 + 78 = 64).
+local HEADER_MIN_LEFT = 70
+local HEADER_Y        = -25
+
 -- ---------------------------------------------------------------------------
 -- Outer chrome + insets
 -- ---------------------------------------------------------------------------
@@ -374,6 +380,15 @@ function DCCF:UpdateHeader()
     else
         CharacterGuildText:Hide()
     end
+
+    local width = CharacterLevelText:GetStringWidth() or 0
+    if guildName then
+        width = math.max(width, CharacterGuildText:GetStringWidth() or 0)
+    end
+    -- Left inset spans x = 4 .. PANEL_WIDTH - 6.
+    local x = math.max((self.PANEL_WIDTH - 2) / 2, HEADER_MIN_LEFT + width / 2)
+    CharacterLevelText:ClearAllPoints()
+    CharacterLevelText:SetPoint("TOP", PaperDollFrame, "TOPLEFT", x, HEADER_Y)
 end
 
 -- ---------------------------------------------------------------------------
@@ -442,12 +457,10 @@ function DCCF:UpdateWeaponRow()
 end
 
 function DCCF:LayoutPaperDoll()
-    local pdf, inset = PaperDollFrame, self.inset
+    local inset = self.inset
     local P = self.PARTS
 
-    -- Attic text.
-    CharacterLevelText:ClearAllPoints()
-    CharacterLevelText:SetPoint("TOP", pdf, "TOP", 0, -25)
+    -- Attic text (horizontal position is set by UpdateHeader, it follows the text width).
     CharacterLevelText:SetFontObject(GameFontNormal)
     CharacterGuildText:ClearAllPoints()
     CharacterGuildText:SetPoint("TOP", CharacterLevelText, "BOTTOM", 0, -2)

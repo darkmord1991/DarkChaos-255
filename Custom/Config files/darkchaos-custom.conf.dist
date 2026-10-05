@@ -2296,6 +2296,20 @@ DCCollection.Transmog.UnlockOnSoulbind = 1
 DCCollection.Transmog.UnlockOnLoot = 1
 DCCollection.Transmog.UnlockOnQuestReward = 0
 
+#
+#    DCCollection.Transmog.UnlockAllQuestRewards
+#        Description: On quest turn-in, collect the appearance of every reward the
+#                     quest offers - all choice items and all fixed reward items -
+#                     not only the item the player picked. Already-collected
+#                     appearances are skipped and DCCollection.Transmog.MinQuality
+#                     still applies.
+#                     Each account's first login with this enabled also back-fills
+#                     the rewards of every quest its characters completed before
+#                     (once; recorded in dc_collection_migrations).
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.UnlockAllQuestRewards = 1
+
 # Transmog Login Scan
 DCCollection.Transmog.LoginScan.Enable = 0
 DCCollection.Transmog.LoginScan.IncludeBank = 1

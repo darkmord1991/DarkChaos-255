@@ -48,6 +48,7 @@
 #include "Map.h"
 #include "RaceMgr.h"
 #include "DC/AddonExtension/dc_addon_spell_template.h"
+#include "DC/ItemUpgrades/HeirloomItemLevel.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
@@ -1845,6 +1846,27 @@ namespace DCQoS
         double multiplier =
             static_cast<double>(snapshot.stat_multiplier_basis_points) / 10000.0;
 
+        // A level-scaling (heirloom) item takes its stats, armor and first weapon
+        // damage from ScalingStatDistribution / ScalingStatValues at its owner's
+        // level; its template only carries placeholders. The rows below mirror
+        // Player::_ApplyItemBonuses / _ApplyWeaponDamage for such an item.
+        ScalingStatDistributionEntry const* scalingDistribution = nullptr;
+        ScalingStatValuesEntry const* scalingValues = nullptr;
+        uint32 scalingLevel = 0;
+        if (DarkChaos::ItemUpgrade::IsLevelScalingItem(itemTemplate))
+        {
+            Player const* owner = item->GetOwner();
+            if (!owner)
+                owner = player;
+
+            scalingLevel = DarkChaos::ItemUpgrade::GetItemScalingLevel(itemTemplate,
+                owner ? owner->GetLevel() : 1);
+            scalingDistribution = sScalingStatDistributionStore.LookupEntry(
+                itemTemplate->ScalingStatDistribution);
+            scalingValues =
+                DarkChaos::ItemUpgrade::GetScalingStatValuesForLevel(scalingLevel);
+        }
+
         // Emitted unconditionally, with fallbacks, because everything below this
         // point is "append-body" content that the baseline client ALSO draws
         // (sockets, durability, requirements, spells, description, sell price, and
@@ -1857,6 +1879,19 @@ namespace DCQoS
             displayItemLevel = snapshot.base_ilvl;
         if (displayItemLevel == 0 && itemTemplate)
             displayItemLevel = itemTemplate->ItemLevel;
+
+        // A scaling item's template item level is a placeholder: show what its
+        // stats are worth at the owner's level (HeirloomItemLevel.h), plus the item
+        // levels its upgrades added.
+        if (scalingLevel)
+        {
+            uint32 const upgradeItemLevels = snapshot.upgraded_ilvl > snapshot.base_ilvl
+                ? snapshot.upgraded_ilvl - snapshot.base_ilvl
+                : 0;
+            displayItemLevel =
+                DarkChaos::ItemUpgrade::GetScalingItemLevelForLevel(scalingLevel)
+                + upgradeItemLevels;
+        }
 
         // Stock order is: damage, armor/block, white stats, resistances, enchants,
         // sockets, durability, requirements, "Item Level", then the green Equip:
@@ -1883,13 +1918,31 @@ namespace DCQoS
                  damageIndex < MAX_ITEM_PROTO_DAMAGES; ++damageIndex)
             {
                 _Damage const& damage = itemTemplate->Damage[damageIndex];
-                if (damage.DamageMax <= 0.0f)
+                float damageMin = damage.DamageMin;
+                float damageMax = damage.DamageMax;
+
+                // A scaling weapon's first damage entry is its ScalingStatValues DPS
+                // per swing, spread 70-130% (two-hand 80-120%).
+                if (scalingValues && damageIndex == 0)
+                {
+                    if (uint32 const scalingDps =
+                            scalingValues->getDPSMod(itemTemplate->ScalingStatValue))
+                    {
+                        float const average = scalingDps * itemTemplate->Delay / 1000.0f;
+                        float const spread =
+                            scalingValues->IsTwoHand(itemTemplate->ScalingStatValue) ? 0.2f : 0.3f;
+                        damageMin = (1.0f - spread) * average;
+                        damageMax = (1.0f + spread) * average;
+                    }
+                }
+
+                if (damageMax <= 0.0f)
                     continue;
 
                 int32 scaledMin = static_cast<int32>(std::lround(
-                    static_cast<double>(damage.DamageMin) * multiplier));
+                    static_cast<double>(damageMin) * multiplier));
                 int32 scaledMax = static_cast<int32>(std::lround(
-                    static_cast<double>(damage.DamageMax) * multiplier));
+                    static_cast<double>(damageMax) * multiplier));
 
                 std::ostringstream left;
                 left << scaledMin << " - " << scaledMax << " Damage";
@@ -1902,8 +1955,8 @@ namespace DCQoS
                 AppendItemTooltipSnapshotRow(rows, left.str(), right.str(),
                     "replace-stat", "weapon-damage");
 
-                scaledDamageSum += (static_cast<double>(damage.DamageMin)
-                    + static_cast<double>(damage.DamageMax)) * 0.5 * multiplier;
+                scaledDamageSum += (static_cast<double>(damageMin)
+                    + static_cast<double>(damageMax)) * 0.5 * multiplier;
             }
 
             if (scaledDamageSum > 0.0 && itemTemplate->Delay > 0)
@@ -1917,11 +1970,19 @@ namespace DCQoS
                     "replace-stat", "weapon-dps");
             }
 
-            if (itemTemplate->Armor > 0)
+            // A scaling item's armor comes from the ScalingStatValues armor column
+            // its mask selects, when it selects one.
+            uint32 armor = itemTemplate->Armor;
+            if (uint32 const scalingArmor = scalingValues
+                    ? scalingValues->getArmorMod(itemTemplate->ScalingStatValue)
+                    : 0)
+                armor = scalingArmor;
+
+            if (armor > 0)
             {
                 uint32 scaledArmor = static_cast<uint32>(std::max<int64>(0,
                     static_cast<int64>(std::lround(
-                        static_cast<double>(itemTemplate->Armor) * multiplier))));
+                        static_cast<double>(armor) * multiplier))));
                 AppendItemTooltipSnapshotRow(rows,
                     std::to_string(scaledArmor) + " Armor", "",
                     "replace-stat", "armor");
@@ -1937,34 +1998,61 @@ namespace DCQoS
                     "replace-stat", "armor");
             }
 
-            uint32 statCount =
-                std::min<uint32>(itemTemplate->StatsCount, MAX_ITEM_PROTO_STATS);
-            for (uint32 statIndex = 0; statIndex < statCount; ++statIndex)
+            auto const appendStatRow = [&](uint32 statType, int32 value)
             {
-                _ItemStat const& stat = itemTemplate->ItemStat[statIndex];
-                if (stat.ItemStatValue == 0)
-                    continue;
+                char const* label = GetItemStatLabel(statType);
+                if (!label || value == 0)
+                    return;
 
-                char const* label = GetItemStatLabel(stat.ItemStatType);
-                if (!label)
-                    continue;
-
-                int32 scaledValue = static_cast<int32>(std::lround(
-                    static_cast<double>(stat.ItemStatValue) * multiplier));
-
-                std::string equipLine =
-                    FormatEquipItemStat(scaledValue, stat.ItemStatType);
+                std::string equipLine = FormatEquipItemStat(value, statType);
                 if (!equipLine.empty())
                 {
                     AppendItemTooltipSnapshotRow(equipStatRows, equipLine, "",
                         "replace-stat", "stat-equip");
-                    continue;
+                    return;
                 }
 
-                std::string line = FormatSignedItemStat(scaledValue, label);
+                std::string line = FormatSignedItemStat(value, label);
                 if (!line.empty())
                     AppendItemTooltipSnapshotRow(rows, line, "",
                         "replace-stat", "stat");
+            };
+
+            auto const scaleStat = [multiplier](int32 value)
+            {
+                return static_cast<int32>(std::lround(
+                    static_cast<double>(value) * multiplier));
+            };
+
+            if (scalingDistribution && scalingValues)
+            {
+                // The distribution names the stats and the budget column the mask
+                // selects sizes them. A caster item's spell power comes from the
+                // values row too, and the core applies it without the upgrade
+                // multiplier.
+                uint32 const budget =
+                    scalingValues->getssdMultiplier(itemTemplate->ScalingStatValue);
+                for (uint32 statIndex = 0; statIndex < MAX_ITEM_PROTO_STATS; ++statIndex)
+                {
+                    if (scalingDistribution->StatMod[statIndex] < 0)
+                        continue;
+
+                    appendStatRow(uint32(scalingDistribution->StatMod[statIndex]),
+                        scaleStat(int32(budget * scalingDistribution->Modifier[statIndex] / 10000)));
+                }
+
+                appendStatRow(ITEM_MOD_SPELL_POWER,
+                    int32(scalingValues->getSpellBonus(itemTemplate->ScalingStatValue)));
+            }
+            else
+            {
+                uint32 statCount =
+                    std::min<uint32>(itemTemplate->StatsCount, MAX_ITEM_PROTO_STATS);
+                for (uint32 statIndex = 0; statIndex < statCount; ++statIndex)
+                {
+                    _ItemStat const& stat = itemTemplate->ItemStat[statIndex];
+                    appendStatRow(stat.ItemStatType, scaleStat(stat.ItemStatValue));
+                }
             }
 
             struct ResistanceRow
@@ -2091,7 +2179,23 @@ namespace DCQoS
                     item->IsBroken() ? "requirement-unmet" : "durability");
             }
 
-            if (itemTemplate->RequiredLevel > 1)
+            if (scalingDistribution)
+            {
+                // Stock draws a scaling item's level range and the level its stats
+                // are shown at ("Requires level 1 to 255 (2)"), red when the viewer
+                // is outside the range.
+                uint32 const minLevel = std::max<uint32>(itemTemplate->RequiredLevel, 1);
+                bool const inRange = !player
+                    || (player->GetLevel() >= itemTemplate->RequiredLevel
+                        && player->GetLevel() <= scalingDistribution->MaxLevel);
+                AppendItemTooltipSnapshotRow(rows,
+                    "Requires level " + std::to_string(minLevel) + " to "
+                        + std::to_string(scalingDistribution->MaxLevel) + " ("
+                        + std::to_string(scalingLevel) + ")",
+                    "", "append-body",
+                    inRange ? "requirement" : "requirement-unmet");
+            }
+            else if (itemTemplate->RequiredLevel > 1)
             {
                 AppendItemTooltipSnapshotRow(rows,
                     "Requires Level "

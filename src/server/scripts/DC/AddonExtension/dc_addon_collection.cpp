@@ -1268,6 +1268,7 @@ namespace DCCollection
         constexpr char const* TRANSMOG_UNLOCK_ON_SOULBIND = "DCCollection.Transmog.UnlockOnSoulbind";
         constexpr char const* TRANSMOG_UNLOCK_ON_LOOT = "DCCollection.Transmog.UnlockOnLoot";
         constexpr char const* TRANSMOG_UNLOCK_ON_QUEST_REWARD = "DCCollection.Transmog.UnlockOnQuestReward";
+        constexpr char const* TRANSMOG_UNLOCK_ALL_QUEST_REWARDS = "DCCollection.Transmog.UnlockAllQuestRewards";
 
         // Login scanning (automatic unlock from inventory/bank on login)
         constexpr char const* TRANSMOG_LOGIN_SCAN_ENABLED = "DCCollection.Transmog.LoginScan.Enable";
@@ -3002,8 +3003,6 @@ namespace DCCollection
             GetItemsCollectionTypeValueExpr(CollectionType::HEIRLOOM);
         std::string const typeTitleValue =
             GetItemsCollectionTypeValueExpr(CollectionType::TITLE);
-        std::string const typeTransmogValue =
-            GetItemsCollectionTypeValueExpr(CollectionType::TRANSMOG);
 
         std::string const petTypeFilter =
             BuildItemsCollectionTypeWhereClause("collection_type", CollectionType::PET);
@@ -3239,7 +3238,7 @@ namespace DCCollection
             bool includeBank = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK, true);
             bool requireSoulbound = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND, false);
 
-            std::unordered_set<uint32> displayIds;
+            std::vector<AppearanceUnlock> unlocks;
 
             auto considerItem = [&](Item* item)
             {
@@ -3257,7 +3256,7 @@ namespace DCCollection
                 if (!displayId)
                     return;
 
-                displayIds.insert(displayId);
+                unlocks.push_back({ displayId, proto->ItemId, player->GetGUID().GetCounter() });
             };
 
             // Equipped slots.
@@ -3291,14 +3290,8 @@ namespace DCCollection
                 }
             }
 
-            for (uint32 displayId : displayIds)
-            {
-                trans->Append(
-                    "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                    "VALUES ({}, {}, {}, 'IMPORT_ITEMSCAN', 1, NOW())",
-                    itemsEntryCol, accountId, typeTransmogValue, displayId);
-            }
+            // Straight into the wardrobe: dc_collection_items rows never reached it.
+            RecordTransmogAppearances(accountId, unlocks, "IMPORT_ITEMSCAN", trans);
 
             // Mark migration as done even if nothing was found.
             MarkTransmogLegacyImportDone(accountId);
@@ -3781,6 +3774,9 @@ namespace DCCollection
     // Load player's collection for a specific type
     std::vector<uint32> LoadPlayerCollection(uint32 accountId, CollectionType type)
     {
+        if (type == CollectionType::TRANSMOG)
+            return GetCollectedAppearances(accountId);
+
         std::vector<uint32> items;
 
         std::string const sql = BuildPlayerCollectionQuery(accountId, type);
@@ -3836,6 +3832,10 @@ namespace DCCollection
                 if (!TryParseOwnedCollectionType(&fields[0], type))
                     continue;
 
+                // Appearances are owned through the wardrobe table (below), not these rows.
+                if (type == CollectionType::TRANSMOG)
+                    continue;
+
                 uint32 entryId = fields[1].Get<uint32>();
                 if (!entryId)
                     continue;
@@ -3852,6 +3852,11 @@ namespace DCCollection
                 buckets[GetCollectionTypeSlot(type)].push_back(entryId);
             } while (result->NextRow());
         }
+
+        // Only the count of this bucket is ever used (the hash and the owned payload skip
+        // appearances), so callers that want neither count skip the copy.
+        if (counts || totalOwnedItems)
+            buckets[GetCollectionTypeSlot(CollectionType::TRANSMOG)] = GetCollectedAppearances(accountId);
 
         auto& titleItems =
             buckets[GetCollectionTypeSlot(CollectionType::TITLE)];
@@ -3920,7 +3925,7 @@ namespace DCCollection
                 if (!TryParseOwnedCollectionType(&fields[0], type))
                     continue;
 
-                if (type == CollectionType::TITLE)
+                if (type == CollectionType::TITLE || type == CollectionType::TRANSMOG)
                     continue;
 
                 counts[type] = fields[1].Get<uint32>();
@@ -3929,6 +3934,7 @@ namespace DCCollection
 
         counts[CollectionType::TITLE] = static_cast<uint32>(
             LoadPlayerCollection(accountId, CollectionType::TITLE).size());
+        counts[CollectionType::TRANSMOG] = static_cast<uint32>(GetCollectedAppearances(accountId).size());
 
         return counts;
     }
@@ -3936,6 +3942,9 @@ namespace DCCollection
     // Check whether an account owns a given collection item (unlocked)
     bool HasCollectionItem(uint32 accountId, CollectionType type, uint32 entryId)
     {
+        if (type == CollectionType::TRANSMOG)
+            return HasTransmogAppearanceUnlocked(accountId, entryId);
+
         std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return false;
@@ -8535,6 +8544,96 @@ namespace DCCollection
     // Community handlers moved to dc_addon_wardrobe.cpp
 
     // =======================================================================
+    // Quest reward appearances
+    // =======================================================================
+
+    // Appends every reward the quest offers - each choice and each fixed item - whose appearance
+    // can be collected.
+    void AppendQuestRewardAppearances(Quest const* quest, uint32 characterGuid, uint32 minQuality,
+        std::vector<AppearanceUnlock>& unlocks)
+    {
+        auto append = [&](uint32 itemId)
+        {
+            ItemTemplate const* proto = itemId ? sObjectMgr->GetItemTemplate(itemId) : nullptr;
+            if (proto && IsItemEligibleForTransmogUnlock(proto) && proto->Quality >= minQuality)
+                unlocks.push_back({ proto->DisplayInfoID, itemId, characterGuid });
+        };
+
+        for (uint32 itemId : quest->RewardChoiceItemId)
+            append(itemId);
+
+        for (uint32 itemId : quest->RewardItemId)
+            append(itemId);
+    }
+
+    // One-time pass for quests finished before turn-ins collected every reward appearance: reads
+    // the rewarded quests of all the account's characters, then marks the account done.
+    void BackfillQuestRewardAppearances(Player* player)
+    {
+        uint32 const accountId = GetAccountId(player);
+        if (!accountId)
+            return;
+
+        // Relogs and character switches stop here; the migration row makes it once per account.
+        static std::unordered_set<uint32> checkedThisSession;
+        if (!checkedThisSession.insert(accountId).second)
+            return;
+
+        // Without the migrations table it runs once per account per uptime instead, and finds
+        // nothing new after the first time.
+        bool const persistent = HasCollectionMigrationsTable();
+
+        std::string sql = Acore::StringFormat(
+            "SELECT r.quest, MIN(r.guid) FROM character_queststatus_rewarded r "
+            "JOIN characters c ON c.guid = r.guid WHERE c.account = {}", accountId);
+
+        if (persistent)
+            sql += Acore::StringFormat(" AND NOT EXISTS (SELECT 1 FROM dc_collection_migrations "
+                "WHERE account_id = {} AND migration_key = 'quest_reward_appearances_v1')", accountId);
+
+        sql += " GROUP BY r.quest";
+
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([accountId, playerGuid, persistent](QueryResult result)
+        {
+            // No rows: already done, or no quest completed yet.
+            if (!result)
+                return;
+
+            uint32 const minQuality = sConfigMgr->GetOption<uint32>(Config::TRANSMOG_MIN_QUALITY, 0);
+            std::vector<AppearanceUnlock> unlocks;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                if (Quest const* quest = sObjectMgr->GetQuestTemplate(fields[0].Get<uint32>()))
+                    AppendQuestRewardAppearances(quest, fields[1].Get<uint32>(), minQuality, unlocks);
+            } while (result->NextRow());
+
+            // The marker shares the transaction, so the account is never marked without its rows.
+            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+            std::size_t const added = RecordTransmogAppearances(accountId, unlocks, "QUEST_BACKFILL", trans).size();
+
+            if (persistent)
+                trans->Append("INSERT IGNORE INTO dc_collection_migrations (account_id, migration_key, done, done_at) "
+                    "VALUES ({}, 'quest_reward_appearances_v1', 1, NOW())", accountId);
+
+            CharacterDatabase.CommitTransaction(trans);
+
+            if (!added)
+                return;
+
+            LOG_INFO("module.dc", "DC-Collection: quest reward back-fill added {} appearances to account {}.",
+                added, accountId);
+
+            if (Player* online = ObjectAccessor::FindPlayer(playerGuid))
+                ChatHandler(online->GetSession()).PSendSysMessage("DC-Collection: {} appearance{} from quests "
+                    "your characters completed earlier added to your wardrobe.", added, added == 1 ? "" : "s");
+        }));
+    }
+
+    // =======================================================================
     // Player Event Hooks
     // =======================================================================
 
@@ -8544,8 +8643,8 @@ namespace DCCollection
         CollectionPlayerScript() : PlayerScript("dc_collection_player",
         {
             PLAYERHOOK_ON_AFTER_SET_VISIBLE_ITEM_SLOT, PLAYERHOOK_ON_EQUIP, PLAYERHOOK_ON_LEARN_SPELL,
-            PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_LOOT_ITEM, PLAYERHOOK_ON_QUEST_REWARD_ITEM,
-            PLAYERHOOK_ON_UPDATE
+            PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_LOOT_ITEM, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST,
+            PLAYERHOOK_ON_QUEST_REWARD_ITEM, PLAYERHOOK_ON_UPDATE
         }) {}
 
         struct CachedTransmogRow
@@ -8714,6 +8813,10 @@ namespace DCCollection
 
             // Seed account-wide collections from already-known mounts/pets/titles.
             ImportExistingCollections(player);
+
+            // Rewards of quests completed before turn-ins collected every appearance (once per account).
+            if (sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ALL_QUEST_REWARDS, true))
+                BackfillQuestRewardAppearances(player);
 
             // Make account-wide collections usable on this character in default UI.
             // (Mounts/Companions are spells; Titles are known-title flags.)
@@ -9037,6 +9140,56 @@ namespace DCCollection
             ItemTemplate const* proto = item->GetTemplate();
             if (proto)
                 UnlockTransmogAppearance(player, proto, "QUEST_REWARD");
+        }
+
+        // Collects every reward the quest offers - each choice and each fixed item - not only the
+        // one handed over. This runs at the end of Player::RewardQuest, so the picked item has
+        // normally been collected (and announced) by the item-create hook already; the rest are
+        // reported in one chat line and one push instead of one per item.
+        void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
+        {
+            if (!player || !quest)
+                return;
+
+            if (!IsModuleEnabled() || DCAddon::IsBotRecipient(player))
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ALL_QUEST_REWARDS, true))
+                return;
+
+            std::vector<AppearanceUnlock> unlocks;
+            AppendQuestRewardAppearances(quest, player->GetGUID().GetCounter(),
+                sConfigMgr->GetOption<uint32>(Config::TRANSMOG_MIN_QUALITY, 0), unlocks);
+
+            std::vector<AppearanceUnlock> const recorded =
+                RecordTransmogAppearances(GetAccountId(player), unlocks, "QUEST_REWARD");
+            if (recorded.empty())
+                return;
+
+            std::vector<GrantedCollectible> collected;
+            std::string itemLinks;
+
+            for (AppearanceUnlock const& unlock : recorded)
+            {
+                collected.push_back({ CollectionType::TRANSMOG, unlock.displayId });
+
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(unlock.itemId);
+                if (!proto)
+                    continue;
+
+                if (!itemLinks.empty())
+                    itemLinks += ", ";
+
+                uint32 const color = ItemQualityColors[std::min<uint32>(proto->Quality, MAX_ITEM_QUALITY - 1)];
+                itemLinks += Acore::StringFormat("|c{:08x}|Hitem:{}:0:0:0:0:0:0:0:0|h[{}]|h|r",
+                    color, proto->ItemId, proto->Name1);
+            }
+
+            ChatHandler(player->GetSession()).PSendSysMessage("DC-Collection: Quest reward appearance{} collected: {}.",
+                recorded.size() == 1 ? "" : "s", itemLinks);
+
+            // Without this the addon only learns about them at the next full collection sync.
+            SendCollectiblesGranted(player, collected, "QUEST", Acore::StringFormat("Quest: {}", quest->GetTitle()));
         }
 
         void OnPlayerLogout(Player* player) override

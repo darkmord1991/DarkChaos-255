@@ -68,8 +68,9 @@ namespace MapCoords
                 // WorldMapArea.csv: "613","37","268","AzsharaCrater","2427","-1884","1756","-1116"
                 { 268u,  2427.0f,   -1884.0f,  1756.0f,   -1116.0f  },
                 // Isles of Giants (MapID 1405, AreaID 5006)
-                // WorldMapArea.csv: "1100","1405","5006","IslesofGiants","2132,02","2,91039","6932,32","5334,3"
-                { 5006u, 2132.02f,  2.91039f,  6932.32f,  5334.3f   },
+                // WorldMapArea.csv: "1100","1405","5006","IslesofGiants","2004.17","216.666","6697.92","5506.25"
+                // (MoP Isle of Giants world-map art + bounds, same as retail WMA 1213)
+                { 5006u, 2004.17f,  216.666f,  6697.92f,  5506.25f  },
                 // Stratholme Valley (MapID 850, AreaID 6000)
                 // WorldMapArea.csv: "1200","850","6000","Strathlevel","-1766,667","-5166,667","4333,333","2066,667"
                 { 6000u, -1766.667f,-5166.667f, 4333.333f, 2066.667f },

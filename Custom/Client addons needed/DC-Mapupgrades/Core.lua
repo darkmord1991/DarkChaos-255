@@ -21,6 +21,27 @@ local function RefreshProtocolMode()
     Core.protocolMode = DC and "DCAddonProtocol" or "None"
 end
 
+-- World-map level dropdown names. The Isles of Giants map (WorldMapArea 1100) carries the
+-- Sunken Temple floors as extra levels (DefaultDungeonFloor = -1); FrameXML reads
+-- DUNGEON_FLOOR_<MAPFILE><n>, n = 0 for the island terrain itself, 1-4 for the island temple
+-- and 5-7 for the Temple of Atal'Hakkar dungeon copy underneath it.
+-- Without these the dropdown falls back to "Level 1".."Level 8".
+local DUNGEON_FLOOR_NAMES = {
+    DUNGEON_FLOOR_ISLESOFGIANTS0 = "Isles of Giants",
+    DUNGEON_FLOOR_ISLESOFGIANTS1 = "Temple Entrance",
+    DUNGEON_FLOOR_ISLESOFGIANTS2 = "The Broken Hall",
+    DUNGEON_FLOOR_ISLESOFGIANTS3 = "Hall of Ritual",
+    DUNGEON_FLOOR_ISLESOFGIANTS4 = "Hall of Bones",
+    DUNGEON_FLOOR_ISLESOFGIANTS5 = "Atal'Hakkar: Upper Ring",
+    DUNGEON_FLOOR_ISLESOFGIANTS6 = "Atal'Hakkar: Middle Ring",
+    DUNGEON_FLOOR_ISLESOFGIANTS7 = "Atal'Hakkar: Lower Ring",
+}
+for key, text in pairs(DUNGEON_FLOOR_NAMES) do
+    if rawget(_G, key) == nil then
+        _G[key] = text
+    end
+end
+
 local state = {
     addonName = addonName,
     hotspots = {},

@@ -1240,9 +1240,11 @@ public:                                                 // opcodes handlers
     LockedQueue<WorldPacket*>& GetPacketQueue();
     std::unique_ptr<WorldPacket> NextQueuedPacket();
 
+    // mod-playerbots creates its sessions headless (no socket) and no longer passes is_bot, so a
+    // headless session counts as a bot too; only real clients come with a socket.
     [[nodiscard]] bool IsBot() const
     {
-        return _isBot;
+        return _isBot || _headless;
     }
 
     [[nodiscard]] bool IsHeadless() const { return _headless; }

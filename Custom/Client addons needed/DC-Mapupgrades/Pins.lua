@@ -244,6 +244,18 @@ local function IsContinentMapView(activeMapId)
     return firstZone ~= nil and firstZone ~= ""
 end
 
+-- A floor plan drawn over a terrain map. A WorldMapArea with DefaultDungeonFloor = -1
+-- (the Isles of Giants map, which carries the Sunken Temple floors) keeps its own
+-- terrain art as level 1 and shows dungeon floors as levels 2+. Those floors use their
+-- own DungeonMap bounds, so pins normalized to the terrain map would land on the wrong
+-- spots -- while the map id stays the same.
+local function IsFloorOverTerrainView()
+    if type(DungeonUsesTerrainMap) ~= "function" or type(GetCurrentMapDungeonLevel) ~= "function" then
+        return false
+    end
+    return DungeonUsesTerrainMap() and (GetCurrentMapDungeonLevel() or 0) > 1 or false
+end
+
 local function NowEpoch()
     if GetServerTime then
         return GetServerTime()
@@ -349,6 +361,47 @@ local function IsBossBlacklistedMap(activeMapId)
     return false
 end
 
+-- The zone a world map shows, read from the client's own WorldMapArea row
+-- (GetWorldMapAreaBounds, WotLKExtensions). It is the authoritative answer that
+-- MAP_TO_ZONE, CUSTOM_ZONE_MAPPING and the runtime learner below only approximate.
+-- The learner pairs whatever map is OPEN with the zone the player STANDS in, and a
+-- map left open across a teleport made it save six wrong pairs on one account
+-- (751 Undercity -> Azshara Crater 268, Western -> Eastern Plaguelands,
+-- Winterspring -> Hyjal, Moonglade -> Felwood, Darkshore -> Azshara, ...), each of
+-- which then drew another zone's rares across the wrong map.
+-- nil when the DLL is absent or the row carries no zone (continent rows, the
+-- degenerate 0/0/0/0 dungeon rows).
+local function WorldMapZoneFor(uiMapId)
+    local fn = rawget(_G, "GetWorldMapAreaBounds") or rawget(_G, "C_Map_GetWorldMapAreaBounds")
+    uiMapId = tonumber(uiMapId)
+    if not uiMapId or type(fn) ~= "function" then
+        return nil
+    end
+    local ok, _, _, _, _, _, areaId = pcall(fn, uiMapId)
+    areaId = ok and tonumber(areaId) or nil
+    if areaId and areaId > 0 then
+        return areaId
+    end
+    return nil
+end
+
+-- Drop learned pairs that the WorldMapArea table contradicts, once per session.
+-- The matchers already ignore them wherever a row exists; this keeps the saved
+-- table from carrying them forever.
+local learnedPurged = false
+local function PurgeContradictedLearnedZones(db)
+    if learnedPurged or not db or type(db.customZoneMapping) ~= "table" then return end
+    learnedPurged = true
+    for uiMapId, zoneId in pairs(db.customZoneMapping) do
+        local realZone = WorldMapZoneFor(uiMapId)
+        if realZone and realZone ~= tonumber(zoneId) then
+            db.customZoneMapping[uiMapId] = nil
+            DebugPrint("Dropped learned map mapping:", tostring(uiMapId), "->", tostring(zoneId),
+                "(WorldMapArea says", tostring(realZone) .. ")")
+        end
+    end
+end
+
 local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     local db = state and state.db
     if not db or not activeMapId or not zoneId or not zoneLabel then return end
@@ -357,12 +410,23 @@ local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     -- the zone match the continent map and get drawn at zone coordinates.
     if IsContinentMapView(activeMapId) then return end
 
+    -- Nothing to learn where the client's own table already knows the answer.
+    if WorldMapZoneFor(activeMapId) then return end
+
     db.customZoneMapping = db.customZoneMapping or {}
     if db.customZoneMapping[activeMapId] then return end
 
     -- Do not learn over static known mappings
     if CustomZoneForMap(activeMapId) then return end
     if MAP_TO_ZONE[activeMapId] then return end
+
+    -- The open map must be the one the player is standing on, otherwise the zone
+    -- text below describes a different map than the one being learned. 3.3.5
+    -- reports 0,0 for a player who is not on the displayed map.
+    if type(GetPlayerMapPosition) == "function" then
+        local px, py = GetPlayerMapPosition("player")
+        if not px or (px == 0 and py == 0) then return end
+    end
 
     local curZone = (GetZoneText and GetZoneText()) or nil
     if not curZone or curZone == "" then return end
@@ -628,16 +692,24 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
         return false
     end
     
+    -- Strategy 0: the map's own WorldMapArea zone.
+    local realZone = WorldMapZoneFor(mapId)
+    if realZone and realZone == hotspotZone then
+        DebugPrint("Match via WorldMapArea: map", mapId, "-> zone", realZone)
+        return true
+    end
+
     -- Strategy 1: Convert WoW map ID to zone ID and compare
     local expectedZone = MAP_TO_ZONE[mapId]
     if expectedZone and expectedZone == hotspotZone then
         DebugPrint("Match via MAP_TO_ZONE: map", mapId, "-> zone", expectedZone)
         return true
     end
-    
-    -- Strategy 2: Check custom zone mappings (for special zones like Azshara Crater)
+
+    -- Strategy 2: Check custom zone mappings (for special zones like Azshara Crater).
+    -- A learned pair is only a guess, so it never overrides a real WorldMapArea row.
     local db = Pins.state and Pins.state.db
-    local learned = db and db.customZoneMapping and db.customZoneMapping[mapId]
+    local learned = not realZone and db and db.customZoneMapping and db.customZoneMapping[mapId]
     local resolvedZoneId = learned or CustomZoneForMap(mapId)
     if resolvedZoneId and hotspotZone == resolvedZoneId then
         DebugPrint("Match via custom mapping: map", mapId, "-> zone", resolvedZoneId)
@@ -692,6 +764,15 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
         if entity.kind == "boss" and db and db.bossBlacklistMaps and db.bossBlacklistMaps[entMapId] then
             return false
         end
+
+        -- The map's own WorldMapArea zone is decisive when it has one. The pin's
+        -- nx/ny are normalized to ITS zone, so on any other zone's canvas it would
+        -- land at a meaningless spot even if a table below claimed a match.
+        local realZone = WorldMapZoneFor(activeMapId)
+        if realZone then
+            return realZone == entMapId
+        end
+
         local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
 
         -- First check: Try to match via MAP_TO_ZONE lookup
@@ -995,6 +1076,7 @@ function Pins:Init(state)
     self.minimapPins = {}
     self.entityWorldPins = {}
     self.entityMinimapPins = {}
+    self.floorMarkerPins = {}
     self.minimapUpdate = 0
     self.worldPinUpdate = 0  -- Debounce for world pins
     self.pendingWorldUpdate = false  -- Flag for pending update
@@ -1435,6 +1517,63 @@ function Pins:AcquireMinimapPin(id, data)
     return pin
 end
 
+-- Boss and rare markers for the dungeon floors of a terrain map (FloorMarkers.lua, keyed by map file and
+-- dungeon level). Their nx/ny are normalized to the floor's own DungeonMap rectangle, which is why the
+-- zone-map pins above cannot be reused on those levels.
+function Pins:HideFloorMarkers()
+    for _, pin in pairs(self.floorMarkerPins) do
+        pin:Hide()
+    end
+end
+
+local function FloorMarkerOnEnter(self)
+    local m = self.marker
+    if not m then return end
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine(m.name)
+    if m.kind == "boss" then
+        GameTooltip:AddLine("Boss", 1, 0.55, 0)
+    else
+        GameTooltip:AddLine("Rare", 0.75, 0.75, 0.9)
+    end
+    if m.note and m.note ~= "" then
+        GameTooltip:AddLine(m.note, 0.9, 0.9, 0.9, true)
+    end
+    GameTooltip:Show()
+end
+
+function Pins:UpdateFloorMarkers(level)
+    self:HideFloorMarkers()
+    local db = self.state.db
+    local mapFile = GetMapInfo and GetMapInfo()
+    local floors = mapFile and DCMapupgradesFloorMarkers and DCMapupgradesFloorMarkers[mapFile]
+    local markers = floors and floors[level]
+    local parent = WorldMapButton
+    if not markers or not parent then return end
+    local width, height = parent:GetWidth(), parent:GetHeight()
+    for i, m in ipairs(markers) do
+        if (m.kind == "boss" and db.showWorldBossPins) or (m.kind == "rare" and db.showRarePins) then
+            local key = mapFile .. ":" .. level .. ":" .. i
+            local pin = self.floorMarkerPins[key]
+            if not pin then
+                pin = CreateFrame("Button", nil, parent)
+                pin:SetSize(22, 22)
+                pin:SetFrameStrata("HIGH")
+                pin.texture = pin:CreateTexture(nil, "OVERLAY")
+                pin.texture:SetAllPoints()
+                pin.texture:SetTexture(EntityTexture(m.kind))
+                pin:SetScript("OnEnter", FloorMarkerOnEnter)
+                pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                self.floorMarkerPins[key] = pin
+            end
+            pin.marker = m
+            pin:ClearAllPoints()
+            pin:SetPoint("CENTER", parent, "TOPLEFT", m.nx * width, -m.ny * height)
+            pin:Show()
+        end
+    end
+end
+
 -- Internal function that actually updates the pins (called via debounce)
 function Pins:UpdateWorldPinsInternal()
     local db = self.state.db
@@ -1446,13 +1585,16 @@ function Pins:UpdateWorldPinsInternal()
         for id, pin in pairs(self.entityWorldPins) do
             pin:Hide()
         end
+        self:HideFloorMarkers()
         return
     end
 
     local activeMapId = ActiveWorldMapId()
-    
+    -- Switching dungeon floors keeps the map id, so the level is part of the view too.
+    local activeLevel = (type(GetCurrentMapDungeonLevel) == "function" and GetCurrentMapDungeonLevel()) or 0
+
     -- Don't skip update if mapId is nil (map not ready yet) - wait for valid map
-    if activeMapId and activeMapId == self.lastMapId and not self.forceUpdate then
+    if activeMapId and activeMapId == self.lastMapId and activeLevel == self.lastMapLevel and not self.forceUpdate then
         return
     end
     -- If no valid map ID yet, clear lastMapId so next update with valid ID will proceed
@@ -1461,6 +1603,7 @@ function Pins:UpdateWorldPinsInternal()
         return
     end
     self.lastMapId = activeMapId
+    self.lastMapLevel = activeLevel
     self.forceUpdate = nil
     
     local seen = {}
@@ -1484,8 +1627,22 @@ function Pins:UpdateWorldPinsInternal()
         for id, pin in pairs(self.entityWorldPins) do
             pin:Hide()
         end
+        self:HideFloorMarkers()
         return
     end
+
+    if IsFloorOverTerrainView() then
+        DebugPrint("Dungeon floor over terrain map (mapId", activeMapId, "level", activeLevel, ") - floor markers only")
+        for id, pin in pairs(self.worldPins) do
+            pin:Hide()
+        end
+        for id, pin in pairs(self.entityWorldPins) do
+            pin:Hide()
+        end
+        self:UpdateFloorMarkers(activeLevel)
+        return
+    end
+    self:HideFloorMarkers()
 
     local canShowHotspots = PlayerCanGainXP()
     if db.debug and self._dbgXpGateMapId ~= activeMapId then
@@ -1509,7 +1666,8 @@ function Pins:UpdateWorldPinsInternal()
                     if db.debug and not dbgNoMatchSample then
                         local expectedZone = MAP_TO_ZONE and MAP_TO_ZONE[activeMapId]
                         local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
-                        local resolvedZoneId = learned or CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
+                        local resolvedZoneId = WorldMapZoneFor(activeMapId) or learned
+                            or CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
                         local mapName = (GetMapNameByID and GetMapNameByID(activeMapId)) or nil
                         dbgNoMatchSample = {
                             id = id,
@@ -1599,8 +1757,10 @@ function Pins:UpdateWorldPinsInternal()
         local totalBoss, enabledBoss, matchedBoss, shownBoss = 0, 0, 0, 0
         local sampleBoss
         local dbgBossDetailsCount = 0
+        PurgeContradictedLearnedZones(db)
+        local realActiveZone = WorldMapZoneFor(activeMapId)
         local learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
-        local resolvedZoneId = learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId
+        local resolvedZoneId = realActiveZone or learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId
         for _, ent in ipairs(list) do
             if ent and ent.id then
                 totalEntities = totalEntities + 1
@@ -1615,7 +1775,7 @@ function Pins:UpdateWorldPinsInternal()
                     and ent.zoneLabel and activeMapId then
                     MaybeLearnZoneMapping(self.state, activeMapId, ent.mapId, ent.zoneLabel)
                     learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
-                    resolvedZoneId = learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId
+                    resolvedZoneId = realActiveZone or learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId
                 end
 
                 local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")

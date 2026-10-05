@@ -12,6 +12,8 @@
 #include "DBCStructure.h"
 #include "DatabaseEnv.h"
 #include "Chat.h"
+#include "HeirloomItemLevel.h"
+#include "ItemUpgradeManager.h"
 
 #include <vector>
 
@@ -24,7 +26,8 @@
  * IMPORTANT: For Tier 3 Heirloom Upgrade System Integration:
  * - Primary stats (STR/AGI/INT/STA/SPI) scale with player level (handled here)
  * - Secondary stats (Crit/Haste/Hit/Expertise/ArmorPen) scale with upgrade level (handled by upgrade system)
- * - Item level NEVER changes (stays at 80) - tier 3 items use upgrade level only
+ * - The template item level never changes; tooltips show the item level the scaled
+ *   stats are worth at the owner's level (HeirloomItemLevel.h)
  * - Upgrade system adds secondary stats via permanent enchantments
  *
  * Features:
@@ -176,6 +179,42 @@ namespace {
         }
     }
 
+    // An upgraded scaling item is drawn from a server tooltip snapshot (stats, armor,
+    // damage and item level at its owner's level) that the client caches per item
+    // revision. Bump the revisions of everything the player carries that scales, so
+    // the next hover redraws at the new level instead of the cached one.
+    void InvalidateScalingItemTooltips(Player* player)
+    {
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!mgr)
+            return;
+
+        auto const invalidate = [mgr](Item* item)
+        {
+            if (item && DarkChaos::ItemUpgrade::IsLevelScalingItem(item->GetTemplate()))
+                mgr->InvalidateTooltipSnapshot(item->GetGUID().GetCounter());
+        };
+
+        auto const invalidateBag = [&](uint8 bagSlot)
+        {
+            if (Bag* bag = player->GetBagByPos(bagSlot))
+                for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                    invalidate(bag->GetItemByPos(static_cast<uint8>(i)));
+        };
+
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+            invalidate(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+            invalidateBag(slot);
+
+        for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+            invalidate(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+        for (uint8 slot = BANK_SLOT_BAG_START; slot < BANK_SLOT_BAG_END; ++slot)
+            invalidateBag(slot);
+    }
+
     uint32 GetNearestAvailableScalingLevel(uint32 requestedLevel)
     {
         if (requestedLevel == 0)
@@ -313,6 +352,8 @@ public:
         for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
             if (Bag* bag = player->GetBagByPos(slot))
                 UpgradeHeirloomBagIfNeeded(player, bag);
+
+        InvalidateScalingItemTooltips(player);
     }
 
     // Catches the case where a bag was granted (or last logged out) below the tier

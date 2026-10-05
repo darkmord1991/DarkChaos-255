@@ -61,6 +61,7 @@ void AddSC_dc_giant_isles_water_monster();    // GiantIsles/dc_giant_isles_water
 void AddSC_giant_isles_hydra_drum();          // GiantIsles/dc_giant_isles_hydra_drum.cpp
 void AddSC_giant_isles_war_economy();         // GiantIsles/dc_giant_isles_war_economy.cpp
 void AddSC_dc_giant_isles_fishing();          // GiantIsles/dc_giant_isles_fishing.cpp
+void AddSC_giant_isles_sunken_temple();       // GiantIsles/dc_giant_isles_sunken_temple.cpp
 
 // --- Deepholm zone (map 646) ---
 void AddSC_deepholm();                         // Deepholm/zone_deepholm.cpp
@@ -357,6 +358,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_giant_isles_hydra_drum);
     DC_LOAD(AddSC_giant_isles_war_economy);
     DC_LOAD(AddSC_dc_giant_isles_fishing);
+    DC_LOAD(AddSC_giant_isles_sunken_temple);
 
     LogSection("Deepholm Zone (map 646)");
     DC_LOAD(AddSC_deepholm);

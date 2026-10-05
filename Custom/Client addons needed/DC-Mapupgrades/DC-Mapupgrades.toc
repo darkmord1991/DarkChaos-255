@@ -10,6 +10,7 @@
 
 Libs\DC_DebugUtils.lua
 Libs\HotspotDisplay_Astrolabe.lua
+FloorMarkers.lua
 Pins.lua
 UI.lua
 Options.lua

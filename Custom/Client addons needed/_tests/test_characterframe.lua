@@ -305,6 +305,8 @@ ok(CharacterFramePortrait._shown == false, "stock portrait hidden behind the chr
 ok(CharacterLevelText._text and CharacterLevelText._text:find("Night Elf") and CharacterLevelText._text:find("Warrior"),
     "level line shows race and class-coloured class: " .. tostring(CharacterLevelText._text))
 ok(CharacterGuildText._text == "Member of Dark Chaos", "guild line rendered")
+ok(CharacterLevelText._point and CharacterLevelText._point[3] == "TOPLEFT" and CharacterLevelText._point[4] == 168,
+    "header centred over the left inset, clear of the sidebar tabs")
 
 -- Legacy buttons
 local retired = true

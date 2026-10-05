@@ -9,6 +9,7 @@
 #define DC_ADDON_COLLECTION_H
 
 #include "dc_addon_namespace.h"
+#include "DatabaseEnvFwd.h"
 #include <vector>
 #include <string>
 #include <map>
@@ -76,8 +77,29 @@ namespace DCCollection
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId);
     bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* proto, TransmogAppearanceVariant const& variant);
     TransmogAppearanceVariant const* FindBestVariantForSlot(uint32 displayId, uint8 slot, ItemTemplate const* proto);
-    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer = true);
+    // Returns true only when this call collected the appearance (false: already owned or not collectible).
+    bool UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source,
+        bool notifyPlayer = true);
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId);
+
+    // Appearance ownership lives only in dc_transmog_collection (the wardrobe). Rows of type
+    // TRANSMOG in dc_collection_items are legacy and nothing reads them any more.
+    struct AppearanceUnlock
+    {
+        uint32 displayId = 0;
+        uint32 itemId = 0;          // obtained_from: item it came from, 0 if unknown
+        uint32 characterGuid = 0;   // obtained_by: character who earned it, 0 if unknown
+    };
+
+    // Sorted display ids in the account's wardrobe.
+    std::vector<uint32> GetCollectedAppearances(uint32 accountId);
+    // Records the appearances the account does not own yet and returns them (repeats within the
+    // batch are dropped too). Does no eligibility checks. Appends to `trans` when given, otherwise
+    // commits its own transaction.
+    std::vector<AppearanceUnlock> RecordTransmogAppearances(uint32 accountId,
+        std::vector<AppearanceUnlock> const& unlocks, std::string const& source,
+        CharacterDatabaseTransaction trans = nullptr);
+    void RemoveTransmogAppearance(uint32 accountId, uint32 displayId);
 
     // Session notification helpers (encapsulate per-translation-unit storage)
     void ClearSessionNotifiedAppearances(uint32 guid);

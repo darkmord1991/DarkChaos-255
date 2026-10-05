@@ -769,27 +769,29 @@ namespace DCCollection
         return proto ? proto->DisplayInfoID : 0;
     }
 
-    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer)
+    bool UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source,
+        bool notifyPlayer)
     {
-        if (!player || !player->GetSession() || !proto) return;
+        if (!player || !player->GetSession() || !proto) return false;
 
         // Playerbots have no wardrobe to show it in. Every item a bot is geared with or loots came
         // through here: a blocking read of the account's appearance list the first time (often on a
         // map thread) and an INSERT per new appearance.
-        if (DCAddon::IsBotRecipient(player)) return;
+        if (DCAddon::IsBotRecipient(player)) return false;
 
-        if (!IsItemEligibleForTransmogUnlock(proto)) return;
+        if (!IsItemEligibleForTransmogUnlock(proto)) return false;
 
         uint32 minQuality = sConfigMgr->GetOption<uint32>(TRANSMOG_MIN_QUALITY, 0);
-        if (proto->Quality < minQuality) return;
+        if (proto->Quality < minQuality) return false;
 
         uint32 accountId = GetAccountId(player);
-        if (!accountId) return;
+        if (!accountId) return false;
 
         uint32 displayId = GetItemDisplayId(proto);
-        if (!displayId) return;
+        if (!displayId) return false;
 
-        if (HasTransmogAppearanceUnlocked(accountId, displayId)) return;
+        AppearanceUnlock const unlock{ displayId, proto->ItemId, player->GetGUID().GetCounter() };
+        if (RecordTransmogAppearances(accountId, { unlock }, source).empty()) return false;
 
         bool shouldNotify = notifyPlayer;
         if (sConfigMgr->GetOption<bool>(TRANSMOG_SESSION_NOTIFICATION_DEDUP, true))
@@ -802,26 +804,6 @@ namespace DCCollection
                  playerNotifications.insert(displayId);
         }
 
-        // Write to dc_transmog_collection table
-        CharacterDatabase.Execute(
-            "INSERT IGNORE INTO dc_transmog_collection "
-            "(account_id, display_id, slot, obtained_by, obtained_from, obtained_date) "
-            "VALUES ({}, {}, 0, '{}', 'DC-Collection', NOW())",
-            accountId, displayId, source);
-
-        {
-            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
-            auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
-            if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
-            {
-                auto updated = std::make_shared<std::unordered_set<uint32>>(*cacheIt->second);
-                updated->insert(displayId);
-                cacheIt->second = updated;
-            }
-
-            s_AccountCollectedAppearancesPayloads.erase(accountId);
-        }
-
         if (shouldNotify)
         {
             if (WorldSession* session = player->GetSession())
@@ -830,6 +812,126 @@ namespace DCCollection
                  handler.PSendSysMessage("DC-Collection: Appearance collected: {} (appearance {}).", proto->Name1, displayId);
             }
         }
+
+        return true;
+    }
+
+    std::vector<uint32> GetCollectedAppearances(uint32 accountId)
+    {
+        std::vector<uint32> appearances;
+        if (!accountId)
+            return appearances;
+
+        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        appearances.assign(unlocked->begin(), unlocked->end());
+        std::sort(appearances.begin(), appearances.end());
+        return appearances;
+    }
+
+    std::vector<AppearanceUnlock> RecordTransmogAppearances(uint32 accountId,
+        std::vector<AppearanceUnlock> const& unlocks, std::string const& source, CharacterDatabaseTransaction trans)
+    {
+        std::vector<AppearanceUnlock> recorded;
+        if (!accountId || unlocks.empty())
+            return recorded;
+
+        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        std::unordered_set<uint32> inBatch;
+        for (AppearanceUnlock const& unlock : unlocks)
+        {
+            if (unlock.displayId && !unlocked->count(unlock.displayId) && inBatch.insert(unlock.displayId).second)
+                recorded.push_back(unlock);
+        }
+
+        if (recorded.empty())
+            return recorded;
+
+        // Kept to the column's [A-Z0-9_]{0,16}, which also makes it safe to put in the statement as-is.
+        std::string safeSource;
+        for (char c : source)
+        {
+            unsigned char const uc = static_cast<unsigned char>(c);
+            if (safeSource.size() < 16 && (std::isupper(uc) || std::isdigit(uc) || c == '_'))
+                safeSource.push_back(c);
+        }
+
+        // obtained_via arrived with a later schema update; a database without it still gets the row.
+        bool const hasVia = CharacterColumnExists("dc_transmog_collection", "obtained_via");
+
+        bool const ownTransaction = !trans;
+        if (ownTransaction)
+            trans = CharacterDatabase.BeginTransaction();
+
+        // The quest back-fill can add thousands of rows at once; multi-row statements keep that cheap.
+        constexpr std::size_t ROWS_PER_STATEMENT = 500;
+        std::string values;
+        std::size_t rows = 0;
+
+        auto flush = [&]()
+        {
+            trans->Append("INSERT IGNORE INTO dc_transmog_collection "
+                "(account_id, display_id, slot, obtained_by, obtained_from, {}obtained_date) VALUES {}",
+                hasVia ? "obtained_via, " : "", values);
+            values.clear();
+            rows = 0;
+        };
+
+        for (AppearanceUnlock const& unlock : recorded)
+        {
+            if (!values.empty())
+                values += ',';
+
+            values += Acore::StringFormat("({}, {}, 0, {}, {}, ", accountId, unlock.displayId, unlock.characterGuid,
+                unlock.itemId ? std::to_string(unlock.itemId) : "NULL");
+            if (hasVia)
+                values += Acore::StringFormat("'{}', ", safeSource);
+            values += "NOW())";
+
+            if (++rows == ROWS_PER_STATEMENT)
+                flush();
+        }
+
+        if (rows)
+            flush();
+
+        if (ownTransaction)
+            CharacterDatabase.CommitTransaction(trans);
+
+        {
+            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+            auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
+            if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
+            {
+                auto updated = std::make_shared<std::unordered_set<uint32>>(*cacheIt->second);
+                for (AppearanceUnlock const& unlock : recorded)
+                    updated->insert(unlock.displayId);
+                cacheIt->second = updated;
+            }
+
+            s_AccountCollectedAppearancesPayloads.erase(accountId);
+        }
+
+        return recorded;
+    }
+
+    void RemoveTransmogAppearance(uint32 accountId, uint32 displayId)
+    {
+        if (!accountId || !displayId)
+            return;
+
+        CharacterDatabase.Execute("DELETE FROM dc_transmog_collection WHERE account_id = {} AND display_id = {}",
+            accountId, displayId);
+
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+        auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
+        if (cacheIt != s_AccountUnlockedTransmogAppearances.end() && cacheIt->second->count(displayId))
+        {
+            auto updated = std::make_shared<std::unordered_set<uint32>>(*cacheIt->second);
+            updated->erase(displayId);
+            cacheIt->second = updated;
+        }
+
+        s_AccountCollectedAppearancesPayloads.erase(accountId);
     }
 
     // =======================================================================

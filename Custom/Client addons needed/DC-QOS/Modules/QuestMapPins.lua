@@ -921,6 +921,18 @@ function QuestMapPins:Refresh()
         return
     end
 
+    -- A dungeon floor drawn over a terrain map (DefaultDungeonFloor -1, e.g. the temple levels of the Isles of
+    -- Giants map) keeps the zone's map id, but its art has its own DungeonMap rectangle: markers normalized to the
+    -- zone would land on the wrong spots.
+    if type(DungeonUsesTerrainMap) == "function" and DungeonUsesTerrainMap()
+        and type(GetCurrentMapDungeonLevel) == "function" and (GetCurrentMapDungeonLevel() or 0) > 1 then
+        if state.overlay then
+            state.overlay:Hide()
+        end
+        HideUnusedButtons(1)
+        return
+    end
+
     local markers = GetVisibleMarkers(currentMapId)
     if #markers == 0 then
         if state.overlay then

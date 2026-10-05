@@ -219,7 +219,11 @@ namespace DarkChaos
             // Caches
             LRUCache<uint32, ItemUpgradeState> item_state_cache{20000}; // Cache last 20k items
             LRUCache<uint32, ItemUpgradeTooltipSnapshot> tooltip_snapshot_cache{20000};
+            // Read by tooltip requests and bumped by upgrades and owner level-ups
+            // (heirloom_scaling_255), from whichever map thread the player is on.
+            // The LRU caches lock themselves; this map needs its own.
             std::unordered_map<uint32, uint32> tooltip_revision_by_item;
+            std::mutex tooltip_revision_mutex;
             // Currency Cache: Key is (High: PlayerGUID, Low: Type|Season) or similar.
             // Simplified: We don't cache currency heavily yet as it's critical to be fresh,
             // but we could. For now, let's stick to Item State caching as that's the heavy lifter.
@@ -301,6 +305,7 @@ namespace DarkChaos
                 if (item_guid == 0)
                     return 0;
 
+                std::lock_guard<std::mutex> lock(tooltip_revision_mutex);
                 uint32& revision = tooltip_revision_by_item[item_guid];
                 if (revision == 0)
                     revision = GetTooltipRevisionEpoch();
@@ -313,6 +318,7 @@ namespace DarkChaos
                 if (item_guid == 0)
                     return 0;
 
+                std::lock_guard<std::mutex> lock(tooltip_revision_mutex);
                 uint32& revision = tooltip_revision_by_item[item_guid];
                 if (revision == 0)
                     revision = GetTooltipRevisionEpoch();
@@ -513,6 +519,7 @@ namespace DarkChaos
             {
                 item_state_cache.Clear();
                 tooltip_snapshot_cache.Clear();
+                std::lock_guard<std::mutex> lock(tooltip_revision_mutex);
                 tooltip_revision_by_item.clear();
             }
             bool UpgradeItem(uint32 player_guid, uint32 item_guid) override
