@@ -671,11 +671,14 @@ local MOUNT_ITEMS_PER_PAGE = 20 -- Increased from 12
 -- EXPANSION FILTER (Mounts / Pets)
 -- ============================================================================
 -- Mirrors UI/Wardrobe/WardrobeCore.lua's EXPANSION_FILTERS so every collection
--- tab offers the same "stock 3.3.5a vs retail downport" split.
+-- tab offers the same "stock 3.3.5a vs retail downport" split, plus a third
+-- bucket, "Ascension": mounts and pets imported from the Ascension client.
 --
 -- Boundaries verified against the live world DB:
---   dc_mount_definitions.spell_id -- stock 458..75973, downports 300700..303033
---   dc_pet_definitions.pet_entry  -- stock 4401..56806, downports 300410..302741
+--   dc_mount_definitions.spell_id -- stock 458..75973, downports 300700..303077,
+--                                    Ascension 350000..359999
+--   dc_pet_definitions.pet_entry  -- stock 4401..56806, downports 300410..302741,
+--                                    Ascension 350000..359999
 -- Both tables carry an `expansion` column, but it is not populated reliably
 -- (every mount row reports 2), so classification keys on the id ranges - the
 -- same convention the Wardrobe and Beastmaster tabs already use.
@@ -689,12 +692,36 @@ DC.WOTLK_MAX_SPELL_ID = 100000
 -- Custom CreatureDisplayInfo floor (matches UI/BeastmasterFrame.lua). Only ever
 -- used as a positive signal: downports may REUSE retail display ids below it.
 DC.CUSTOM_DISPLAY_FLOOR = 100000
+-- Mounts and pets imported from the Ascension client (retroport_tools/
+-- dc_mount_ascension_pipeline.py, dc_pet_ascension_pipeline.py) own the id
+-- band 350000-359999: mount spells and pet teaching items alike (mounts
+-- 350000-350409, pets 351000-351155). Their definition rows carry expansion
+-- 100. The CDBC has no expansion column, so the client classifies by the band.
+DC.ASCENSION_ID_MIN = 350000
+DC.ASCENSION_ID_MAX = 359999
 
 DC.EXPANSION_FILTERS = {
     { id = "all",       text = "All Expansions" },
     { id = "classic",   text = "Classic - WotLK" },
     { id = "wotlkplus", text = "WotLK+ (Downports)" },
+    { id = "ascension", text = "Ascension" },
 }
+
+local function InAscensionBand(id)
+    id = ToPositiveNumber(id) or 0
+    return id >= (DC.ASCENSION_ID_MIN or 350000) and id <= (DC.ASCENSION_ID_MAX or 359999)
+end
+
+-- True when a mount (keyed by spell id) was imported from the Ascension client.
+function DC:IsMountAscension(spellId)
+    return InAscensionBand(spellId)
+end
+
+-- True when a companion pet (keyed by its teaching item's entry) was imported
+-- from the Ascension client.
+function DC:IsPetAscension(petId)
+    return InAscensionBand(petId)
+end
 
 -- True when a mount (keyed by spell id) is a downport / custom addition.
 function DC:IsMountDownported(spellId, def)
@@ -736,6 +763,16 @@ function DC:EntryPassesExpansionFilter(collType, id, def)
         return false
     end
 
+    local isAscension
+    if collType == "mounts" then
+        isAscension = self:IsMountAscension(numericId)
+    else
+        isAscension = self:IsPetAscension(numericId)
+    end
+    if mode == "ascension" then
+        return isAscension
+    end
+
     local isDownport
     if collType == "mounts" then
         isDownport = self:IsMountDownported(numericId, def)
@@ -744,7 +781,8 @@ function DC:EntryPassesExpansionFilter(collType, id, def)
     end
 
     if mode == "wotlkplus" then
-        return isDownport
+        -- retail downports only; Ascension imports have their own filter
+        return isDownport and not isAscension
     end
     return not isDownport
 end
@@ -1211,19 +1249,23 @@ function DC:CreateFilterBar(parent)
     UIDropDownMenu_SetWidth(expansionDropdown, 130)
     UIDropDownMenu_SetText(expansionDropdown, DC.EXPANSION_FILTERS[1].text)
 
+    local function AddExpansionOption(expInfo, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = expInfo.text
+        info.value = expInfo.id
+        info.func = function(btn)
+            DC.selectedExpansionFilter = btn.value
+            UIDropDownMenu_SetText(expansionDropdown, btn:GetText())
+            CloseDropDownMenus()
+            DC:OnFilterChanged()
+        end
+        info.checked = ((DC.selectedExpansionFilter or "all") == expInfo.id)
+        UIDropDownMenu_AddButton(info, level)
+    end
+
     UIDropDownMenu_Initialize(expansionDropdown, function(self, level)
         for _, expInfo in ipairs(DC.EXPANSION_FILTERS or {}) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = expInfo.text
-            info.value = expInfo.id
-            info.func = function(btn)
-                DC.selectedExpansionFilter = btn.value
-                UIDropDownMenu_SetText(expansionDropdown, btn:GetText())
-                CloseDropDownMenus()
-                DC:OnFilterChanged()
-            end
-            info.checked = ((DC.selectedExpansionFilter or "all") == expInfo.id)
-            UIDropDownMenu_AddButton(info, level)
+            AddExpansionOption(expInfo, level)
         end
     end)
 

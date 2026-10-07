@@ -6404,8 +6404,9 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* /*param1*/, uint32* /*para
                     if (!pet->HaveInDiet(foodItem->GetTemplate()))
                         return SPELL_FAILED_WRONG_PET_FOOD;
 
-                    if (!pet->GetCurrentFoodBenefitLevel(foodItem->GetTemplate()->ItemLevel))
-                        return SPELL_FAILED_FOOD_LOWLEVEL;
+                    // Feeding heals now (see EffectFeedPet), so food level no longer matters; don't waste the food
+                    if (pet->IsFullHealth())
+                        return SPELL_FAILED_ALREADY_AT_FULL_HEALTH;
 
                     if (unitCaster->IsInCombat() || pet->IsInCombat())
                         return SPELL_FAILED_AFFECTING_COMBAT;

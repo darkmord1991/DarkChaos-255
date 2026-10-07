@@ -62,11 +62,19 @@ DCAddonProtocol = {
         PRESTIGE_NATIVE = 0x01000000,
         WORLD_NATIVE = 0x02000000,
         GENERIC_MESSAGE_NATIVE = 0x04000000,
+        -- The DLL reads every native payload whole, so the server may send
+        -- bodies past the old fixed-buffer limits instead of falling to chat.
+        LARGE_NATIVE_PAYLOAD = 0x08000000,
+        -- The DLL signals DC_NATIVE_DATA(channel) when a native store changes.
+        NATIVE_PUSH_EVENTS = 0x10000000,
+        -- Lua-advertised (no DLL bit): this client sends QOS item prefetch
+        -- requests. Negotiated only against a server that answers them.
+        ITEM_PREFETCH = 0x20000000,
     },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
-    -- JSON_MESSAGES | BATCH_MESSAGES | NATIVE_MODULES_EXT
-    BASE_CAPABILITIES = 0x83,
-    CAPABILITIES = 0x83, -- Compatibility mirror; GetClientCapabilities() is authoritative.
+    -- JSON_MESSAGES | BATCH_MESSAGES | NATIVE_MODULES_EXT | ITEM_PREFETCH
+    BASE_CAPABILITIES = 0x20000083,
+    CAPABILITIES = 0x20000083, -- Compatibility mirror; GetClientCapabilities() is authoritative.
     _handlers = {},
     _debug = false,
     _connected = false,
@@ -714,6 +722,12 @@ function DC:HasClientCapability(capability)
     return HasCapabilityBit(self:GetClientCapabilities(), capability)
 end
 
+-- True when the server negotiated `capability` in this session's handshake.
+function DC:HasNegotiatedCapability(capability)
+    return self._connected and HasCapabilityBit(self._serverCaps, capability)
+        or false
+end
+
 function DC:DescribeCapabilities(mask)
     local capabilities = tonumber(mask) or 0
     local parts = {}
@@ -799,6 +813,18 @@ function DC:DescribeCapabilities(mask)
     if HasCapabilityBit(capabilities,
             self.Capability.CLIENT_METADATA) then
         table.insert(parts, "ClientMetadata")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.LARGE_NATIVE_PAYLOAD) then
+        table.insert(parts, "LargeNativePayload")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.NATIVE_PUSH_EVENTS) then
+        table.insert(parts, "NativePushEvents")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.ITEM_PREFETCH) then
+        table.insert(parts, "ItemPrefetch")
     end
 
     if #parts == 0 then
@@ -2182,6 +2208,12 @@ function DC:_ShouldUseNativeBridge(bridge)
     return HasCapabilityBit(serverCaps, bridge.capability)
 end
 
+-- The server closes the connection on a client packet of 10240 bytes or more
+-- (WorldSocket ClientPktHeader::IsValidSize), and an older DLL sends whatever it
+-- is given, so a larger request takes the chunked addon transport. The margin
+-- covers the opcodes, the module code and the terminators around the payload.
+local NATIVE_REQUEST_MAX_BYTES = 10000
+
 -- Try to send a JSON request over a native bridge. Returns true if it was sent
 -- natively (caller must not also send it over the addon protocol).
 function DC:_TryNativeSendJSON(module, opcode, json)
@@ -2190,23 +2222,26 @@ function DC:_TryNativeSendJSON(module, opcode, json)
         return false
     end
     local payload = (type(json) == "string" and json ~= "") and json or "{}"
+    if string.len(payload) + string.len(module) > NATIVE_REQUEST_MAX_BYTES then
+        return false
+    end
 
+    -- A DLL that checks the packet size itself returns false for one the
+    -- server would reject; older DLLs return nothing.
     if bridge.kind == "generic" then
         local requestFn = ResolveGlobalFunction("RequestNativeDcMessage")
         if not requestFn then
             return false
         end
         -- Canonical addon body carries the JSON marker.
-        requestFn(module, tonumber(opcode) or 0, "J|" .. payload)
-        return true
+        return requestFn(module, tonumber(opcode) or 0, "J|" .. payload) ~= false
     end
 
     local requestFn = ResolveGlobalFunction(bridge.requestFn)
     if not requestFn then
         return false
     end
-    requestFn(tonumber(opcode) or 0, payload)
-    return true
+    return requestFn(tonumber(opcode) or 0, payload) ~= false
 end
 
 -- Dispatch a native JSON response through the same handler chain the addon
@@ -2358,6 +2393,332 @@ function DC:_PollNativeResponses()
         end
     end
 end
+
+-- ============================================================
+-- Native push events
+-- ============================================================
+-- A DLL with NATIVE_PUSH_EVENTS signals DC_NATIVE_DATA(channel) from the packet
+-- handler once a native store holds something new, so nothing has to poll every
+-- frame. The polls stay as a safety net (NATIVE_PUSH_SAFETY_POLL_SEC) for
+-- signals the DLL cannot deliver: it only signals while the world event table
+-- is live, and a frame may not be registered yet.
+local NATIVE_PUSH_EVENT = "DC_NATIVE_DATA"
+local NATIVE_PUSH_SAFETY_POLL_SEC = 1.0
+-- Channels this library drains itself, all in _PollNativeResponses. The others
+-- (MPLUS_HUD, COLL_WAVE1, COLL_TRANSMOG, COLL_ITEMSETS, PING, ENVELOPE, HLBG,
+-- SPEC) belong to consumer addons, which subscribe with DC:OnNativeData.
+local CORE_NATIVE_CHANNELS = {
+    GENERIC = true, SEAS = true, SPOT = true, PRES = true, WRLD = true,
+}
+
+DC._nativeDataHandlers = DC._nativeDataHandlers or {}
+
+-- True when the DLL pushes DC_NATIVE_DATA and this library listens to it.
+function DC:HasNativePushEvents()
+    return self._nativePushActive == true
+end
+
+-- Run fn(channel) whenever the DLL signals new data on `channel`. A consumer
+-- that polls a DLL store registers its drain function here and stretches its
+-- own poll with GetNativePollInterval. Returns whether pushes are active.
+function DC:OnNativeData(channel, fn)
+    if type(channel) ~= "string" or type(fn) ~= "function" then
+        return false
+    end
+    local handlers = self._nativeDataHandlers[channel]
+    if not handlers then
+        handlers = {}
+        self._nativeDataHandlers[channel] = handlers
+    end
+    table.insert(handlers, fn)
+    return self:HasNativePushEvents()
+end
+
+-- The interval a consumer's own native poll should use: its normal interval
+-- without pushes, otherwise only the slow safety net.
+function DC:GetNativePollInterval(baseInterval)
+    local base = tonumber(baseInterval) or 0.1
+    if self:HasNativePushEvents() and base < NATIVE_PUSH_SAFETY_POLL_SEC then
+        return NATIVE_PUSH_SAFETY_POLL_SEC
+    end
+    return base
+end
+
+function DC:_DispatchNativeDataSignal(channel)
+    if CORE_NATIVE_CHANNELS[channel] then
+        self:_PollNativeResponses()
+    end
+    local handlers = self._nativeDataHandlers[channel]
+    if handlers then
+        for _, fn in ipairs(handlers) do
+            self:_InvokeHandlerSafe("native-data", channel, 0, fn, channel)
+        end
+    end
+end
+
+function DC:_OnNativeDataSignal(channel)
+    channel = tostring(channel or "")
+    if self._worldLoading then
+        -- Same rule as the poll: nothing is dispatched during a loading screen.
+        -- Remembered per channel and replayed on PLAYER_ENTERING_WORLD.
+        self._deferredNativeSignals = self._deferredNativeSignals or {}
+        self._deferredNativeSignals[channel] = true
+        return
+    end
+    self:_DispatchNativeDataSignal(channel)
+end
+
+function DC:_FlushDeferredNativeSignals()
+    local deferred = self._deferredNativeSignals
+    self._deferredNativeSignals = nil
+    if not deferred then
+        return
+    end
+    for channel in pairs(deferred) do
+        self:_DispatchNativeDataSignal(channel)
+    end
+end
+
+-- ============================================================
+-- Item prefetch
+-- ============================================================
+-- A UI about to show many items (a collection page, a loot table, vault rows)
+-- asks for all of them in one QOS CMSG_PREFETCH_ITEMS request instead of one
+-- item query per row. The server pushes each record into the client's item
+-- cache ahead of its reply, so when SMSG_PREFETCH_ITEMS_RESULT arrives every
+-- known item resolves in GetItemInfo. Against a server without ITEM_PREFETCH,
+-- and for anything the reply did not deliver, an id is queried the stock way:
+-- a hidden tooltip's SetHyperlink makes the client send its own item query.
+local PREFETCH_BATCH_MAX = 50           -- server ITEM_PREFETCH_MAX_IDS
+local PREFETCH_BATCHES_PER_SEC = 3      -- server ITEM_PREFETCH_MAX_REQUESTS_PER_SECOND
+local PREFETCH_TIMEOUT_SEC = 10         -- per attempt: server request, then stock query
+local PREFETCH_RESOLVE_GRACE_SEC = 2    -- after a reply without the record
+local PREFETCH_RESOLVE_CHECK_SEC = 0.1  -- how often pending ids are looked up
+local PREFETCH_HANDSHAKE_WAIT_SEC = 5   -- before the ACK nobody knows the server's caps
+
+local QOS_CMSG_PREFETCH_ITEMS = 0x09
+local QOS_SMSG_PREFETCH_ITEMS_RESULT = 0x18
+
+DC._itemPrefetch = DC._itemPrefetch or {
+    queue = {},        -- ids waiting for a request slot, in request order
+    queued = {},       -- id -> true while in queue
+    pending = {},      -- id -> { deadline, stockQueried } once requested
+    callbacks = {},    -- id -> { fn, ... }
+    missing = {},      -- ids the server has no item template for
+    windowStart = 0,
+    sentInWindow = 0,
+    nextResolveCheck = 0,
+}
+
+local function IsItemCached(itemId)
+    return GetItemInfo(itemId) ~= nil
+end
+
+function DC:_FinishItemPrefetch(itemId, ok)
+    local state = self._itemPrefetch
+    state.pending[itemId] = nil
+    state.queued[itemId] = nil
+    local callbacks = state.callbacks[itemId]
+    state.callbacks[itemId] = nil
+    if callbacks then
+        for _, fn in ipairs(callbacks) do
+            self:_InvokeHandlerSafe("item-prefetch", "QOS",
+                QOS_SMSG_PREFETCH_ITEMS_RESULT, fn, itemId, ok)
+        end
+    end
+end
+
+function DC:_QueryItemTheStockWay(itemId)
+    local tip = self._itemPrimerTooltip
+    if not tip then
+        tip = CreateFrame("GameTooltip", "DCAddonProtocolItemPrimer", UIParent,
+            "GameTooltipTemplate")
+        self._itemPrimerTooltip = tip
+    end
+    -- Hiding a tooltip clears its owner, so the owner is set before every link.
+    tip:SetOwner(UIParent, "ANCHOR_NONE")
+    tip:SetHyperlink("item:" .. itemId)
+    tip:Hide()
+end
+
+-- Make the client cache these item ids. callback(itemId, ok), optional, runs once
+-- per id: ok = true once GetItemInfo resolves, false when the server has no such
+-- item or nothing arrived in time. Cached ids call back at once. Returns how
+-- many ids were queued.
+function DC:PrefetchItems(itemIds, callback)
+    if type(itemIds) ~= "table" then
+        return 0
+    end
+
+    local state = self._itemPrefetch
+    -- Before the ACK nobody knows the server's caps: wait for it, counting from
+    -- the first request made without one.
+    if not self._connected and not state.handshakeWaitUntil then
+        state.handshakeWaitUntil = GetTime() + PREFETCH_HANDSHAKE_WAIT_SEC
+    end
+
+    local queuedCount = 0
+    for _, value in ipairs(itemIds) do
+        local itemId = tonumber(value)
+        if itemId and itemId > 0 and itemId == math.floor(itemId) then
+            if IsItemCached(itemId) or state.missing[itemId] then
+                if callback then
+                    self:_InvokeHandlerSafe("item-prefetch", "QOS",
+                        QOS_SMSG_PREFETCH_ITEMS_RESULT, callback, itemId,
+                        not state.missing[itemId])
+                end
+            else
+                if callback then
+                    local list = state.callbacks[itemId]
+                    if not list then
+                        list = {}
+                        state.callbacks[itemId] = list
+                    end
+                    table.insert(list, callback)
+                end
+                if not state.queued[itemId] and not state.pending[itemId] then
+                    state.queued[itemId] = true
+                    table.insert(state.queue, itemId)
+                    queuedCount = queuedCount + 1
+                end
+            end
+        end
+    end
+    return queuedCount
+end
+
+-- Takes up to PREFETCH_BATCH_MAX ids off the queue and requests them. Returns
+-- false when they had all been cached in the meantime.
+function DC:_SendItemPrefetchBatch(now)
+    local state = self._itemPrefetch
+    local batch = {}
+    while #batch < PREFETCH_BATCH_MAX and #state.queue > 0 do
+        local itemId = table.remove(state.queue, 1)
+        state.queued[itemId] = nil
+        if IsItemCached(itemId) then
+            self:_FinishItemPrefetch(itemId, true)
+        else
+            table.insert(batch, itemId)
+        end
+    end
+    if #batch == 0 then
+        return false
+    end
+
+    local viaServer = self:HasNegotiatedCapability(self.Capability.ITEM_PREFETCH)
+    for _, itemId in ipairs(batch) do
+        state.pending[itemId] = {
+            deadline = now + PREFETCH_TIMEOUT_SEC,
+            stockQueried = not viaServer,
+        }
+        if not viaServer then
+            self:_QueryItemTheStockWay(itemId)
+        end
+    end
+    if viaServer then
+        self:Request("QOS", QOS_CMSG_PREFETCH_ITEMS, { ids = batch })
+    end
+    return true
+end
+
+-- Runs from the OnUpdate loop; returns at once when nothing is queued or pending.
+function DC:_ItemPrefetchTick()
+    local state = self._itemPrefetch
+    if #state.queue == 0 and next(state.pending) == nil then
+        return
+    end
+
+    local now = GetTime()
+    if now >= state.nextResolveCheck then
+        state.nextResolveCheck = now + PREFETCH_RESOLVE_CHECK_SEC
+        for itemId, entry in pairs(state.pending) do
+            if IsItemCached(itemId) then
+                self:_FinishItemPrefetch(itemId, true)
+            elseif now >= entry.deadline then
+                if entry.stockQueried then
+                    self:_FinishItemPrefetch(itemId, false)
+                else
+                    -- No reply in time, or a reply without the record.
+                    entry.stockQueried = true
+                    entry.deadline = now + PREFETCH_TIMEOUT_SEC
+                    self:_QueryItemTheStockWay(itemId)
+                end
+            end
+        end
+    end
+
+    if #state.queue == 0 then
+        return
+    end
+
+    if not self._connected and now < (state.handshakeWaitUntil or 0) then
+        return
+    end
+
+    if now - state.windowStart >= 1 then
+        state.windowStart = now
+        state.sentInWindow = 0
+    end
+    while state.sentInWindow < PREFETCH_BATCHES_PER_SEC and #state.queue > 0 do
+        if self:_SendItemPrefetchBatch(now) then
+            state.sentInWindow = state.sentInWindow + 1
+        end
+    end
+end
+
+function DC:_OnItemPrefetchResult(data)
+    if type(data) ~= "table" or type(data.ids) ~= "table" then
+        return
+    end
+
+    local state = self._itemPrefetch
+    if data.throttled then
+        -- Over the server's per-second budget: back to the front of the queue,
+        -- in their original order.
+        for index = #data.ids, 1, -1 do
+            local itemId = tonumber(data.ids[index])
+            if itemId and state.pending[itemId] then
+                state.pending[itemId] = nil
+                state.queued[itemId] = true
+                table.insert(state.queue, 1, itemId)
+            end
+        end
+        return
+    end
+
+    local missing = {}
+    if type(data.missing) == "table" then
+        for _, value in ipairs(data.missing) do
+            local itemId = tonumber(value)
+            if itemId then
+                missing[itemId] = true
+            end
+        end
+    end
+
+    local now = GetTime()
+    for _, value in ipairs(data.ids) do
+        local itemId = tonumber(value)
+        local entry = itemId and state.pending[itemId]
+        if entry then
+            if missing[itemId] then
+                state.missing[itemId] = true
+                self:_FinishItemPrefetch(itemId, false)
+            elseif IsItemCached(itemId) then
+                self:_FinishItemPrefetch(itemId, true)
+            else
+                -- Answered without the record (the server sent it earlier this
+                -- session): give it a moment, then ask the stock way.
+                entry.deadline = math.min(entry.deadline,
+                    now + PREFETCH_RESOLVE_GRACE_SEC)
+            end
+        end
+    end
+end
+
+DC:RegisterHandler("QOS", QOS_SMSG_PREFETCH_ITEMS_RESULT, function(data)
+    DC:_OnItemPrefetchResult(data)
+end)
 
 -- Session-critical traffic that must never sit behind a throttle backlog:
 -- the handshake and version check establish the connection in the first place,
@@ -2866,12 +3227,33 @@ frame:RegisterEvent("ADDON_LOADED")
 -- client; PLAYER_LEAVING_WORLD..PLAYER_ENTERING_WORLD brackets that window.
 frame:RegisterEvent("PLAYER_LEAVING_WORLD")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+-- Only a DLL that advertises NATIVE_PUSH_EVENTS appends DC_NATIVE_DATA to the
+-- client's event table; registering it on any other client would name an
+-- event that does not exist.
+if DC:HasClientCapability(DC.Capability.NATIVE_PUSH_EVENTS) then
+    DC._nativePushActive = pcall(frame.RegisterEvent, frame, NATIVE_PUSH_EVENT)
+        and true or false
+end
 frame:SetScript("OnUpdate", function(self, elapsed)
     -- Drain native bridge responses every frame so the UI stays responsive
-    -- (the 1s throttle below only gates the slower bookkeeping tasks). Skip
-    -- while a loading screen is active - see PLAYER_LEAVING_WORLD below.
+    -- (the 1s throttle below only gates the slower bookkeeping tasks), or only
+    -- as a safety net when the DLL pushes DC_NATIVE_DATA. Skip while a loading
+    -- screen is active - see PLAYER_LEAVING_WORLD below.
     if not DC._worldLoading and type(DC._PollNativeResponses) == "function" then
-        DC:_PollNativeResponses()
+        if DC._nativePushActive then
+            DC._nativeSafetyPollElapsed = (DC._nativeSafetyPollElapsed or 0)
+                + (elapsed or 0)
+            if DC._nativeSafetyPollElapsed >= NATIVE_PUSH_SAFETY_POLL_SEC then
+                DC._nativeSafetyPollElapsed = 0
+                DC:_PollNativeResponses()
+            end
+        else
+            DC:_PollNativeResponses()
+        end
+    end
+
+    if type(DC._ItemPrefetchTick) == "function" then
+        DC:_ItemPrefetchTick()
     end
 
     -- Release throttled outbound messages as the token bucket refills. Runs
@@ -2920,13 +3302,18 @@ frame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 frame:SetScript("OnEvent", function()
-    if event == "PLAYER_LEAVING_WORLD" then
+    if event == NATIVE_PUSH_EVENT then
+        DC:_OnNativeDataSignal(arg1)
+        return
+    elseif event == "PLAYER_LEAVING_WORLD" then
         -- Loading screen / map teardown begins: pause native response dispatch.
         DC._worldLoading = true
         return
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- World is valid again: resume native response dispatch.
+        -- World is valid again: resume native response dispatch, starting with
+        -- whatever was signalled while it was paused.
         DC._worldLoading = nil
+        DC:_FlushDeferredNativeSignals()
         return
     end
     if event == "CHAT_MSG_ADDON" then
@@ -3655,9 +4042,43 @@ function DC:IsConnected()
     return self._connected
 end
 
--- Get server feature availability
+-- Get server feature availability by module code ("MPLUS", "COLL", ...).
 function DC:HasFeature(feature)
     return self._features[feature] == true
+end
+
+-- SMSG_FEATURE_LIST positions -> module codes, in the order of the server's
+-- BuildFeatureListMessage (dc_addon_protocol.cpp). The server only appends.
+local FEATURE_LIST_ORDER = {
+    "AOE", "SPEC", "UPG", "DUEL", "MPLUS", "PRES", "SEAS", "HLBG", "WRLD", "QOS",
+}
+
+DC._featureChangeHandlers = DC._featureChangeHandlers or {}
+
+-- handler(moduleCode, enabled, wasEnabled) runs when a module is switched on or
+-- off server-side while this client is connected (`.reload config` re-sends
+-- the flags). The first copy of the flags after login is not a change.
+function DC:RegisterFeatureChangeHandler(handler)
+    if type(handler) == "function" then
+        table.insert(self._featureChangeHandlers, handler)
+    end
+end
+
+function DC:_ApplyFeatureStates(states)
+    local changes = {}
+    for code, enabled in pairs(states) do
+        local previous = self._features[code]
+        self._features[code] = enabled
+        if previous ~= nil and previous ~= enabled then
+            table.insert(changes, { code, enabled, previous })
+        end
+    end
+    for _, change in ipairs(changes) do
+        for _, handler in ipairs(self._featureChangeHandlers) do
+            self:_InvokeHandlerSafe("feature-change", "CORE", 0x14, handler,
+                change[1], change[2], change[3])
+        end
+    end
 end
 
 -- Register built-in handlers for CORE module
@@ -3798,20 +4219,40 @@ DC:RegisterHandler("CORE", 0x10, function(...)
     end
 end)
 
+-- Positional "1"/"0" flags (see FEATURE_LIST_ORDER). Each value used to be
+-- stored as a feature NAME, so _features only ever held "1" and "0".
 DC:RegisterHandler("CORE", 0x12, function(...)
-    local features = {...}
-    DC:DebugPrint("Feature list received:", table.concat(features, ", "))
-    for _, feat in ipairs(features) do
-        DC._features[feat] = true
+    local values = {...}
+    DC:DebugPrint("Feature list received:", table.concat(values, ", "))
+    local states = {}
+    for index, code in ipairs(FEATURE_LIST_ORDER) do
+        local hasFlag, enabled = ParseBooleanLike(values[index])
+        if hasFlag then
+            states[code] = enabled
+        end
     end
+    DC:_ApplyFeatureStates(states)
 end)
 
 DC:RegisterHandler("CORE", 0x14, function(data)
     if type(data) ~= "table" then return end
+    -- Every module's flag by module code; newer servers only.
+    if type(data.features) == "table" then
+        local states = {}
+        for code, value in pairs(data.features) do
+            local hasFlag, enabled = ParseBooleanLike(value)
+            if hasFlag then
+                states[tostring(code)] = enabled
+            end
+        end
+        DC:_ApplyFeatureStates(states)
+    end
     DC._serverContext = {
         seasonId = tonumber(data.seasonId) or 0,
         seasonName = data.seasonName or data.name,
         phaseMask = tonumber(data.phaseMask) or 1,
+        -- Bumped by each server config reload; 0 from servers that predate it.
+        configRevision = tonumber(data.configRevision) or 0,
     }
     for _, handler in ipairs(DC._serverContextHandlers or {}) do
         DC:_InvokeHandlerSafe("server-context", "CORE", 0x14, handler, DC._serverContext)

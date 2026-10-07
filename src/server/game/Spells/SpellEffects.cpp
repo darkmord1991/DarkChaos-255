@@ -4740,17 +4740,16 @@ void Spell::EffectFeedPet(SpellEffIndex effIndex)
     if (!pet->IsAlive())
         return;
 
-    int32 benefit = pet->GetCurrentFoodBenefitLevel(foodItem->GetTemplate()->ItemLevel);
-    if (benefit <= 0)
-        return;
-
     ExecuteLogEffectDestroyItem(effIndex, foodItem->GetEntry());
 
     uint32 count = 1;
     player->DestroyItemCount(foodItem, count, true);
     /// @todo: fix crash when a spell has two effects, both pointed at the same item target
 
-    unitCaster->CastCustomSpell(pet, m_spellInfo->Effects[effIndex].TriggerSpell, &benefit, nullptr, nullptr, true);
+    // Pets are always happy (see HAPPINESS_LEVEL_SIZE), so as in retail since 4.1 the food heals the pet for 50%
+    // instead of casting the happiness effect (TriggerSpell 1539)
+    HealInfo healInfo(unitCaster, pet, pet->CountPctFromMaxHealth(50), m_spellInfo, m_spellInfo->GetSchoolMask());
+    unitCaster->HealBySpell(healInfo);
 }
 
 void Spell::EffectDismissPet(SpellEffIndex effIndex)

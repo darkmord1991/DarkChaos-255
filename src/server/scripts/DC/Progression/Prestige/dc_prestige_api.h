@@ -20,7 +20,18 @@ namespace PrestigeAPI
     bool CanPrestige(Player* player);
     void ApplyPrestigeBuffs(Player* player);
     void RemovePrestigeBuffs(Player* player);
+    // Re-reads the challenge stat bonus into the prestige aura already on the player.
+    void RecalculatePrestigeBuffs(Player* player);
+    // Tells the player why when it refuses.
     bool PerformPrestige(Player* player);
+    // Why the player cannot prestige right now, or an empty string when they can. Covers the
+    // requirements (CanPrestige) and the moment: alive, out of combat, not travelling, open world.
+    std::string GetPrestigeRefusal(Player* player);
+    // The level a prestige restarts this character at: Prestige.ResetLevel plus Head Start.
+    uint32 GetRestartLevel(Player* player);
+    // Prestige.FreshStart: a prestige also unlearns class spells above the restart level, unequips
+    // gear the character can no longer use and makes completed zone quests available again.
+    bool IsFreshStartEnabled();
 
     // Challenges
     bool IsChallengesEnabled();

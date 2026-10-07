@@ -174,11 +174,15 @@ namespace Seasons
         msg.Send(player);
     }
 
-    // Pick the negotiated transport for a server -> client response.
+    // Pick the negotiated transport for a server -> client response. A payload
+    // an older DLL would cut (it read into a 32 KB buffer) takes the chunked
+    // addon transport instead.
     static void SendSeasonalPayload(Player* player, uint8 logicalOpcode,
         std::string const& payload)
     {
-        if (ResolveSeasonalTransport(player).UsesNative())
+        if (ResolveSeasonalTransport(player).UsesNative()
+            && DCAddon::NativePayloadFits(player, payload.size(),
+                DCAddon::LegacyNativePayloadMax::SEASONAL))
         {
             SendNativeSeasonalPayload(player, logicalOpcode, payload);
             return;

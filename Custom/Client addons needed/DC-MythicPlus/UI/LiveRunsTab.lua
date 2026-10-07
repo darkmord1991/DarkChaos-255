@@ -352,6 +352,12 @@ local function EnsureNativeSpectatorPollFrame()
         return
     end
 
+    -- A DLL that pushes DC_NATIVE_DATA signals each new snapshot, so the poll
+    -- below is then only a safety net (DCAddonProtocol:GetNativePollInterval).
+    local protocol = rawget(_G, "DCAddonProtocol")
+    local pushProtocol = protocol and type(protocol.OnNativeData) == "function"
+        and type(protocol.GetNativePollInterval) == "function" and protocol or nil
+
     nativeSpectatorPollFrame = CreateFrame("Frame")
     nativeSpectatorPollFrame.elapsed = 0
     nativeSpectatorPollFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -360,13 +366,21 @@ local function EnsureNativeSpectatorPollFrame()
         end
 
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_SPECTATOR_LIVE_POLL_INTERVAL then
+        local interval = NATIVE_SPECTATOR_LIVE_POLL_INTERVAL
+        if pushProtocol then
+            interval = pushProtocol:GetNativePollInterval(interval)
+        end
+        if self.elapsed < interval then
             return
         end
 
         self.elapsed = 0
         ConsumeNativeSpectatorSnapshot()
     end)
+
+    if pushProtocol then
+        pushProtocol:OnNativeData("SPEC", ConsumeNativeSpectatorSnapshot)
+    end
 end
 
 -- =====================================================================

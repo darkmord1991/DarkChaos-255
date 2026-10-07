@@ -31,6 +31,7 @@
 void AddSC_ac_guard_npc();                    // AC/ac_guard_npc.cpp
 void AddSC_dc_worgoblin();                    // Races/dc_worgoblin.cpp
 void AddSC_dc_dark_iron();                    // Races/dc_dark_iron.cpp
+void AddSC_dc_hunter_pet_abilities();         // Pets/dc_hunter_pet_abilities.cpp
 void AddSC_dc_login_announce();               // Progression/FirstStart/dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009();             // AC/ac_quest_npc_800009.cpp
 void AddSC_flightmasters();                   // AC/ac_flightmasters.cpp
@@ -99,6 +100,9 @@ void AddSC_dc_azshara_cata();                 // MountHyjal/zone_azshara_cata.cp
 
 // --- Plaguelands downport (map 751) ---
 void AddSC_dc_western_plaguelands();          // Plaguelands/zone_western_plaguelands_dc.cpp
+
+// --- Worldforged pickups (maps 750 / 751, ported from Ascension CoA) ---
+void AddSC_dc_worldforged_pickups();          // Worldforged/dc_worldforged_pickups.cpp
 
 // --- Blackfathom Deeps (Ashenvale) -- map-48 clone on map 820 ---
 void AddSC_instance_bfd_ashenvale();          // BlackfathomAshenvale/instance_bfd_ashenvale.cpp
@@ -186,6 +190,7 @@ void AddSC_dc_cata_itemset_bonuses();         // ItemSets/dc_cata_itemset_bonuse
 
 // --- Random enchants system ---
 void AddSC_dc_random_enchants();              // RandomEnchants/dc_random_enchants.cpp
+void AddSC_dc_random_enchants_reroll();       // RandomEnchants/dc_random_enchants_reroll.cpp
 
 // --- Unified spectator core (must load before spectator consumers) ---
 void AddSC_dc_spectator_core();               // Spectator/dc_spectator_core.cpp
@@ -327,6 +332,7 @@ void AddDCScripts()
     LogSection("DC Core Services");
     DC_LOAD(AddSC_dc_worgoblin);
     DC_LOAD(AddSC_dc_dark_iron);
+    DC_LOAD(AddSC_dc_hunter_pet_abilities);
     DC_LOAD(AddSC_dc_login_announce);
     DC_LOAD(AddSC_dc_teleporter);
 
@@ -396,6 +402,9 @@ void AddDCScripts()
 
     LogSection("Plaguelands Downport (map 751)");
     DC_LOAD(AddSC_dc_western_plaguelands);
+
+    LogSection("Worldforged Pickups (maps 750 / 751)");
+    DC_LOAD(AddSC_dc_worldforged_pickups);
 
     LogSection("Blackfathom Deeps (Ashenvale) - map 820");
     DC_LOAD(AddSC_instance_bfd_ashenvale);
@@ -493,6 +502,9 @@ void AddDCScripts()
 
     LogSection("Random Enchants System");
     DC_LOAD(AddSC_dc_random_enchants);
+    // Paid reroll / add-a-line for the item upgrade window; its UPG handlers are
+    // registered with the other addon modules (dc_addon_enchant_reroll.cpp).
+    DC_LOAD(AddSC_dc_random_enchants_reroll);
 
     LogSection("Unified Spectator Core");
     // Owns the spectator live-snapshot opcode pair and logout cleanup;

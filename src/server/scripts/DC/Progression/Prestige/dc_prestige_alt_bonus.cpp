@@ -17,6 +17,7 @@
 #include "Chat.h"
 #include "StringFormat.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include <algorithm>
 #include <functional>
 #include <unordered_set>
 #include <vector>
@@ -123,18 +124,15 @@ namespace
                 return; // a warm-up query is already running for this account
 
             uint32 const capturedMaxLevel = maxLevel;
-            uint32 const capturedMaxBonusChars = maxBonusChars;
             DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
                 "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
                 accountId, capturedMaxLevel))
-                .WithCallback([accountId, capturedMaxBonusChars](QueryResult result)
+                .WithCallback([accountId](QueryResult result)
             {
+                // Kept uncapped so OnLeftMaxLevel can adjust it exactly; CalculateXPBonus applies the cap.
                 uint32 count = 0;
                 if (result)
                     count = result->Fetch()[0].Get<uint32>();
-
-                if (count > capturedMaxBonusChars)
-                    count = capturedMaxBonusChars;
 
                 g_AccountMaxLevelCache[accountId] = count;
                 g_AccountMaxLevelWarmInFlight.erase(accountId);
@@ -160,13 +158,23 @@ namespace
             if (player->GetLevel() >= maxLevel)
                 return 0;
 
-            uint32 maxLevelCount = GetMaxLevelCharCount(player->GetSession()->GetAccountId());
-
-            // Subtract 1 if this character is at max level (shouldn't happen due to check above, but just in case)
-            if (player->GetLevel() >= maxLevel && maxLevelCount > 0)
-                maxLevelCount--;
-
+            uint32 maxLevelCount = std::min(GetMaxLevelCharCount(player->GetSession()->GetAccountId()), maxBonusChars);
             return maxLevelCount * bonusPerChar;
+        }
+
+        // A prestige took the character below max level: it no longer counts for its own account and
+        // earns the bonus itself. Adjusted in place, because a re-query could still read the level from
+        // before the prestige (the character save is asynchronous). A cold cache reads it later anyway.
+        void OnLeftMaxLevel(Player* player)
+        {
+            auto it = g_AccountMaxLevelCache.find(player->GetSession()->GetAccountId());
+            if (it == g_AccountMaxLevelCache.end())
+                return;
+
+            if (it->second > 0)
+                --it->second;
+
+            ApplyVisualBuff(player);
         }
 
         void ClearAccountCache(uint32 accountId)
@@ -307,13 +315,20 @@ namespace
             });
         }
 
-        void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
+        void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
 
+            uint32 maxLevel = PrestigeAltBonusSystem::instance()->GetMaxLevel();
+            if (player->GetLevel() < maxLevel && oldLevel >= maxLevel)
+            {
+                PrestigeAltBonusSystem::instance()->OnLeftMaxLevel(player);
+                return;
+            }
+
             // Clear cache and update buff when player reaches max level
-            if (player->GetLevel() >= PrestigeAltBonusSystem::instance()->GetMaxLevel())
+            if (player->GetLevel() >= maxLevel)
             {
                 PrestigeAltBonusSystem::instance()->InvalidateCacheForPlayer(player);
                 PrestigeAltBonusSystem::instance()->RemoveVisualBuff(player);

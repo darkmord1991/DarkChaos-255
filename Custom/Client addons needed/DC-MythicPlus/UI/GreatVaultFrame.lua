@@ -217,6 +217,13 @@ local function PrimeItem(itemId)
     end
     primedItems[itemId] = true
 
+    -- The protocol batches every row of the vault into one prefetch request.
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.PrefetchItems) == "function" then
+        protocol:PrefetchItems({ itemId })
+        return
+    end
+
     if not scanTooltip then
         scanTooltip = CreateFrame("GameTooltip", "DCMythicPlusVaultScanTooltip", UIParent, "GameTooltipTemplate")
     end

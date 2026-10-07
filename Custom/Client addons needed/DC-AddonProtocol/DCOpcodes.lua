@@ -112,6 +112,11 @@ DC.Opcode = {
         SMSG_TRANSMUTE_INFO = 0x30,
         SMSG_TRANSMUTE_RESULT = 0x31,
         SMSG_OPEN_TRANSMUTE_UI = 0x32,
+        -- Random enchant reroll (DC-ItemUpgrade/EnchantReroll.lua)
+        CMSG_GET_ENCHANT_INFO = 0x22,
+        CMSG_DO_ENCHANT_REROLL = 0x23,
+        SMSG_ENCHANT_INFO = 0x33,
+        SMSG_ENCHANT_RESULT = 0x34,
     },
     Spec = {
         CMSG_REQUEST_SPECTATE = 0x01,
@@ -344,6 +349,7 @@ DC.Opcode = {
         CMSG_GET_SPELL_INFO = 0x05,
         CMSG_REQUEST_FEATURE = 0x06,
         CMSG_COLLECT_ALL_MAIL = 0x07,
+        CMSG_PREFETCH_ITEMS = 0x09,
         SMSG_SETTINGS_SYNC = 0x10,
         SMSG_SETTING_UPDATED = 0x11,
         SMSG_ITEM_INFO = 0x12,
@@ -351,6 +357,7 @@ DC.Opcode = {
         SMSG_SPELL_INFO = 0x14,
         SMSG_FEATURE_DATA = 0x15,
         SMSG_NOTIFICATION = 0x16,
+        SMSG_PREFETCH_ITEMS_RESULT = 0x18,
     },
 }
 
@@ -380,6 +387,11 @@ DC.Upgrade = {
     BatchRequest = function(items) DC:Request("UPG", 0x03, { items = items }) end,
     GetCurrency = function() DC:Request("UPG", 0x04, {}) end,
     SelectPackage = function(packageId) DC:Request("UPG", 0x05, { packageId = packageId }) end,
+    -- action = "reroll" | "add" | "rerollAll"; line is 0-based; expected = the 3 enchant ids shown.
+    GetEnchantInfo = function(bag, slot) DC:Request("UPG", 0x22, { bag = bag, slot = slot }) end,
+    RerollEnchant = function(bag, slot, action, line, expected)
+        DC:Request("UPG", 0x23, { bag = bag, slot = slot, action = action, line = line, expected = expected })
+    end,
 }
 
 DC.Spectator = {

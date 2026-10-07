@@ -209,6 +209,13 @@ local function RequestItem(itemID)
     if requested[itemID] then return end
     requested[itemID] = true
 
+    -- The protocol batches a whole loot table into one prefetch request.
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.PrefetchItems) == "function" then
+        protocol:PrefetchItems({ itemID })
+        return
+    end
+
     local tip = Primer()
     if not tip then return end
     pcall(tip.SetOwner, tip, UIParent, "ANCHOR_NONE")

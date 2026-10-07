@@ -96,13 +96,19 @@ namespace World
             BridgeOpcode::SMSG_WORLD_CONTENT, data.size(), preview, true, 0);
     }
 
-    // Transport-aware send: native dedicated opcode when negotiated, else addon.
+    // Transport-aware send: native dedicated opcode when negotiated and the
+    // payload fits the client's reader, else addon.
     static void SendWorldMessage(Player* player, DCAddon::JsonMessage const& msg)
     {
         if (ResolveWorldTransport(player).UsesNative())
         {
-            SendNativeWorldPayload(player, msg.GetOpcode(), msg.Encode());
-            return;
+            std::string const payload = msg.Encode();
+            if (DCAddon::NativePayloadFits(player, payload.size(),
+                    DCAddon::LegacyNativePayloadMax::WORLD))
+            {
+                SendNativeWorldPayload(player, msg.GetOpcode(), payload);
+                return;
+            }
         }
 
         msg.Send(player);
@@ -248,10 +254,17 @@ namespace World
         // Resolve the transport once for the whole snapshot rather than once
         // per message (this used to run per boss update too).
         bool const useNative = ResolveWorldTransport(player).UsesNative();
+        bool const largeNative = useNative && DCAddon::SessionSupportsCapability(player,
+            DCAddon::ProtocolVersion::Capability::LARGE_NATIVE_PAYLOAD);
+        // An older DLL cut a snapshot longer than its 64 KB buffer, so a larger
+        // one goes over chat for it; a LARGE_NATIVE_PAYLOAD DLL reads it whole.
+        bool const snapshotNative = useNative
+            && DCAddon::NativePayloadFits(player, payload->snapshotJson.size(),
+                DCAddon::LegacyNativePayloadMax::WORLD);
 
         JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
         response.SetPreEncodedJson(payload->snapshotJson);
-        if (useNative)
+        if (snapshotNative)
             SendNativeWorldPayload(player, response.GetOpcode(), payload->snapshotJson);
         else
             response.Send(player);
@@ -267,10 +280,10 @@ namespace World
         // single largest S2C byte consumer in the protocol telemetry: ~3.5
         // redundant per-boss copies of data already inside the snapshot.
         // The size gate keeps the fallback for any payload big enough to
-        // approach a client-side buffer cap.
+        // approach an older DLL's buffer cap; a LARGE_NATIVE_PAYLOAD DLL has none.
         constexpr std::size_t NATIVE_WHOLE_PAYLOAD_LIMIT = 8000;
-        bool const nativeDeliveredWhole = useNative
-            && payload->snapshotJson.size() < NATIVE_WHOLE_PAYLOAD_LIMIT;
+        bool const nativeDeliveredWhole = snapshotNative
+            && (largeNative || payload->snapshotJson.size() < NATIVE_WHOLE_PAYLOAD_LIMIT);
 
         if (!nativeDeliveredWhole)
         {

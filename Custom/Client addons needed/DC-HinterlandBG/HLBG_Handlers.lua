@@ -474,6 +474,18 @@ local function EnsureNativeHLBGLivePollFrame()
 
         nativeHLBGLiveWasViewActive = viewActive
     end)
+
+    -- A DLL that pushes DC_NATIVE_DATA signals each new snapshot, so an open
+    -- view takes it at once. The tick above keeps its cadence: it also notices
+    -- the view opening and re-requests while it stays open.
+    local protocol = rawget(_G, 'DCAddonProtocol')
+    if protocol and type(protocol.OnNativeData) == 'function' then
+        protocol:OnNativeData('HLBG', function()
+            if IsNativeHLBGLiveViewActive() then
+                ConsumeNativeHLBGLiveSnapshot()
+            end
+        end)
+    end
 end
 
 EnsureNativeHLBGLivePollFrame()
@@ -519,10 +531,32 @@ local function ApplySpectatorPayload(payload)
     return ApplyNativeHLBGLiveSnapshot(decoded)
 end
 
+local function ConsumeSpectatorSnapshot()
+    if not HLBG._spectating or not ShouldUseNativeSpectatorBridge() then
+        return
+    end
+
+    -- Revision poll: the native side keeps only the latest snapshot.
+    local ok, revision, payload = pcall(rawget(_G, 'GetNativeSpectatorLiveSnapshot'))
+    revision = ok and tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativeSpectatorRevision then
+        return
+    end
+
+    lastNativeSpectatorRevision = revision
+    ApplySpectatorPayload(payload)
+end
+
 local function EnsureSpectatorPollFrame()
     if spectatorPollFrame then
         return
     end
+
+    -- A DLL that pushes DC_NATIVE_DATA signals each new snapshot, so the poll
+    -- below is then only a safety net (DCAddonProtocol:GetNativePollInterval).
+    local protocol = rawget(_G, 'DCAddonProtocol')
+    local pushProtocol = protocol and type(protocol.OnNativeData) == 'function'
+        and type(protocol.GetNativePollInterval) == 'function' and protocol or nil
 
     spectatorPollFrame = CreateFrame('Frame')
     spectatorPollFrame.elapsed = 0
@@ -532,25 +566,21 @@ local function EnsureSpectatorPollFrame()
         end
 
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < SPECTATOR_POLL_INTERVAL then
+        local interval = SPECTATOR_POLL_INTERVAL
+        if pushProtocol then
+            interval = pushProtocol:GetNativePollInterval(interval)
+        end
+        if self.elapsed < interval then
             return
         end
         self.elapsed = 0
 
-        if not ShouldUseNativeSpectatorBridge() then
-            return
-        end
-
-        -- Revision poll: the native side keeps only the latest snapshot.
-        local ok, revision, payload = pcall(rawget(_G, 'GetNativeSpectatorLiveSnapshot'))
-        revision = ok and tonumber(revision) or 0
-        if revision <= 0 or revision == lastNativeSpectatorRevision then
-            return
-        end
-
-        lastNativeSpectatorRevision = revision
-        ApplySpectatorPayload(payload)
+        ConsumeSpectatorSnapshot()
     end)
+
+    if pushProtocol then
+        pushProtocol:OnNativeData('SPEC', ConsumeSpectatorSnapshot)
+    end
 end
 
 local function RequestSpectatorOpcode(opcode, payload)

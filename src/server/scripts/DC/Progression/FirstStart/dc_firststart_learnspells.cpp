@@ -779,4 +779,94 @@ namespace DCFirstStart::LearnSpells
         LearnTrainerSpells(player, toLevel, debug);
         EnsureCoreWeaponPassives(player, debug);
     }
+
+    uint32 ForgetClassSpellsAbove(Player* player, uint8 level, bool debug)
+    {
+        uint8 classId = player->getClass();
+        uint32 family = GetSpellFamily(classId);
+        if (family == SPELLFAMILY_GENERIC)
+            return 0;
+
+        BuildSpellCaches(debug);
+
+        // Only what comes back on the way up: a class trainer always teaches its spells again, the
+        // DBC scan and the additional spells only return through GrantClassSpellsOnLevelUp.
+        bool const relearnOnLevelUp = sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true);
+        uint8 const relearnMaxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, 80);
+
+        std::vector<uint32> spells;
+        for (CachedSpell const& cached : g_trainerSpellCache[classId])
+        {
+            if (cached.reqLevel <= level)
+                continue;
+
+            spells.push_back(cached.spellId);
+
+            // A trainer entry can be the spell that teaches the real one.
+            if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(cached.spellId))
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                    if (spellInfo->Effects[i].Effect == SPELL_EFFECT_LEARN_SPELL && spellInfo->Effects[i].TriggerSpell)
+                        spells.push_back(spellInfo->Effects[i].TriggerSpell);
+        }
+
+        if (relearnOnLevelUp)
+        {
+            for (CachedSpell const& cached : g_dbcSpellCache[classId])
+                if (cached.reqLevel > level && cached.reqLevel <= relearnMaxLevel)
+                    spells.push_back(cached.spellId);
+
+            for (auto const& [spellLevel, families] : kAdditionalSpells)
+            {
+                if (spellLevel <= level || spellLevel > relearnMaxLevel)
+                    continue;
+
+                auto familyIt = families.find(family);
+                if (familyIt == families.end())
+                    continue;
+
+                for (AddSpell const& spell : familyIt->second)
+                    spells.push_back(spell.spellId);
+            }
+        }
+
+        std::unordered_set<uint32> chains;
+        uint32 forgotten = 0;
+        for (uint32 spellId : spells)
+        {
+            if (!player->HasSpell(spellId))
+                continue;
+
+            // Unlearning Dual Wield leaves CanDualWield() set until the next login, which then mails
+            // the off-hand away; EnsureCoreWeaponPassives grants it again on the way up anyway.
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo || spellInfo->HasEffect(SPELL_EFFECT_DUAL_WIELD))
+                continue;
+
+            chains.insert(sSpellMgr->GetFirstSpellInChain(spellId));
+            player->removeSpell(spellId, SPEC_MASK_ALL, false);
+            ++forgotten;
+        }
+
+        // removeSpell leaves the rank below a removed one known but inactive, so it cannot be cast
+        // until the next login. Learning the highest rank left again makes it the active one.
+        for (uint32 firstRank : chains)
+        {
+            uint32 highest = 0;
+            for (uint32 rank = firstRank; rank; rank = sSpellMgr->GetNextSpellInChain(rank))
+                if (player->HasSpell(rank))
+                    highest = rank;
+
+            if (!highest || player->HasActiveSpell(highest))
+                continue;
+
+            player->removeSpell(highest, SPEC_MASK_ALL, false);
+            player->learnSpell(highest, false);
+        }
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCFirstStart] Unlearned {} class spell(s) above level {} for {}",
+                forgotten, uint32(level), player->GetName());
+
+        return forgotten;
+    }
 } // namespace DCFirstStart::LearnSpells

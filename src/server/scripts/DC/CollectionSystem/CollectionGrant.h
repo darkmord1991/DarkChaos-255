@@ -145,6 +145,14 @@ namespace DCCollection
     /// touching the DB. Returns true when something actually changed.
     bool ApplyCollectibleToCharacter(Player* player, CollectionType type, uint32 entryId);
 
+    /// Resends the character's whole spell list (SMSG_INITIAL_SPELLS) shortly
+    /// after a silent addSpell. The client builds the spellbook and the
+    /// Mounts/Companions tabs from that list, and a silent addSpell never
+    /// reaches it - the spell only showed up after the next login or loading
+    /// screen. Calls inside the coalescing window share one packet, so a bulk
+    /// grant costs one resend.
+    void RefreshClientSpellList(Player* player);
+
     /// "mount"/"pet"/"toy"/"heirloom"/"title"/"transmog", or a numeric 1-6.
     bool ParseCollectionType(std::string const& token, CollectionType& out);
     char const* CollectionTypeToName(CollectionType type);

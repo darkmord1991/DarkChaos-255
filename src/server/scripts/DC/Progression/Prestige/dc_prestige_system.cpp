@@ -26,16 +26,22 @@
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
 #include "AchievementMgr.h"
+#include "Item.h"
+#include "Mail.h"
+#include "ObjectMgr.h"
+#include "QuestDef.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
+#include "DC/Progression/FirstStart/dc_firststart_learnspells.h"
 #include "dc_prestige_api.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_prestige_notify.h"
 #include <functional>
 #include <sstream>
 #include <mutex>
+#include <vector>
 
 using namespace Acore::ChatCommands;
 
@@ -67,6 +73,24 @@ struct PrestigeReward
     uint32 count;
 };
 
+// Why a prestige is refused. The first three are the requirements (CanPrestige); the rest are about
+// the moment, because a prestige rebuilds the character and teleports it.
+enum class PrestigeRefusal : uint8
+{
+    None,
+    Disabled,
+    BelowLevel,
+    MaxPrestige,
+    Dead,
+    InCombat,
+    Travelling,
+    NotInOpenWorld
+};
+
+// The action bar a fresh start cleared: index 0 counts the buttons still waiting, index 1 + button
+// holds that button's spell until the character knows a rank of it again.
+std::string const PRESTIGE_BAR_SETTING = "dc-prestige-bar";
+
 class PrestigeSystem
 {
 public:
@@ -87,6 +111,7 @@ public:
         keepGear = sConfigMgr->GetOption<bool>("Prestige.KeepGear", true);
         keepProfessions = sConfigMgr->GetOption<bool>("Prestige.KeepProfessions", true);
         keepGold = sConfigMgr->GetOption<bool>("Prestige.KeepGold", true);
+        freshStart = sConfigMgr->GetOption<bool>("Prestige.FreshStart", true);
         grantStarterGear = sConfigMgr->GetOption<bool>("Prestige.GrantStarterGear", false);
         announcePrestige = sConfigMgr->GetOption<bool>("Prestige.AnnounceWorld", true);
         pointsPerPrestige = sConfigMgr->GetOption<uint32>("Prestige.PointsPerPrestige", 1);
@@ -104,9 +129,10 @@ public:
             configValid = false;
         }
 
-        if (requireLevel == 0 || requireLevel > 255)
+        // A prestige restarts below RequiredLevel and at level 1 or higher.
+        if (requireLevel < 2 || requireLevel > 255)
         {
-            LOG_ERROR("scripts.dc", "Prestige: Invalid RequiredLevel ({}). Must be 1-255. Using default {}.",
+            LOG_ERROR("scripts.dc", "Prestige: Invalid RequiredLevel ({}). Must be 2-255. Using default {}.",
                 requireLevel, REQUIRED_LEVEL);
             requireLevel = REQUIRED_LEVEL;
             configValid = false;
@@ -158,6 +184,7 @@ public:
     uint32 GetMaxPrestigeLevel() const { return maxPrestigeLevel; }
     uint32 GetStatBonusPercent() const { return statBonusPercent; }
     uint32 GetResetLevel() const { return resetLevel; }
+    bool IsFreshStartEnabled() const { return freshStart; }
 
     uint32 GetPrestigeLevel(Player* player)
     {
@@ -169,24 +196,26 @@ public:
             std::lock_guard<std::mutex> lock(cacheMutex);
             auto it = prestigeCache.find(guid);
             if (it != prestigeCache.end())
-                return it->second;
+                return it->second.level;
         }
 
         // Query from database - guid is uint32 so SQL injection is not possible
-        std::string sql = Acore::StringFormat("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
+        std::string sql = Acore::StringFormat(
+            "SELECT prestige_level, prestige_points FROM dc_character_prestige WHERE guid = {}", guid);
         QueryResult result = CharacterDatabase.Query(sql.c_str());
-        uint32 level = 0;
+        CachedPrestige cached;
         if (result)
         {
             Field* fields = result->Fetch();
-            level = fields[0].Get<uint32>();
+            cached.level = fields[0].Get<uint32>();
+            cached.points = fields[1].Get<uint32>();
         }
 
         {
             std::lock_guard<std::mutex> lock(cacheMutex);
-            prestigeCache[guid] = level;
+            prestigeCache[guid] = cached;
         }
-        return level;
+        return cached.level;
     }
 
     // Cache-only read: never touches the database. Returns 0 until the cache
@@ -196,7 +225,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(cacheMutex);
         auto it = prestigeCache.find(playerGuid.GetCounter());
-        return it != prestigeCache.end() ? it->second : 0;
+        return it != prestigeCache.end() ? it->second.level : 0;
     }
 
     // Load + cache the prestige level asynchronously (the cache is cold after
@@ -206,7 +235,7 @@ public:
     void WarmPrestigeCacheAsync(ObjectGuid playerGuid, std::function<void(Player*, uint32)> continuation)
     {
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
-            "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
+            "SELECT prestige_level, prestige_points FROM dc_character_prestige WHERE guid = {}",
             playerGuid.GetCounter()))
             .WithCallback([this, playerGuid, continuation = std::move(continuation)](QueryResult result)
         {
@@ -214,14 +243,21 @@ public:
             if (!player || !player->GetSession())
                 return;
 
-            uint32 level = result ? result->Fetch()[0].Get<uint32>() : 0;
+            CachedPrestige cached;
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                cached.level = fields[0].Get<uint32>();
+                cached.points = fields[1].Get<uint32>();
+            }
+
             {
                 std::lock_guard<std::mutex> lock(cacheMutex);
-                prestigeCache[playerGuid.GetCounter()] = level;
+                prestigeCache[playerGuid.GetCounter()] = cached;
             }
 
             if (continuation)
-                continuation(player, level);
+                continuation(player, cached.level);
         }));
     }
 
@@ -234,19 +270,17 @@ public:
         SetPrestigeProgress(player, level, currentPoints);
     }
 
+    // The points come from the same row as the level, cached alongside it.
     uint32 GetPrestigePoints(Player* player)
     {
         if (!player)
             return 0;
 
-        uint32 guid = player->GetGUID().GetCounter();
-        std::string sql = Acore::StringFormat("SELECT prestige_points FROM dc_character_prestige WHERE guid = {}", guid);
-        QueryResult result = CharacterDatabase.Query(sql.c_str());
-        if (!result)
-            return 0;
+        GetPrestigeLevel(player); // fills the cache when it is cold
 
-        Field* fields = result->Fetch();
-        return fields[0].Get<uint32>();
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        auto it = prestigeCache.find(player->GetGUID().GetCounter());
+        return it != prestigeCache.end() ? it->second.points : 0;
     }
 
     void SetPrestigeProgress(Player* player, uint32 level, uint32 points)
@@ -254,19 +288,26 @@ public:
         if (!player)
             return;
 
+        CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+        AppendPrestigeProgress(trans, player, level, points);
+        CharacterDatabase.CommitTransaction(trans);
+    }
+
+    // Writes the prestige row as part of `trans`, so it commits together with the character save.
+    void AppendPrestigeProgress(CharacterDatabaseTransaction trans, Player* player, uint32 level, uint32 points)
+    {
         uint32 guid = player->GetGUID().GetCounter();
 
         // All parameters are uint32 so SQL injection is not possible with StringFormat
-        std::string sql = Acore::StringFormat(
+        trans->Append(
             "INSERT INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time, prestige_points) "
             "VALUES ({}, {}, {}, UNIX_TIMESTAMP(), {}) "
             "ON DUPLICATE KEY UPDATE prestige_level = VALUES(prestige_level), total_prestiges = VALUES(total_prestiges), "
             "last_prestige_time = VALUES(last_prestige_time), prestige_points = VALUES(prestige_points)",
             guid, level, level, points);
-        CharacterDatabase.Execute(sql.c_str());
 
         std::lock_guard<std::mutex> lock(cacheMutex);
-        prestigeCache[guid] = level;
+        prestigeCache[guid] = { level, points };
     }
 
     void ClearPrestigeCache(ObjectGuid guid)
@@ -294,10 +335,81 @@ public:
         return true;
     }
 
+    // CanPrestige plus the moment itself: the character is rebuilt and teleported, so not while
+    // dead, fighting, travelling or inside an instance.
+    PrestigeRefusal CheckPrestige(Player* player)
+    {
+        if (!enabled)
+            return PrestigeRefusal::Disabled;
+        if (player->GetLevel() < requireLevel)
+            return PrestigeRefusal::BelowLevel;
+        if (GetPrestigeLevel(player) >= maxPrestigeLevel)
+            return PrestigeRefusal::MaxPrestige;
+        if (!player->IsAlive())
+            return PrestigeRefusal::Dead;
+        if (player->IsInCombat())
+            return PrestigeRefusal::InCombat;
+        if (player->IsInFlight() || player->GetVehicle() || player->GetTransport())
+            return PrestigeRefusal::Travelling;
+        if (player->GetMap()->Instanceable())
+            return PrestigeRefusal::NotInOpenWorld;
+        return PrestigeRefusal::None;
+    }
+
+    std::string GetRefusalText(PrestigeRefusal refusal) const
+    {
+        switch (refusal)
+        {
+            case PrestigeRefusal::None:
+                return {};
+            case PrestigeRefusal::Disabled:
+                return "The prestige system is currently disabled.";
+            case PrestigeRefusal::BelowLevel:
+                return Acore::StringFormat("You must be level {} to prestige.", requireLevel);
+            case PrestigeRefusal::MaxPrestige:
+                return "You have already reached the maximum prestige level.";
+            case PrestigeRefusal::Dead:
+                return "You cannot prestige while dead.";
+            case PrestigeRefusal::InCombat:
+                return "You cannot prestige while in combat.";
+            case PrestigeRefusal::Travelling:
+                return "You cannot prestige while on a flight path, a vehicle or a transport.";
+            case PrestigeRefusal::NotInOpenWorld:
+                return "You can only prestige in the open world, not in a dungeon, raid, battleground or arena.";
+        }
+        return {};
+    }
+
+    // Where a prestige restarts this character: Prestige.ResetLevel plus the Head Start talent,
+    // always below RequiredLevel.
+    uint32 GetRestartLevel(Player* player) const
+    {
+        uint32 talentLevels = static_cast<uint32>(
+            PrestigeAPI::GetTalentEffect(player, PrestigeAPI::PRESTIGE_EFFECT_RESET_LEVEL_BONUS));
+        return std::min(resetLevel + talentLevels, requireLevel - 1);
+    }
+
     bool PerformPrestige(Player* player)
     {
-        if (!CanPrestige(player))
+        if (!player)
             return false;
+
+        ChatHandler chat(player->GetSession());
+        if (PrestigeRefusal refusal = CheckPrestige(player); refusal != PrestigeRefusal::None)
+        {
+            chat.SendSysMessage(GetRefusalText(refusal));
+            return false;
+        }
+
+        // Resolved before anything changes, so a character without one is refused untouched.
+        PlayerInfo const* start = sObjectMgr->GetPlayerInfo(player->getRace(true), player->getClass());
+        if (!start)
+        {
+            LOG_ERROR("scripts.dc", "Prestige: No starting location for race {} class {}: {} cannot prestige.",
+                uint32(player->getRace(true)), uint32(player->getClass()), player->GetName());
+            chat.SendSysMessage("|cFFFF0000ERROR: Could not determine your starting location. Please contact a GM.|r");
+            return false;
+        }
 
         uint32 currentPrestige = GetPrestigeLevel(player);
         uint32 newPrestige = currentPrestige + 1;
@@ -349,23 +461,41 @@ public:
         LOG_INFO("scripts.dc", "Prestige: Player {} (GUID: {}) starting prestige {} -> {}",
             playerName, player->GetGUID().ToString(), currentPrestige, newPrestige);
 
-        // Head Start (prestige talent) restarts the character a few levels higher.
-        uint32 talentLevels = static_cast<uint32>(PrestigeAPI::GetTalentEffect(player, PrestigeAPI::PRESTIGE_EFFECT_RESET_LEVEL_BONUS));
-        uint32 newLevel = std::min(resetLevel + talentLevels, requireLevel - 1);
+        uint32 newLevel = GetRestartLevel(player);
 
         // Remove old prestige buffs
         RemovePrestigeBuffs(player);
 
-        // Reset level
-        player->SetLevel(newLevel);
+        ResetQuests(player);
+
+        if (freshStart)
+            RememberActionBar(player);
+
+        // GiveLevel is the core's own level change, the one .character level also takes downwards:
+        // it resets the talents to the new level's points, locks glyph slots, rescales level-scaled
+        // items, resyncs the pet and fires OnPlayerLevelChanged.
+        player->GiveLevel(newLevel);
+        player->SetUInt32Value(PLAYER_XP, 0);
 
         // Clear player flags using helper function
         ClearPrestigePlayerFlags(player);
 
-        // Initialize stats for new level
-        player->InitStatsForLevel(true);
-        player->UpdateSkillsForLevel();
-        player->UpdateAllStats();
+        if (freshStart)
+        {
+            uint32 forgotten = DCFirstStart::LearnSpells::ForgetClassSpellsAbove(player, newLevel, debug);
+            ClearForgottenActionButtons(player);
+            RestoreRememberedButtons(player, 0);
+            player->SendInitialActionButtons();
+            StripTemporaryAuras(player);
+
+            if (debug)
+                LOG_DEBUG("scripts.dc", "Prestige: {} unlearned {} class spell(s) above level {}",
+                    playerName, forgotten, newLevel);
+        }
+
+        // What the prestige writes commits together with the character save below, so a crash can
+        // never leave the prestige row and the character out of step.
+        CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
 
         // Handle gear
         if (!keepGear)
@@ -384,11 +514,8 @@ public:
             ResetProfessions(player);
 
         // Update prestige points and level
-        uint32 currentPoints = GetPrestigePoints(player);
-        uint32 newTotalPoints = currentPoints + awardedPoints;
-
-        // Update prestige level
-        SetPrestigeProgress(player, newPrestige, newTotalPoints);
+        uint32 newTotalPoints = GetPrestigePoints(player) + awardedPoints;
+        AppendPrestigeProgress(trans, player, newPrestige, newTotalPoints);
 
         // Every prestige level adds to the account-wide prestige talent pool
         PrestigeAPI::OnPrestigeLevelChanged(player, currentPrestige, newPrestige);
@@ -429,6 +556,17 @@ public:
         // Update achievements/statistics
         UpdatePrestigeAchievements(player, newPrestige);
 
+        // After the rewards, which the bag space check above counted on: what no longer fits is mailed.
+        std::vector<Item*> mailed;
+        if (freshStart)
+        {
+            if (keepGear)
+                UnequipUnusableItems(player, mailed, trans);
+
+            player->SetHomebind(WorldLocation(start->mapId, start->positionX, start->positionY, start->positionZ,
+                start->orientation), start->areaId);
+        }
+
         // Apply new prestige buffs
         ApplyPrestigeBuffs(player);
 
@@ -438,13 +576,15 @@ public:
         if (player->getPowerType() == POWER_MANA)
             player->SetPower(POWER_MANA, player->GetMaxPower(POWER_MANA));
 
-        // Reset experience to 0 for new level
-        uint32 newXpForLevel = sObjectMgr->GetXPForLevel(newLevel);
-        player->SetUInt32Value(PLAYER_XP, 0);
-        player->SetUInt32Value(PLAYER_NEXT_LEVEL_XP, newXpForLevel);
+        trans->Append(
+            "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear, "
+            "awarded_points, awarded_tokens, awarded_essence) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {}, {}, {}, {})",
+            player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0, awardedPoints, awardedTokens,
+            awardedEssence);
 
-        // Save player (single save instead of two)
-        player->SaveToDB(false, false);
+        MailItems(player, mailed, trans);
+        player->SaveToDB(trans, false, false);
+        CharacterDatabase.CommitTransaction(trans);
 
         // Announce to world
         if (announcePrestige)
@@ -464,94 +604,230 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("You gained {} upgrade tokens.", awardedTokens);
         if (awardedEssence > 0)
             ChatHandler(player->GetSession()).PSendSysMessage("You gained {} artifact essence.", awardedEssence);
+        if (!mailed.empty())
+            chat.SendSysMessage("Equipment you can no longer use did not fit in your bags and was mailed to you.");
 
         // Notify client addon (if installed/enabled) so UI can refresh immediately
         DCPrestigeAddon::NotifyPrestigeLevelUp(player, newPrestige, newPrestige * statBonusPercent);
 
-        // Log to database
-        try
-        {
-            std::string sql = Acore::StringFormat(
-                "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear, awarded_points, awarded_tokens, awarded_essence) "
-                "VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {}, {}, {}, {})",
-                player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0, awardedPoints, awardedTokens, awardedEssence
-            );
-            CharacterDatabase.Execute(sql.c_str());
-        }
-        catch (...)
-        {
-            LOG_ERROR("scripts.dc", "Prestige: Failed to log prestige for player {} (GUID: {})",
-                playerName, player->GetGUID().ToString());
-        }
-
         LOG_INFO("scripts.dc", "Prestige: Player {} completed prestige to level {}", playerName, newPrestige);
 
-        // Teleport to starting location
-        TeleportToStartingLocation(player);
+        if (!player->TeleportTo(start->mapId, start->positionX, start->positionY, start->positionZ, start->orientation))
+            LOG_ERROR("scripts.dc", "Prestige: {} prestiged but could not be sent to the starting location (map {}).",
+                playerName, start->mapId);
 
         return true;
     }
 
-// TeleportToStartingLocation refactored to rely on DB
-    void TeleportToStartingLocation(Player* player)
+    // A quest finished but not turned in pays its full experience at turn-in however far below its
+    // level the character has dropped (Quest::XPValue never scales a higher quest down), so the quest
+    // log is always emptied. A fresh start also hands the ordinary zone quests of the climb back.
+    void ResetQuests(Player* player)
     {
-        if (!player)
+        bool pvpQuestRemoved = false;
+        for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+        {
+            uint32 questId = player->GetQuestSlotQuestId(slot);
+            if (!questId)
+                continue;
+
+            // The steps of abandoning it from the quest log (WorldSession::HandleQuestLogRemoveQuest).
+            if (Quest const* quest = sObjectMgr->GetQuestTemplate(questId))
+            {
+                if (quest->HasSpecialFlag(QUEST_SPECIAL_FLAGS_TIMED))
+                    player->RemoveTimedQuest(questId);
+
+                if (quest->HasFlag(QUEST_FLAGS_FLAGS_PVP))
+                    pvpQuestRemoved = true;
+            }
+
+            player->TakeQuestSourceItem(questId, false);
+            player->AbandonQuest(questId);
+            player->RemoveActiveQuest(questId);
+            player->RemoveTimedAchievement(ACHIEVEMENT_TIMED_TYPE_QUEST, questId);
+            sScriptMgr->OnPlayerQuestAbandon(player, questId);
+            player->SetQuestSlot(slot, 0);
+        }
+
+        if (pvpQuestRemoved)
+        {
+            player->pvpInfo.IsHostile = player->pvpInfo.IsInHostileArea || player->HasPvPForcingQuest();
+            player->UpdatePvPState();
+        }
+
+        if (!freshStart)
             return;
 
-        uint32 mapId = 0;
-        float x = 0, y = 0, z = 0, o = 0;
-        bool found = false;
+        std::vector<uint32> replayable;
+        for (uint32 questId : player->getRewardedQuests())
+            if (Quest const* quest = sObjectMgr->GetQuestTemplate(questId))
+                if (IsReplayableQuest(quest))
+                    replayable.push_back(questId);
 
-        // 1. Try exact match (Race + Class)
-        std::string sql = Acore::StringFormat(
-            "SELECT map, position_x, position_y, position_z, orientation FROM playercreateinfo WHERE race = {} AND class = {} LIMIT 1",
-            player->getRace(), player->getClass()
-        );
-        QueryResult result = WorldDatabase.Query(sql.c_str());
+        // No per-quest update: the teleport that ends the prestige refreshes the quest-driven auras
+        // and phases of the starting area.
+        for (uint32 questId : replayable)
+            player->RemoveRewardedQuest(questId, false);
 
-        if (result)
+        if (debug)
+            LOG_DEBUG("scripts.dc", "Prestige: {} can do {} completed zone quest(s) again",
+                player->GetName(), replayable.size());
+    }
+
+    // The quests a new character meets on the way up: ordinary open-world quests of a zone, at a fixed
+    // level of the climb, done once. Class and profession quests (negative QuestSortID or a class
+    // restriction), dungeon, raid, PvP and event quests, and daily, weekly, monthly, seasonal,
+    // repeatable and dungeon finder quests stay done. Conquest of Azeroth's mod-coa-prestige replays
+    // the same set.
+    bool IsReplayableQuest(Quest const* quest) const
+    {
+        switch (quest->GetType())
         {
-            Field* fields = result->Fetch();
-            mapId = fields[0].Get<uint32>();
-            x = fields[1].Get<float>();
-            y = fields[2].Get<float>();
-            z = fields[3].Get<float>();
-            o = fields[4].Get<float>();
-            found = true;
+            case 0: // QuestInfoID none: a normal quest
+            case QUEST_TYPE_ELITE:
+            case QUEST_TYPE_LIFE:
+            case QUEST_TYPE_ESCORT:
+                break;
+            default:
+                return false;
         }
 
-        // 2. Try race fallback
-        if (!found)
-        {
-            sql = Acore::StringFormat(
-                "SELECT map, position_x, position_y, position_z, orientation FROM playercreateinfo WHERE race = {} LIMIT 1",
-                player->getRace()
-            );
-            result = WorldDatabase.Query(sql.c_str());
+        if (quest->IsRepeatable() || quest->IsDailyOrWeekly() || quest->IsMonthly() || quest->IsSeasonal() ||
+            quest->IsDFQuest() || quest->GetRequiredClasses())
+            return false;
 
-            if (result)
+        return quest->GetZoneOrSort() > 0 && quest->GetQuestLevel() >= 1 &&
+            uint32(quest->GetQuestLevel()) <= requireLevel;
+    }
+
+    // The spell buttons of the action bar, kept so each spell returns to its button once the
+    // character knows a rank of it again (RestoreRememberedButtons).
+    void RememberActionBar(Player* player)
+    {
+        uint32 remembered = 0;
+        for (uint8 button = 0; button < MAX_ACTION_BUTTONS; ++button)
+        {
+            uint32 spellId = 0;
+            if (ActionButton const* action = player->GetActionButton(button))
+                if (action->GetType() == ACTION_BUTTON_SPELL)
+                    spellId = action->GetAction();
+
+            player->UpdatePlayerSetting(PRESTIGE_BAR_SETTING, 1 + button, spellId);
+            if (spellId)
+                ++remembered;
+        }
+
+        player->UpdatePlayerSetting(PRESTIGE_BAR_SETTING, 0, remembered);
+    }
+
+    // Spell buttons whose spell the prestige took away go, as the next login would drop them.
+    void ClearForgottenActionButtons(Player* player)
+    {
+        for (uint8 button = 0; button < MAX_ACTION_BUTTONS; ++button)
+            if (ActionButton const* action = player->GetActionButton(button))
+                if (action->GetType() == ACTION_BUTTON_SPELL && !player->HasSpell(action->GetAction()))
+                    player->removeActionButton(button);
+    }
+
+    static uint32 HighestKnownRank(Player* player, uint32 firstRank)
+    {
+        uint32 highest = 0;
+        for (uint32 rank = firstRank; rank; rank = sSpellMgr->GetNextSpellInChain(rank))
+            if (player->HasSpell(rank))
+                highest = rank;
+        return highest;
+    }
+
+    // Puts remembered spells back on their buttons: the ones of `learnedSpell`'s rank chain, or with 0
+    // every one the character knows a rank of. A button filled with something else since keeps it.
+    // Returns whether a button changed.
+    bool RestoreRememberedButtons(Player* player, uint32 learnedSpell)
+    {
+        uint32 waiting = player->GetPlayerSetting(PRESTIGE_BAR_SETTING, 0).value;
+        if (!waiting)
+            return false;
+
+        uint32 learnedChain = learnedSpell ? sSpellMgr->GetFirstSpellInChain(learnedSpell) : 0;
+        bool placed = false;
+        for (uint8 button = 0; button < MAX_ACTION_BUTTONS && waiting; ++button)
+        {
+            uint32 remembered = player->GetPlayerSetting(PRESTIGE_BAR_SETTING, 1 + button).value;
+            if (!remembered)
+                continue;
+
+            uint32 chain = sSpellMgr->GetFirstSpellInChain(remembered);
+            uint32 spellId = 0;
+            if (!learnedSpell)
+                spellId = HighestKnownRank(player, chain);
+            else if (chain == learnedChain)
+                spellId = learnedSpell;
+
+            if (!spellId)
+                continue;
+
+            player->UpdatePlayerSetting(PRESTIGE_BAR_SETTING, 1 + button, 0);
+            --waiting;
+
+            ActionButton const* current = player->GetActionButton(button);
+            bool isFree = !current ||
+                (current->GetType() == ACTION_BUTTON_SPELL && !player->HasSpell(current->GetAction()));
+            if (isFree && player->addActionButton(button, spellId, ACTION_BUTTON_SPELL))
+                placed = true;
+        }
+
+        player->UpdatePlayerSetting(PRESTIGE_BAR_SETTING, 0, waiting);
+        return placed;
+    }
+
+    // Buffs from before the prestige (flasks, food, raid buffs at their old strength) and the mount
+    // go. Debuffs stay: Deserter, Resurrection Sickness and dungeon cooldowns are penalties.
+    void StripTemporaryAuras(Player* player)
+    {
+        player->RemoveAurasByType(SPELL_AURA_MOUNTED);
+        player->RemoveOwnedAuras([](Aura const* aura)
+        {
+            return !aura->IsPassive() && !aura->IsPermanent() && aura->GetSpellInfo()->IsPositive();
+        });
+    }
+
+    // Equipment the character can no longer use at its new level (level, proficiency, skill or
+    // reputation requirement) goes to the bags, or to the mailbox when they are full.
+    void UnequipUnusableItems(Player* player, std::vector<Item*>& mailed, CharacterDatabaseTransaction trans)
+    {
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item || player->CanUseItem(item, false) == EQUIP_ERR_OK)
+                continue;
+
+            ItemPosCountVec destination;
+            if (player->CanStoreItem(NULL_BAG, NULL_SLOT, destination, item, false) == EQUIP_ERR_OK)
             {
-                Field* fields = result->Fetch();
-                mapId = fields[0].Get<uint32>();
-                x = fields[1].Get<float>();
-                y = fields[2].Get<float>();
-                z = fields[3].Get<float>();
-                o = fields[4].Get<float>();
-                found = true;
+                player->RemoveItem(INVENTORY_SLOT_BAG_0, slot, true);
+                player->StoreItem(destination, item, true);
+                continue;
             }
+
+            player->MoveItemFromInventory(INVENTORY_SLOT_BAG_0, slot, true);
+            item->DeleteFromInventoryDB(trans);
+            item->SaveToDB(trans);
+            mailed.push_back(item);
         }
 
-        if (found)
+        // The off-hand rules (Dual Wield, Titan's Grip) against what the character still knows.
+        player->AutoUnequipOffhandIfNeed();
+    }
+
+    void MailItems(Player* player, std::vector<Item*> const& items, CharacterDatabaseTransaction trans)
+    {
+        for (size_t first = 0; first < items.size(); first += MAX_MAIL_ITEMS)
         {
-            player->TeleportTo(mapId, x, y, z, o);
-            LOG_INFO("scripts.dc", "Prestige: Teleported player {} to starting location (Map: {}, {:.2f}, {:.2f}, {:.2f})",
-                player->GetName(), mapId, x, y, z);
-        }
-        else
-        {
-            LOG_ERROR("scripts.dc", "Prestige: No starting location found for Race {} Class {} in playercreateinfo!",
-                player->getRace(), player->getClass());
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Could not determine starting location. Please contact a GM.|r");
+            MailDraft draft("Prestige", "Your bags were full, so the equipment you can no longer use was sent here.");
+            for (size_t index = first; index < std::min<size_t>(items.size(), first + MAX_MAIL_ITEMS); ++index)
+                draft.AddItem(items[index]);
+
+            draft.SendMailTo(trans, MailReceiver(player), MailSender(MAIL_NORMAL, 0, MAIL_STATIONERY_GM),
+                MAIL_CHECK_MASK_COPIED);
         }
     }
 
@@ -602,6 +878,18 @@ public:
             player->RemoveAura(spellId);
     }
 
+    // The prestige aura works out its amount, challenge bonus included, when it is applied
+    // (dc_prestige_spells.cpp); a change to that bonus only shows once it is recalculated.
+    void RecalculatePrestigeBuffs(Player* player)
+    {
+        if (!player)
+            return;
+
+        for (uint32 spellId : PRESTIGE_SPELLS)
+            if (Aura* aura = player->GetAura(spellId))
+                aura->RecalculateAmountOfEffects();
+    }
+
     uint32 GetPrestigeSpell(uint32 prestigeLevel)
     {
         if (prestigeLevel == 0 || prestigeLevel > MAX_PRESTIGE_LEVEL)
@@ -616,27 +904,14 @@ public:
         return PRESTIGE_TITLES[prestigeLevel - 1]; // Array index is 0-based
     }
 
-    // Helper: Clear player flags that prevent XP gain or cause display issues
+    // Helper: clear the flags left from the level the character prestiged from; at max level the
+    // core sets NO_XP_GAIN, which would stop it from levelling again. Only at the moment of a
+    // prestige (the character is alive, CheckPrestige makes sure): run at login it undid every
+    // XP lock (Experience Eliminator, playerbots) and resurrected anyone who logged in dead.
     void ClearPrestigePlayerFlags(Player* player)
     {
         if (!player)
             return;
-
-        // Resurrect if dead
-        if (player->isDead())
-        {
-            player->ResurrectPlayer(1.0f);
-            if (debug)
-                LOG_DEBUG("scripts.dc", "Prestige: Player {} was dead, resurrecting", player->GetName());
-        }
-
-        // Clear flags that prevent XP bar from showing or XP gain
-        if (player->HasPlayerFlag(PLAYER_FLAGS_GHOST))
-        {
-            player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
-            if (debug)
-                LOG_DEBUG("scripts.dc", "Prestige: Removed GHOST flag from {}", player->GetName());
-        }
 
         if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
         {
@@ -688,14 +963,23 @@ private:
     bool keepGear;
     bool keepProfessions;
     bool keepGold;
+    bool freshStart;
     bool grantStarterGear;
     bool announcePrestige;
     uint32 pointsPerPrestige;
     uint32 tokenRewardPerPrestige;
     uint32 essenceRewardPerPrestige;
     std::unordered_map<uint32, std::vector<PrestigeReward>> prestigeRewards;
+
+    // dc_character_prestige, per character guid
+    struct CachedPrestige
+    {
+        uint32 level = 0;
+        uint32 points = 0;
+    };
+
     std::mutex cacheMutex;
-    std::unordered_map<uint32, uint32> prestigeCache;
+    std::unordered_map<uint32, CachedPrestige> prestigeCache;
 
     static uint32 CountStacksForItem(uint32 itemEntry, uint32 count)
     {
@@ -975,15 +1259,37 @@ private:
     std::unordered_map<uint32, uint32> lastAuraCheckTime;
 
 public:
-    PrestigePlayerScript() : PlayerScript("PrestigePlayerScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_UPDATE }) { }
+    PrestigePlayerScript() : PlayerScript("PrestigePlayerScript",
+        { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_UPDATE, PLAYERHOOK_ON_LEARN_SPELL,
+          PLAYERHOOK_CAN_GIVE_MAIL_REWARD_AT_GIVE_LEVEL }) { }
+
+    // mail_level_reward keeps no record of who already had a letter, so a prestiged character
+    // climbing back up would be sent the same ones every cycle.
+    bool OnPlayerCanGiveMailRewardAtGiveLevel(Player* player, uint8 /*level*/) override
+    {
+        PrestigeSystem* prestige = PrestigeSystem::instance();
+        return !prestige->IsEnabled() || !prestige->GetCachedPrestigeLevel(player->GetGUID());
+    }
+
+    // A fresh start cleared the action bar: each spell returns to its button when learned again.
+    void OnPlayerLearnSpell(Player* player, uint32 spellId) override
+    {
+        PrestigeSystem* prestige = PrestigeSystem::instance();
+        if (!prestige->IsEnabled() || !prestige->IsFreshStartEnabled())
+            return;
+
+        // Cache-only: only a prestiged character can have a remembered bar.
+        if (!prestige->GetCachedPrestigeLevel(player->GetGUID()))
+            return;
+
+        if (prestige->RestoreRememberedButtons(player, spellId))
+            player->SendInitialActionButtons();
+    }
 
     void OnPlayerLogin(Player* player) override
     {
         if (!PrestigeSystem::instance()->IsEnabled())
             return;
-
-        // Clear player flags that might prevent XP gain or cause display issues
-        PrestigeSystem::instance()->ClearPrestigePlayerFlags(player);
 
         // The prestige level is loaded asynchronously so login never blocks
         // the world thread; buffs and welcome messages apply moments later in
@@ -1178,6 +1484,11 @@ namespace PrestigeAPI
         PrestigeSystem::instance()->RemovePrestigeBuffs(player);
     }
 
+    void RecalculatePrestigeBuffs(Player* player)
+    {
+        PrestigeSystem::instance()->RecalculatePrestigeBuffs(player);
+    }
+
     void SetPrestigeLevel(Player* player, uint32 level)
     {
         uint32 oldLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
@@ -1190,5 +1501,24 @@ namespace PrestigeAPI
     bool PerformPrestige(Player* player)
     {
         return PrestigeSystem::instance()->PerformPrestige(player);
+    }
+
+    std::string GetPrestigeRefusal(Player* player)
+    {
+        if (!player)
+            return {};
+
+        PrestigeSystem* prestige = PrestigeSystem::instance();
+        return prestige->GetRefusalText(prestige->CheckPrestige(player));
+    }
+
+    uint32 GetRestartLevel(Player* player)
+    {
+        return PrestigeSystem::instance()->GetRestartLevel(player);
+    }
+
+    bool IsFreshStartEnabled()
+    {
+        return PrestigeSystem::instance()->IsFreshStartEnabled();
     }
 }

@@ -259,17 +259,31 @@ local function EnsureNativePingRelayPollFrame()
         return
     end
 
+    -- A DLL that pushes DC_NATIVE_DATA signals each relayed ping, so the poll
+    -- below is then only a safety net (DCAddonProtocol:GetNativePollInterval).
+    local protocol = rawget(_G, "DCAddonProtocol")
+    local pushProtocol = protocol and type(protocol.OnNativeData) == "function"
+        and type(protocol.GetNativePollInterval) == "function" and protocol or nil
+
     nativePingRelayPollFrame = CreateFrame("Frame")
     nativePingRelayPollFrame.elapsed = 0
     nativePingRelayPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_PING_RELAY_POLL_INTERVAL then
+        local interval = NATIVE_PING_RELAY_POLL_INTERVAL
+        if pushProtocol then
+            interval = pushProtocol:GetNativePollInterval(interval)
+        end
+        if self.elapsed < interval then
             return
         end
 
         self.elapsed = 0
         ConsumeNativePingRelaySnapshot()
     end)
+
+    if pushProtocol then
+        pushProtocol:OnNativeData("PING", ConsumeNativePingRelaySnapshot)
+    end
 end
 
 local RAID_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"

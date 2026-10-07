@@ -20,3 +20,5 @@ Transmutation.lua
 Transmutation.xml
 DarkChaos_ItemUpgrade_Retail.lua
 DarkChaos_ItemUpgrade_Retail.xml
+# After the XML: the Random Enchants panel attaches its button to DarkChaos_ItemUpgradeFrame.
+EnchantReroll.lua

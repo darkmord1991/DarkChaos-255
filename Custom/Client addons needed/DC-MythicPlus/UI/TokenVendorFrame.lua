@@ -198,6 +198,13 @@ local iconPrefetchTooltip
 
 local function PrefetchItemIcon(itemId)
     if not itemId then return end
+    -- The protocol batches the whole vendor page into one prefetch request and
+    -- asks for each id once; the retries below then only re-read the cache.
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.PrefetchItems) == "function" then
+        protocol:PrefetchItems({ itemId })
+        return
+    end
     if not iconPrefetchTooltip then
         iconPrefetchTooltip = CreateFrame("GameTooltip", "DCMP_TokenVendorScanTooltip", UIParent, "GameTooltipTemplate")
         iconPrefetchTooltip:SetOwner(UIParent, "ANCHOR_NONE")

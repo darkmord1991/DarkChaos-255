@@ -205,7 +205,8 @@ protocol.Opcodes = {
     CMSG_REQUEST_FEATURE    = 0x06,  -- Request specific feature data
     CMSG_COLLECT_ALL_MAIL   = 0x07,  -- Request to collect all mail
     CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 0x08,  -- Request enriched spell tooltip line
-    
+    CMSG_PREFETCH_ITEMS     = 0x09,  -- Batch item cache priming (DCAddonProtocol:PrefetchItems)
+
     -- Server -> Client (0x10-0x1F)
     SMSG_SETTINGS_SYNC      = 0x10,  -- Full settings sync from server
     SMSG_SETTING_UPDATED    = 0x11,  -- Confirmation of setting update
@@ -215,6 +216,7 @@ protocol.Opcodes = {
     SMSG_FEATURE_DATA       = 0x15,  -- Feature-specific data
     SMSG_NOTIFICATION       = 0x16,  -- Server notification/message
     SMSG_SPELL_TOOLTIP_ENRICHMENT = 0x17,  -- requestId|spellId|contextHash|status|line
+    SMSG_PREFETCH_ITEMS_RESULT = 0x18,  -- Handled by DCAddonProtocol:PrefetchItems
 }
 
 -- ============================================================
@@ -405,33 +407,57 @@ function protocol:HandleNativeEnvelope(moduleId, feature, action, revision,
     return true
 end
 
+-- Hands up to `limit` queued envelopes to HandleNativeEnvelope.
+function protocol:DrainNativeEnvelopes(limit)
+    for _ = 1, limit do
+        local ok, moduleId, feature, action, revision, payload, context =
+            pcall(PollDCNativeEnvelope)
+        if not ok or moduleId == nil then
+            return
+        end
+
+        self:HandleNativeEnvelope(moduleId, feature, action, revision,
+            payload, context)
+    end
+end
+
 function protocol:EnsureNativeEnvelopeDispatcher()
     if self.nativeEnvelopeFrame or type(PollDCNativeEnvelope) ~= "function" then
         return self.nativeEnvelopeFrame ~= nil
     end
 
+    -- A DLL that pushes DC_NATIVE_DATA signals each queued envelope, so the
+    -- poll below is then only a safety net (DCAddonProtocol:GetNativePollInterval).
+    local dcProtocol = rawget(_G, "DCAddonProtocol")
+    local pushProtocol = dcProtocol and type(dcProtocol.OnNativeData) == "function"
+        and type(dcProtocol.GetNativePollInterval) == "function" and dcProtocol or nil
+
     local frame = CreateFrame("Frame")
     frame:SetScript("OnUpdate", function(_, elapsed)
         self.nativeEnvelopePollElapsed = (self.nativeEnvelopePollElapsed or 0)
             + (elapsed or 0)
-        if self.nativeEnvelopePollElapsed < NATIVE_ENVELOPE_POLL_INTERVAL then
+        local interval = NATIVE_ENVELOPE_POLL_INTERVAL
+        if pushProtocol then
+            interval = pushProtocol:GetNativePollInterval(interval)
+        end
+        if self.nativeEnvelopePollElapsed < interval then
             return
         end
 
         self.nativeEnvelopePollElapsed = 0
-
-        for _ = 1, 8 do
-            local ok, moduleId, feature, action, revision, payload, context =
-                pcall(PollDCNativeEnvelope)
-            if not ok or moduleId == nil then
-                return
-            end
-
-            self:HandleNativeEnvelope(moduleId, feature, action, revision,
-                payload, context)
-        end
+        -- The 1 s safety net takes everything a missed signal left behind; the
+        -- 10 Hz poll keeps its per-tick cap.
+        self:DrainNativeEnvelopes(interval > NATIVE_ENVELOPE_POLL_INTERVAL and 64 or 8)
     end)
     frame:Show()
+
+    if pushProtocol then
+        -- The whole queue (the DLL keeps at most 64), so a burst replayed after
+        -- a loading screen does not wait for the safety net.
+        pushProtocol:OnNativeData("ENVELOPE", function()
+            self:DrainNativeEnvelopes(64)
+        end)
+    end
 
     self.nativeEnvelopeFrame = frame
     return true

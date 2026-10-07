@@ -31,6 +31,7 @@
 #include "DC/CrossSystem/CrossSystemCore.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "ObjectAccessor.h"
+#include "WorldSessionMgr.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -1650,6 +1651,9 @@ struct DCAddonProtocolConfig
     uint32 MaxJsonPayloadSize;       // Maximum JSON payload size in bytes
     uint32 MaxPendingChunks;         // Maximum concurrent pending chunked messages per account
 
+    // Largest single native payload for a LARGE_NATIVE_PAYLOAD client (0 = none)
+    uint32 NativeLargeBodyMaxBytes;
+
     // Version
     std::string ProtocolVersion;
 };
@@ -1958,6 +1962,12 @@ static void LoadAddonConfig()
     s_AddonConfig.MaxChunksPerMessage   = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxChunksPerMessage", 2048);
     s_AddonConfig.MaxJsonPayloadSize    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxJsonPayloadSize", 524288);
     s_AddonConfig.MaxPendingChunks      = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxPendingChunks", 5);
+
+    // Capped at the Lua library's DC.MAX_JSON_PAYLOAD_SIZE (2 MB): DecodeJSON
+    // rejects anything larger, so sending it in one packet would only lose it.
+    constexpr uint32 MAX_LARGE_NATIVE_BODY_BYTES = 2 * 1024 * 1024;
+    s_AddonConfig.NativeLargeBodyMaxBytes = std::min(MAX_LARGE_NATIVE_BODY_BYTES,
+        sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Native.LargeBodyMaxBytes", 1024 * 1024));
 
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
@@ -2720,6 +2730,18 @@ namespace DCAddon
             || (decision.capabilityState.negotiatedCapabilities & required) == required;
     }
 
+    bool NativePayloadFits(Player* player, size_t payloadBytes,
+        size_t legacyMaxBytes)
+    {
+        if (payloadBytes <= legacyMaxBytes)
+            return true;
+
+        uint32 const largeMax = s_AddonConfig.NativeLargeBodyMaxBytes;
+        return largeMax != 0 && payloadBytes <= largeMax
+            && SessionSupportsCapability(player,
+                ProtocolVersion::Capability::LARGE_NATIVE_PAYLOAD);
+    }
+
     bool TrySendModuleNativeMessage(Player* player, std::string const& module,
         uint8 opcode, std::string const& body)
     {
@@ -2736,13 +2758,12 @@ namespace DCAddon
         if (body.empty())
             return false;
 
-        // The client DLL reads the native body into a fixed 64 KB buffer
-        // (kDcNativeMessageBodyMaxLength = 65535 in WotLKExtensions
-        // CNetClient.cpp); larger bodies arrive truncated and fail to parse.
-        // Refuse the native route so callers fall back to the chunked
-        // addon-message transport, which has no size limit.
-        constexpr size_t MAX_NATIVE_MESSAGE_BODY_BYTES = 60000;
-        if (body.size() > MAX_NATIVE_MESSAGE_BODY_BYTES)
+        // An older client DLL reads the body into a fixed 64 KB buffer and
+        // cuts anything longer; a LARGE_NATIVE_PAYLOAD one reads it whole (the
+        // collection definition catalogs are several hundred KB). A body that
+        // does not fit goes out over the chunked addon transport instead.
+        if (!NativePayloadFits(player, body.size(),
+                LegacyNativePayloadMax::GENERIC_BODY))
         {
             LOG_DEBUG("module.dc", "[DCAddon] Native message body too large "
                 "({} bytes) for module={} opcode={}; falling back to chunked "
@@ -2865,14 +2886,13 @@ namespace DCAddon
         if (IsBotRecipient(player))
             return false;
 
-        // The client DLL reads the envelope payload into a fixed 16 KB buffer
-        // (kDCNativeEnvelopePayloadMaxLength = 16384 in WotLKExtensions
-        // CNetClient.cpp); an oversized payload would arrive truncated and
-        // poison the envelope cache with unparseable JSON. Envelope sends are
-        // stage-2 mirrors of data already delivered over the addon-chat
-        // transport, so skipping the mirror loses nothing.
-        constexpr size_t MAX_NATIVE_ENVELOPE_PAYLOAD_BYTES = 15000;
-        if (payload.size() > MAX_NATIVE_ENVELOPE_PAYLOAD_BYTES)
+        // An older client DLL reads the envelope payload into a fixed 16 KB
+        // buffer, and a truncated payload would poison its envelope cache with
+        // unparseable JSON. Envelope sends are stage-2 mirrors of data already
+        // delivered over the addon-chat transport, so skipping the mirror
+        // loses nothing.
+        if (!NativePayloadFits(player, payload.size(),
+                LegacyNativePayloadMax::ENVELOPE))
         {
             LOG_DEBUG("module.dc", "[DCAddon] Native envelope payload too "
                 "large ({} bytes) for module={} feature={}; skipping mirror",
@@ -2998,6 +3018,104 @@ static bool CheckRateLimit(Player* player)
 // CORE HANDLERS (Handshake, Version, Feature Query)
 // ============================================================================
 
+// SMSG_FEATURE_LIST: module enable flags as positional bools. The Lua library
+// maps the positions to module codes (DCAddonProtocol.lua FEATURE_LIST_ORDER),
+// so new flags are only ever appended.
+static DCAddon::Message BuildFeatureListMessage()
+{
+    DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
+    featureMsg.Add(s_AddonConfig.EnableAOELoot);
+    featureMsg.Add(s_AddonConfig.EnableSpectator);
+    featureMsg.Add(s_AddonConfig.EnableUpgrade);
+    featureMsg.Add(s_AddonConfig.EnableDuels);
+    featureMsg.Add(s_AddonConfig.EnableMythicPlus);
+    featureMsg.Add(s_AddonConfig.EnablePrestige);
+    featureMsg.Add(s_AddonConfig.EnableSeasonal);
+    featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
+    featureMsg.Add(s_AddonConfig.EnableWorld);
+    featureMsg.Add(s_AddonConfig.EnableQoS);
+    return featureMsg;
+}
+
+// Every module enable flag by module code, for SMSG_SERVER_CONTEXT.
+static DCAddon::JsonValue BuildFeatureStatesJson()
+{
+    DCAddon::JsonValue features;
+    features.SetObject();
+    auto const set = [&features](char const* module, bool enabled)
+    {
+        features.Set(module, DCAddon::JsonValue(enabled));
+    };
+
+    set(DCAddon::Module::CORE, s_AddonConfig.EnableCore);
+    set(DCAddon::Module::AOE_LOOT, s_AddonConfig.EnableAOELoot);
+    set(DCAddon::Module::SPECTATOR, s_AddonConfig.EnableSpectator);
+    set(DCAddon::Module::UPGRADE, s_AddonConfig.EnableUpgrade);
+    set(DCAddon::Module::PHASED_DUELS, s_AddonConfig.EnableDuels);
+    set(DCAddon::Module::MYTHIC_PLUS, s_AddonConfig.EnableMythicPlus);
+    set(DCAddon::Module::PRESTIGE, s_AddonConfig.EnablePrestige);
+    set(DCAddon::Module::SEASONAL, s_AddonConfig.EnableSeasonal);
+    set(DCAddon::Module::HINTERLAND_BG, s_AddonConfig.EnableHinterlandBG);
+    set(DCAddon::Module::LEADERBOARD, s_AddonConfig.EnableLeaderboard);
+    set(DCAddon::Module::TELEPORTS, s_AddonConfig.EnableTeleports);
+    set(DCAddon::Module::GOMOVE, s_AddonConfig.EnableGOMove);
+    set(DCAddon::Module::NPCMOVE, s_AddonConfig.EnableNPCMove);
+    set(DCAddon::Module::GROUP_FINDER, s_AddonConfig.EnableGroupFinder);
+    set(DCAddon::Module::HOTSPOT, s_AddonConfig.EnableHotspot);
+    set(DCAddon::Module::WORLD, s_AddonConfig.EnableWorld);
+    set(DCAddon::Module::EVENTS, s_AddonConfig.EnableEvents);
+    set(DCAddon::Module::QOS, s_AddonConfig.EnableQoS);
+    set(DCAddon::Module::COLLECTION, s_AddonConfig.EnableCollection);
+    set(DCAddon::Module::DECORATION, s_AddonConfig.EnableDecoration);
+    return features;
+}
+
+// Bumped by every `.reload config`, so a client can tell a re-push from the
+// copy it got with the handshake.
+static uint32 s_ServerConfigRevision = 1;
+
+// The feature flags and the server context (season, phase, flags by module
+// code). Sent after a compatible handshake and again after a config reload.
+static void SendServerConfig(Player* player)
+{
+    BuildFeatureListMessage().Send(player);
+
+    DCAddon::JsonMessage ctxMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_SERVER_CONTEXT);
+    ctxMsg.Set("seasonId", DarkChaos::GetActiveSeasonId());
+    ctxMsg.Set("seasonName", DarkChaos::GetActiveSeasonName());
+    ctxMsg.Set("phaseMask", player->GetPhaseMask());
+    ctxMsg.Set("configRevision", s_ServerConfigRevision);
+    ctxMsg.Set("features", BuildFeatureStatesJson());
+    ctxMsg.Send(player);
+}
+
+// `.reload config`: re-send the server config to every client that completed a
+// compatible handshake this session, so a toggled module reaches open UIs
+// without a relog.
+static void BroadcastServerConfig()
+{
+    ++s_ServerConfigRevision;
+
+    uint32 recipients = 0;
+    for (auto const& [accountId, session] : sWorldSessionMgr->GetAllSessions())
+    {
+        Player* player = session ? session->GetPlayer() : nullptr;
+        if (!player || !player->IsInWorld() || DCAddon::IsBotRecipient(player))
+            continue;
+
+        DCAddon::SessionCapabilityState state;
+        if (!DCAddon::TryGetLiveSessionCapabilityState(accountId, state)
+            || !state.versionCompatible)
+            continue;
+
+        SendServerConfig(player);
+        ++recipients;
+    }
+
+    LOG_INFO("dc.addon", "Re-sent the server config (revision {}) to {} client(s) after a config reload",
+        s_ServerConfigRevision, recipients);
+}
+
 static void HandleCoreHandshake(Player* player, DCAddon::ParsedMessage const& msg)
 {
     // Client says hello with version string: "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|capabilities"
@@ -3053,34 +3171,7 @@ static void HandleCoreHandshake(Player* player, DCAddon::ParsedMessage const& ms
         return;  // Don't send features if incompatible
     }
 
-    // Store negotiated capabilities for this player (could use a map for per-player caps)
-    // For now, we log it - actual storage would be in PlayerScript or session
-
-    // Automatically send feature list
-    DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
-    featureMsg.Add(s_AddonConfig.EnableAOELoot);
-    featureMsg.Add(s_AddonConfig.EnableSpectator);
-    featureMsg.Add(s_AddonConfig.EnableUpgrade);
-    featureMsg.Add(s_AddonConfig.EnableDuels);
-    featureMsg.Add(s_AddonConfig.EnableMythicPlus);
-    featureMsg.Add(s_AddonConfig.EnablePrestige);
-    featureMsg.Add(s_AddonConfig.EnableSeasonal);
-    featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
-    featureMsg.Add(s_AddonConfig.EnableWorld);
-    featureMsg.Send(player);
-
-    // Send server context (season + phase) to all UI addons
-    {
-        uint32 seasonId = DarkChaos::GetActiveSeasonId();
-        std::string seasonName = DarkChaos::GetActiveSeasonName();
-        uint32 phaseMask = player->GetPhaseMask();
-
-        DCAddon::JsonMessage ctxMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_SERVER_CONTEXT);
-        ctxMsg.Set("seasonId", seasonId);
-        ctxMsg.Set("seasonName", seasonName);
-        ctxMsg.Set("phaseMask", phaseMask);
-        ctxMsg.Send(player);
-    }
+    SendServerConfig(player);
 
     // Proactively send WRLD content snapshot after handshake
     if (s_AddonConfig.EnableWorld)
@@ -3107,19 +3198,9 @@ static void HandleCoreVersionCheck(Player* player, DCAddon::ParsedMessage const&
 
 static void HandleCoreFeatureQuery(Player* player, DCAddon::ParsedMessage const& msg)
 {
-    DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
+    DCAddon::Message featureMsg = BuildFeatureListMessage();
     if (msg.HasRequestId())
         featureMsg.SetRequestId(msg.GetRequestId());
-    featureMsg.Add(s_AddonConfig.EnableAOELoot);
-    featureMsg.Add(s_AddonConfig.EnableSpectator);
-    featureMsg.Add(s_AddonConfig.EnableUpgrade);
-    featureMsg.Add(s_AddonConfig.EnableDuels);
-    featureMsg.Add(s_AddonConfig.EnableMythicPlus);
-    featureMsg.Add(s_AddonConfig.EnablePrestige);
-    featureMsg.Add(s_AddonConfig.EnableSeasonal);
-    featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
-    featureMsg.Add(s_AddonConfig.EnableWorld);
-    featureMsg.Add(s_AddonConfig.EnableQoS);
     featureMsg.Send(player);
 }
 
@@ -4134,9 +4215,11 @@ public:
         LOG_INFO("dc.addon", "===========================================");
     }
 
-    void OnAfterConfigLoad(bool /*reload*/) override
+    void OnAfterConfigLoad(bool reload) override
     {
         LoadAddonConfig();
+        if (reload)
+            BroadcastServerConfig();
     }
 
 private:

@@ -1976,7 +1976,11 @@ function resultLoot:Update(rewards)
                     -- the next paint (or a hover) resolves the real name.
                     row.pendingName = true
                     row.text:SetText("|cffffffffItem #" .. itemId .. "|r" .. suffix)
-                    if DCMythicPlusTooltipPrimer then
+                    local protocol = rawget(_G, "DCAddonProtocol")
+                    if protocol and type(protocol.PrefetchItems) == "function" then
+                        -- Batched with the other rows into one prefetch request.
+                        protocol:PrefetchItems({ itemId })
+                    elseif DCMythicPlusTooltipPrimer then
                         DCMythicPlusTooltipPrimer:SetOwner(UIParent, "ANCHOR_NONE")
                         DCMythicPlusTooltipPrimer:SetHyperlink("item:" .. itemId .. ":0:0:0:0:0:0:0")
                         DCMythicPlusTooltipPrimer:Hide()
@@ -2996,6 +3000,12 @@ local function EnsureNativeHudPollFrame()
         return
     end
 
+    -- A DLL that pushes DC_NATIVE_DATA signals each new snapshot, so the poll
+    -- below is then only a safety net (DCAddonProtocol:GetNativePollInterval).
+    local protocol = rawget(_G, "DCAddonProtocol")
+    local pushProtocol = protocol and type(protocol.OnNativeData) == "function"
+        and type(protocol.GetNativePollInterval) == "function" and protocol or nil
+
     nativeHudPollFrame = CreateFrame("Frame")
     nativeHudPollFrame.elapsed = 0
     nativeHudPollFrame.idleElapsed = 0
@@ -3007,6 +3017,9 @@ local function EnsureNativeHudPollFrame()
         -- for the whole session.
         local inInstance = IsInInstance and IsInInstance() or false
         local interval = inInstance and NATIVE_MPLUS_HUD_POLL_INTERVAL or 1.0
+        if pushProtocol then
+            interval = pushProtocol:GetNativePollInterval(interval)
+        end
 
         if self.elapsed < interval then
             return
@@ -3015,6 +3028,10 @@ local function EnsureNativeHudPollFrame()
         self.elapsed = 0
         ConsumeNativeHudSnapshot()
     end)
+
+    if pushProtocol then
+        pushProtocol:OnNativeData("MPLUS_HUD", ConsumeNativeHudSnapshot)
+    end
 end
 
 local function HandleTimerUpdatePayload(...)

@@ -146,9 +146,10 @@ public:
             return true;
         }
 
-        if (!PrestigeAPI::CanPrestige(player))
+        std::string refusal = PrestigeAPI::GetPrestigeRefusal(player);
+        if (!refusal.empty())
         {
-            handler->SendSysMessage("You cannot prestige at this time.");
+            handler->SendSysMessage(refusal);
             return true;
         }
 
@@ -156,7 +157,15 @@ public:
         uint32 newBonus = nextPrestige * PrestigeAPI::GetStatBonusPercent();
 
         handler->PSendSysMessage("|cFFFF0000WARNING: Prestiging will:|r");
-        handler->PSendSysMessage("- Reset you to level 1");
+        handler->PSendSysMessage("- Reset you to level {} and reset your talents",
+            PrestigeAPI::GetRestartLevel(player));
+        handler->PSendSysMessage("- Abandon every quest in your quest log");
+        if (PrestigeAPI::IsFreshStartEnabled())
+        {
+            handler->PSendSysMessage("- Unlearn class spells above that level (levelling up teaches them again)");
+            handler->PSendSysMessage("- Move equipment you can no longer use into your bags");
+            handler->PSendSysMessage("- Let you do completed zone quests again and bind your hearthstone to the start");
+        }
         handler->PSendSysMessage("- Grant you Prestige Level {} with {}% permanent stat bonus", nextPrestige, newBonus);
         handler->PSendSysMessage("- Grant you an exclusive title");
         handler->PSendSysMessage("|cFFFFD700Type .prestige confirm to proceed.|r");
@@ -170,20 +179,9 @@ public:
         if (!player)
             return false;
 
-        if (!PrestigeAPI::CanPrestige(player))
-        {
-            handler->SendSysMessage("You cannot prestige at this time.");
-            return true;
-        }
-
+        // PerformPrestige tells the player why when it refuses.
         if (PrestigeAPI::PerformPrestige(player))
-        {
             handler->SendSysMessage("|cFF00FF00Prestige successful!|r");
-        }
-        else
-        {
-            handler->SendSysMessage("|cFFFF0000Prestige failed. Check server logs.|r");
-        }
 
         return true;
     }
@@ -404,6 +402,14 @@ public:
             return true;
         }
 
+        uint32 restartLevel = PrestigeAPI::GetRestartLevel(player);
+        if (player->GetLevel() > restartLevel)
+        {
+            handler->PSendSysMessage("A prestige challenge covers a whole climb: start it right after you prestige, "
+                "at level {} or below.", restartLevel);
+            return true;
+        }
+
         if (PrestigeAPI::StartChallenge(player, static_cast<uint8>(challengeType), prestigeLevel))
         {
             handler->PSendSysMessage("|cFF00FF00Challenge started: {}|r",
@@ -460,20 +466,22 @@ public:
     {
         handler->SendSysMessage("|cFFFFD700=== Available Prestige Challenges ===|r");
 
+        uint32 requiredLevel = PrestigeAPI::GetRequiredLevel();
+
         handler->SendSysMessage("|cFF00FF00Iron Prestige|r");
-        handler->SendSysMessage("  Requirement: Reach level 255 without dying");
+        handler->PSendSysMessage("  Requirement: Reach level {} without dying", requiredLevel);
         handler->SendSysMessage("  Rewards: Special title, +2% all stats");
 
         handler->PSendSysMessage("|cFF00FF00Speed Prestige|r");
-        handler->SendSysMessage("  Requirement: Reach level 255 in <100 hours");
+        handler->PSendSysMessage("  Requirement: Reach level {} in <100 hours", requiredLevel);
         handler->SendSysMessage("  Rewards: Special title, +2% all stats");
 
         handler->SendSysMessage("|cFF00FF00Solo Prestige|r");
-        handler->SendSysMessage("  Requirement: Reach level 255 without joining a group");
+        handler->PSendSysMessage("  Requirement: Reach level {} without joining a group", requiredLevel);
         handler->SendSysMessage("  Rewards: Special title, +2% all stats");
 
         handler->SendSysMessage("");
-        handler->SendSysMessage("Use |cFFFFFF00.prestige challenge start <type>|r to begin");
+        handler->SendSysMessage("Use |cFFFFFF00.prestige challenge start <type>|r right after you prestige to begin");
 
         return true;
     }

@@ -93,12 +93,25 @@ namespace DarkChaos
             // was applied with, and remove with THAT. Stored in Player::CustomData,
             // which lives and dies with the Player and is only touched from that
             // player's own update context, so it needs no locking.
+            //
+            // The core fires the enchant hook once per STAT effect of an enchant, in both
+            // directions, so a two-stat line ("+10 Stamina, +10 Agility") is applied twice and
+            // must be removed twice at the same multiplier. Erasing the record on the first
+            // removal sent the second one back to 1.0 and left (m - 1) x that stat on the
+            // character every time the line came off -- on each unequip, and on each reroll of
+            // an equipped item.
+            struct AppliedEnchantMultiplier
+            {
+                float multiplier = 1.0f;
+                uint32 effects = 0;     // stat effects applied with it and not yet removed
+            };
+
             struct AppliedUpgradeMultipliers : public DataMap::Base
             {
                 // item guid (low) -> multiplier its template stats were applied with
                 std::unordered_map<uint32, float> itemStats;
                 // (item guid low << 4 | enchant slot) -> multiplier for that enchant
-                std::unordered_map<uint64, float> enchantStats;
+                std::unordered_map<uint64, AppliedEnchantMultiplier> enchantStats;
 
                 // The _ApplyItemBonuses pass in progress. The core opens every pass
                 // with OnPlayerCustomScalingStatValueBefore (slot + direction) and the
@@ -214,7 +227,9 @@ namespace DarkChaos
                 if (apply)
                 {
                     float const multiplier = GetLiveMultiplier(item);
-                    applied->enchantStats[key] = multiplier;
+                    AppliedEnchantMultiplier& entry = applied->enchantStats[key];
+                    entry.multiplier = multiplier;
+                    ++entry.effects;
                     return multiplier;
                 }
 
@@ -222,8 +237,9 @@ namespace DarkChaos
                 if (itr == applied->enchantStats.end())
                     return 1.0f;
 
-                float const multiplier = itr->second;
-                applied->enchantStats.erase(itr);
+                float const multiplier = itr->second.multiplier;
+                if (--itr->second.effects == 0)
+                    applied->enchantStats.erase(itr);
                 return multiplier;
             }
 

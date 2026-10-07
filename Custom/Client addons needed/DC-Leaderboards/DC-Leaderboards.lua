@@ -973,6 +973,17 @@ function LB:EnsureNativeEnvelopePoller()
     -- Left hidden; started only while the leaderboard window is open (see
     -- LB:Show/LB:Hide). No need to poll the native envelope queue 4x/sec forever.
     self._nativeEnvelopeFrame = frame
+
+    -- A DLL that pushes DC_NATIVE_DATA signals each envelope; while this poller
+    -- runs, the envelope is taken at once instead of on the next tick.
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.OnNativeData) == "function" then
+        protocol:OnNativeData("ENVELOPE", function()
+            if frame:IsShown() then
+                LB:PollNativeEnvelopes()
+            end
+        end)
+    end
 end
 
 function LB:StartNativeEnvelopePoller()

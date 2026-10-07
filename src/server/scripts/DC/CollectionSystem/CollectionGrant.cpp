@@ -13,11 +13,13 @@
 #include "DatabaseEnv.h"
 #include "ItemTemplate.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "StringFormat.h"
+#include "Timer.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 
@@ -49,6 +51,21 @@ namespace DCCollection
 
         // dc_collection_items.source_type is VARCHAR(16).
         constexpr size_t SOURCE_TYPE_MAX_LEN = 16;
+
+        // Grants landing within this window share one spell-list resend.
+        constexpr uint32 SPELL_LIST_REFRESH_DELAY_MS = 250;
+
+        // A resend still pending after this long was dropped together with the
+        // player's event queue, so the next request schedules a new one.
+        constexpr uint32 SPELL_LIST_REFRESH_STALE_MS = 5000;
+
+        constexpr char const* SPELL_LIST_REFRESH_KEY = "DCCollectionSpellListRefresh";
+
+        struct SpellListRefreshState : public DataMap::Base
+        {
+            uint32 scheduledAtMs = 0;
+            bool pending = false;
+        };
 
         bool IsMountSpellId(uint32 spellId)
         {
@@ -164,6 +181,10 @@ namespace DCCollection
 
             // Silent: the collection toast is the player-facing notification.
             player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
+            if (!player->HasSpell(spellId))
+                return false;
+
+            RefreshClientSpellList(player);
             return true;
         }
 
@@ -366,6 +387,39 @@ namespace DCCollection
         }
 
         return TeachSpellIfPossible(player, ResolveTeachableSpell(type, entryId));
+    }
+
+    void RefreshClientSpellList(Player* player)
+    {
+        if (!player || !player->GetSession() || !player->IsInWorld())
+            return;
+
+        SpellListRefreshState* state =
+            player->CustomData.GetDefault<SpellListRefreshState>(SPELL_LIST_REFRESH_KEY);
+
+        uint32 const now = getMSTime();
+        if (state->pending && getMSTimeDiff(state->scheduledAtMs, now) < SPELL_LIST_REFRESH_STALE_MS)
+            return;
+
+        state->pending = true;
+        state->scheduledAtMs = now;
+
+        // The same packet the far-teleport path sends with every loading screen,
+        // so the client already handles it mid-session. Unlike one
+        // SMSG_LEARNED_SPELL per spell it prints no "You have learned" line.
+        ObjectGuid const guid = player->GetGUID();
+        player->m_Events.AddEventAtOffset([guid]()
+        {
+            Player* target = ObjectAccessor::FindPlayer(guid);
+            if (!target)
+                return;
+
+            if (SpellListRefreshState* pending = target->CustomData.Get<SpellListRefreshState>(SPELL_LIST_REFRESH_KEY))
+                pending->pending = false;
+
+            if (target->GetSession())
+                target->SendInitialSpells();
+        }, std::chrono::milliseconds(SPELL_LIST_REFRESH_DELAY_MS));
     }
 
     // =======================================================================

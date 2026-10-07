@@ -26,6 +26,7 @@
 
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "Bag.h"
 #include "Config.h"
 #include "Chat.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
@@ -468,6 +469,36 @@ namespace DCFirstStart
             classBagId = 0;
         }
 
+        // Only one quiver or ammo pouch may be equipped (Player::CanEquipItem), and the
+        // hunter's starting outfit already equips a 6-slot one holding the starter ammo.
+        // Keep the larger of the two; the ammo moves into the class bag below.
+        std::vector<std::pair<uint32, uint32>> ammo;
+        ItemTemplate const* classBagProto = classBagId ? sObjectMgr->GetItemTemplate(classBagId) : nullptr;
+        if (classBagProto && classBagProto->Class == ITEM_CLASS_QUIVER)
+        {
+            for (uint8 s = INVENTORY_SLOT_BAG_START; s < INVENTORY_SLOT_BAG_END; ++s)
+            {
+                Bag* bag = player->GetBagByPos(s);
+                if (!bag || bag->GetTemplate()->Class != ITEM_CLASS_QUIVER)
+                    continue;
+
+                if (bag->GetBagSize() >= classBagProto->ContainerSlots)
+                {
+                    classBagId = 0;
+                    break;
+                }
+
+                for (uint8 i = 0; i < bag->GetBagSize(); ++i)
+                    if (Item* item = bag->GetItemByPos(i))
+                        ammo.emplace_back(item->GetEntry(), item->GetCount());
+
+                if (debug)
+                    LOG_INFO("module.dc", "[DCFirstStart] Removed outfit ammo bag {} from slot {}", bag->GetEntry(), s);
+
+                player->DestroyItem(INVENTORY_SLOT_BAG_0, s, true);
+            }
+        }
+
         // The class bag replaces one default bag, so the slot kept free for the
         // Welcome quest's heirloom bag stays free.
         if (classBagId && !bagIds.empty())
@@ -506,6 +537,17 @@ namespace DCFirstStart
                     break;
                 }
             }
+        }
+
+        // NULL_BAG lets the store pick the quiver/pouch first, then the other bags.
+        for (auto const& [entry, count] : ammo)
+        {
+            ItemPosCountVec dest;
+            if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, entry, count) == EQUIP_ERR_OK)
+                player->StoreNewItem(dest, entry, true);
+            else
+                LOG_ERROR("module.dc", "[DCFirstStart] No room to restore {}x item {} for {}", count, entry,
+                    player->GetName());
         }
     }
 

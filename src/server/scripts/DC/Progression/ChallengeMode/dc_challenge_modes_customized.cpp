@@ -878,9 +878,10 @@ public:
                 return OnGossipHello(player, go);
             }
 
-            if (!PrestigeAPI::CanPrestige(player))
+            std::string refusal = PrestigeAPI::GetPrestigeRefusal(player);
+            if (!refusal.empty())
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("You cannot prestige at this time.");
+                ChatHandler(player->GetSession()).SendSysMessage(refusal);
                 return OnGossipHello(player, go);
             }
 
@@ -890,7 +891,23 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff4500Prestige Warning|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("You are about to begin Prestige {}.", nextPrestige), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000This will reset you to level 1.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                Acore::StringFormat("|cffff0000This will reset you to level {} and reset your talents.|r",
+                    PrestigeAPI::GetRestartLevel(player)),
+                GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000Every quest in your quest log is abandoned.|r",
+                GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            if (PrestigeAPI::IsFreshStartEnabled())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "|cffff0000Class spells above that level are unlearned; levelling teaches them again.|r",
+                    GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "|cffff8800Equipment you can no longer use moves to your bags.|r",
+                    GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8800Completed zone quests can be done again.|r",
+                    GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+            }
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("|cffffd700You will gain a total of {}% bonus to all stats.|r", nextBonus), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8800You will retain configured prestige rewards.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
@@ -903,13 +920,10 @@ public:
 
         if (action == ACTION_PRESTIGE_CONFIRM)
         {
-            if (!PrestigeAPI::IsEnabled() || !PrestigeAPI::CanPrestige(player))
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("You cannot prestige at this time.");
+            // PerformPrestige tells the player why when it refuses.
+            if (!PrestigeAPI::PerformPrestige(player))
                 return OnGossipHello(player, go);
-            }
 
-            PrestigeAPI::PerformPrestige(player);
             CloseGossipMenuFor(player);
             return true;
         }

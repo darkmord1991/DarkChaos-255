@@ -24,9 +24,12 @@
  *
  * Cost is bounded: each entry is pushed at most once per session (the client
  * keeps it for the rest of the session either way), so re-opening a vendor or
- * visiting a vendor that shares stock is free.
+ * visiting a vendor that shares stock is free. The same per-session record backs
+ * DarkChaos::ItemCachePrime::PrimeItem (dc_item_cache_prime.h), which the QOS
+ * item prefetch uses.
  */
 
+#include "dc_item_cache_prime.h"
 #include "ScriptMgr.h"
 #include "Config.h"
 #include "Creature.h"
@@ -64,7 +67,45 @@ VendorPrimeConfig sVendorPrimeConfig;
 std::unordered_map<ObjectGuid, std::unordered_set<uint32>> sPrimedEntries;
 std::mutex sPrimedEntriesMutex;
 
+using DarkChaos::ItemCachePrime::Result;
+
+// Caller holds sPrimedEntriesMutex.
+Result PrimeLocked(WorldSession* session, std::unordered_set<uint32>& primed, uint32 entry)
+{
+    // A missing template answers "unknown item", which would only poison the
+    // client's cache.
+    if (!entry || !sObjectMgr->GetItemTemplate(entry))
+        return Result::UnknownItem;
+
+    if (!primed.insert(entry).second)
+        return Result::AlreadySent;
+
+    if (primed.size() > sVendorPrimeConfig.maxTrackedPerSession)
+    {
+        // Session has seen an implausible amount of distinct items; restart
+        // tracking rather than growing without bound. A later request for an
+        // entry dropped here falls back to the client's own query, which still
+        // works.
+        primed.clear();
+        return Result::SessionFull;
+    }
+
+    session->SendItemQueryResponse(entry);
+    return Result::Sent;
+}
+
 } // namespace
+
+DarkChaos::ItemCachePrime::Result DarkChaos::ItemCachePrime::PrimeItem(Player* player, uint32 entry)
+{
+    WorldSession* session = player ? player->GetSession() : nullptr;
+    // Bots have no client and therefore no item cache to prime.
+    if (!session || session->IsBot())
+        return Result::NoClient;
+
+    std::lock_guard<std::mutex> lock(sPrimedEntriesMutex);
+    return PrimeLocked(session, sPrimedEntries[player->GetGUID()], entry);
+}
 
 class DCVendorItemCachePrimeWorldScript : public WorldScript
 {
@@ -133,26 +174,17 @@ public:
             if (!entry)
                 return true;
 
-            // A missing template is dropped by SendListInventory anyway, and the
-            // "unknown item" response would only poison the client's cache.
-            if (!sObjectMgr->GetItemTemplate(entry))
-                return true;
-
-            if (!primed.insert(entry).second)
-                return true;
-
-            if (primed.size() > sVendorPrimeConfig.maxTrackedPerSession)
+            // A missing template is dropped by SendListInventory anyway.
+            switch (PrimeLocked(session, primed, entry))
             {
-                // Session has seen an implausible amount of distinct stock; stop
-                // tracking rather than growing without bound. Later opens fall
-                // back to the client's own query, which still works.
-                primed.clear();
-                return false;
+                case Result::Sent:
+                    ++pushed;
+                    return true;
+                case Result::SessionFull:
+                    return false;
+                default:
+                    return true;
             }
-
-            session->SendItemQueryResponse(entry);
-            ++pushed;
-            return true;
         };
 
         for (uint8 slot = 0; slot < itemCount; ++slot)

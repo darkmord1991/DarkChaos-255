@@ -47,6 +47,12 @@ namespace DarkChaos
         std::vector<std::string> BuildScaledRandomEnchantLines(Item* item,
             float multiplier);
 
+        // What one random-enchant line (PROP_ENCHANTMENT_SLOT_0 + line) prints at
+        // `multiplier`: the rows the item tooltip shows for it, whether or not an upgrade
+        // changes them. The reroll window uses it so a line reads as it does on the item.
+        std::vector<std::string> BuildRandomEnchantLineText(Item* item, uint8 line,
+            float multiplier);
+
         // True when spellId is an "equip spell" whose aura amounts the upgrade hooks
         // scale -- i.e. it applies at least one aura that is not itself a proc/periodic
         // trigger. "+33 Frost Spell Damage" (enchant 2253 -> spell 17895) is the

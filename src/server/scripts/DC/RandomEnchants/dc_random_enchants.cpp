@@ -5,6 +5,7 @@
  * stronger validation, safer enchant slot usage, and runtime data caching.
  */
 
+#include "dc_random_enchants.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Item.h"
@@ -15,6 +16,7 @@
 #include "Log.h"
 #include "Random.h"
 #include "SpellMgr.h"
+#include "StringFormat.h"
 
 #include <algorithm>
 #include <array>
@@ -131,7 +133,7 @@ struct RandomEnchantsConfig
         enchantChance1 = std::clamp(enchantChance1, 0.0f, 100.0f);
         enchantChance2 = std::clamp(enchantChance2, 0.0f, 100.0f);
         enchantChance3 = std::clamp(enchantChance3, 0.0f, 100.0f);
-        maxEnchantsPerItem = std::clamp<uint8>(maxEnchantsPerItem, 1, 3);
+        maxEnchantsPerItem = std::clamp<uint8>(maxEnchantsPerItem, 1, DarkChaos::RandomEnchants::MAX_LINES);
 
         minQuality = std::min<uint8>(minQuality, ITEM_QUALITY_LEGENDARY);
         maxQuality = std::min<uint8>(maxQuality, ITEM_QUALITY_LEGENDARY);
@@ -177,6 +179,8 @@ struct TierPools
 struct EnchantPools
 {
     std::array<TierPools, 6> byTier;
+    // Highest tier each enchant is listed under, for the reroll window's tier badge.
+    std::unordered_map<uint32, uint8> tierByEnchant;
     bool loaded = false;
     uint32 loadedRows = 0;
     uint32 skippedRows = 0;
@@ -192,6 +196,7 @@ struct EnchantPools
             pools.armorBySubClass.clear();
         }
 
+        tierByEnchant.clear();
         loaded = false;
         loadedRows = 0;
         skippedRows = 0;
@@ -369,38 +374,33 @@ void LoadEnchantPools()
             continue;
         }
 
-        TierPools& tierPools = sPools.byTier[tier];
-
-        if (classToken == "ANY")
+        if (classToken != "ANY" && classToken != "WEAPON" && classToken != "ARMOR")
         {
-            tierPools.any.push_back(enchantId);
-            ++sPools.loadedRows;
+            ++sPools.skippedRows;
             continue;
         }
 
-        if (classToken == "WEAPON")
+        TierPools& tierPools = sPools.byTier[tier];
+        uint8& knownTier = sPools.tierByEnchant[enchantId];
+        knownTier = std::max(knownTier, tier);
+        ++sPools.loadedRows;
+
+        if (classToken == "ANY")
+            tierPools.any.push_back(enchantId);
+        else if (classToken == "WEAPON")
         {
             if (subClass >= 0)
                 tierPools.weaponBySubClass[static_cast<uint32>(subClass)].push_back(enchantId);
             else
                 tierPools.weapon.push_back(enchantId);
-
-            ++sPools.loadedRows;
-            continue;
         }
-
-        if (classToken == "ARMOR")
+        else
         {
             if (subClass >= 0)
                 tierPools.armorBySubClass[static_cast<uint32>(subClass)].push_back(enchantId);
             else
                 tierPools.armor.push_back(enchantId);
-
-            ++sPools.loadedRows;
-            continue;
         }
-
-        ++sPools.skippedRows;
     }
     while (result->NextRow());
 
@@ -553,6 +553,22 @@ uint32 PickRandomEnchantId(
     return 0;
 }
 
+EnchantmentSlot LineSlot(uint8 line)
+{
+    return EnchantmentSlot(PROP_ENCHANTMENT_SLOT_0 + line);
+}
+
+// Swaps one line's enchant. On an equipped item the old enchant's effects come off first and
+// the new one's go on after it, which is also what keeps the upgrade scaling of the property
+// slots symmetric (ItemUpgradeStatApplication records per slot what it applied).
+void WriteLine(Player* player, Item* item, uint8 line, uint32 enchantId)
+{
+    EnchantmentSlot const slot = LineSlot(line);
+    player->ApplyEnchantment(item, slot, false);
+    item->SetEnchantment(slot, enchantId, 0, 0, player->GetGUID());
+    player->ApplyEnchantment(item, slot, true);
+}
+
 void ApplyRandomEnchants(Player* player, Item* item, char const* source)
 {
     if (!sConfig.enabled)
@@ -618,13 +634,6 @@ void ApplyRandomEnchants(Player* player, Item* item, char const* source)
         sConfig.enchantChance1,
         sConfig.enchantChance2,
         sConfig.enchantChance3
-    };
-
-    std::array<EnchantmentSlot, 3> const slots =
-    {
-        PROP_ENCHANTMENT_SLOT_0,
-        PROP_ENCHANTMENT_SLOT_1,
-        PROP_ENCHANTMENT_SLOT_2
     };
 
     uint8 appliedCount = 0;
@@ -701,10 +710,8 @@ void ApplyRandomEnchants(Player* player, Item* item, char const* source)
             continue;
         }
 
-        EnchantmentSlot const slot = slots[i];
-        player->ApplyEnchantment(item, slot, false);
-        item->SetEnchantment(slot, enchantId, 0, 0, player->GetGUID());
-        player->ApplyEnchantment(item, slot, true);
+        EnchantmentSlot const slot = LineSlot(i);
+        WriteLine(player, item, i, enchantId);
 
         if (sConfig.debug)
         {
@@ -756,6 +763,112 @@ void ApplyRandomEnchants(Player* player, Item* item, char const* source)
 }
 
 } // namespace
+
+namespace DarkChaos::RandomEnchants
+{
+    bool IsEnabled()
+    {
+        return sConfig.enabled && sPools.loaded;
+    }
+
+    uint8 GetMaxLines()
+    {
+        return sConfig.maxEnchantsPerItem;
+    }
+
+    Eligibility GetEligibility(Item const* item)
+    {
+        if (!IsEnabled())
+            return Eligibility::SystemDisabled;
+
+        ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+        if (!proto)
+            return Eligibility::NotWeaponOrArmor;
+
+        bool const classAllowed = (proto->Class == ITEM_CLASS_WEAPON && sConfig.allowWeapons)
+            || (proto->Class == ITEM_CLASS_ARMOR && sConfig.allowArmor);
+        if (!classAllowed)
+            return Eligibility::NotWeaponOrArmor;
+
+        if (proto->Quality < sConfig.minQuality || proto->Quality > sConfig.maxQuality)
+            return Eligibility::QualityOutOfRange;
+
+        // A random property writes PROP slots 2-4 and a suffix all five, so a rolled line would
+        // overwrite (and be overwritten by) stats the client draws from the suffix itself.
+        if (item->GetItemRandomPropertyId() != 0)
+            return Eligibility::HasRandomProperty;
+
+        return Eligibility::Eligible;
+    }
+
+    std::string DescribeEligibility(Eligibility eligibility)
+    {
+        static char const* const QUALITY_NAMES[] = { "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary" };
+
+        switch (eligibility)
+        {
+            case Eligibility::Eligible:
+                return "";
+            case Eligibility::SystemDisabled:
+                return "Random enchants are switched off on this realm.";
+            case Eligibility::NotWeaponOrArmor:
+                if (sConfig.allowWeapons && sConfig.allowArmor)
+                    return "Only weapons and armor can carry random enchants.";
+                if (sConfig.allowWeapons)
+                    return "Only weapons can carry random enchants.";
+                if (sConfig.allowArmor)
+                    return "Only armor can carry random enchants.";
+                return "No item can carry random enchants on this realm.";
+            case Eligibility::QualityOutOfRange:
+                // Load() clamps both bounds to ITEM_QUALITY_LEGENDARY.
+                return Acore::StringFormat("Random enchants need {} to {} quality.",
+                    QUALITY_NAMES[sConfig.minQuality], QUALITY_NAMES[sConfig.maxQuality]);
+            case Eligibility::HasRandomProperty:
+                return "Items with a random suffix keep their own stats and cannot hold random enchants.";
+        }
+
+        return "";
+    }
+
+    Lines GetLines(Item const* item)
+    {
+        Lines lines{};
+        if (!item)
+            return lines;
+
+        for (uint8 i = 0; i < MAX_LINES; ++i)
+            lines[i] = item->GetEnchantmentId(LineSlot(i));
+
+        return lines;
+    }
+
+    uint8 GetEnchantTier(uint32 enchantId)
+    {
+        auto itr = sPools.tierByEnchant.find(enchantId);
+        return itr != sPools.tierByEnchant.end() ? itr->second : 0;
+    }
+
+    uint32 RollLine(Item const* item, std::unordered_set<uint32> const& exclude)
+    {
+        ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+        if (!proto || !IsEnabled())
+            return 0;
+
+        uint8 const tier = RollTierForQuality(proto->Quality);
+        if (!tier)
+            return 0;
+
+        return PickRandomEnchantId(proto, tier, exclude);
+    }
+
+    void SetLine(Player* player, Item* item, uint8 index, uint32 enchantId)
+    {
+        if (!player || !item || index >= MAX_LINES)
+            return;
+
+        WriteLine(player, item, index, enchantId);
+    }
+}
 
 class DCRandomEnchantsPlayerScript : public PlayerScript
 {

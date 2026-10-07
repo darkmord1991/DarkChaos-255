@@ -70,6 +70,10 @@ namespace
     // never has to touch the database directly.
     std::unordered_map<uint32, uint32> g_ChallengeStatBonusCache;
 
+    // Challenge types each player already holds the reward row for (bit 1 << type). The table keeps
+    // one row per character and type, so the stat bonus is earned once per type.
+    std::unordered_map<uint32, uint8> g_ChallengeRewardedTypes;
+
     class PrestigeChallengeSystem
     {
     public:
@@ -159,23 +163,40 @@ namespace
             if (!player)
                 return;
 
-            uint32 const guid = player->GetGUID().GetCounter();
+            ObjectGuid const playerGuid = player->GetGUID();
+            uint32 const guid = playerGuid.GetCounter();
 
-            // Load asynchronously so login never blocks the world thread; the cache is
-            // filled in by the continuation once the sum comes back.
+            // Load asynchronously so login never blocks the world thread; the caches are
+            // filled in by the continuation once the rows come back.
             DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
-                "SELECT SUM(stat_bonus_percent) FROM dc_prestige_challenge_rewards WHERE guid = {}",
+                "SELECT challenge_type, stat_bonus_percent FROM dc_prestige_challenge_rewards WHERE guid = {}",
                 guid))
-                .WithCallback([guid](QueryResult result)
+                .WithCallback([playerGuid, guid](QueryResult result)
             {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player)
+                    return;
+
                 uint32 totalBonus = 0;
+                uint8 rewardedTypes = 0;
                 if (result)
                 {
-                    Field* fields = result->Fetch();
-                    totalBonus = fields[0].Get<uint32>();
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint8 challengeType = fields[0].Get<uint8>();
+                        if (challengeType < 8)
+                            rewardedTypes |= uint8(1 << challengeType);
+                        totalBonus += fields[1].Get<uint8>();
+                    } while (result->NextRow());
                 }
 
                 g_ChallengeStatBonusCache[guid] = totalBonus;
+                g_ChallengeRewardedTypes[guid] = rewardedTypes;
+
+                // The prestige aura can be on the player already, worked out without this bonus:
+                // both loads run at login and either can finish first.
+                PrestigeAPI::RecalculatePrestigeBuffs(player);
             }));
         }
 
@@ -211,6 +232,11 @@ namespace
                 return false;
             }
 
+            // A challenge covers a whole climb, so it starts right after a prestige, before the
+            // character has gained a level; started near the top it would complete for free.
+            if (player->GetLevel() > PrestigeAPI::GetRestartLevel(player))
+                return false;
+
             // Check if player already has this challenge active
             if (HasActiveChallenge(player, challengeType))
                 return false;
@@ -219,10 +245,14 @@ namespace
             uint32 currentTime = GameTime::GetGameTime().count();
             uint32 currentPlayTime = player->GetTotalPlayedTime();
 
-            // Insert into database
+            // Insert into database. The key is guid + prestige level + type, so a retry after a failed
+            // attempt at this prestige level restarts that row; a plain INSERT would fail on it and the
+            // challenge would only live in memory until the next login.
             CharacterDatabase.Execute(
                 "INSERT INTO dc_prestige_challenges (guid, prestige_level, challenge_type, active, completed, start_time, start_playtime, death_count, group_count) "
-                "VALUES ({}, {}, {}, 1, 0, {}, {}, 0, 0)",
+                "VALUES ({}, {}, {}, 1, 0, {}, {}, 0, 0) "
+                "ON DUPLICATE KEY UPDATE active = 1, completed = 0, start_time = VALUES(start_time), "
+                "start_playtime = VALUES(start_playtime), completion_time = NULL, death_count = 0, group_count = 0",
                 guid, prestigeLevel, static_cast<uint32>(challengeType), currentTime, currentPlayTime
             );
 
@@ -357,8 +387,8 @@ namespace
             if (!HasActiveChallenge(player, CHALLENGE_SPEED))
                 return;
 
-            // Check if player reached max level
-            if (player->GetLevel() < 255)
+            // Check if player reached the prestige level
+            if (player->GetLevel() < PrestigeAPI::GetRequiredLevel())
                 return;
 
             uint32 guid = player->GetGUID().GetCounter();
@@ -393,8 +423,8 @@ namespace
             if (!player)
                 return;
 
-            // Check if player reached max level
-            if (player->GetLevel() < 255)
+            // Check if player reached the prestige level
+            if (player->GetLevel() < PrestigeAPI::GetRequiredLevel())
                 return;
 
             uint32 guid = player->GetGUID().GetCounter();
@@ -475,17 +505,30 @@ namespace
                 }
             }
 
-            // Grant permanent stat bonus (stored in database)
+            // Grant permanent stat bonus (stored in database). The reward table keeps one row per
+            // character and type, so the bonus is earned once per type; a later completion of the
+            // same type only grants the title again.
             uint32 const guid = player->GetGUID().GetCounter();
+            uint8& rewardedTypes = g_ChallengeRewardedTypes[guid];
+            uint8 const typeBit = uint8(1 << challengeType);
+            if (rewardedTypes & typeBit)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cFFFFD700You already have the {} stat bonus.|r", GetChallengeName(challengeType));
+                return;
+            }
+
+            rewardedTypes |= typeBit;
             CharacterDatabase.Execute(
-                "INSERT INTO dc_prestige_challenge_rewards (guid, challenge_type, stat_bonus_percent, granted_time) "
-                "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
+                "INSERT IGNORE INTO dc_prestige_challenge_rewards (guid, challenge_type, stat_bonus_percent, "
+                "granted_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
                 guid, static_cast<uint32>(challengeType), statBonus
             );
 
-            // Keep the cached total in sync so the prestige aura picks up the new bonus
-            // immediately, without waiting for a re-login.
+            // Keep the cached total in sync, and recalculate the prestige aura, which worked out its
+            // amount when it was applied: the bonus shows at once, not only after a re-login.
             g_ChallengeStatBonusCache[guid] += statBonus;
+            PrestigeAPI::RecalculatePrestigeBuffs(player);
 
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFFD700You gained +{}% permanent stat bonus!|r", statBonus);
@@ -537,6 +580,7 @@ namespace
                 uint32 const guid = player->GetGUID().GetCounter();
                 g_ActiveChallenges.erase(guid);
                 g_ChallengeStatBonusCache.erase(guid);
+                g_ChallengeRewardedTypes.erase(guid);
             }
         }
 

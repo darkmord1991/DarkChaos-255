@@ -499,6 +499,17 @@ function Adapter:EnsureNativeEnvelopePoller()
     -- issued (same gating pattern as DC-Leaderboards). Polling 4x/sec forever
     -- from module load was pure idle cost.
     self._envelopeFrame = frame
+
+    -- A DLL that pushes DC_NATIVE_DATA signals each envelope; while this poller
+    -- runs, the envelope is taken at once instead of on the next tick.
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.OnNativeData) == "function" then
+        protocol:OnNativeData("ENVELOPE", function()
+            if frame:IsShown() then
+                Adapter:PollNativeEnvelopes()
+            end
+        end)
+    end
 end
 
 function Adapter:StartNativeEnvelopePoller()

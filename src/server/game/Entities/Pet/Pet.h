@@ -22,7 +22,8 @@
 #include "PetDefines.h"
 #include "TemporarySummon.h"
 
-constexpr auto PET_LOSE_HAPPINES_INTERVAL = 7500;
+// Hunter pets are always fully happy (no decay, no death penalty), as in retail since 4.1.
+// Happiness is still a power so the client keeps showing the Happy state and its +25% damage.
 constexpr auto HAPPINESS_LEVEL_SIZE = 333000;
 
 struct PetSpell
@@ -80,13 +81,11 @@ public:
             return m_autospells[pos];
     }
 
-    void LoseHappiness();
     HappinessState GetHappinessState();
     void GivePetXP(uint32 xp);
     void GivePetLevel(uint8 level);
     void SynchronizeLevelWithOwner();
     bool HaveInDiet(ItemTemplate const* item) const;
-    uint32 GetCurrentFoodBenefitLevel(uint32 itemlevel) const;
     void SetDuration(Milliseconds dur) { m_duration = dur; }
     Milliseconds GetDuration() const { return m_duration; }
 
@@ -149,7 +148,6 @@ public:
     std::string GetDebugInfo() const override;
 protected:
     Player* m_owner;
-    int32   m_happinessTimer;
     PetType m_petType;
     Milliseconds m_duration; // time until unsummon (used mostly for summoned guardians and not used for controlled pets)
     uint64  m_auraRaidUpdateMask;

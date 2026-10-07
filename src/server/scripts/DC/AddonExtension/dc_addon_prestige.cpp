@@ -119,14 +119,20 @@ namespace DCPrestigeAddon
             BridgeOpcode::SMSG_PRESTIGE, data.size(), preview, true, 0);
     }
 
-    // Transport-aware send: native dedicated opcode when negotiated, else addon.
+    // Transport-aware send: native dedicated opcode when negotiated and the
+    // payload fits the client's reader, else addon.
     static void SendPrestigeMessage(Player* player,
         DCAddon::JsonMessage const& msg)
     {
         if (ResolvePrestigeTransport(player).UsesNative())
         {
-            SendNativePrestigePayload(player, msg.GetOpcode(), msg.Encode());
-            return;
+            std::string const payload = msg.Encode();
+            if (DCAddon::NativePayloadFits(player, payload.size(),
+                    DCAddon::LegacyNativePayloadMax::PRESTIGE))
+            {
+                SendNativePrestigePayload(player, msg.GetOpcode(), payload);
+                return;
+            }
         }
 
         msg.Send(player);

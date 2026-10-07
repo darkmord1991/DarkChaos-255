@@ -42,7 +42,6 @@ Pet::Pet(Player* owner, PetType type) : Guardian(nullptr, owner ? owner->GetGUID
     m_usedTalentCount(0),
     m_removed(false),
     m_owner(owner),
-    m_happinessTimer(PET_LOSE_HAPPINES_INTERVAL),
     m_petType(type),
     m_duration(0),
     m_auraRaidUpdateMask(0),
@@ -317,7 +316,7 @@ bool Pet::LoadPetFromDB(Player* owner, uint32 petEntry, uint32 petnumber, bool c
             ReplaceAllUnitFlags(UNIT_FLAG_PLAYER_CONTROLLED);
                                                             // this enables popup window (pet abandon, cancel)
             SetMaxPower(POWER_HAPPINESS, GetCreatePowers(POWER_HAPPINESS));
-            SetPower(POWER_HAPPINESS, petInfo->Happiness);
+            SetPower(POWER_HAPPINESS, GetMaxPower(POWER_HAPPINESS)); // always happy, see HAPPINESS_LEVEL_SIZE
             setPowerType(POWER_FOCUS);
             break;
         default:
@@ -634,11 +633,6 @@ void Pet::setDeathState(DeathState s, bool /*despawn = false*/)                 
             ReplaceAllDynamicFlags(UNIT_DYNFLAG_NONE);
             RemoveUnitFlag(UNIT_FLAG_SKINNABLE);
 
-            //lose happiness when died and not in BG/Arena
-            MapEntry const* mapEntry = sMapStore.LookupEntry(GetMapId());
-            if (!mapEntry || (mapEntry->map_type != MAP_ARENA && mapEntry->map_type != MAP_BATTLEGROUND))
-                ModifyPower(POWER_HAPPINESS, -HAPPINESS_LEVEL_SIZE);
-
             //SetUnitFlag(UNIT_FLAG_STUNNED);
         }
     }
@@ -716,16 +710,6 @@ void Pet::Update(uint32 diff)
                 }
 
                 CastPendingSpell();
-
-                if (getPetType() == HUNTER_PET)
-                {
-                    m_happinessTimer -= diff;
-                    if (m_happinessTimer <= int32(0))
-                    {
-                        LoseHappiness();
-                        m_happinessTimer += PET_LOSE_HAPPINES_INTERVAL;
-                    }
-                }
 
                 break;
             }
@@ -880,17 +864,6 @@ void Pet::CastPendingSpell()
     }
 }
 
-void Pet::LoseHappiness()
-{
-    uint32 curValue = GetPower(POWER_HAPPINESS);
-    if (curValue <= 0)
-        return;
-    int32 addvalue = 670;                                   //value is 70/35/17/8/4 (per min) * 1000 / 8 (timer 7.5 secs)
-    if (IsInCombat())                                        //we know in combat happiness fades faster, multiplier guess
-        addvalue = int32(addvalue * 1.5f);
-    ModifyPower(POWER_HAPPINESS, -addvalue);
-}
-
 HappinessState Pet::GetHappinessState()
 {
     if (GetPower(POWER_HAPPINESS) < HAPPINESS_LEVEL_SIZE)
@@ -1020,7 +993,7 @@ bool Pet::CreateBaseAtTamed(CreatureTemplate const* cinfo, Map* map, uint32 phas
         return false;
 
     SetMaxPower(POWER_HAPPINESS, GetCreatePowers(POWER_HAPPINESS));
-    SetPower(POWER_HAPPINESS, 166500);
+    SetPower(POWER_HAPPINESS, GetMaxPower(POWER_HAPPINESS)); // always happy, see HAPPINESS_LEVEL_SIZE
     setPowerType(POWER_FOCUS);
     SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP, 0);
     SetUInt32Value(UNIT_FIELD_PETEXPERIENCE, 0);
@@ -1460,22 +1433,6 @@ bool Pet::HaveInDiet(ItemTemplate const* item) const
     uint32 diet = cFamily->petFoodMask;
     uint32 FoodMask = 1 << (item->FoodType - 1);
     return diet & FoodMask;
-}
-
-uint32 Pet::GetCurrentFoodBenefitLevel(uint32 itemlevel) const
-{
-    // -5 or greater food level
-    if (GetLevel() <= itemlevel + 5)                         //possible to feed level 60 pet with level 55 level food for full effect
-        return 35000;
-    // -10..-6
-    else if (GetLevel() <= itemlevel + 10)                   //pure guess, but sounds good
-        return 17000;
-    // -14..-11
-    else if (GetLevel() <= itemlevel + 14)                   //level 55 food gets green on 70, makes sense to me
-        return 8000;
-    // -15 or less
-    else
-        return 0;                                           //food too low level
 }
 
 void Pet::_LoadSpellCooldowns(PreparedQueryResult result)

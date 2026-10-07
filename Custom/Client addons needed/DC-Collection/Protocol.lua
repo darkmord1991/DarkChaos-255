@@ -260,6 +260,24 @@ local NATIVE_ITEM_SETS_POLL_INTERVAL = 0.10
 local lastNativeItemSetsRevision = 0
 local nativeItemSetsPollFrame = nil
 
+-- When the client DLL pushes DC_NATIVE_DATA, the polls below drain on the
+-- signal and only poll as a safety net (DCAddonProtocol:GetNativePollInterval).
+-- Older protocol libraries have neither function; the polls then run as before.
+local function NativePollInterval(baseInterval)
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.GetNativePollInterval) == "function" then
+        return protocol:GetNativePollInterval(baseInterval)
+    end
+    return baseInterval
+end
+
+local function OnNativeData(channel, drain)
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.OnNativeData) == "function" then
+        protocol:OnNativeData(channel, drain)
+    end
+end
+
 DC._collectionTransportDiagnostics = DC._collectionTransportDiagnostics or {}
 
 local function GetTransportTimestamp()
@@ -1152,6 +1170,16 @@ local function ConsumeNativeCollectionWave1Snapshot()
     return handled
 end
 
+-- Drain all queued messages at once so rapid-fire server responses (e.g. 13
+-- DeltaSync replies on a LAN server) don't pile up and stall the progress bar
+-- for seconds. Cap at 64 to match the C++ queue max.
+local function DrainNativeCollectionWave1()
+    local drained = 0
+    while ConsumeNativeCollectionWave1Snapshot() and drained < 64 do
+        drained = drained + 1
+    end
+end
+
 local function EnsureNativeCollectionWave1PollFrame()
     if nativeCollectionWave1PollFrame then
         return
@@ -1162,19 +1190,14 @@ local function EnsureNativeCollectionWave1PollFrame()
     nativeCollectionWave1PollFrame:SetScript("OnUpdate", function(self,
         elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_COLLECTION_WAVE1_POLL_INTERVAL then
+        if self.elapsed < NativePollInterval(NATIVE_COLLECTION_WAVE1_POLL_INTERVAL) then
             return
         end
 
         self.elapsed = 0
-        -- Drain all queued messages in one tick so rapid-fire server responses
-        -- (e.g. 13 DeltaSync replies on a LAN server) don't pile up and stall
-        -- the progress bar for seconds. Cap at 64 to match the C++ queue max.
-        local drained = 0
-        while ConsumeNativeCollectionWave1Snapshot() and drained < 64 do
-            drained = drained + 1
-        end
+        DrainNativeCollectionWave1()
     end)
+    OnNativeData("COLL_WAVE1", DrainNativeCollectionWave1)
 end
 
 local function ConsumeNativeCollectionSavedOutfitsSnapshot()
@@ -1234,13 +1257,15 @@ local function EnsureNativeCollectionSavedOutfitsPollFrame()
     nativeSavedOutfitsPollFrame.elapsed = 0
     nativeSavedOutfitsPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_SAVED_OUTFITS_POLL_INTERVAL then
+        if self.elapsed < NativePollInterval(NATIVE_SAVED_OUTFITS_POLL_INTERVAL) then
             return
         end
 
         self.elapsed = 0
         ConsumeNativeCollectionSavedOutfitsSnapshot()
     end)
+    -- Saved outfits arrive on the wave1 opcode; its signal covers this mirror.
+    OnNativeData("COLL_WAVE1", ConsumeNativeCollectionSavedOutfitsSnapshot)
 end
 
 local function ConsumeNativeCollectionCommunitySnapshot()
@@ -1334,13 +1359,15 @@ local function EnsureNativeCollectionCommunityPollFrame()
     nativeCommunityPollFrame.elapsed = 0
     nativeCommunityPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_COMMUNITY_POLL_INTERVAL then
+        if self.elapsed < NativePollInterval(NATIVE_COMMUNITY_POLL_INTERVAL) then
             return
         end
 
         self.elapsed = 0
         ConsumeNativeCollectionCommunitySnapshot()
     end)
+    -- Community replies arrive on the wave1 opcode; its signal covers this mirror.
+    OnNativeData("COLL_WAVE1", ConsumeNativeCollectionCommunitySnapshot)
 end
 
 local function SendCollectionCommunityRequest(logicalOpcode, data, options)
@@ -1482,6 +1509,11 @@ local function SendCollectionWave1Request(logicalOpcode, data, options)
                 logicalOpcode, string.len(payload))
             local ok, err = pcall(RequestNativeCollectionWave1,
                 logicalOpcode, payload)
+            -- A DLL that checks the packet size returns false for a request the
+            -- server would drop the connection over; older DLLs return nothing.
+            if ok and err == false then
+                ok, err = false, "request too large for the native bridge"
+            end
             if ok then
                 LogCollectionTransportEvent("info", "collection-wave1",
                     "Collection wave1 native request -> "
@@ -1563,6 +1595,11 @@ local function SendOwnedCollectionWave1Request(channelKey, logicalOpcode,
                 { expectsReply = expectsReply })
             local ok, err = pcall(RequestNativeCollectionWave1,
                 logicalOpcode, payload)
+            -- A DLL that checks the packet size returns false for a request the
+            -- server would drop the connection over; older DLLs return nothing.
+            if ok and err == false then
+                ok, err = false, "request too large for the native bridge"
+            end
             if ok then
                 if expectsReply then
                     SetNativeCollectionWave1RequestState(channelKey, {
@@ -1850,13 +1887,14 @@ local function EnsureNativeCollectionTransmogStatePollFrame()
     nativeTransmogStatePollFrame.elapsed = 0
     nativeTransmogStatePollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_TRANSMOG_STATE_POLL_INTERVAL then
+        if self.elapsed < NativePollInterval(NATIVE_TRANSMOG_STATE_POLL_INTERVAL) then
             return
         end
 
         self.elapsed = 0
         ConsumeNativeCollectionTransmogStateSnapshot()
     end)
+    OnNativeData("COLL_TRANSMOG", ConsumeNativeCollectionTransmogStateSnapshot)
 end
 
 local function SendCollectionTransmogStateRequest(reason, options)
@@ -2031,13 +2069,14 @@ local function EnsureNativeCollectionItemSetsPollFrame()
     nativeItemSetsPollFrame.elapsed = 0
     nativeItemSetsPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_ITEM_SETS_POLL_INTERVAL then
+        if self.elapsed < NativePollInterval(NATIVE_ITEM_SETS_POLL_INTERVAL) then
             return
         end
 
         self.elapsed = 0
         ConsumeNativeCollectionItemSetsSnapshot()
     end)
+    OnNativeData("COLL_ITEMSETS", ConsumeNativeCollectionItemSetsSnapshot)
 end
 
 local function SendItemSetsRequest(payload, options)

@@ -219,6 +219,13 @@ namespace DCAddon
             constexpr uint8 SMSG_TRANSMUTE_INFO     = 0x30; // Recipes, rates, status
             constexpr uint8 SMSG_TRANSMUTE_RESULT   = 0x31; // Result of operation
             constexpr uint8 SMSG_OPEN_TRANSMUTE_UI  = 0x32; // Open the UI
+
+            // Random enchant reroll (dc_addon_enchant_reroll.cpp)
+            constexpr uint8 CMSG_GET_ENCHANT_INFO   = 0x22; // An item's rolled lines, prices, balance
+            constexpr uint8 CMSG_DO_ENCHANT_REROLL  = 0x23; // Reroll a line, reroll all, or add a line
+
+            constexpr uint8 SMSG_ENCHANT_INFO       = 0x33; // Answer to CMSG_GET_ENCHANT_INFO
+            constexpr uint8 SMSG_ENCHANT_RESULT     = 0x34; // Answer to CMSG_DO_ENCHANT_REROLL
         }
 
         // Phased Duels opcodes
@@ -809,6 +816,18 @@ namespace DCAddon
             constexpr uint32 PRESTIGE_NATIVE = 0x01000000; // Native prestige request/response bridge (info/bonuses)
             constexpr uint32 WORLD_NATIVE = 0x02000000; // Native world-content request/response bridge (content/resolve)
             constexpr uint32 GENERIC_MESSAGE_NATIVE = 0x04000000; // Generic DC native message bridge: any module in the GetModuleNativeCapability registry (GRPF/UPG/AOE/MPLUS/TELE/EVNT/DUEL/LBRD/WELC/SPEC/GOMV/NPCM) routes its JsonMessage/Message::Send over SMSG_DC_NATIVE_MESSAGE
+            // The client DLL reads every native string payload sized from the
+            // packet, so bodies may exceed the old fixed-buffer limits up to
+            // DC.AddonProtocol.Native.LargeBodyMaxBytes (see NativePayloadFits).
+            constexpr uint32 LARGE_NATIVE_PAYLOAD = 0x08000000;
+            // The client DLL signals the DC_NATIVE_DATA FrameXML event when a
+            // native store changes. Client-local; negotiated only so the caps
+            // telemetry records which clients have it.
+            constexpr uint32 NATIVE_PUSH_EVENTS = 0x10000000;
+            // The server answers QOS CMSG_PREFETCH_ITEMS. Advertised by the Lua
+            // library (no DLL bit); an older server leaves it out, so the client
+            // primes items one by one instead.
+            constexpr uint32 ITEM_PREFETCH = 0x20000000;
 
             // Default capabilities for current server version
             constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
@@ -829,7 +848,10 @@ namespace DCAddon
                 PRESTIGE_NATIVE |
                 WORLD_NATIVE |
                 GENERIC_MESSAGE_NATIVE |
-                NATIVE_MODULES_EXT;
+                NATIVE_MODULES_EXT |
+                LARGE_NATIVE_PAYLOAD |
+                NATIVE_PUSH_EVENTS |
+                ITEM_PREFETCH;
         }
 
         // Version info structure for handshake
@@ -1519,6 +1541,27 @@ namespace DCAddon
     bool CanUseModuleNativeMessage(Player* player, std::string const& module);
     bool TrySendModuleNativeMessage(Player* player, std::string const& module,
         uint8 opcode, std::string const& body);
+
+    // Largest payload an older client DLL reads whole on each native path: it
+    // read them into fixed buffers (WotLKExtensions CNetClient.cpp) and cut
+    // anything longer, so the JSON arrived unparseable.
+    namespace LegacyNativePayloadMax
+    {
+        constexpr size_t GENERIC_BODY = 60000;  // 64 KB buffer, kept with margin
+        constexpr size_t ENVELOPE = 15000;      // 16 KB buffer, kept with margin
+        constexpr size_t SEASONAL = 32767;      // 32768-byte buffer incl. NUL
+        constexpr size_t HOTSPOT = 32767;
+        constexpr size_t PRESTIGE = 16383;
+        constexpr size_t WORLD = 65534;
+    }
+
+    // Whether a native payload of `payloadBytes` can reach this player in one
+    // packet: within `legacyMaxBytes` for any client, or within
+    // DC.AddonProtocol.Native.LargeBodyMaxBytes once the session negotiated
+    // LARGE_NATIVE_PAYLOAD. Callers fall back to the chunked addon transport
+    // otherwise.
+    bool NativePayloadFits(Player* player, size_t payloadBytes,
+        size_t legacyMaxBytes);
     bool HandleNativeGenericRequest(WorldSession* session,
         WorldPacket const& packet);
     bool SendNativeEnvelope(Player* player, std::string const& module,

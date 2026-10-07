@@ -52,6 +52,8 @@
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
+#include "DC/QOL/dc_item_cache_prime.h"
+#include "Timer.h"
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -67,6 +69,7 @@
 #include <set>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "Mail.h"
 #include "TradeData.h"
@@ -88,6 +91,7 @@ namespace DCQoS
         constexpr uint8 CMSG_REQUEST_FEATURE    = 0x06;  // Request specific feature data
         constexpr uint8 CMSG_COLLECT_ALL_MAIL   = 0x07;  // Request to collect all mail
         constexpr uint8 CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 0x08;  // Request server-enriched spell tooltip line
+        constexpr uint8 CMSG_PREFETCH_ITEMS     = 0x09;  // {"ids":[entry,...]}: push their item cache records
 
         // Server -> Client
         constexpr uint8 SMSG_SETTINGS_SYNC      = 0x10;  // Full settings sync
@@ -98,6 +102,7 @@ namespace DCQoS
         constexpr uint8 SMSG_FEATURE_DATA       = 0x15;  // Feature-specific data
         constexpr uint8 SMSG_NOTIFICATION       = 0x16;  // Server notification
         constexpr uint8 SMSG_SPELL_TOOLTIP_ENRICHMENT = 0x17;  // requestId|spellId|contextHash|status|line
+        constexpr uint8 SMSG_PREFETCH_ITEMS_RESULT = 0x18;  // {"ids","sent","missing"} or {"ids","throttled"}
     }
 
     // Bridge reference to the custom client packet opcodes used by WotLK-Extensions.
@@ -1324,6 +1329,77 @@ namespace DCQoS
     //   anything else           -> the description verbatim (weapon-damage and
     //                              resistance enchants have no hook; mixed rows are
     //                              rare enough to under-state rather than guess)
+    // The lines one random-enchant slot (PROP_ENCHANTMENT_SLOT_0 + propIndex) grants, by the
+    // rules above. Empty for an empty slot.
+    static std::vector<std::string> BuildRandomEnchantSlotLines(Item* item, uint32 propIndex,
+        double multiplier)
+    {
+        std::vector<std::string> lines;
+        if (!item || propIndex >= MAX_ITEM_ENCHANTMENT_EFFECTS)
+            return lines;
+
+        SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(
+            item->GetEnchantmentId(EnchantmentSlot(PROP_ENCHANTMENT_SLOT_0 + propIndex)));
+        if (!enchant)
+            return lines;
+
+        uint32 statEffects = 0;
+        uint32 scalableSpellEffects = 0;
+        uint32 otherEffects = 0;
+        for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+        {
+            switch (enchant->type[i])
+            {
+                case ITEM_ENCHANTMENT_TYPE_NONE:
+                    break;
+                case ITEM_ENCHANTMENT_TYPE_STAT:
+                    ++statEffects;
+                    break;
+                case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
+                    if (DarkChaos::ItemUpgrade::IsUpgradeScaledEquipSpell(enchant->spellid[i]))
+                        ++scalableSpellEffects;
+                    else
+                        ++otherEffects;
+                    break;
+                default:
+                    ++otherEffects;
+                    break;
+            }
+        }
+
+        bool const hasDescription = enchant->description[0] && *enchant->description[0];
+
+        if (statEffects > 0 && scalableSpellEffects == 0 && otherEffects == 0)
+        {
+            for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
+            {
+                if (enchant->type[i] != ITEM_ENCHANTMENT_TYPE_STAT)
+                    continue;
+
+                uint32 const amount = ScaleEnchantAmount(
+                    ResolveEnchantmentStatAmount(item, enchant, i), multiplier);
+                char const* label = GetItemStatLabel(enchant->spellid[i]);
+                if (amount == 0 || !label)
+                    continue;
+
+                std::string line = FormatSignedItemStat(static_cast<int32>(amount), label);
+                if (!line.empty())
+                    lines.push_back(std::move(line));
+            }
+            return lines;
+        }
+
+        if (!hasDescription)
+            return lines;
+
+        bool const descriptionScales =
+            scalableSpellEffects > 0 && statEffects == 0 && otherEffects == 0;
+        lines.push_back(descriptionScales
+            ? ScalePlusNumbersInText(enchant->description[0], multiplier)
+            : std::string(enchant->description[0]));
+        return lines;
+    }
+
     static std::vector<std::string> BuildRandomEnchantLines(Item* item, double multiplier)
     {
         std::vector<std::string> lines;
@@ -1332,65 +1408,8 @@ namespace DCQoS
 
         for (uint32 propIndex = 0; propIndex < MAX_ITEM_ENCHANTMENT_EFFECTS; ++propIndex)
         {
-            SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(
-                item->GetEnchantmentId(EnchantmentSlot(PROP_ENCHANTMENT_SLOT_0 + propIndex)));
-            if (!enchant)
-                continue;
-
-            uint32 statEffects = 0;
-            uint32 scalableSpellEffects = 0;
-            uint32 otherEffects = 0;
-            for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
-            {
-                switch (enchant->type[i])
-                {
-                    case ITEM_ENCHANTMENT_TYPE_NONE:
-                        break;
-                    case ITEM_ENCHANTMENT_TYPE_STAT:
-                        ++statEffects;
-                        break;
-                    case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
-                        if (DarkChaos::ItemUpgrade::IsUpgradeScaledEquipSpell(enchant->spellid[i]))
-                            ++scalableSpellEffects;
-                        else
-                            ++otherEffects;
-                        break;
-                    default:
-                        ++otherEffects;
-                        break;
-                }
-            }
-
-            bool const hasDescription = enchant->description[0] && *enchant->description[0];
-
-            if (statEffects > 0 && scalableSpellEffects == 0 && otherEffects == 0)
-            {
-                for (uint32 i = 0; i < MAX_SPELL_ITEM_ENCHANTMENT_EFFECTS; ++i)
-                {
-                    if (enchant->type[i] != ITEM_ENCHANTMENT_TYPE_STAT)
-                        continue;
-
-                    uint32 const amount = ScaleEnchantAmount(
-                        ResolveEnchantmentStatAmount(item, enchant, i), multiplier);
-                    char const* label = GetItemStatLabel(enchant->spellid[i]);
-                    if (amount == 0 || !label)
-                        continue;
-
-                    std::string line = FormatSignedItemStat(static_cast<int32>(amount), label);
-                    if (!line.empty())
-                        lines.push_back(std::move(line));
-                }
-                continue;
-            }
-
-            if (!hasDescription)
-                continue;
-
-            bool const descriptionScales =
-                scalableSpellEffects > 0 && statEffects == 0 && otherEffects == 0;
-            lines.push_back(descriptionScales
-                ? ScalePlusNumbersInText(enchant->description[0], multiplier)
-                : std::string(enchant->description[0]));
+            for (std::string& line : BuildRandomEnchantSlotLines(item, propIndex, multiplier))
+                lines.push_back(std::move(line));
         }
 
         return lines;
@@ -6236,6 +6255,140 @@ namespace DCQoS
     }
 
     // -----------------------------------------------------------------------
+    // Item prefetch
+    // -----------------------------------------------------------------------
+
+    // A client that is about to show a list of items (collection pages, loot
+    // tables, vault rows) asks for all of them at once instead of letting each
+    // row send its own CMSG_ITEM_QUERY_SINGLE, which is answered on the map tick.
+    constexpr uint32 ITEM_PREFETCH_MAX_IDS = 50;
+    constexpr uint32 ITEM_PREFETCH_MAX_REQUESTS_PER_SECOND = 3;
+    constexpr uint32 ITEM_PREFETCH_WINDOW_MS = IN_MILLISECONDS;
+
+    struct ItemPrefetchWindow
+    {
+        uint32 startMs = 0;
+        uint32 requests = 0;
+    };
+
+    // guid low -> this second's request count. Erased on logout.
+    static std::unordered_map<uint32, ItemPrefetchWindow> s_ItemPrefetchWindows;
+    static std::mutex s_ItemPrefetchMutex;
+
+    static bool AllowItemPrefetchRequest(Player* player)
+    {
+        uint32 const nowMs = getMSTime();
+        std::lock_guard<std::mutex> lock(s_ItemPrefetchMutex);
+        ItemPrefetchWindow& window = s_ItemPrefetchWindows[player->GetGUID().GetCounter()];
+        if (window.requests == 0 || getMSTimeDiff(window.startMs, nowMs) >= ITEM_PREFETCH_WINDOW_MS)
+        {
+            window.startMs = nowMs;
+            window.requests = 0;
+        }
+
+        if (window.requests >= ITEM_PREFETCH_MAX_REQUESTS_PER_SECOND)
+            return false;
+
+        ++window.requests;
+        return true;
+    }
+
+    static void ForgetItemPrefetchWindow(uint32 guidLow)
+    {
+        std::lock_guard<std::mutex> lock(s_ItemPrefetchMutex);
+        s_ItemPrefetchWindows.erase(guidLow);
+    }
+
+    // The distinct item entries of a {"ids":[...]} request, at most
+    // ITEM_PREFETCH_MAX_IDS; anything that is not a whole number in uint32 range
+    // is dropped.
+    static std::vector<uint32> ReadItemPrefetchIds(DCAddon::JsonValue const& ids)
+    {
+        std::vector<uint32> entries;
+        if (!ids.IsArray())
+            return entries;
+
+        std::unordered_set<uint32> seen;
+        for (DCAddon::JsonValue const& value : ids.AsArray())
+        {
+            if (entries.size() >= ITEM_PREFETCH_MAX_IDS)
+                break;
+
+            if (!value.IsNumber())
+                continue;
+
+            double const number = value.AsNumber();
+            if (!(number >= 1.0 && number <= static_cast<double>(std::numeric_limits<uint32>::max())))
+                continue;
+
+            uint32 const entry = static_cast<uint32>(number);
+            if (static_cast<double>(entry) != number)
+                continue;
+
+            if (seen.insert(entry).second)
+                entries.push_back(entry);
+        }
+
+        return entries;
+    }
+
+    // CMSG_PREFETCH_ITEMS {"ids":[entry,...]}. Every entry this session has not
+    // been sent yet goes out as an unsolicited SMSG_ITEM_QUERY_SINGLE_RESPONSE,
+    // which the client files in its item cache. SMSG_PREFETCH_ITEMS_RESULT
+    // follows on the same session, so when it arrives every known entry is
+    // cached client-side; "missing" lists the entries with no template, so the
+    // client stops waiting for them. "ids" echoes the request because the native
+    // transport carries no request id. A throttled request is answered with
+    // "throttled" and nothing else, for the client to retry.
+    void HandlePrefetchItems(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        std::vector<uint32> const entries =
+            ReadItemPrefetchIds(DCAddon::GetJsonData(msg)["ids"]);
+        if (entries.empty())
+            return;
+
+        DCAddon::JsonValue echoed;
+        echoed.SetArray(entries.size());
+        for (uint32 entry : entries)
+            echoed.Push(DCAddon::JsonValue(entry));
+
+        DCAddon::JsonMessage reply(MODULE, Opcode::SMSG_PREFETCH_ITEMS_RESULT);
+        reply.Set("ids", std::move(echoed));
+
+        if (!AllowItemPrefetchRequest(player))
+        {
+            reply.Set("throttled", true);
+            reply.Send(player);
+            return;
+        }
+
+        using DarkChaos::ItemCachePrime::Result;
+
+        uint32 sent = 0;
+        DCAddon::JsonValue missing;
+        missing.SetArray();
+        for (uint32 entry : entries)
+        {
+            Result result = DarkChaos::ItemCachePrime::PrimeItem(player, entry);
+            // The session's record was just reset; the entry is new to it now.
+            if (result == Result::SessionFull)
+                result = DarkChaos::ItemCachePrime::PrimeItem(player, entry);
+
+            if (result == Result::Sent)
+                ++sent;
+            else if (result == Result::UnknownItem)
+                missing.Push(DCAddon::JsonValue(entry));
+        }
+
+        reply.Set("sent", sent);
+        reply.Set("missing", std::move(missing));
+        reply.Send(player);
+    }
+
+    // -----------------------------------------------------------------------
     // Login spell enrichment pre-push helpers
     // -----------------------------------------------------------------------
 
@@ -6459,6 +6612,7 @@ public:
             player->GetGUID());
 
         DCQoS::InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
+        DCQoS::ForgetItemPrefetchWindow(player->GetGUID().GetCounter());
 
         std::lock_guard<std::mutex> lock(DCQoS::s_RuntimeProfileMutex);
         DCQoS::s_LastRuntimeProfileByGuid.erase(
@@ -6797,6 +6951,7 @@ namespace DCAddon
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_REQUEST_FEATURE, HandleRequestFeature);
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_COLLECT_ALL_MAIL, HandleCollectAllMail);
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT, HandleRequestSpellTooltipEnrichment);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_PREFETCH_ITEMS, HandlePrefetchItems);
     }
 }
 
@@ -6825,6 +6980,11 @@ namespace ItemUpgrade
         }
 
         return changing;
+    }
+
+    std::vector<std::string> BuildRandomEnchantLineText(Item* item, uint8 line, float multiplier)
+    {
+        return DCQoS::BuildRandomEnchantSlotLines(item, line, static_cast<double>(multiplier));
     }
 
     std::vector<std::string> BuildScaledItemProcLines(Player* player,

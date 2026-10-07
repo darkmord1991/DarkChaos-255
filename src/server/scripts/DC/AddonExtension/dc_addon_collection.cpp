@@ -3343,6 +3343,12 @@ namespace DCCollection
             // Add silently (no "You have learned..." spam).
             player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
             ++taughtThisTick;
+
+            // A spell addSpell refused would otherwise count as taught, and
+            // trigger a client refresh, on every login.
+            if (!player->HasSpell(spellId))
+                continue;
+
             ++state->taughtTotal;
             taughtSpellIds.push_back(spellId);
         }
@@ -3415,6 +3421,12 @@ namespace DCCollection
                 }
             }
 
+            // The silent addSpell left the client with the spell list it got at
+            // login, so the default UI's Mounts/Companions tabs only listed the
+            // account collection after the next relog. One resend for the run.
+            if (state->taughtTotal > 0)
+                RefreshClientSpellList(player);
+
             // One push at the end of the whole batch run, not one per item:
             // the client refreshes its collection view once and drops the
             // "please relog" advice.
@@ -3458,6 +3470,10 @@ namespace DCCollection
         // Kick off immediately (still outside the login handler).
         TeachCollectedSpellsBatchTick(state);
     }
+
+    // Below this level (and without riding) the sync teaches no mounts. Crossing
+    // it in-session re-runs the sync from OnPlayerLevelChanged.
+    constexpr uint8 MOUNT_SYNC_MIN_LEVEL = 10;
 
     void SyncAccountWideCollectionsToCharacter(Player* player)
     {
@@ -3541,7 +3557,8 @@ namespace DCCollection
                 // Titles are cheap to apply and don't need batching.
                 uint32 titlesApplied = 0;
 
-                bool canSyncMounts = player->GetLevel() >= 10 || player->GetSkillValue(SKILL_RIDING) > 0;
+                bool canSyncMounts = player->GetLevel() >= MOUNT_SYNC_MIN_LEVEL ||
+                    player->GetSkillValue(SKILL_RIDING) > 0;
 
                 auto considerSpell = [&](uint32 spellId)
                 {
@@ -8643,8 +8660,8 @@ namespace DCCollection
         CollectionPlayerScript() : PlayerScript("dc_collection_player",
         {
             PLAYERHOOK_ON_AFTER_SET_VISIBLE_ITEM_SLOT, PLAYERHOOK_ON_EQUIP, PLAYERHOOK_ON_LEARN_SPELL,
-            PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_LOOT_ITEM, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST,
-            PLAYERHOOK_ON_QUEST_REWARD_ITEM, PLAYERHOOK_ON_UPDATE
+            PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_LOOT_ITEM,
+            PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_QUEST_REWARD_ITEM, PLAYERHOOK_ON_UPDATE
         }) {}
 
         struct CachedTransmogRow
@@ -8903,6 +8920,17 @@ namespace DCCollection
 
             if (HasMountedStateChanged(player))
                 UpdateMountSpeedBonus(player);
+        }
+
+        void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
+        {
+            if (!IsModuleEnabled() || DCAddon::IsBotRecipient(player))
+                return;
+
+            // The login sync skipped mounts below the threshold. A character that
+            // levels or is boosted past it would otherwise wait for its next login.
+            if (oldLevel < MOUNT_SYNC_MIN_LEVEL && player->GetLevel() >= MOUNT_SYNC_MIN_LEVEL)
+                SyncAccountWideCollectionsToCharacter(player);
         }
 
         void OnPlayerLearnSpell(Player* player, uint32 spellId) override

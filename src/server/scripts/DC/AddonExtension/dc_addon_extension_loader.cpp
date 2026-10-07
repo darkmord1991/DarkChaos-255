@@ -12,6 +12,7 @@ void AddSC_dc_addon_protocol();
 void AddSC_dc_addon_aoeloot();
 void AddSC_dc_addon_upgrade();
 void AddSC_dc_addon_transmutation();
+void AddSC_dc_addon_enchant_reroll();
 void AddSC_dc_addon_mythicplus();
 void AddSC_dc_addon_spectator();
 void AddSC_dc_addon_hotspot();
@@ -52,6 +53,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_aoeloot();
     AddSC_dc_addon_upgrade();
     AddSC_dc_addon_transmutation();
+    AddSC_dc_addon_enchant_reroll();
     AddSC_dc_addon_mythicplus();
     AddSC_dc_addon_spectator();
     AddSC_dc_addon_hotspot();

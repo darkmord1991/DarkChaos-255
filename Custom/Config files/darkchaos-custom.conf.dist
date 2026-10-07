@@ -475,6 +475,21 @@ DC.AddonProtocol.ChunkTimeout = 5000
 #
 DC.AddonProtocol.RequestTimeoutMs = 8000
 
+#
+#    DC.AddonProtocol.Native.LargeBodyMaxBytes
+#        Description: Largest single native-bridge payload (bytes) sent to a
+#                     client whose WotLKExtensions DLL negotiated
+#                     LARGE_NATIVE_PAYLOAD (it reads payloads whole). Larger
+#                     payloads, and anything past the old fixed-buffer limits
+#                     (60000 bytes generic, 15000 envelope, 16-64 KB for the
+#                     seasonal/hotspot/prestige/world channels) to an older
+#                     DLL, go out over chunked addon chat instead.
+#                     Capped at 2097152, the client's JSON size limit.
+#                     0 keeps every client on the old limits.
+#        Default:     1048576 (1 MB)
+#
+DC.AddonProtocol.Native.LargeBodyMaxBytes = 1048576
+
 # -----------------------------------------------------------------------------
 # Rate Limiting
 # -----------------------------------------------------------------------------
@@ -1963,6 +1978,92 @@ DC.RandomEnchants.NotifyOnApply = 1
 #        Default:     0 (Disabled)
 #
 DC.RandomEnchants.Debug = 0
+
+#
+#    DC.RandomEnchants.Reroll.Enable
+#        Description: Paid rerolling from the "Random Enchants" panel of the
+#                     item upgrade window: reroll one line, reroll every line,
+#                     or add a line to an empty slot. Needs the characters DB
+#                     tables dc_item_random_enchant_rerolls and
+#                     dc_item_random_enchant_log.
+#        Default:     1 (Enabled)
+#
+DC.RandomEnchants.Reroll.Enable = 1
+
+#
+#    DC.RandomEnchants.Reroll.AllowAdd
+#    DC.RandomEnchants.Reroll.AllowRerollAll
+#        Description: Offer "Add" (fill the first empty line, up to
+#                     MaxEnchantsPerItem) and "Reroll All" (every line at once).
+#                     Rerolling a single line is always offered.
+#        Default:     1 (Enabled) for both
+#
+DC.RandomEnchants.Reroll.AllowAdd = 1
+DC.RandomEnchants.Reroll.AllowRerollAll = 1
+
+#
+#    DC.RandomEnchants.Reroll.BlockInCombat
+#        Description: Refuse rerolls in combat (GM mode bypasses this).
+#        Default:     1 (Enabled)
+#
+DC.RandomEnchants.Reroll.BlockInCombat = 1
+
+#
+#    DC.RandomEnchants.Reroll.Currency
+#        Description: What rerolls are paid in.
+#                     0 = the item's upgrade currency (Upgrade Tokens for
+#                         tiers 1/2, Emberwood Sap for the Hyjal tiers 4/5)
+#                     1 = Upgrade Tokens, 2 = Artifact Essence,
+#                     3 = Emberwood Sap, for every item
+#        Default:     0
+#
+DC.RandomEnchants.Reroll.Currency = 0
+
+#
+#    DC.RandomEnchants.Reroll.Cost
+#    DC.RandomEnchants.Reroll.CostIncrease
+#    DC.RandomEnchants.Reroll.MaxCost
+#        Description: Price of rerolling one line: Cost, plus CostIncrease for
+#                     every line of the same item rerolled before, capped at
+#                     MaxCost (0 = no cap). Reroll All prices its lines as if
+#                     they were rerolled one after another. The count is kept
+#                     per item, so it survives trades. All three are then
+#                     multiplied by QualityCostFactor.
+#        Defaults:    2 / 1 / 20
+#
+DC.RandomEnchants.Reroll.Cost = 2
+DC.RandomEnchants.Reroll.CostIncrease = 1
+DC.RandomEnchants.Reroll.MaxCost = 20
+
+#
+#    DC.RandomEnchants.Reroll.AddCost
+#        Description: Price of adding a line: AddCost times the number of
+#                     lines the item will hold afterwards (5 / 10 / 15 by
+#                     default), multiplied by QualityCostFactor. Adding does
+#                     not raise the reroll price.
+#        Default:     5
+#
+DC.RandomEnchants.Reroll.AddCost = 5
+
+#
+#    DC.RandomEnchants.Reroll.MoneyCost
+#    DC.RandomEnchants.Reroll.AddMoneyCost
+#        Description: Gold charged on top, in copper: per rerolled line and per
+#                     added line. Not scaled by quality.
+#        Defaults:    0 / 0
+#
+DC.RandomEnchants.Reroll.MoneyCost = 0
+DC.RandomEnchants.Reroll.AddMoneyCost = 0
+
+#
+#    DC.RandomEnchants.Reroll.QualityCostFactor
+#        Description: Price factor per item quality, space separated, from
+#                     Poor up to Legendary. A shorter list repeats its last
+#                     value.
+#        Default:     "1 1 1 2 3 4" (Uncommon x1, Rare x2, Epic x3,
+#                     Legendary x4)
+#
+DC.RandomEnchants.Reroll.QualityCostFactor = "1 1 1 2 3 4"
 
 
 ###############################################################################
@@ -3528,6 +3629,27 @@ Prestige.StatBonusPercent = 1
 # -----------------------------------------------------------------------------
 # Retention Settings
 # -----------------------------------------------------------------------------
+
+#
+#    Prestige.FreshStart
+#        Description: Start every prestige like a new character, as far as the
+#                     restart level allows. Class spells above that level are
+#                     unlearned (levelling up teaches them again: class trainers
+#                     always, DCFirstStart.LearnSpells.* while it is enabled),
+#                     equipped items the character can no longer use move to the
+#                     bags (the mailbox when they are full), buffs are removed,
+#                     the hearthstone is bound to the starting area, and
+#                     completed zone quests up to Prestige.RequiredLevel can be
+#                     done again. Class, profession, dungeon, raid, PvP, event
+#                     and repeatable quests stay done. Each action bar spell goes
+#                     back to its button when it is learned again (needs
+#                     EnablePlayerSettings = 1).
+#                     Always, whatever this option says: the quest log is
+#                     emptied and talents reset to the restart level's points.
+#        Default:     1 (Enabled)
+#                     0 (Disabled - keep spells, equipped gear and completed quests)
+#
+Prestige.FreshStart = 1
 
 #
 #    Prestige.KeepGear
