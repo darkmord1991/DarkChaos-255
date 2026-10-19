@@ -103,9 +103,9 @@ public:
     void Execute(PreparedStatementBase* stmt);
     void DirectExecute(PreparedStatementBase* stmt);
     PreparedQueryResult Query(PreparedStatementBase* stmt);
+    QueryCallback AsyncQuery(PreparedStatementBase* stmt);
 
     QueryCallback AsyncQuery(std::string_view sql);
-    QueryCallback AsyncQuery(PreparedStatementBase* stmt);
 
     SQLQueryHolderCallback DelayQueryHolder(std::shared_ptr<SQLQueryHolderBase> holder);
 
@@ -124,7 +124,7 @@ public:
 protected:
     virtual MySQLConnection* CreateConnection(MySQLConnectionInfo& connInfo) = 0;
 
-    virtual MySQLConnection* CreateConnection(ProducerConsumerQueue<SQLOperation*>* queue,
+    virtual MySQLConnection* CreateAsyncConnection(ProducerConsumerQueue<SQLOperation*>* queue,
         MySQLConnectionInfo& connInfo);
 
 private:
