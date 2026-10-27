@@ -122,7 +122,7 @@ private:
     uint32 _playerCount;
     uint32 _maxPlayerCount;
     std::vector<ExtraPlayerCountProvider> _extraPlayerCountProviders;
-    uint32 _accountsPlayHistoryPruneTimer;
+    uint32 _stalePruneTimer;
 };
 
 #define sWorldSessionMgr WorldSessionMgr::Instance()

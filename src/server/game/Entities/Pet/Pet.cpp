@@ -2367,7 +2367,7 @@ void Pet::SynchronizeLevelWithOwner()
     }
 }
 
-void Pet::SetDisplayId(uint32 modelId, float displayScale /*= 1.f*/)
+void Pet::SetDisplayId(uint32 modelId, std::optional<float> displayScale /*= {}*/)
 {
     Guardian::SetDisplayId(modelId, displayScale);
 
