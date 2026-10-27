@@ -382,7 +382,7 @@ namespace
 
     // ------------------------------------------------------------------
     // Playerbot accounts. mod-playerbots names its random-bot (and AddClass)
-    // accounts <AiPlayerbot.RandomBotAccountPrefix><n> and finds them with
+    // accounts <Playerbots.RandomBotAccountPrefix><n> and finds them with
     // this same query; the characters DB itself has no bot flag. Loaded at
     // startup, then refreshed in the background.
     // ------------------------------------------------------------------
@@ -391,7 +391,7 @@ namespace
 
     std::string BuildBotAccountSql()
     {
-        std::string prefix = sConfigMgr->GetOption<std::string>("AiPlayerbot.RandomBotAccountPrefix", "rndbot", false);
+        std::string prefix = sConfigMgr->GetOption<std::string>("Playerbots.RandomBotAccountPrefix", "rndbot", false);
         LoginDatabase.EscapeString(prefix);
         return Acore::StringFormat("SELECT id FROM account WHERE username LIKE '{}%'", prefix);
     }
