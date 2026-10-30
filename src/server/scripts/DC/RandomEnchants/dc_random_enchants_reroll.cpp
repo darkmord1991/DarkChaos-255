@@ -52,6 +52,7 @@ namespace
         uint32 rerollCost = 2;      // first reroll of a line
         uint32 costIncrease = 1;    // added for every earlier reroll on the same item
         uint32 maxCost = 20;        // per line, before the quality factor; 0 = no cap
+        uint32 maxRerolls = 15;     // lines an item can have rerolled in its lifetime; 0 = unlimited
         uint32 addCost = 5;         // times the lines the item holds once the add is done
         uint32 rerollMoney = 0;     // copper per rerolled line
         uint32 addMoney = 0;        // copper per added line
@@ -69,6 +70,7 @@ namespace
             rerollCost = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.Cost", 2);
             costIncrease = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.CostIncrease", 1);
             maxCost = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.MaxCost", 20);
+            maxRerolls = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.MaxRerolls", 15);
             addCost = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.AddCost", 5);
             rerollMoney = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.MoneyCost", 0);
             addMoney = sConfigMgr->GetOption<uint32>("DC.RandomEnchants.Reroll.AddMoneyCost", 0);
@@ -278,6 +280,11 @@ namespace DarkChaos::RandomEnchants::Reroll
         return sRerollConfig.costIncrease;
     }
 
+    uint32 GetMaxRerolls()
+    {
+        return sRerollConfig.maxRerolls;
+    }
+
     Price Quote(Item const* item, Action action, uint32 rerollCount)
     {
         Price price;
@@ -411,6 +418,12 @@ namespace DarkChaos::RandomEnchants::Reroll
                 break;
         }
 
+        // Every rerolled line uses one of the item's lifetime rerolls; a Reroll All needs one per
+        // line and is refused whole rather than rerolling some of them.
+        if (request.action != Action::AddLine && sRerollConfig.maxRerolls
+            && uint64(rerollCount) + targets.size() > sRerollConfig.maxRerolls)
+            return fail(Error::LimitReached);
+
         // Every new line is rolled before anything is charged, so a pool that runs dry costs
         // nothing. A new line never repeats an enchant the item holds or held a moment ago.
         std::unordered_set<uint32> exclude;
@@ -434,7 +447,9 @@ namespace DarkChaos::RandomEnchants::Reroll
         Price const price = Quote(item, request.action, rerollCount);
         outcome.price = price;
 
-        if (price.amount && player->GetItemCount(price.currencyItemId) < price.amount)
+        // Counted the way DestroyItemCount takes it: a stack parked in an open trade
+        // window passed GetItemCount and was then never taken.
+        if (price.amount && DarkChaos::ItemUpgrade::GetSpendableItemCount(player, price.currencyItemId) < price.amount)
             return fail(Error::NotEnoughCurrency);
 
         if (price.money && !player->HasEnoughMoney(price.money))
@@ -523,6 +538,8 @@ namespace DarkChaos::RandomEnchants::Reroll
                 return "You do not have enough gold.";
             case Error::InTrade:
                 return "Take the item out of the trade window first.";
+            case Error::LimitReached:
+                return "This item has no rerolls left for that.";
         }
 
         return "Unknown error.";

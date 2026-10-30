@@ -102,7 +102,7 @@ uint32 ByteBuffer::ReadPackedTime()
     //lt.tm_wday = (packedDate >> 11) & 7;
     lt.tm_mday = ((packedDate >> 14) & 0x3F) + 1;
     lt.tm_mon = (packedDate >> 20) & 0xF;
-    lt.tm_year = ((packedDate >> 24) & 0x1F) + 100;
+    lt.tm_year = Acore::Time::UnpackTimeYear(packedDate >> 24) + 100; // DarkChaos: era-relative past 2030
 
     return uint32(mktime(&lt));
 }
@@ -137,7 +137,8 @@ void ByteBuffer::append(uint8 const* src, std::size_t cnt)
 void ByteBuffer::AppendPackedTime(time_t time)
 {
     tm lt = Acore::Time::TimeBreakdown(time);
-    append<uint32>((lt.tm_year - 100) << 24 | lt.tm_mon << 20 | (lt.tm_mday - 1) << 14 | lt.tm_wday << 11 | lt.tm_hour << 6 | lt.tm_min);
+    // DarkChaos: the year modulo 31 (Acore::Time::PackTimeYear); year - 100 spilled into the flags from 2032
+    append<uint32>(Acore::Time::PackTimeYear(lt.tm_year - 100) << 24 | lt.tm_mon << 20 | (lt.tm_mday - 1) << 14 | lt.tm_wday << 11 | lt.tm_hour << 6 | lt.tm_min);
 }
 
 void ByteBuffer::put(std::size_t pos, uint8 const* src, std::size_t cnt)

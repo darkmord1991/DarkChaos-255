@@ -29,7 +29,7 @@ local LocationPlugin = {
     type = "combo",
     side = "left",
     priority = 60,
-    icon = "Interface\\Icons\\INV_Misc_Map01",
+    icon = "Interface\\Icons\\INV_Misc_Map_01",
     updateInterval = 1.0,
 
     leftClickHint = "Print position to chat",

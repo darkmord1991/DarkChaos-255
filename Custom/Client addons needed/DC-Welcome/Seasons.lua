@@ -98,10 +98,10 @@ local function GetTokenInfo()
             tokenID = tokenID,
             essenceID = essenceID,
             getTokenIcon = function()
-                return DCProtocol:GetTokenIcon(tokenID) or "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
+                return DCProtocol:GetTokenIcon(tokenID) or "Interface\\Icons\\INV_Misc_Token_ArgentDawn"
             end,
             getEssenceIcon = function()
-                return DCProtocol:GetTokenIcon(essenceID) or "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+                return DCProtocol:GetTokenIcon(essenceID) or "Interface\\Icons\\INV_Misc_Herb_Manathistle"
             end,
             formatToken = function(count)
                 return DCProtocol:FormatTokenDisplay(tokenID, count) or ("|cffffd700" .. count .. " Tokens|r")
@@ -114,8 +114,8 @@ local function GetTokenInfo()
         return {
             tokenID = tokenID,
             essenceID = essenceID,
-            getTokenIcon = function() return "Interface\\Icons\\INV_Misc_Token_ArgentCrusade" end,
-            getEssenceIcon = function() return "Interface\\Icons\\INV_Misc_Herb_Draenethisle" end,
+            getTokenIcon = function() return "Interface\\Icons\\INV_Misc_Token_ArgentDawn" end,
+            getEssenceIcon = function() return "Interface\\Icons\\INV_Misc_Herb_Manathistle" end,
             formatToken = function(count) return "|cffffd700" .. count .. " Tokens|r" end,
             formatEssence = function(count) return "|cff0070dd" .. count .. " Essence|r" end,
         }

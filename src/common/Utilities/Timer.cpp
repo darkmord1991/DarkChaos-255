@@ -440,3 +440,29 @@ uint32 Acore::Time::GetYear(Seconds time /*= 0s*/)
 
     return TimeBreakdown(time.count()).tm_year;
 }
+
+uint32 Acore::Time::PackTimeYear(int yearsSince2000)
+{
+    if (yearsSince2000 < 0)
+        return 0;
+
+    return uint32(yearsSince2000 % 31);
+}
+
+int Acore::Time::UnpackTimeYear(uint32 field)
+{
+    field &= 0x1F;
+    int const now = int(GetYear()) - 100;
+
+    if (now < 31 || field == 0x1F)
+        return int(field);
+
+    int const first = now - 20;
+    return first + ((int(field) - first) % 31 + 31) % 31;
+}
+
+int Acore::Time::LastPackedTimeYear()
+{
+    int const now = int(GetYear()) - 100;
+    return now < 31 ? 30 : now + 10;
+}

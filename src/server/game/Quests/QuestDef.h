@@ -30,7 +30,10 @@ class Player;
 
 class ObjectMgr;
 
-#define MAX_QUEST_LOG_SIZE 25
+// The player update fields hold 25 quest log slots, and a stock client knows no more. The slots past them live on the
+// Player alone and a client that negotiated them gets them in SMSG_DC_QUEST_SLOTS (Player::SendExtendedQuestSlots)
+#define CLIENT_QUEST_LOG_SIZE 25
+#define MAX_QUEST_LOG_SIZE 64
 
 #define QUEST_OBJECTIVES_COUNT 4
 #define QUEST_ITEM_OBJECTIVES_COUNT 6

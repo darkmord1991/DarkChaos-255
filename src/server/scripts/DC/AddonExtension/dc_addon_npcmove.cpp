@@ -359,10 +359,11 @@ namespace DCAddon
                         case PHASE:
                         {
                             target->SetPhaseMask(ARG, true);
-                            if (!target->IsPet())
-                                target->SaveToDB();
+                            // SaveToDB persists the spawn's phase, so record the change in the spawn data first
                             if (CreatureData const* data = sObjectMgr->GetCreatureData(target->GetSpawnId()))
                                 const_cast<CreatureData*>(data)->phaseMask = ARG;
+                            if (!target->IsPet())
+                                target->SaveToDB();
                         } break;
                     }
                 }

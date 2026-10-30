@@ -590,7 +590,7 @@ bool Player::CanRewardQuest(Quest const* quest, uint32 reward, bool msg)
 
 void Player::AddQuest(Quest const* quest, Object* questGiver)
 {
-    uint16 log_slot = FindQuestSlot(0);
+    uint16 log_slot = FindFreeQuestSlot();
 
     if (log_slot >= MAX_QUEST_LOG_SIZE) // Player does not have any free slot in the quest log
         return;
@@ -1096,7 +1096,7 @@ bool Player::SatisfyQuestLevel(Quest const* qInfo, bool msg) const
 bool Player::SatisfyQuestLog(bool msg)
 {
     // exist free slot
-    if (FindQuestSlot(0) < MAX_QUEST_LOG_SIZE)
+    if (FindFreeQuestSlot() < MAX_QUEST_LOG_SIZE)
         return true;
 
     if (msg)
@@ -1931,6 +1931,54 @@ uint16 Player::FindQuestSlot(uint32 quest_id) const
             return i;
 
     return MAX_QUEST_LOG_SIZE;
+}
+
+uint16 Player::FindFreeQuestSlot() const
+{
+    uint16 const capacity = GetSession()->HasExtendedQuestLog() ? MAX_QUEST_LOG_SIZE : CLIENT_QUEST_LOG_SIZE;
+
+    for (uint16 i = 0; i < capacity; ++i)
+        if (!GetQuestSlotQuestId(i))
+            return i;
+
+    return MAX_QUEST_LOG_SIZE;
+}
+
+void Player::EnableExtendedQuestLog()
+{
+    GetSession()->SetExtendedQuestLog(true);
+    m_extendedQuestDirty = (uint64(1) << (MAX_QUEST_LOG_SIZE - CLIENT_QUEST_LOG_SIZE)) - 1;
+    SendExtendedQuestSlots();
+}
+
+void Player::SendExtendedQuestSlots()
+{
+    uint64 const dirty = m_extendedQuestDirty;
+    m_extendedQuestDirty = 0;
+
+    if (!dirty || !GetSession()->HasExtendedQuestLog())
+        return;
+
+    ByteBuffer slots;
+    uint8 count = 0;
+
+    for (uint8 i = 0; i < MAX_QUEST_LOG_SIZE - CLIENT_QUEST_LOG_SIZE; ++i)
+    {
+        if (!(dirty & (uint64(1) << i)))
+            continue;
+
+        slots << uint8(CLIENT_QUEST_LOG_SIZE + i);
+
+        for (uint8 word = 0; word < MAX_QUEST_OFFSET; ++word)
+            slots << uint32(m_extendedQuestFields[i * MAX_QUEST_OFFSET + word]);
+
+        ++count;
+    }
+
+    WorldPacket data(SMSG_DC_QUEST_SLOTS, 1 + slots.size());
+    data << uint8(count);
+    data.append(slots);
+    SendDirectMessage(&data);
 }
 
 void Player::AreaExploredOrEventHappens(uint32 questId)

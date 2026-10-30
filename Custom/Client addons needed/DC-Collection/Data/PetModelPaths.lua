@@ -2083,4 +2083,7 @@ DC.PetModelPaths = DC.PetModelPaths or {
     [507153] = "petpreview\\mummypet\\mummypet_507153.m2",
     [507154] = "petpreview\\squirrelflying\\squirrelflying_507154.m2",
     [507155] = "petpreview\\squirrelflying\\squirrelflying_507155.m2",
+    [505192] = "petpreview\\aqirflying\\aqirflying_505192.m2",
+    [505193] = "petpreview\\aqirflying\\aqirflying_505193.m2",
+    [505194] = "petpreview\\aqirscarab\\aqirscarab_505194.m2",
 }

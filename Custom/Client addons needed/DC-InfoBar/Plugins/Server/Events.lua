@@ -146,18 +146,31 @@ function EventsPlugin:OnTooltip(tooltip)
         tooltip:AddDoubleLine("  Status:", GetStatusText(event), 0.7, 0.7, 0.7, 1, 1, 1)
 
         -- Giant Isles invasion extras
+        if event.stage and event.stage ~= "" then
+            tooltip:AddDoubleLine("  Stage:", event.stage, 0.7, 0.7, 0.7, 1, 0.82, 0)
+        end
+        if event.objective and event.objective ~= "" then
+            tooltip:AddLine("  " .. event.objective, 1, 1, 1, true)
+        end
+        local lineStrength = tonumber(event.line)
+        if lineStrength then
+            local lineGreen = lineStrength > 50 and 0.9 or (lineStrength > 25 and 0.6 or 0.25)
+            tooltip:AddDoubleLine("  Line strength:", lineStrength .. "%", 0.7, 0.7, 0.7, 1, lineGreen, 0.25)
+        end
+        -- The server sends an empty plan once no war plan is running: a merged
+        -- record would otherwise keep showing the last one.
+        if event.plan and event.plan ~= "" then
+            local planTime = tonumber(event.planTime)
+            tooltip:AddDoubleLine("  War plan:", event.plan .. (planTime and (" (" .. DCInfoBar:FormatTime(planTime) .. ")") or ""),
+                0.7, 0.7, 0.7, 1, 0.5, 0.5)
+        end
         if tonumber(event.boatsTotal) and tonumber(event.boatsTotal) > 0 then
             tooltip:AddDoubleLine("  Boats scuttled:", (tonumber(event.boatsScuttled) or 0) .. " / " .. event.boatsTotal,
                 0.7, 0.7, 0.7, 1, 1, 1)
         end
-        -- ritualTime is only sent while channeling (a merged record keeps the old
-        -- value afterwards), so gate on the ritual state.
-        if event.ritual == "channeling" then
-            local ritualTime = tonumber(event.ritualTime)
-            tooltip:AddDoubleLine("  Loa ritual:", ritualTime and DCInfoBar:FormatTime(ritualTime) or "Channeling",
-                0.7, 0.7, 0.7, 1, 0.5, 0.5)
-        elseif event.ritual == "empowered" then
-            tooltip:AddDoubleLine("  Loa ritual:", "Empowered", 0.7, 0.7, 0.7, 1, 0.3, 0.3)
+        local foothold = tonumber(event.foothold)
+        if foothold and foothold > 0 then
+            tooltip:AddDoubleLine("  Zandalari foothold:", foothold .. " / 5", 0.7, 0.7, 0.7, 1, 0.5, 0.25)
         end
 
         local remaining = GetRemaining(event)

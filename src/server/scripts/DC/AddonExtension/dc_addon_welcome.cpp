@@ -45,6 +45,7 @@
 #include <string>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DCWelcome
 {
@@ -80,6 +81,9 @@ namespace DCWelcome
 
         std::mutex sWelcomeContentCacheLock;
         std::unordered_map<std::string, CachedFaqPayload> sCachedFaqPayloads;
+        // Categories present in dc_welcome_faq, as NormalizeFaqCategoryFilter
+        // spells them; refreshed with the "all" payload (under the lock).
+        std::unordered_set<std::string> sKnownFaqCategories;
         std::unordered_map<uint32, CachedProgressPayload> sCachedProgressPayloads;
         CachedWhatsNewPayload sCachedWhatsNewPayload;
 
@@ -109,7 +113,10 @@ namespace DCWelcome
             return categoryFilter;
         }
 
-        CachedFaqPayload LoadFaqPayload(std::string const& categoryFilter)
+        // `outCategories` (optional) receives every category the rows carry,
+        // normalized the way a client filter is.
+        CachedFaqPayload LoadFaqPayload(std::string const& categoryFilter,
+            std::unordered_set<std::string>* outCategories = nullptr)
         {
             CachedFaqPayload payload;
             std::string query =
@@ -128,10 +135,14 @@ namespace DCWelcome
                 do
                 {
                     Field* fields = result->Fetch();
+                    std::string const category = fields[1].Get<std::string>();
+                    if (outCategories)
+                        outCategories->insert(NormalizeFaqCategoryFilter(category));
+
                     DCAddon::JsonValue entry;
                     entry.SetObject();
                     entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
-                    entry.Set("category", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                    entry.Set("category", DCAddon::JsonValue(category));
                     entry.Set("question", DCAddon::JsonValue(fields[2].Get<std::string>()));
                     entry.Set("answer", DCAddon::JsonValue(fields[3].Get<std::string>()));
                     entriesArray.Push(entry);
@@ -150,6 +161,28 @@ namespace DCWelcome
             std::string const normalizedFilter = NormalizeFaqCategoryFilter(categoryFilter);
             std::time_t const now = std::time(nullptr);
             std::lock_guard<std::mutex> lock(sWelcomeContentCacheLock);
+
+            // The filter comes from the client, and every distinct string used
+            // to cost a blocking query plus a cache entry nothing ever removed.
+            // Only categories that exist get either now: the "all" payload is
+            // kept fresh first, and loading it refreshes the category set, so
+            // the cache holds at most one entry per real category.
+            auto allItr = sCachedFaqPayloads.find("all");
+            if (allItr == sCachedFaqPayloads.end() || allItr->second.expiresAt <= now)
+            {
+                sKnownFaqCategories.clear();
+                allItr = sCachedFaqPayloads.insert_or_assign("all",
+                    LoadFaqPayload("all", &sKnownFaqCategories)).first;
+            }
+
+            if (normalizedFilter == "all")
+                return allItr->second;
+
+            if (!sKnownFaqCategories.count(normalizedFilter))
+            {
+                sCachedFaqPayloads.erase(normalizedFilter); // category removed since it was cached
+                return CachedFaqPayload();                  // what the query would have returned
+            }
 
             auto itr = sCachedFaqPayloads.find(normalizedFilter);
             if (itr != sCachedFaqPayloads.end() && itr->second.expiresAt > now)

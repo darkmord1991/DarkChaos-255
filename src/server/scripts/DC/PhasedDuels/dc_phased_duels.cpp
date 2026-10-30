@@ -16,12 +16,17 @@
 #include "GameTime.h"
 #include "DatabaseEnv.h"
 #include "ObjectAccessor.h"
+#include "ObjectMgr.h"
 #include "Map.h"
 #include "GameObject.h"
+#include "DBCStores.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "Log.h"
 #include "CommandScript.h"
 #include "DC/Spectator/dc_spectator_core.h"
 #include "DC/CrossSystem/CrossSystemCommon.h"
+#include "DC/CrossSystem/PhaseLayers.h"
 #include "ObjectGuid.h"
 
 #include <unordered_map>
@@ -97,21 +102,38 @@ namespace DCPhasedDuels
     {
         ObjectGuid player1;
         ObjectGuid player2;
-        uint32 phaseId;
-        uint64 startTime;
-        uint32 player1DamageDealt;
-        uint32 player2DamageDealt;
+        uint32 matchId = 0;                 // unique id handed to the spectator UI
+        uint32 phaseId = 0;                 // the phase bit the duel runs in
+        uint64 mapKey = 0;                  // map instance the bit is reserved on
+        uint64 startTime = 0;
+        uint32 player1DamageDealt = 0;
+        uint32 player2DamageDealt = 0;
     };
 
+    // Duel phases come from bits 1..29. Bit 0 is the normal world, bit 30 is used by the world
+    // boss combat phase (and the dungeon-clear lab), bit 31 stays free as an isolation phase.
+    constexpr uint32 DUEL_PHASE_FIRST_BIT = 1;
+    constexpr uint32 DUEL_PHASE_LAST_BIT = 29;
+
     static std::unordered_map<ObjectGuid, ActiveDuel> sActiveDuels;
-    static std::unordered_set<uint32> sUsedPhases;
+    // Phase bits held by running duels, per map instance: a phase only separates objects on the
+    // same map, so every map instance has the whole pool to itself.
+    static std::unordered_map<uint64, uint32> sUsedPhaseBitsByMap;
+    // Bits that static content uses for objects NOT visible in phase 1, per map (creature and
+    // gameobject spawns, plus the phase auras spell_area hands out in that map's areas). A duel
+    // must never run in such a bit or the duelists would see, and fight, that content.
+    static std::unordered_map<uint32, uint32> sContentPhaseBitsByMap;
+    static uint32 sContentPhaseBitsAllMaps = 0;
+    // Duelists whose duel actually started (countdown over), phased or not.
+    static std::unordered_set<ObjectGuid> sStartedDuelists;
+    static uint32 sNextMatchId = 0;
+
     struct DuelSpectatorState
     {
         ObjectGuid spectatorGuid;
         ObjectGuid targetGuid;
-        uint32 watchedPhaseId = 0;
+        uint32 watchedMatchId = 0;
         uint32 savedMapId = 0;
-        uint32 savedPhaseMask = PHASEMASK_NORMAL;
         Position savedPosition;
         bool wasSpectator = false;
     };
@@ -123,64 +145,104 @@ namespace DCPhasedDuels
     // Helper Functions
     // ============================================================
 
-    uint32 GetNormalPhase(Player* player)
+    uint64 MakeMapKey(Map const* map)
     {
-        if (!player)
-            return PHASEMASK_NORMAL;
-
-        if (player->IsGameMaster())
-            return uint32(PHASEMASK_ANYWHERE);
-
-        // GetPhaseMaskForSpawn equivalent
-        uint32 phase = PHASEMASK_NORMAL;
-        Player::AuraEffectList const& phases = player->GetAuraEffectsByType(SPELL_AURA_PHASE);
-        if (!phases.empty())
-            phase = phases.front()->GetMiscValue();
-
-        if (uint32 n_phase = phase & ~PHASEMASK_NORMAL)
-            return n_phase;
-
-        return PHASEMASK_NORMAL;
+        return (uint64(map->GetId()) << 32) | map->GetInstanceId();
     }
 
-    uint32 FindFreePhase(Player* centerPlayer)
+    // Scans the loaded spawns and spell_area once (startup, .duel reload).
+    void BuildContentPhaseBits()
     {
-        if (!centerPlayer || !centerPlayer->GetMap())
+        std::unordered_map<uint32, uint32> bitsByMap;
+        uint32 bitsAllMaps = 0;
+
+        for (auto const& creatureItr : sObjectMgr->GetAllCreatureData())
+            if (!(creatureItr.second.phaseMask & PHASEMASK_NORMAL))
+                bitsByMap[creatureItr.second.mapid] |= creatureItr.second.phaseMask;
+
+        for (auto const& goItr : sObjectMgr->GetAllGOData())
+            if (!(goItr.second.phaseMask & PHASEMASK_NORMAL))
+                bitsByMap[goItr.second.mapid] |= goItr.second.phaseMask;
+
+        // spell_area phase auras: the bits a player picks up in those areas
+        for (uint32 spellId = 0; spellId < sSpellMgr->GetSpellInfoStoreSize(); ++spellId)
+        {
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo || !spellInfo->HasAura(SPELL_AURA_PHASE))
+                continue;
+
+            uint32 auraBits = 0;
+            for (SpellEffectInfo const& effect : spellInfo->GetEffects())
+                if (effect.ApplyAuraName == SPELL_AURA_PHASE)
+                    auraBits |= uint32(effect.MiscValue);
+
+            auraBits &= ~uint32(PHASEMASK_NORMAL);
+            if (!auraBits)
+                continue;
+
+            SpellAreaMapBounds const bounds = sSpellMgr->GetSpellAreaMapBounds(spellId);
+            for (SpellAreaMap::const_iterator itr = bounds.first; itr != bounds.second; ++itr)
+            {
+                // No area (applies anywhere) or an area the DBC does not know: block it everywhere
+                uint32 const areaId = itr->second.areaId;
+                AreaTableEntry const* area = areaId ? sAreaTableStore.LookupEntry(areaId) : nullptr;
+                if (area)
+                    bitsByMap[area->mapid] |= auraBits;
+                else
+                    bitsAllMaps |= auraBits;
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(sDuelMutex);
+        sContentPhaseBitsByMap = std::move(bitsByMap);
+        sContentPhaseBitsAllMaps = bitsAllMaps;
+    }
+
+    uint32 FindFreePhase(Player* centerPlayer, GameObject* duelFlag)
+    {
+        if (!centerPlayer || !duelFlag)
             return 0;
 
         Map* map = centerPlayer->GetMap();
-        GameObject* duelFlag = map->GetGameObject(centerPlayer->GetGuidValue(PLAYER_DUEL_ARBITER));
-        if (!duelFlag)
+        if (!map)
             return 0;
 
-        // Collect all phases in use within radius
+        // Bits a duel phase must not take here: the normal world, content hidden from phase 1 on
+        // this map, phases other systems put on players around the flag, and duels already
+        // running on this map instance.
+        uint32 blockedPhases = PHASEMASK_NORMAL | DarkChaos::PhaseLayers::ReservedBitsOnMap(map->GetId());
+
         std::list<Player*> nearbyPlayers;
         Acore::AnyPlayerInObjectRangeCheck checker(duelFlag, sConfig.phaseRadius);
         Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(duelFlag, nearbyPlayers, checker);
         Cell::VisitObjects(duelFlag, searcher, sConfig.phaseRadius);
 
-        uint32 usedPhases = 0;
         for (Player* p : nearbyPlayers)
         {
             if (p && !p->IsGameMaster())
-                usedPhases |= p->GetPhaseMask();
+                blockedPhases |= p->GetPhaseMask();
         }
 
-        // Also consider globally used phases
         {
             std::lock_guard<std::mutex> lock(sDuelMutex);
-            for (uint32 phase : sUsedPhases)
-                usedPhases |= phase;
+            blockedPhases |= sContentPhaseBitsAllMaps;
+
+            auto const content = sContentPhaseBitsByMap.find(map->GetId());
+            if (content != sContentPhaseBitsByMap.end())
+                blockedPhases |= content->second;
+
+            auto const used = sUsedPhaseBitsByMap.find(MakeMapKey(map));
+            if (used != sUsedPhaseBitsByMap.end())
+                blockedPhases |= used->second;
         }
 
-        // Find first available phase (skip phase 1 which is normal)
-        // Use bit shifting to avoid overflow: phase starts at 2 (bit 1), max 31 bits
-        for (uint32 bit = 1; bit < 31; ++bit)
+        for (uint32 bit = DUEL_PHASE_FIRST_BIT; bit <= DUEL_PHASE_LAST_BIT; ++bit)
         {
-            uint32 phase = 1u << bit;
+            uint32 const phase = 1u << bit;
             if (phase > sConfig.maxPhaseId)
                 break;
-            if (!(usedPhases & phase))
+
+            if (!(blockedPhases & phase))
                 return phase;
         }
 
@@ -196,19 +258,61 @@ namespace DCPhasedDuels
         duel.player1 = p1->GetGUID();
         duel.player2 = p2->GetGUID();
         duel.phaseId = phaseId;
+        duel.mapKey = MakeMapKey(p1->GetMap());
         duel.startTime = GameTime::GetGameTime().count();
-        duel.player1DamageDealt = 0;
-        duel.player2DamageDealt = 0;
 
         {
             std::lock_guard<std::mutex> lock(sDuelMutex);
+            duel.matchId = ++sNextMatchId;
+            if (!duel.matchId) // wrapped; 0 means "no match" to the spectator UI
+                duel.matchId = ++sNextMatchId;
+
             sActiveDuels[p1->GetGUID()] = duel;
             sActiveDuels[p2->GetGUID()] = duel;
-            sUsedPhases.insert(phaseId);
+            sUsedPhaseBitsByMap[duel.mapKey] |= phaseId;
         }
 
         LOG_DEBUG("scripts.dc", "PhasedDuels: Started duel between {} and {} in phase {}",
                   p1->GetName(), p2->GetName(), phaseId);
+    }
+
+    // Caller holds sDuelMutex.
+    void ReleaseDuelPhaseLocked(ActiveDuel const& duel)
+    {
+        auto it = sUsedPhaseBitsByMap.find(duel.mapKey);
+        if (it == sUsedPhaseBitsByMap.end())
+            return;
+
+        it->second &= ~duel.phaseId;
+        if (!it->second)
+            sUsedPhaseBitsByMap.erase(it);
+    }
+
+    // Removes the duel of either player from tracking and frees its phase bit.
+    std::optional<ActiveDuel> TakeActiveDuel(ObjectGuid const& guid1, ObjectGuid const& guid2)
+    {
+        std::lock_guard<std::mutex> lock(sDuelMutex);
+
+        auto it = sActiveDuels.find(guid1);
+        if (it == sActiveDuels.end())
+            it = sActiveDuels.find(guid2);
+
+        if (it == sActiveDuels.end())
+            return std::nullopt;
+
+        ActiveDuel const duel = it->second;
+        sActiveDuels.erase(duel.player1);
+        sActiveDuels.erase(duel.player2);
+        ReleaseDuelPhaseLocked(duel);
+        return duel;
+    }
+
+    // Takes the duel's phase layer off a duelist: what the player's phase auras and other systems'
+    // layers make comes back, including anything that changed during the duel
+    void RestoreDuelistPhase(Player* player, ActiveDuel const& /*duel*/)
+    {
+        if (player)
+            player->ClearPhaseLayer(DarkChaos::PhaseLayers::PhasedDuel);
     }
 
     std::optional<ActiveDuel> GetActiveDuelCopy(ObjectGuid targetGuid, uint32 matchId)
@@ -228,7 +332,7 @@ namespace DCPhasedDuels
         for (auto const& [guid, duel] : sActiveDuels)
         {
             (void)guid;
-            if (duel.phaseId == matchId)
+            if (duel.matchId == matchId)
                 return duel;
         }
 
@@ -244,8 +348,7 @@ namespace DCPhasedDuels
         if (!state.wasSpectator)
             DCSpectator::ReleaseSpectatorFlag(spectator);
 
-        spectator->SetPhaseMask(state.savedPhaseMask, false);
-        spectator->UpdateObjectVisibility();
+        spectator->ClearPhaseLayer(DarkChaos::PhaseLayers::PhasedDuelSpectator);
         spectator->TeleportTo(state.savedMapId,
             state.savedPosition.GetPositionX(),
             state.savedPosition.GetPositionY(),
@@ -253,7 +356,7 @@ namespace DCPhasedDuels
             state.savedPosition.GetOrientation());
     }
 
-    void StopSpectatorsForPhase(uint32 phaseId, std::string const& reason)
+    void StopSpectatorsForMatch(uint32 matchId, std::string const& reason)
     {
         std::vector<ObjectGuid> spectators;
 
@@ -261,7 +364,7 @@ namespace DCPhasedDuels
             std::lock_guard<std::mutex> lock(sDuelMutex);
             for (auto const& [guid, state] : sDuelSpectators)
             {
-                if (state.watchedPhaseId == phaseId)
+                if (state.watchedMatchId == matchId)
                     spectators.push_back(guid);
             }
         }
@@ -281,65 +384,38 @@ namespace DCPhasedDuels
         }
     }
 
+    // Logout runs the logout hook before the duel is completed, so the duel is untracked here and
+    // the opponent, who stays online, gets their phase back now.
     void CleanupActiveDuelForPlayer(Player* player)
     {
         if (!player)
             return;
 
-        uint32 phaseId = 0;
-        ObjectGuid otherPlayerGuid;
-
         {
             std::lock_guard<std::mutex> lock(sDuelMutex);
-            auto const it = sActiveDuels.find(player->GetGUID());
-            if (it == sActiveDuels.end())
-                return;
-
-            phaseId = it->second.phaseId;
-            otherPlayerGuid = it->second.player1 == player->GetGUID()
-                ? it->second.player2
-                : it->second.player1;
-
-            sUsedPhases.erase(phaseId);
-            sActiveDuels.erase(player->GetGUID());
-            if (!otherPlayerGuid.IsEmpty())
-                sActiveDuels.erase(otherPlayerGuid);
+            sStartedDuelists.erase(player->GetGUID());
         }
 
-        if (phaseId != 0)
-            StopSpectatorsForPhase(phaseId,
-                "The duel ended unexpectedly.");
+        std::optional<ActiveDuel> duel = TakeActiveDuel(player->GetGUID(), ObjectGuid::Empty);
+        if (!duel)
+            return;
+
+        ObjectGuid const otherPlayerGuid = duel->player1 == player->GetGUID() ? duel->player2 : duel->player1;
+        if (Player* otherPlayer = ObjectAccessor::FindConnectedPlayer(otherPlayerGuid))
+            RestoreDuelistPhase(otherPlayer, *duel);
+
+        StopSpectatorsForMatch(duel->matchId, "The duel ended unexpectedly.");
     }
 
-    void RecordDuelEnd(Player* winner, Player* loser, DuelCompleteType type)
+    void RecordDuelEnd(Player* winner, Player* loser, DuelCompleteType type, ActiveDuel const& duel)
     {
         if (!winner || !loser)
             return;
 
-        ActiveDuel duel;
-        uint32 phaseId = 0;
-        {
-            std::lock_guard<std::mutex> lock(sDuelMutex);
-            auto it = sActiveDuels.find(winner->GetGUID());
-            if (it == sActiveDuels.end())
-                it = sActiveDuels.find(loser->GetGUID());
-
-            if (it == sActiveDuels.end())
-                return;
-
-            duel = it->second;
-            phaseId = duel.phaseId;
-
-            sUsedPhases.erase(phaseId);
-            sActiveDuels.erase(winner->GetGUID());
-            sActiveDuels.erase(loser->GetGUID());
-        }
-
         uint64 now = GameTime::GetGameTime().count();
         uint32 durationSeconds = static_cast<uint32>(now - duel.startTime);
 
-        if (phaseId != 0)
-            StopSpectatorsForPhase(phaseId, "The duel has ended.");
+        StopSpectatorsForMatch(duel.matchId, "The duel has ended.");
 
         if (sConfig.trackStatistics)
         {
@@ -414,14 +490,14 @@ namespace DCPhasedDuels
     std::string BuildActiveDuelListJson()
     {
         std::vector<ActiveDuel> activeDuels;
-        std::unordered_set<uint32> seenPhases;
+        std::unordered_set<uint32> seenMatches;
 
         {
             std::lock_guard<std::mutex> lock(sDuelMutex);
             for (auto const& [guid, duel] : sActiveDuels)
             {
                 (void)guid;
-                if (!seenPhases.insert(duel.phaseId).second)
+                if (!seenMatches.insert(duel.matchId).second)
                     continue;
 
                 activeDuels.push_back(duel);
@@ -448,8 +524,9 @@ namespace DCPhasedDuels
                 json << ",";
             first = false;
 
+            // Phase bits repeat across maps now, so the UI identifies a duel by its match id
             json << "{"
-                 << "\"matchId\":" << duel.phaseId << ","
+                 << "\"matchId\":" << duel.matchId << ","
                  << "\"phaseId\":" << duel.phaseId << ","
                  << "\"duration\":" << durationSeconds << ","
                  << "\"player1Guid\":" << player1->GetGUID().GetCounter() << ","
@@ -558,9 +635,8 @@ namespace DCPhasedDuels
         DuelSpectatorState state;
         state.spectatorGuid = spectator->GetGUID();
         state.targetGuid = watchedPlayer->GetGUID();
-        state.watchedPhaseId = duel->phaseId;
+        state.watchedMatchId = duel->matchId;
         state.savedMapId = spectator->GetMapId();
-        state.savedPhaseMask = spectator->GetPhaseMask();
         state.savedPosition = Position(spectator->GetPositionX(),
             spectator->GetPositionY(), spectator->GetPositionZ(),
             spectator->GetOrientation());
@@ -571,8 +647,7 @@ namespace DCPhasedDuels
             sDuelSpectators[spectator->GetGUID()] = state;
         }
 
-        spectator->SetPhaseMask(duel->phaseId, false);
-        spectator->UpdateObjectVisibility();
+        spectator->SetPhaseLayer(DarkChaos::PhaseLayers::PhasedDuelSpectator, duel->phaseId, true);
         if (!spectator->TeleportTo(watchedPlayer->GetMapId(),
                 watchedPlayer->GetPositionX(), watchedPlayer->GetPositionY(),
                 watchedPlayer->GetPositionZ() + 0.25f,
@@ -583,8 +658,7 @@ namespace DCPhasedDuels
                 sDuelSpectators.erase(spectator->GetGUID());
             }
 
-            spectator->SetPhaseMask(state.savedPhaseMask, false);
-            spectator->UpdateObjectVisibility();
+            spectator->ClearPhaseLayer(DarkChaos::PhaseLayers::PhasedDuelSpectator);
             error = "Could not teleport you to the duel.";
             return false;
         }
@@ -596,10 +670,12 @@ namespace DCPhasedDuels
             DCSpectator::HoldSpectatorFlag(spectator);
 
         opponentName = otherPlayer->GetName();
-        phaseId = duel->phaseId;
+        // The id the spectator UI knows this duel by. It used to be the phase bit, which is no
+        // longer unique now that every map has its own pool, so it is the match id.
+        phaseId = duel->matchId;
 
         DCSpectator::NotifySessionStarted(spectator,
-            DCSpectator::SystemId::Duel, phaseId, "Now spectating the duel.");
+            DCSpectator::SystemId::Duel, duel->matchId, "Now spectating the duel.");
         return true;
     }
 
@@ -679,7 +755,7 @@ namespace DCPhasedDuels
     bool BuildSpectatorLiveSnapshot(Player* spectator,
         DCAddon::JsonValue& payload)
     {
-        uint32 phaseId = 0;
+        uint32 matchId = 0;
         uint32 spectatorCount = 0;
 
         {
@@ -688,17 +764,17 @@ namespace DCPhasedDuels
             if (it == sDuelSpectators.end())
                 return false;
 
-            phaseId = it->second.watchedPhaseId;
+            matchId = it->second.watchedMatchId;
             for (auto const& [guid, state] : sDuelSpectators)
             {
                 (void)guid;
-                if (state.watchedPhaseId == phaseId)
+                if (state.watchedMatchId == matchId)
                     ++spectatorCount;
             }
         }
 
         std::optional<ActiveDuel> duel =
-            GetActiveDuelCopy(ObjectGuid::Empty, phaseId);
+            GetActiveDuelCopy(ObjectGuid::Empty, matchId);
         if (!duel)
             return false;
 
@@ -715,8 +791,8 @@ namespace DCPhasedDuels
         payload.SetObject();
         payload.Set("system", std::string(DCSpectator::SystemName(
             DCSpectator::SystemId::Duel)));
-        payload.Set("matchId", static_cast<int32>(phaseId));
-        payload.Set("phaseId", static_cast<int32>(phaseId));
+        payload.Set("matchId", static_cast<int32>(matchId));
+        payload.Set("phaseId", static_cast<int32>(duel->phaseId));
         payload.Set("duration", static_cast<int32>(durationSeconds));
         payload.Set("player1Name", player1->GetName());
         payload.Set("player1Class", static_cast<int32>(player1->getClass()));
@@ -784,18 +860,18 @@ namespace DCPhasedDuels
 
             {
                 std::lock_guard<std::mutex> lock(sDuelMutex);
-                std::unordered_set<uint32> seenPhases;
+                std::unordered_set<uint32> seenMatches;
                 for (auto const& [guid, duel] : sActiveDuels)
                 {
                     (void)guid;
-                    if (seenPhases.insert(duel.phaseId).second)
+                    if (seenMatches.insert(duel.matchId).second)
                         duels.push_back(duel);
                 }
 
                 for (auto const& [guid, state] : sDuelSpectators)
                 {
                     (void)guid;
-                    ++watchers[state.watchedPhaseId];
+                    ++watchers[state.watchedMatchId];
                 }
             }
 
@@ -807,13 +883,13 @@ namespace DCPhasedDuels
                 if (!player1 || !player2)
                     continue;
 
-                auto const watched = watchers.find(duel.phaseId);
+                auto const watched = watchers.find(duel.matchId);
 
                 DCAddon::JsonValue entry;
                 entry.SetObject();
                 entry.Set("system", std::string(DCSpectator::SystemName(
                     DCSpectator::SystemId::Duel)));
-                entry.Set("id", static_cast<int32>(duel.phaseId));
+                entry.Set("id", static_cast<int32>(duel.matchId));
                 entry.Set("name", player1->GetName() + " vs " + player2->GetName());
                 entry.Set("player1Name", player1->GetName());
                 entry.Set("player2Name", player2->GetName());
@@ -836,9 +912,9 @@ namespace DCPhasedDuels
             }
 
             std::string opponentName;
-            uint32 phaseId = 0;
+            uint32 matchId = 0;
             return DCPhasedDuels::StartSpectating(player, id, ObjectGuid::Empty,
-                error, opponentName, phaseId);
+                error, opponentName, matchId);
         }
     };
 
@@ -924,6 +1000,14 @@ public:
         if (!sConfig.enabled || !player1 || !player2)
             return;
 
+        // Remembered for every started duel, phased or not: only these get the end-of-duel
+        // health/power/cooldown reset (a declined or cancelled request never starts).
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            sStartedDuelists.insert(player1->GetGUID());
+            sStartedDuelists.insert(player2->GetGUID());
+        }
+
         Map* map = player1->GetMap();
         if (!map)
             return;
@@ -950,7 +1034,7 @@ public:
             return;
 
         // Find a free phase
-        uint32 freePhase = FindFreePhase(player1);
+        uint32 freePhase = FindFreePhase(player1, duelFlag);
         if (freePhase == 0)
         {
             ChatHandler(player1->GetSession()).SendSysMessage(
@@ -960,16 +1044,11 @@ public:
             return;
         }
 
-        // Phase both players (don't update visibility yet)
-        player1->SetPhaseMask(freePhase, false);
-        player2->SetPhaseMask(freePhase, false);
-
-        // Phase the duel flag
+        // Phase the duel flag, then both duelists: an exclusive layer each, the duel's bit is their
+        // whole mask until the layer comes off
         duelFlag->SetPhaseMask(freePhase, true);
-
-        // Now update visibility for both players
-        player1->UpdateObjectVisibility();
-        player2->UpdateObjectVisibility();
+        player1->SetPhaseLayer(DarkChaos::PhaseLayers::PhasedDuel, freePhase, true);
+        player2->SetPhaseLayer(DarkChaos::PhaseLayers::PhasedDuel, freePhase, true);
 
         // Record duel start
         RecordDuelStart(player1, player2, freePhase);
@@ -978,25 +1057,39 @@ public:
                  player1->GetName(), player2->GetName(), freePhase);
     }
 
+    // Runs for every completed duel request, including declined, cancelled and never-phased ones.
+    // Only players this system phased are put back, into the masks saved at duel start; any other
+    // duel leaves phases alone, so the phase another system gave a player is not overwritten.
     void OnPlayerDuelEnd(Player* winner, Player* loser, DuelCompleteType type) override
     {
-        if (!sConfig.enabled || !winner || !loser)
+        if (!winner || !loser)
             return;
 
-        // Restore normal phases
-        winner->SetPhaseMask(GetNormalPhase(winner), false);
-        loser->SetPhaseMask(GetNormalPhase(loser), false);
+        bool started = false;
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            started = sStartedDuelists.erase(winner->GetGUID()) > 0;
+            started = sStartedDuelists.erase(loser->GetGUID()) > 0 || started;
+        }
 
-        // Update visibility
-        winner->UpdateObjectVisibility();
-        loser->UpdateObjectVisibility();
+        // Tracked duels are undone even if the system was switched off mid-duel
+        std::optional<ActiveDuel> duel = TakeActiveDuel(winner->GetGUID(), loser->GetGUID());
+        if (duel)
+        {
+            RestoreDuelistPhase(winner, *duel);
+            RestoreDuelistPhase(loser, *duel);
+        }
+
+        if (!sConfig.enabled || (!started && !duel))
+            return;
 
         // Restore player states
         RestorePlayerState(winner);
         RestorePlayerState(loser);
 
         // Record duel end and update statistics
-        RecordDuelEnd(winner, loser, type);
+        if (duel)
+            RecordDuelEnd(winner, loser, type, *duel);
 
         LOG_INFO("scripts.dc", "PhasedDuels: Duel ended - Winner: {}, Loser: {}",
                  winner->GetName(), loser->GetName());
@@ -1125,6 +1218,7 @@ public:
     static bool HandleDuelReload(ChatHandler* handler)
     {
         sConfig.Load();
+        BuildContentPhaseBits();
         handler->SendSysMessage("Phased Duels configuration reloaded.");
         return true;
     }
@@ -1141,6 +1235,8 @@ public:
     void OnStartup() override
     {
         sConfig.Load();
+        // Spawns and spell_area are loaded by now
+        BuildContentPhaseBits();
         LOG_INFO("scripts.dc", "DarkChaos Phased Duels system initialized (Enabled: {})",
                  sConfig.enabled ? "Yes" : "No");
     }

@@ -21,6 +21,7 @@
 #include "World.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
+#include "LFGMgr.h"
 #include "ObjectAccessor.h"
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
@@ -34,8 +35,11 @@
 #include "WorldSessionMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "DC/Progression/FirstStart/dc_firststart_learnspells.h"
+#include "DC/Worldforged/dc_worldforged_pickups.h"
 #include "dc_prestige_api.h"
+#include "DC/AddonExtension/dc_addon_matchmaking.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_prestige_notify.h"
 #include <functional>
@@ -84,7 +88,8 @@ enum class PrestigeRefusal : uint8
     Dead,
     InCombat,
     Travelling,
-    NotInOpenWorld
+    NotInOpenWorld,
+    Queued
 };
 
 // The action bar a fresh start cleared: index 0 counts the buttons still waiting, index 1 + button
@@ -335,8 +340,26 @@ public:
         return true;
     }
 
+    // A queue was joined at the old level and would still place the character afterwards: a
+    // battleground only turns away players above its bracket.
+    bool IsQueued(Player* player) const
+    {
+        if (player->InBattlegroundQueue() || sMatchmakingQueue.IsQueued(player))
+            return true;
+
+        switch (sLFGMgr->GetState(player->GetGUID()))
+        {
+            case lfg::LFG_STATE_ROLECHECK:
+            case lfg::LFG_STATE_QUEUED:
+            case lfg::LFG_STATE_PROPOSAL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     // CanPrestige plus the moment itself: the character is rebuilt and teleported, so not while
-    // dead, fighting, travelling or inside an instance.
+    // dead, fighting, travelling, inside an instance or queued.
     PrestigeRefusal CheckPrestige(Player* player)
     {
         if (!enabled)
@@ -353,6 +376,8 @@ public:
             return PrestigeRefusal::Travelling;
         if (player->GetMap()->Instanceable())
             return PrestigeRefusal::NotInOpenWorld;
+        if (IsQueued(player))
+            return PrestigeRefusal::Queued;
         return PrestigeRefusal::None;
     }
 
@@ -376,6 +401,9 @@ public:
                 return "You cannot prestige while on a flight path, a vehicle or a transport.";
             case PrestigeRefusal::NotInOpenWorld:
                 return "You can only prestige in the open world, not in a dungeon, raid, battleground or arena.";
+            case PrestigeRefusal::Queued:
+                return "You cannot prestige while queued. Leave the battleground, Dungeon Finder or Group Finder "
+                    "queue first.";
         }
         return {};
     }
@@ -487,10 +515,13 @@ public:
             RestoreRememberedButtons(player, 0);
             player->SendInitialActionButtons();
             StripTemporaryAuras(player);
+            // Like the zone quests, the climb's worldforged pickups can be looted again. The claims save
+            // with the character below, and the teleport at the end brings the pickups back into view.
+            uint32 released = DCWorldforged::ResetClaims(player);
 
             if (debug)
-                LOG_DEBUG("scripts.dc", "Prestige: {} unlearned {} class spell(s) above level {}",
-                    playerName, forgotten, newLevel);
+                LOG_DEBUG("scripts.dc", "Prestige: {} unlearned {} class spell(s) above level {}, released {} "
+                    "worldforged pickup(s)", playerName, forgotten, newLevel, released);
         }
 
         // What the prestige writes commits together with the character save below, so a crash can
@@ -584,7 +615,19 @@ public:
 
         MailItems(player, mailed, trans);
         player->SaveToDB(trans, false, false);
-        CharacterDatabase.CommitTransaction(trans);
+
+        // Everything below tells the player it worked, so wait for the answer: a prestige is rare enough
+        // to afford it. A failed commit rolled back the prestige row while the character in memory has
+        // already dropped, and the next save would store that.
+        if (!CharacterDatabase.AsyncCommitTransaction(trans).m_future.get())
+        {
+            ClearPrestigeCache(player->GetGUID());
+            LOG_ERROR("scripts.dc", "Prestige: Saving prestige {} of {} ({}) failed. The character is now level {} "
+                "but the database still has prestige {}.", newPrestige, playerName, player->GetGUID().ToString(),
+                newLevel, currentPrestige);
+            chat.SendSysMessage("|cFFFF0000ERROR: Your prestige could not be saved. Please contact a GM.|r");
+            return false;
+        }
 
         // Announce to world
         if (announcePrestige)
@@ -609,6 +652,9 @@ public:
 
         // Notify client addon (if installed/enabled) so UI can refresh immediately
         DCPrestigeAddon::NotifyPrestigeLevelUp(player, newPrestige, newPrestige * statBonusPercent);
+
+        DarkChaos::CrossSystem::EventBus::instance()->PublishPrestige(player, uint8(currentPrestige),
+            uint8(newPrestige), uint8(oldLevel), keepGear);
 
         LOG_INFO("scripts.dc", "Prestige: Player {} completed prestige to level {}", playerName, newPrestige);
 

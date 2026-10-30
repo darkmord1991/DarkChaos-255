@@ -12,6 +12,7 @@
 #include "Player.h"
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace
 {
@@ -21,6 +22,39 @@ namespace
         outAreaId = 0;
         sMapMgr->GetZoneAndAreaId(phaseMask, outZoneId, outAreaId, mapId, x, y, z);
     }
+
+    // entry -> lowest spawn id, over one of the spawn stores. An entry-only lookup used to go
+    // straight to a blocking "WHERE id = ? ORDER BY guid LIMIT 1" query although every loaded spawn
+    // is already in memory; this answers the same question from the store. Built once on first use
+    // (world thread). A spawn added later is not indexed and still reaches the DB fallback.
+    template <typename SpawnStore>
+    std::unordered_map<uint32, ObjectGuid::LowType> BuildLowestSpawnIndex(SpawnStore const& store)
+    {
+        std::unordered_map<uint32, ObjectGuid::LowType> index;
+        for (auto const& [spawnId, data] : store)
+        {
+            auto [itr, inserted] = index.try_emplace(data.id, spawnId);
+            if (!inserted && spawnId < itr->second)
+                itr->second = spawnId;
+        }
+        return index;
+    }
+
+    ObjectGuid::LowType LowestCreatureSpawn(uint32 entry)
+    {
+        static std::unordered_map<uint32, ObjectGuid::LowType> const index =
+            BuildLowestSpawnIndex(sObjectMgr->GetAllCreatureData());
+        auto itr = index.find(entry);
+        return itr != index.end() ? itr->second : 0;
+    }
+
+    ObjectGuid::LowType LowestGameObjectSpawn(uint32 entry)
+    {
+        static std::unordered_map<uint32, ObjectGuid::LowType> const index =
+            BuildLowestSpawnIndex(sObjectMgr->GetAllGOData());
+        auto itr = index.find(entry);
+        return itr != index.end() ? itr->second : 0;
+    }
 }
 
 namespace DC
@@ -29,6 +63,11 @@ namespace SpawnResolver
 {
     ResolvedPosition ResolveCreature(Player* contextPlayer, uint32 spawnId, uint32 entry, bool preferLive)
     {
+        // Entry only: take the entry's lowest spawn from memory -- the row the DB fallback would
+        // return -- so the live and spawn-cache steps below can answer.
+        if (spawnId == 0 && entry != 0)
+            spawnId = LowestCreatureSpawn(entry);
+
         ResolvedPosition out;
         out.spawnId = spawnId;
         out.entry = entry;
@@ -83,20 +122,21 @@ namespace SpawnResolver
             }
         }
 
-        // 3) DB fallback
+        // 3) DB fallback. The column is `id` (the 2026_06_16_00 world update renamed `id1`); an unknown
+        // column is ER_BAD_FIELD_ERROR, which the DB layer treats as fatal and aborts the worldserver.
         QueryResult res;
         if (spawnId != 0)
         {
             res = WorldDatabase.Query(
-                "SELECT guid, id1, map, zoneId, areaId, phaseMask, position_x, position_y, position_z "
+                "SELECT guid, id, map, zoneId, areaId, phaseMask, position_x, position_y, position_z "
                 "FROM creature WHERE guid = {} LIMIT 1",
                 spawnId);
         }
         else if (entry != 0)
         {
             res = WorldDatabase.Query(
-                "SELECT guid, id1, map, zoneId, areaId, phaseMask, position_x, position_y, position_z "
-                "FROM creature WHERE id1 = {} ORDER BY guid ASC LIMIT 1",
+                "SELECT guid, id, map, zoneId, areaId, phaseMask, position_x, position_y, position_z "
+                "FROM creature WHERE id = {} ORDER BY guid ASC LIMIT 1",
                 entry);
         }
 
@@ -124,6 +164,10 @@ namespace SpawnResolver
 
     ResolvedPosition ResolveGameObject(Player* contextPlayer, uint32 spawnId, uint32 entry, bool preferLive)
     {
+        // Entry only: see ResolveCreature.
+        if (spawnId == 0 && entry != 0)
+            spawnId = LowestGameObjectSpawn(entry);
+
         ResolvedPosition out;
         out.spawnId = spawnId;
         out.entry = entry;

@@ -175,6 +175,13 @@ local classCache = {}
 -- Drill-down view: nil, or { guid = <row guid>, name = <row name> }
 local detailView = nil
 
+-- Bumped whenever recorded data can have changed (a group combat-log event,
+-- a roster/combat-state event). The window's 10 Hz tick redraws only when this
+-- moved since the last draw, during a fight (the timer and per-second values
+-- move on their own) or in the live threat mode; every UI action that changes
+-- what is shown calls CombatLog.UpdateFrame itself.
+local meterDataVersion = 0
+
 -- ============================================================
 -- Group / roster helpers (3.3.5a has no IsInRaid / IsInGroup)
 -- ============================================================
@@ -2287,12 +2294,16 @@ local function CreateCombatFrame()
         end
     end)
 
-    -- Update timer
+    -- Update timer. Out of combat with no new data the window used to re-sort
+    -- and re-format every row ten times a second; see meterDataVersion.
     combatFrame:SetScript("OnUpdate", function(self, elapsed)
         self.updateElapsed = (self.updateElapsed or 0) + elapsed
         if self.updateElapsed >= 0.1 then
             self.updateElapsed = 0
-            CombatLog.UpdateFrame()
+            if inCombat or self.drawnDataVersion ~= meterDataVersion
+                or addon.settings.combatLog.meterMode == "threat" then
+                CombatLog.UpdateFrame()
+            end
         end
     end)
 
@@ -2433,6 +2444,7 @@ end
 
 function CombatLog.UpdateFrame()
     if not combatFrame then return end
+    combatFrame.drawnDataVersion = meterDataVersion
 
     local settings = addon.settings.combatLog
     local mode = settings.meterMode or "damage"
@@ -3271,7 +3283,8 @@ local function OnCombatLogEvent(timestamp, event, sourceGUID, sourceName, source
 
     if not sourceInGroup and not destInGroup then
         -- Only one thing of interest happens entirely outside the group: an
-        -- enemy we are already fighting healing itself or an ally.
+        -- enemy we are already fighting healing itself or an ally. (In combat,
+        -- so the window redraws anyway; no meterDataVersion bump needed.)
         if settings.trackEnemyHealing ~= false and inCombat and HEAL_EVENTS[event]
             and bit.band(sourceFlags, ENEMY_MASK) > 0 and enemyData[sourceGUID] then
             local amount, overheal = select(4, ...), select(5, ...)
@@ -3279,6 +3292,7 @@ local function OnCombatLogEvent(timestamp, event, sourceGUID, sourceName, source
         end
         return
     end
+    meterDataVersion = meterDataVersion + 1
 
     local sourceIsPet = bit.band(sourceFlags, PET_MASK) > 0
     local destIsPet = bit.band(destFlags, PET_MASK) > 0
@@ -3629,6 +3643,9 @@ local function OnCombatEvent(self, event, ...)
         return
     end
 
+    -- Roster changes recolour rows; combat state and deaths change the data.
+    meterDataVersion = meterDataVersion + 1
+
     if ROSTER_EVENTS[event] then
         MarkRosterDirty()
         if event == "PLAYER_ENTERING_WORLD" then
@@ -3682,6 +3699,18 @@ function CombatLog.OnInitialize()
     addon:Debug("CombatLog module initializing")
     playerGUID = UnitGUID("player")
     playerName = UnitName("player")
+
+    -- A setting changed from the settings panel rather than one of the
+    -- window's own controls (which redraw at once) still shows on the next
+    -- tick, as it did when the window redrew unconditionally.
+    if not CombatLog._settingWatchRegistered and type(addon.RegisterEvent) == "function" then
+        CombatLog._settingWatchRegistered = true
+        addon:RegisterEvent("SETTING_CHANGED", function(path)
+            if type(path) == "string" and string.find(path, "^combatLog%.") then
+                meterDataVersion = meterDataVersion + 1
+            end
+        end)
+    end
 
     -- Register slash commands even if the module is disabled.
     -- This lets players recover a hidden/off-screen window without needing the module enabled.

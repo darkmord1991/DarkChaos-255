@@ -63,6 +63,32 @@ namespace DCAddon
         GF_EVENT_COMPLETED = 5
     };
 
+    // Widest dungeon_name / note the dc_group_finder_* tables hold, in
+    // characters. Listing, application and event text is cached in memory and
+    // sent to everyone who searches, so it is cut to the column up front
+    // instead of carrying whatever a crafted request put in it.
+    constexpr std::size_t GF_MAX_NAME_CHARS = 64;
+    constexpr std::size_t GF_MAX_NOTE_CHARS = 256;
+
+    // Cuts `text` after `maxChars` UTF-8 code points, never inside a sequence.
+    // (Deliberately not utf8truncate(): it sizes its UTF-16 scratch buffer by
+    // code points and overruns it on characters outside the BMP.)
+    inline void TruncateGroupFinderText(std::string& text, std::size_t maxChars)
+    {
+        std::size_t chars = 0;
+        for (std::size_t i = 0; i < text.size(); ++i)
+        {
+            if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80)
+                continue;   // continuation byte
+
+            if (chars++ == maxChars)
+            {
+                text.resize(i);
+                return;
+            }
+        }
+    }
+
     // ========================================================================
     // DATA STRUCTURES
     // ========================================================================
@@ -158,6 +184,8 @@ namespace DCAddon
         // Caches
         std::unordered_map<uint32, GroupFinderListing> _listings;
         std::unordered_map<uint32, std::vector<GroupFinderApplication>> _applications;  // listingId -> apps
+        std::unordered_map<uint32, uint32> _lastApplyMs;  // playerGuid -> getMSTime() of the last apply (under _mutex)
+        static constexpr uint32 GF_APPLY_COOLDOWN_MS = 1000;
         std::unordered_map<uint32, ScheduledEvent> _events;
         std::unordered_map<uint32, std::vector<EventSignup>> _eventSignups;  // eventId -> signups
 
@@ -210,7 +238,9 @@ namespace DCAddon
 
         // Application Management
         bool ApplyToListing(Player* player, uint32 listingId, uint8 role, std::string const& note);
-        bool AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid);
+        // `quiet` suppresses the stock party-result error the leader gets when
+        // the applicant cannot join (auto-match retries every pending app).
+        bool AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid, bool quiet = false);
         bool DeclineApplication(Player* leader, uint32 listingId, uint32 applicantGuid);
         bool CancelApplication(Player* player, uint32 listingId);
         std::vector<GroupFinderApplication> GetApplicationsForListing(uint32 listingId);
@@ -238,7 +268,11 @@ namespace DCAddon
         // (async), then call these to keep _events/_eventSignups in sync so
         // other players (and the creator) see the change without a restart.
         void CacheEvent(ScheduledEvent const& event);
-        void CacheSignup(EventSignup const& signup);
+        // Also the gate for a signup: false (nothing cached) when the player
+        // already holds an active signup or the cached event is closed/full.
+        // The handler's DB check runs asynchronously and can be stale by the
+        // time its callback runs; this check is synchronous.
+        bool CacheSignup(EventSignup const& signup);
         void RemoveCachedSignup(uint32 eventId, uint32 playerGuid);
         void CancelCachedEvent(uint32 eventId);
 

@@ -11,6 +11,7 @@
 #include "dc_addon_namespace.h"
 #include "dc_addon_transmutation.h"
 #include "ScriptMgr.h"
+#include "DC/CrossSystem/CrossSystemManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/dc_constants.h"
 #include "Player.h"
@@ -66,6 +67,19 @@ namespace Upgrade
                 return false;
 
             return player->IsInCombat();
+        }
+
+        // Equipment, the backpack, the bank and the contents of equipped bags. Bag 255
+        // otherwise also reaches the bag items themselves, the keyring, the currency
+        // tab and the buyback slots.
+        inline bool IsUpgradeablePosition(uint8 bag, uint8 slot)
+        {
+            if (bag != INVENTORY_SLOT_BAG_0)
+                return true;
+
+            return slot < EQUIPMENT_SLOT_END
+                || (slot >= INVENTORY_SLOT_ITEM_START && slot < INVENTORY_SLOT_ITEM_END)
+                || (slot >= BANK_SLOT_ITEM_START && slot < BANK_SLOT_ITEM_END);
         }
 
         inline bool TryGetJsonUInt(ParsedMessage const& msg, char const* key, uint32& out)
@@ -186,6 +200,20 @@ namespace Upgrade
         {
             DarkChaos::ItemUpgrade::UI::SumHeirloomUpgradeCosts(tierId, fromLevel, toLevel, outTokens, outEssence);
         }
+
+        // Level and package last applied to a heirloom by this process. The upgrade
+        // prices itself from the dc_heirloom_upgrades row, but its own REPLACE is
+        // asynchronous: a second request whose read ran before that write landed saw
+        // the old level and was charged for the same levels again. An entry is dropped
+        // once the table shows the same state.
+        struct AppliedHeirloomState
+        {
+            uint32 level = 0;
+            uint32 package = 0;
+        };
+
+        std::mutex s_AppliedHeirloomMutex;
+        std::unordered_map<uint32, AppliedHeirloomState> s_AppliedHeirloomStates; // item guid -> state
     }
 
     // Send currency update to client
@@ -758,6 +786,18 @@ namespace Upgrade
              return;
         }
 
+        // Only gear, from a slot the player wears or carries it in. Anything else
+        // reached the cost table too: an item with no tier (item level 0 among them)
+        // got the default 80 levels with no cost rows, i.e. for free.
+        ItemTemplate const* itemProto = item->GetTemplate();
+        if (!IsUpgradeablePosition(bag, slot) || !itemProto || itemProto->ItemLevel == 0 ||
+            (itemProto->Class != ITEM_CLASS_WEAPON && itemProto->Class != ITEM_CLASS_ARMOR))
+        {
+            SendUpgradeResult(player, msg.GetRequestId(), false, item->GetGUID().GetCounter(), 0, 0,
+                UPGRADE_ERR_NOT_UPGRADEABLE, "This item cannot be upgraded");
+            return;
+        }
+
         uint32 itemGUID = item->GetGUID().GetCounter();
         uint32 currentEntry = item->GetEntry();
        uint32 baseEntry = currentEntry;
@@ -771,7 +811,14 @@ namespace Upgrade
         {
             DarkChaos::ItemUpgrade::TierDefinition const* tierDef =
                 mgr ? mgr->GetTierDefinition(static_cast<uint8>(tier)) : nullptr;
-            if (tierDef && tierDef->is_artifact)
+            if (!tierDef)
+            {
+                SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, 0, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE,
+                    "This item cannot be upgraded");
+                return;
+            }
+
+            if (tierDef->is_artifact)
             {
                 SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, 0, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE,
                     "Heirloom items must be upgraded via the Heirloom interface");
@@ -820,19 +867,41 @@ namespace Upgrade
             }
         }
 
-        // Check currency
-        uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
-        uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+        // Paid in the tier's own currency, as UpgradeManager::UpgradeItem and the
+        // respec refund (GetTierCurrency) do: T4/T5 are priced in token_cost but paid
+        // in Emberwood Sap. Charging that column in upgrade tokens made Hyjal gear
+        // cost 3-5 tokens a level, and the respec then refunded it in sap.
+        DarkChaos::ItemUpgrade::CurrencyType const currency =
+            DarkChaos::ItemUpgrade::GetTierCurrency(static_cast<uint8>(tier));
+        bool const paidInEssence = currency == DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE;
+        uint32 const currencyId = DarkChaos::ItemUpgrade::GetCurrencyItemId(currency);
+        uint32 const cost = paidInEssence ? essenceNeeded : tokensNeeded;
 
-           if (player->GetItemCount(tokenId) < tokensNeeded)
+        // A range with no cost rows is a misconfigured tier, not a free upgrade.
+        if (cost == 0)
         {
-               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NOT_ENOUGH_TOKENS, "Not enough Tokens");
-             return;
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                UPGRADE_ERR_NOT_UPGRADEABLE, "No upgrade cost is configured for this item");
+            return;
         }
-           if (player->GetItemCount(essenceId) < essenceNeeded)
+
+        // The payment must not be able to destroy the item it pays for.
+        if (currentEntry == currencyId)
         {
-               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NOT_ENOUGH_ESSENCE, "Not enough Essence");
-             return;
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                UPGRADE_ERR_NOT_UPGRADEABLE, "This item cannot be upgraded");
+            return;
+        }
+
+        // Counted the way DestroyItemCount will take it: a stack parked in an open
+        // trade window passed a plain GetItemCount and was then never taken.
+        if (DarkChaos::ItemUpgrade::GetSpendableItemCount(player, currencyId) < cost)
+        {
+            char const* const shortfall = paidInEssence ? "Not enough Essence"
+                : (currency == DarkChaos::ItemUpgrade::CURRENCY_FRONTIER_SAP ? "Not enough Emberwood Sap" : "Not enough Tokens");
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                paidInEssence ? UPGRADE_ERR_NOT_ENOUGH_ESSENCE : UPGRADE_ERR_NOT_ENOUGH_TOKENS, shortfall);
+            return;
         }
 
         if (!mgr || !upgradeState)
@@ -869,9 +938,12 @@ namespace Upgrade
             nextEssenceCost = mgr->GetEssenceCost(static_cast<uint8>(tier), nextLevel);
         }
 
+        // Read off the item before paying; nothing below dereferences it.
+        uint32 const itemBagSlot = item->GetBagSlot();
+        uint32 const itemSlot = item->GetSlot();
+
         // Consume currency
-        if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
-        if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
+        player->DestroyItemCount(currencyId, cost, true);
 
         auto loadInvestedCostsThroughLevel = [&](uint32 throughLevel, uint32& outTokens, uint32& outEssence)
         {
@@ -906,8 +978,10 @@ namespace Upgrade
             : (std::string("Item ") + std::to_string(baseEntry));
         upgradeState->tier_id = static_cast<uint8>(tier);
         upgradeState->upgrade_level = static_cast<uint8>(targetLevel);
-        upgradeState->tokens_invested = investedTokens + tokensNeeded;
-        upgradeState->essence_invested = investedEssence + essenceNeeded;
+        // tokens_invested is the generic non-essence ledger; the refund recovers
+        // which item it was from the tier.
+        upgradeState->tokens_invested = investedTokens + (paidInEssence ? 0 : cost);
+        upgradeState->essence_invested = investedEssence + (paidInEssence ? cost : 0);
         upgradeState->season = 1;
         upgradeState->base_item_level = baseTemplate->ItemLevel;
         upgradeState->upgraded_item_level =
@@ -925,9 +999,9 @@ namespace Upgrade
         DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
 
         SendUpgradeResult(player, msg.GetRequestId(), true, itemGUID,
-            targetLevel, item->GetEntry(), UPGRADE_ERR_NONE, "", tier,
-            maxLevel, nextTokenCost, nextEssenceCost, item->GetBagSlot(),
-            item->GetSlot());
+            targetLevel, currentEntry, UPGRADE_ERR_NONE, "", tier,
+            maxLevel, nextTokenCost, nextEssenceCost, itemBagSlot,
+            itemSlot);
         SendCurrencyUpdate(player);
 
         // Onboarding quest 820065 "Sharpening the Edge". Issued only once the
@@ -935,6 +1009,9 @@ namespace Upgrade
         // upgrade never credits. Heirlooms take the separate HandleHeirloomUpgrade
         // path and credit 820066 there instead.
         player->KilledMonsterCredit(DCConstants::NPC_CREDIT_ITEM_UPGRADED);
+
+        DarkChaos::CrossSystem::GetManager()->OnItemUpgrade(player, itemGUID,
+            static_cast<uint8>(currentLevel), static_cast<uint8>(targetLevel));
     }
 
     // Handler: Package selection (migrated from itemupgrade_communication.lua)
@@ -1206,6 +1283,22 @@ namespace Upgrade
                 currentPackage = (*result)[1].Get<uint32>();
             }
 
+            // An upgrade applied after this read was queued is newer than the row.
+            {
+                std::lock_guard<std::mutex> lock(s_AppliedHeirloomMutex);
+                auto const applied = s_AppliedHeirloomStates.find(itemGuid);
+                if (applied != s_AppliedHeirloomStates.end())
+                {
+                    if (applied->second.level == currentLevel && applied->second.package == currentPackage)
+                        s_AppliedHeirloomStates.erase(applied);
+                    else
+                    {
+                        currentLevel = applied->second.level;
+                        currentPackage = applied->second.package;
+                    }
+                }
+            }
+
             if (targetLevel < currentLevel && packageId == currentPackage)
             {
                 JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
@@ -1226,7 +1319,8 @@ namespace Upgrade
             uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
 
-            if (player->GetItemCount(tokenId) < tokensNeeded)
+            // Counted the way DestroyItemCount will take it (skipping a trade window).
+            if (DarkChaos::ItemUpgrade::GetSpendableItemCount(player, tokenId) < tokensNeeded)
             {
                 JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
                     .SetRequestId(requestId)
@@ -1235,7 +1329,7 @@ namespace Upgrade
                     .Send(player);
                 return;
             }
-            if (player->GetItemCount(essenceId) < essenceNeeded)
+            if (DarkChaos::ItemUpgrade::GetSpendableItemCount(player, essenceId) < essenceNeeded)
             {
                 JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
                     .SetRequestId(requestId)
@@ -1263,6 +1357,11 @@ namespace Upgrade
             CharacterDatabase.Execute("REPLACE INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, enchant_id) VALUES ({}, {}, {}, {}, {}, {})",
                 player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), targetLevel, packageId, enchantId);
 
+            {
+                std::lock_guard<std::mutex> lock(s_AppliedHeirloomMutex);
+                s_AppliedHeirloomStates[itemGuid] = { targetLevel, packageId };
+            }
+
             // Log
             CharacterDatabase.Execute("INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, to_level, from_package, to_package, enchant_id, token_cost, essence_cost) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
                 player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), currentLevel, targetLevel, currentPackage, packageId, enchantId, tokensNeeded, essenceNeeded);
@@ -1283,6 +1382,9 @@ namespace Upgrade
             // heirloom upgrade only. This runs inside the async callback, so the
             // player pointer is the one re-resolved by the enclosing lambda.
             player->KilledMonsterCredit(DCConstants::NPC_CREDIT_HEIRLOOM_UPGRADED);
+
+            DarkChaos::CrossSystem::GetManager()->OnItemUpgrade(player, itemGuid,
+                static_cast<uint8>(currentLevel), static_cast<uint8>(targetLevel));
         }));
     }
 

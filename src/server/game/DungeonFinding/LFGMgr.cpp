@@ -1881,8 +1881,9 @@ namespace lfg
 
                 if (player->GetMapId() == uint32(dungeon->map))
                 {
-                    // check instance id with leader
-                    if (!leaderTeleportIncluded)
+                    // check instance id with leader, only when the group fills up a dungeon it is still running:
+                    // a new dungeon on the same map (another wing, the same dungeon again) starts a fresh instance
+                    if (!proposal.isNew && !leaderTeleportIncluded)
                     {
                         if (InstancePlayerBind* ilb = sInstanceSaveMgr->PlayerGetBoundInstance(grp->GetLeaderGUID(), dungeon->map, player->GetDungeonDifficulty()))
                         {
@@ -1899,8 +1900,9 @@ namespace lfg
                 }
                 else
                 {
-                    // RDF removes all binds to that map
-                    if (randomDungeon)
+                    // RDF removes all binds to that map, a new dungeon the temporary bind of an earlier run
+                    InstancePlayerBind const* bind = sInstanceSaveMgr->PlayerGetBoundInstance(player->GetGUID(), dungeon->map, player->GetDungeonDifficulty());
+                    if (randomDungeon || (proposal.isNew && bind && !bind->perm))
                         sInstanceSaveMgr->PlayerUnbindInstance(player->GetGUID(), dungeon->map, player->GetDungeonDifficulty(), true);
                 }
 

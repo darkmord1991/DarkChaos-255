@@ -192,6 +192,7 @@ UI\SharedShell.lua
 
 # Settings UI
 UI\SettingsPanel.lua
+UI\VideoOptions.lua
 
 # Feature Modules
 Modules\Experience.lua
@@ -205,6 +206,7 @@ Modules\Chat.lua
 Modules\Interface.lua
 Modules\WorldMapWindow.lua
 Modules\GraphicsPlus.lua
+Modules\PostProcessing.lua
 Modules\QuestRecurringLookup.lua
 Modules\MapZoneLabels.lua
 Modules\ZoneLabels.lua

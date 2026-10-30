@@ -1,0 +1,11 @@
+## Interface: 30300
+## Title: |cffFFCC00DC|r Path of Chaos
+## Notes: The long road through Dark Chaos: tasks and milestones that pay Shop Points for the Collection shop.
+## Author: DarkChaos-255
+## Version: 1.0.0
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: DC-Collection, DC-Welcome
+## SavedVariables: DCPathDB
+
+Core.lua
+UI.lua

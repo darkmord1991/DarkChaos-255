@@ -97,14 +97,30 @@ DC.SAP_ITEM_ID = nil;
 -- UI Mode: "STANDARD" or "HEIRLOOM"
 DC.uiMode = "STANDARD";
 
-local function CanOpenItemUpgradeFrame()
+-- The guild house maps (1409 "GuildHouse Dalaran", 1413 "GuildHouse Dalaran 2")
+-- are party instances, so IsInInstance() reports them like any dungeon. 3.3.5
+-- has no API for the instance map id, so match the Map.dbc name, and the
+-- AreaTable zone name ("GuildHouse Dalaran WOTLK"/"... Legion") as a fallback.
+local function IsGuildHouseName(name)
+	if type(name) ~= "string" then
+		return false;
+	end
+	return string.find(string.gsub(string.lower(name), "[^a-z]", ""), "^guildhouse") ~= nil;
+end
+
+function DC.IsInGuildHouse()
+	return IsGuildHouseName((GetInstanceInfo())) or IsGuildHouseName(GetRealZoneText());
+end
+
+function DC.CanOpenItemUpgradeFrame()
 	if UnitAffectingCombat("player") then
 		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
 		return false;
 	end
 
 	local inInstance, instanceType = IsInInstance();
-	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
+	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp")
+		and not DC.IsInGuildHouse() then
 		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
 		return false;
 	end
@@ -113,7 +129,7 @@ local function CanOpenItemUpgradeFrame()
 end
 
 function DC.ToggleUpgradeFrame(mode)
-	if not CanOpenItemUpgradeFrame() then
+	if not DC.CanOpenItemUpgradeFrame() then
 		return false;
 	end
 
@@ -2002,12 +2018,9 @@ function DC.CreateCommPanel()
 		Print("Ping disabled in JSON-only mode")
 	end)
 	
-	CreateButton("TestChat", "Test Chat Cmd", 1, 0, function()
-		Print("Testing chat command: .dcupgrade init")
-		SendChatMessage(".dcupgrade init", "SAY")
-	end)
-
-	CreateButton("ShowStatus", "Show Status", 2, 0, function()
+	-- (No "Test Chat Cmd" button any more: the server has no .dcupgrade
+	-- command, so for a player it was posted to /say as plain chat.)
+	CreateButton("ShowStatus", "Show Status", 1, 0, function()
 		Print("--- Protocol Status ---")
 		Print("DC Protocol: " .. (DC.useDCProtocol and "Available" or "Not Found"))
 		Print("Active Mode: " .. DC.protocolMode)

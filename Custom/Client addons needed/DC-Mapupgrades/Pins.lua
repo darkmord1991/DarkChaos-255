@@ -1081,6 +1081,11 @@ function Pins:Init(state)
     self.worldPinUpdate = 0  -- Debounce for world pins
     self.pendingWorldUpdate = false  -- Flag for pending update
     self.lastMapId = nil  -- Track last map to avoid redundant updates
+    -- Reused by every minimap rebuild (5 a second) instead of two new tables each.
+    self.minimapSeen = {}
+    self.minimapEntSeen = {}
+    -- What the minimap pins were last placed from; see MinimapViewChanged.
+    self.minimapView = {}
 
     -- Drop continent-level entries an older build learned into SavedVariables.
     -- They outlive the code fix: a stored customZoneMapping[1262] = <zone id>
@@ -1946,11 +1951,67 @@ function Pins:UpdateWorldPinsInternal()
     end
 end
 
+local function ClearTable(t)
+    for key in pairs(t) do
+        t[key] = nil
+    end
+end
+
+-- The visible minimap diameter in yards, as the projection helpers see it
+-- (zoom step and indoor/outdoor scale); the zoom step alone without DC-QoS.
+local function MinimapScaleKey()
+    local dcqos = rawget(_G, "DCQOS")
+    if dcqos and type(dcqos.GetMapUtils) == "function" then
+        local mapUtils = dcqos:GetMapUtils()
+        if mapUtils and type(mapUtils.GetMinimapDiameterYards) == "function" then
+            return mapUtils.GetMinimapDiameterYards()
+        end
+    end
+    return (Minimap.GetZoom and Minimap:GetZoom()) or 0
+end
+
+-- Records what a placement pass projects from -- the player's position, the
+-- minimap's facing (only while it rotates), its scale and size -- and reports
+-- whether any of it differs from the last pass. While nothing does, every pin
+-- already sits where a new pass would put it.
+function Pins:MinimapViewChanged(px, py, playerMap, pwx, pwy, playerGameMap, radius)
+    local view = self.minimapView
+    if not view then
+        view = {}
+        self.minimapView = view
+    end
+
+    local facing = 0
+    if GetCVar and GetCVar("rotateMinimap") == "1" and GetPlayerFacing then
+        facing = GetPlayerFacing() or 0
+    end
+    local scale = MinimapScaleKey()
+
+    if view.valid and view.px == px and view.py == py and view.playerMap == playerMap
+        and view.pwx == pwx and view.pwy == pwy and view.playerGameMap == playerGameMap
+        and view.radius == radius and view.facing == facing and view.scale == scale then
+        return false
+    end
+
+    view.valid = true
+    view.px, view.py, view.playerMap = px, py, playerMap
+    view.pwx, view.pwy, view.playerGameMap = pwx, pwy, playerGameMap
+    view.radius, view.facing, view.scale = radius, facing, scale
+    return true
+end
+
+function Pins:InvalidateMinimapView()
+    if self.minimapView then
+        self.minimapView.valid = false
+    end
+end
+
 function Pins:UpdateMinimapPins()
     local db = self.state.db
     if not db or not db.showMinimapPins or not Minimap then
         for id in pairs(self.minimapPins) do self:DestroyPin(self.minimapPins, id) end
         for id in pairs(self.entityMinimapPins) do self:DestroyPin(self.entityMinimapPins, id) end
+        self:InvalidateMinimapView()
         return
     end
 
@@ -1958,6 +2019,7 @@ function Pins:UpdateMinimapPins()
     local worldMode = (pwx and pwy and playerGameMap) and true or false
     if not worldMode and (not px or not py) then
         for _, pin in pairs(self.minimapPins) do pin:Hide() end
+        self:InvalidateMinimapView()
         return
     end
 
@@ -1969,10 +2031,20 @@ function Pins:UpdateMinimapPins()
     -- is applied as a visibility margin inside the two projection helpers.
     local minimapRadius = math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5
     if minimapRadius <= MINIMAP_EDGE_PADDING then
+        self:InvalidateMinimapView()
         return
     end
 
-    local seen = {}
+    -- This rebuild places every tracked pin from the current view, so the
+    -- per-frame pass has nothing to do until the view changes again.
+    self:MinimapViewChanged(px, py, playerMap, pwx, pwy, playerGameMap, minimapRadius)
+
+    local seen = self.minimapSeen
+    if not seen then
+        seen = {}
+        self.minimapSeen = seen
+    end
+    ClearTable(seen)
     local canShowHotspots = PlayerCanGainXP()
     if canShowHotspots then
         for id, hotspot in pairs(self.state.hotspots) do
@@ -2045,7 +2117,12 @@ function Pins:UpdateMinimapPins()
     end
 
     -- Entities on minimap (only when on same map as player)
-    local entSeen = {}
+    local entSeen = self.minimapEntSeen
+    if not entSeen then
+        entSeen = {}
+        self.minimapEntSeen = entSeen
+    end
+    ClearTable(entSeen)
     local list = db.entities and db.entities.list
     if type(list) == "table" and playerMap then
         for _, ent in ipairs(list) do
@@ -2127,6 +2204,12 @@ function Pins:RepositionMinimapPins()
         return
     end
 
+    -- No minimap pin exists at all (the usual case away from hotspots and
+    -- rares): nothing to place, so not even the player position is read.
+    if next(self.minimapPins) == nil and next(self.entityMinimapPins) == nil then
+        return
+    end
+
     local px, py, playerMap, pwx, pwy, playerGameMap = PlayerAnchor(self.state)
     local worldMode = (pwx and pwy and playerGameMap) and true or false
     if not worldMode and (not px or not py) then
@@ -2139,6 +2222,11 @@ function Pins:RepositionMinimapPins()
     -- is applied as a visibility margin inside the two projection helpers.
     local minimapRadius = math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5
     if minimapRadius <= MINIMAP_EDGE_PADDING then
+        return
+    end
+
+    -- Standing still with the minimap untouched: the pins are already placed.
+    if not self:MinimapViewChanged(px, py, playerMap, pwx, pwy, playerGameMap, minimapRadius) then
         return
     end
 

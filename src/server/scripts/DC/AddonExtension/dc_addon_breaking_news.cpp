@@ -5,9 +5,11 @@
 #include "Log.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "Timer.h"
 #include "dc_addon_namespace.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 
 #include <algorithm>
@@ -17,6 +19,9 @@
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace DCBreakingNews
 {
@@ -49,6 +54,16 @@ namespace DCBreakingNews
 
         std::mutex sBreakingNewsLock;
         CachedState sBreakingNewsState;
+
+        // Character lists that went out before the account's capabilities were known: the first one of a
+        // connection, and the one after a logout, which clears them. The registry reads them asynchronously (a
+        // synchronous read here stalled the world thread), so the news follows once it has them, while the
+        // session is still at character select. Account id -> getMSTime() of the character list.
+        constexpr uint32 DEFERRED_SEND_INTERVAL_MS = 250;
+        constexpr uint32 DEFERRED_SEND_TIMEOUT_MS = 15000;
+        std::mutex sDeferredSendLock;
+        std::unordered_map<uint32, uint32> sDeferredSends;
+        uint32 sDeferredSendTimer = 0;
 
         bool IsDeliveryLogEnabled()
         {
@@ -574,6 +589,62 @@ namespace DCBreakingNews
 
         return true;
     }
+
+    void SendWithCharacterList(WorldSession* session)
+    {
+        if (!session || SendToSession(session, "char-enum"))
+            return;
+
+        // Only a list that missed the news for want of the capabilities gets it later
+        TransportDecision decision = EvaluateTransportDecision(session);
+        if (decision.hasCapabilityState || !decision.snapshotReady)
+            return;
+
+        std::lock_guard<std::mutex> lock(sDeferredSendLock);
+        sDeferredSends[session->GetAccountId()] = getMSTime();
+    }
+
+    void UpdateDeferredSends(uint32 diff)
+    {
+        sDeferredSendTimer += diff;
+        if (sDeferredSendTimer < DEFERRED_SEND_INTERVAL_MS)
+            return;
+
+        sDeferredSendTimer = 0;
+        std::vector<std::pair<uint32, uint32>> pending;
+        {
+            std::lock_guard<std::mutex> lock(sDeferredSendLock);
+            if (sDeferredSends.empty())
+                return;
+
+            pending.assign(sDeferredSends.begin(), sDeferredSends.end());
+        }
+
+        for (auto const& [accountId, listedAt] : pending)
+        {
+            // Gone, in the world already, or no stored capabilities to load: nothing to show it on
+            WorldSession* session = sWorldSessionMgr->FindSession(accountId);
+            bool done = !session || session->GetPlayer()
+                || getMSTimeDiff(listedAt, getMSTime()) > DEFERRED_SEND_TIMEOUT_MS;
+
+            if (!done)
+            {
+                DCAddon::SessionCapabilityState capabilityState;
+                if (!DCAddon::TryGetSessionCapabilityState(session, capabilityState))
+                    continue;
+
+                SendToSession(session, "char-enum-deferred");
+                done = true;
+            }
+
+            std::lock_guard<std::mutex> lock(sDeferredSendLock);
+            auto itr = sDeferredSends.find(accountId);
+
+            // A newer character list re-armed it
+            if (itr != sDeferredSends.end() && itr->second == listedAt)
+                sDeferredSends.erase(itr);
+        }
+    }
 }
 
 namespace
@@ -592,7 +663,7 @@ namespace
             WorldPacket const& packet) override
         {
             if (packet.GetOpcode() == SMSG_CHAR_ENUM)
-                DCBreakingNews::SendToSession(session, "char-enum");
+                DCBreakingNews::SendWithCharacterList(session);
 
             return true;
         }
@@ -603,11 +674,16 @@ namespace
     public:
         DCBreakingNewsWorldScript()
             : WorldScript("DCBreakingNewsWorldScript",
-                { WORLDHOOK_ON_AFTER_CONFIG_LOAD })
+                { WORLDHOOK_ON_AFTER_CONFIG_LOAD, WORLDHOOK_ON_UPDATE })
         {
         }
 
     private:
+        void OnUpdate(uint32 diff) override
+        {
+            DCBreakingNews::UpdateDeferredSends(diff);
+        }
+
         void OnAfterConfigLoad(bool /*reload*/) override
         {
             std::string errorMessage;

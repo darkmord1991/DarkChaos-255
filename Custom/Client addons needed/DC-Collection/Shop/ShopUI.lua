@@ -38,6 +38,7 @@ local SHOP_FRAME_WIDTH = 680
 local SHOP_FRAME_HEIGHT = 450
 local ITEM_HEIGHT = 70
 local ITEMS_PER_PAGE = 5
+local SHOP_POINTS_ICON = "Interface\\Icons\\INV_Misc_Coin_16"
 local HISTORY_ROW_HEIGHT = 42
 local HISTORY_ITEMS_PER_PAGE = 8
 
@@ -256,10 +257,10 @@ function DC:CreateShopUI()
     -- Get icons from DCCentral if available, else use fallback
     local central = rawget(_G, "DCAddonProtocol")
         local tokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
-        tokenIcon = DC:NormalizeTexturePath(tokenIcon, "Interface\\Icons\\INV_Misc_Token_ArgentCrusade")
+        tokenIcon = DC:NormalizeTexturePath(tokenIcon, "Interface\\Icons\\INV_Misc_Token_ArgentDawn")
 
         local essenceIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
-        essenceIcon = DC:NormalizeTexturePath(essenceIcon, "Interface\\Icons\\INV_Misc_Herb_Draenethisle")
+        essenceIcon = DC:NormalizeTexturePath(essenceIcon, "Interface\\Icons\\INV_Misc_Herb_Manathistle")
     
     -- Tokens
     local tokensIcon = currencyFrame:CreateTexture(nil, "ARTWORK")
@@ -465,7 +466,30 @@ function DC:CreateShopUI()
         DC.ShopModule:RefreshCurrency()
     end)
     frame.refreshBtn = refreshBtn
-    
+
+    -- Shop Points balance. The header row has no room for a third currency; this side of
+    -- the pager does. The button is the way to earn more, so it only shows with DC-Path.
+    local pathBtn = CreateFrame("Button", nil, navFrame, "UIPanelButtonTemplate")
+    pathBtn:SetSize(64, 22)
+    pathBtn:SetPoint("RIGHT", navFrame, "RIGHT", 0, 0)
+    pathBtn:SetText(L["SHOP_EARN_POINTS"] or "Earn")
+    pathBtn:SetScript("OnClick", function()
+        if SlashCmdList and type(SlashCmdList["DCPATH"]) == "function" then
+            SlashCmdList["DCPATH"]("")
+        end
+    end)
+    frame.pathBtn = pathBtn
+
+    local pointsValue = navFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    pointsValue:SetPoint("RIGHT", pathBtn, "LEFT", -6, 0)
+    pointsValue:SetText("0")
+    frame.pointsValue = pointsValue
+
+    local pointsIcon = navFrame:CreateTexture(nil, "ARTWORK")
+    pointsIcon:SetSize(18, 18)
+    pointsIcon:SetPoint("RIGHT", pointsValue, "LEFT", -4, 0)
+    pointsIcon:SetTexture(SHOP_POINTS_ICON)
+
     self.ShopUI = frame
     frame.currentPage = 1
     frame.historyPage = 1
@@ -529,13 +553,13 @@ function DC:CreateShopItemFrame(parent, index)
     -- Cost (get icons from DCCentral if available)
     local central = rawget(_G, "DCAddonProtocol")
     local itemTokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
-    itemTokenIcon = DC:NormalizeTexturePath(itemTokenIcon, "Interface\\Icons\\INV_Misc_Token_ArgentCrusade")
+    itemTokenIcon = DC:NormalizeTexturePath(itemTokenIcon, "Interface\\Icons\\INV_Misc_Token_ArgentDawn")
 
     local itemEssenceIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
-    itemEssenceIcon = DC:NormalizeTexturePath(itemEssenceIcon, "Interface\\Icons\\INV_Misc_Herb_Draenethisle")
+    itemEssenceIcon = DC:NormalizeTexturePath(itemEssenceIcon, "Interface\\Icons\\INV_Misc_Herb_Manathistle")
     
     frame.costFrame = CreateFrame("Frame", nil, frame)
-    frame.costFrame:SetSize(120, 40)
+    frame.costFrame:SetSize(120, 58)
     frame.costFrame:SetPoint("RIGHT", frame, "RIGHT", -170, 0)
     
     frame.costTokensIcon = frame.costFrame:CreateTexture(nil, "ARTWORK")
@@ -555,7 +579,16 @@ function DC:CreateShopItemFrame(parent, index)
     frame.costEmblemsText = frame.costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.costEmblemsText:SetPoint("LEFT", frame.costEmblemsIcon, "RIGHT", 3, 0)
     frame.costEmblemsText:SetText("0")
-    
+
+    frame.costPointsIcon = frame.costFrame:CreateTexture(nil, "ARTWORK")
+    frame.costPointsIcon:SetSize(16, 16)
+    frame.costPointsIcon:SetPoint("TOPLEFT", frame.costEmblemsIcon, "BOTTOMLEFT", 0, -5)
+    frame.costPointsIcon:SetTexture(SHOP_POINTS_ICON)
+
+    frame.costPointsText = frame.costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.costPointsText:SetPoint("LEFT", frame.costPointsIcon, "RIGHT", 3, 0)
+    frame.costPointsText:SetText("0")
+
     -- Buy button
     frame.buyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.buyBtn:SetSize(70, 24)
@@ -567,10 +600,22 @@ function DC:CreateShopItemFrame(parent, index)
         end
     end)
 
+    -- Pay with Shop Points, stacked under Buy on the rows that take them.
+    frame.buyPointsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.buyPointsBtn:SetSize(70, 24)
+    frame.buyPointsBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 9)
+    frame.buyPointsBtn:SetText(L["SHOP_BUY_POINTS"] or "Use Points")
+    frame.buyPointsBtn:SetScript("OnClick", function()
+        if frame.itemData then
+            DC.ShopModule:Purchase(frame.itemData.id, true)
+        end
+    end)
+    frame.buyPointsBtn:Hide()
+
     -- Preview button
     frame.previewBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.previewBtn:SetSize(70, 24)
-    frame.previewBtn:SetPoint("RIGHT", frame.buyBtn, "LEFT", -6, 0)
+    frame.previewBtn:SetPoint("RIGHT", frame, "RIGHT", -86, 0)
     frame.previewBtn:SetText(L["PREVIEW"] or "Preview")
     frame.previewBtn:SetScript("OnClick", function()
         if frame.itemData then
@@ -730,6 +775,12 @@ function DC:UpdateShopCurrencyDisplay()
     
         self.ShopUI.tokensValue:SetText(tokens)
         self.ShopUI.emblemsValue:SetText(essence)
+    self.ShopUI.pointsValue:SetText(self.ShopModule and self.ShopModule:GetPoints() or 0)
+    if SlashCmdList and type(SlashCmdList["DCPATH"]) == "function" then
+        self.ShopUI.pathBtn:Show()
+    else
+        self.ShopUI.pathBtn:Hide()
+    end
 end
 
 function DC:CanPreviewShopItem(item)
@@ -1032,6 +1083,10 @@ function DC:UpdateShopHistoryRow(row, entry)
     if costEmblems > 0 then
         table.insert(costParts, tostring(costEmblems) .. " " .. (L["EMBLEMS"] or "Emblems"))
     end
+    local costPoints = tonumber(entry.costPoints) or 0
+    if costPoints > 0 then
+        table.insert(costParts, tostring(costPoints) .. " " .. (L["SHOP_POINTS"] or "Shop Points"))
+    end
     if #costParts == 0 then
         table.insert(costParts, L["FREE"] or "Free")
     end
@@ -1087,34 +1142,61 @@ function DC:UpdateShopItemFrame(frame, item)
         frame.costEmblemsIcon:Hide()
         frame.costEmblemsText:Hide()
     end
-    
+
+    local costPoints = item.costPoints or 0
+    local takesPoints = costPoints > 0
+    local pointsOnly = self.ShopModule:IsPointsOnly(item)
+    if takesPoints then
+        frame.costPointsIcon:Show()
+        frame.costPointsText:Show()
+        frame.costPointsText:SetText(costPoints)
+    else
+        frame.costPointsIcon:Hide()
+        frame.costPointsText:Hide()
+    end
+
     -- Buy button / Purchased state
-    local alreadyPurchased = item.purchased or 
+    local alreadyPurchased = item.purchased or
         (item.maxPurchases and item.purchaseCount and item.purchaseCount >= item.maxPurchases)
-    
+
     if alreadyPurchased then
         frame.buyBtn:Hide()
+        frame.buyPointsBtn:Hide()
         frame.purchasedText:Show()
     else
         frame.purchasedText:Hide()
         frame.buyBtn:Show()
-        
+
+        -- Two ways to pay need two buttons; a row with one keeps Buy centred.
+        local bothWays = takesPoints and not pointsOnly
+        frame.buyBtn:ClearAllPoints()
+        if bothWays then
+            frame.buyBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -9)
+            frame.buyPointsBtn:Show()
+        else
+            frame.buyBtn:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
+            frame.buyPointsBtn:Hide()
+        end
+
         -- Enable/disable based on affordability
         local canAfford = self.ShopModule:CanAfford(item)
-        if frame.buyBtn.SetEnabled then
-            frame.buyBtn:SetEnabled(canAfford)
-        elseif canAfford then
-            frame.buyBtn:Enable()
-        else
-            frame.buyBtn:Disable()
-        end
-        
+        SetWidgetEnabled(frame.buyBtn, canAfford)
+
+        local canAffordPoints = self.ShopModule:CanAffordPoints(item)
+        SetWidgetEnabled(frame.buyPointsBtn, canAffordPoints)
+
         if canAfford then
             frame.costTokensText:SetTextColor(1, 1, 1)
             frame.costEmblemsText:SetTextColor(1, 1, 1)
         else
             frame.costTokensText:SetTextColor(1, 0.3, 0.3)
             frame.costEmblemsText:SetTextColor(1, 0.3, 0.3)
+        end
+
+        if canAffordPoints then
+            frame.costPointsText:SetTextColor(1, 1, 1)
+        else
+            frame.costPointsText:SetTextColor(1, 0.3, 0.3)
         end
     end
 

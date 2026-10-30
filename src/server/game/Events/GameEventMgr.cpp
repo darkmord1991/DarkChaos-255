@@ -1135,11 +1135,12 @@ void GameEventMgr::LoadHolidayDates()
             continue;
         }
 
-        // Generate dates for current year + 2 ahead (year capped at 2030 due to 5-bit client limitation)
+        // Generate dates for current year + 2 ahead (DarkChaos: up to the last year a packed time reaches, 2030 until
+        // 2031, see Acore::Time::PackTimeYear)
         for (int yearOffset = -1; yearOffset <= 2; ++yearOffset)
         {
             int const year = currentYear + yearOffset;
-            if (year > 2030)
+            if (year - 2000 > Acore::Time::LastPackedTimeYear())
                 break;
 
             uint8 const dateId = static_cast<uint8>(yearOffset + 1);
@@ -1188,11 +1189,11 @@ void GameEventMgr::LoadHolidayDates()
 
             int const year = timeInfo.tm_year + 1900;
             // Only override if start_time is current year or later (ignore old static dates)
-            if (year < currentYear || year > 2030)
+            if (year < currentYear || year - 2000 > Acore::Time::LastPackedTimeYear()) // DarkChaos: was 2030
                 continue;
 
             // Pack the date in WoW format and override Date[0]
-            uint32_t const yearOffset = static_cast<uint32_t>(year - 2000);
+            uint32_t const yearOffset = Acore::Time::PackTimeYear(year - 2000); // DarkChaos: modulo 31 past 2030
             uint32_t const month = static_cast<uint32_t>(timeInfo.tm_mon);
             uint32_t const day = static_cast<uint32_t>(timeInfo.tm_mday - 1);
             uint32_t const weekday = static_cast<uint32_t>(timeInfo.tm_wday);

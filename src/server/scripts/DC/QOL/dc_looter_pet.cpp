@@ -393,17 +393,19 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        // fallback, leash, leashdist and the path* switches write the realm-wide
+        // looter-pet config every player shares, not a per-player setting.
         static ChatCommandTable looterPetTable =
         {
             { "toggle", HandleToggle, SEC_PLAYER, Console::No },
             { "on", HandleOn, SEC_PLAYER, Console::No },
             { "off", HandleOff, SEC_PLAYER, Console::No },
-            { "fallback", HandleFallback, SEC_PLAYER, Console::No },
-            { "leash", HandleLeash, SEC_PLAYER, Console::No },
-            { "leashdist", HandleLeashDistance, SEC_PLAYER, Console::No },
-            { "path", HandlePathfinding, SEC_PLAYER, Console::No },
-            { "pathincomplete", HandlePathIncomplete, SEC_PLAYER, Console::No },
-            { "pathshortcutreject", HandlePathShortcutReject, SEC_PLAYER, Console::No },
+            { "fallback", HandleFallback, SEC_GAMEMASTER, Console::No },
+            { "leash", HandleLeash, SEC_GAMEMASTER, Console::No },
+            { "leashdist", HandleLeashDistance, SEC_GAMEMASTER, Console::No },
+            { "path", HandlePathfinding, SEC_GAMEMASTER, Console::No },
+            { "pathincomplete", HandlePathIncomplete, SEC_GAMEMASTER, Console::No },
+            { "pathshortcutreject", HandlePathShortcutReject, SEC_GAMEMASTER, Console::No },
             { "status", HandleStatus, SEC_PLAYER, Console::No },
             { "reload", HandleReload, SEC_ADMINISTRATOR, Console::No },
         };

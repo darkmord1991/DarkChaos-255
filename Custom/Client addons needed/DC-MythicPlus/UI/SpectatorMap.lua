@@ -730,10 +730,17 @@ function SpectatorMap.RefreshRoster()
     hud:SetHeight(HUD_BASE_HEIGHT + extra)
 end
 
+-- The live-position ticker (Events, below). It runs only while there are
+-- members to place: shown by GF:UpdateSpectatorMap, hidden again by Clear.
+local ticker
+
 function SpectatorMap.Clear()
     state.players = nil
     state.me = nil
     state.lastOwn = nil
+    if ticker then
+        ticker:Hide()
+    end
     HideAll(blips)
     HideAll(dots)
     HideAll(rosterRows)
@@ -761,6 +768,9 @@ function GF:UpdateSpectatorMap(data)
     state.players = data.players
     state.me = type(data.me) == "table" and data.me or nil
     state.mapId = tonumber(data.mapId)
+    if ticker then
+        ticker:Show()
+    end
 
     local floors = {}
     for _, floor in ipairs(type(data.floors) == "table" and data.floors or {}) do
@@ -854,11 +864,13 @@ if worldMapFrame and type(worldMapFrame.HookScript) == "function" then
 end
 
 -- Live positions: the spectator moves, members in view move, the minimap
--- may rotate. Ten times a second is plenty for a dozen small frames.
-local ticker = CreateFrame("Frame")
+-- may rotate. Ten times a second is plenty for a dozen small frames. Shown
+-- only while spectating a run (see SpectatorMap.Clear).
+ticker = CreateFrame("Frame")
 ticker.elapsed = 0
 ticker:SetScript("OnUpdate", function(self, elapsed)
     if not state.players then
+        self:Hide()
         return
     end
     self.elapsed = self.elapsed + (elapsed or 0)
@@ -874,6 +886,9 @@ ticker:SetScript("OnUpdate", function(self, elapsed)
         SpectatorMap.RefreshWorldMap()
     end
 end)
+if not state.players then
+    ticker:Hide()
+end
 
 SLASH_DCSPECMAP1 = "/dcspecmap"
 SlashCmdList["DCSPECMAP"] = function()

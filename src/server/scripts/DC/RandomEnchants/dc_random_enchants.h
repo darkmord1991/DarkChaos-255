@@ -92,6 +92,7 @@ namespace DarkChaos::RandomEnchants::Reroll
         NotEnoughCurrency = 11,
         NotEnoughMoney    = 12,
         InTrade           = 13,  // the other side of a trade already saw the old lines
+        LimitReached      = 14,  // DC.RandomEnchants.Reroll.MaxRerolls used up on this item
     };
 
     struct Price
@@ -125,6 +126,10 @@ namespace DarkChaos::RandomEnchants::Reroll
 
     // DC.RandomEnchants.Reroll.CostIncrease: what every earlier reroll adds to a line's price.
     uint32 GetCostIncrease();
+
+    // DC.RandomEnchants.Reroll.MaxRerolls: lines an item can have rerolled in its lifetime
+    // (a Reroll All of three lines uses three); 0 = unlimited. Adding a line uses none.
+    uint32 GetMaxRerolls();
 
     // What `action` costs on `item` right now, given its reroll count. RerollAll prices every
     // filled line, each one a step further up the escalation.

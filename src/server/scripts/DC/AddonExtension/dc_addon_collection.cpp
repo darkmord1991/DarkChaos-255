@@ -29,6 +29,7 @@
 #include "dc_wardrobe_visuals.h"
 #include "DC/CollectionSystem/CollectionGrant.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/EventBus.h"
 
 void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "Config.h"
@@ -44,6 +45,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "ObjectAccessor.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
+#include "DC/Progression/Path/DCPath.h"
 #include <string>
 #include <charconv>
 #include <sstream>
@@ -3206,13 +3208,24 @@ namespace DCCollection
                 itemsEntryCol, accountId, typeTitleValue, titleEntry->ID);
         }
 
-        if (uint32 chosenTitleKey = player->GetUInt32Value(PLAYER_CHOSEN_TITLE))
-            if (CharTitlesEntry const* chosenTitle = ResolveTitleEntryByAnyKey(chosenTitleKey))
+        // PLAYER_CHOSEN_TITLE holds a bit_index, never an ID. Resolving it ID-first
+        // imported whichever title happens to have that number as its ID.
+        if (uint32 const chosenBitIndex = player->GetUInt32Value(PLAYER_CHOSEN_TITLE))
+        {
+            for (uint32 i = 1; i < sCharTitlesStore.GetNumRows(); ++i)
+            {
+                CharTitlesEntry const* chosenTitle = sCharTitlesStore.LookupEntry(i);
+                if (!chosenTitle || chosenTitle->bit_index != chosenBitIndex || !player->HasTitle(chosenTitle))
+                    continue;
+
                 trans->Append(
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT_CHOSEN_TITLE', 1, NOW())",
                     itemsEntryCol, accountId, typeTitleValue, chosenTitle->ID);
+                break;
+            }
+        }
 
         if (fullImport)
         {
@@ -3983,32 +3996,29 @@ namespace DCCollection
         if (type != CollectionType::TITLE)
             return false;
 
+        // Ownership is decided on canonical CharTitles IDs only. A bit_index is not
+        // an ID: dozens of titles have a bit_index equal to another title's ID (Hand
+        // of A'dal, ID 64, is Grand Master Alchemist's bit_index), so accepting a row
+        // that held the bit_index let owning one title unlock another, which the
+        // login import then stored as owned. A legacy row that stored a bit_index
+        // still counts when that number cannot be read as an ID.
         CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId);
         if (!titleEntry)
             return false;
 
-        uint32 altEntryId = (titleEntry->ID == entryId) ?
-            titleEntry->bit_index : titleEntry->ID;
-
-        if (altEntryId && altEntryId != entryId && hasExactEntry(altEntryId))
+        if (titleEntry->ID != entryId && hasExactEntry(titleEntry->ID))
             return true;
 
-        auto legacyTitles = LoadLegacyTitleCollection(accountId);
-        for (uint32 legacyId : legacyTitles)
+        uint32 const legacyBitIndex = titleEntry->bit_index;
+        if (legacyBitIndex && legacyBitIndex != entryId && !sCharTitlesStore.LookupEntry(legacyBitIndex) &&
+            hasExactEntry(legacyBitIndex))
+            return true;
+
+        for (uint32 legacyId : LoadLegacyTitleCollection(accountId))
         {
-            if (legacyId == entryId || legacyId == altEntryId)
+            CharTitlesEntry const* legacyEntry = ResolveTitleEntryByAnyKey(legacyId);
+            if (legacyEntry && legacyEntry->ID == titleEntry->ID)
                 return true;
-
-            CharTitlesEntry const* legacyEntry =
-                ResolveTitleEntryByAnyKey(legacyId);
-            if (!legacyEntry)
-                continue;
-
-            if (legacyEntry->ID == titleEntry->ID ||
-                legacyEntry->bit_index == titleEntry->bit_index)
-            {
-                return true;
-            }
         }
 
         return false;
@@ -4698,6 +4708,7 @@ namespace DCCollection
             {
                 payload.Set("tokens", tokens);
                 payload.Set("emblems", emblems);
+                payload.Set("points", sPathMgr->GetPoints(GetAccountId(player)));
             }
 
             SendCollectionJsonPayload(player,
@@ -5039,9 +5050,18 @@ namespace DCCollection
         payload.SetObject();
         payload.Set("tokens", currencies[CURRENCY_TOKEN]);
         payload.Set("emblems", currencies[CURRENCY_EMBLEM]);
+        payload.Set("points", sPathMgr->GetPoints(GetAccountId(player)));
 
         SendCollectionJsonPayload(player,
             DCAddon::Opcode::Collection::SMSG_CURRENCIES, payload);
+    }
+
+    // Shop Points came after the shop did, and only the characters-database table carries
+    // the column. Selecting 0 in its place keeps every other row buyable until it arrives.
+    static std::string GetShopPointsPriceExpr(bool useCharacterShop)
+    {
+        return useCharacterShop && CharacterColumnExists("dc_collection_shop", "price_points")
+            ? "price_points" : "0";
     }
 
     void SendShopData(Player* player, std::string const& category,
@@ -5096,7 +5116,8 @@ namespace DCCollection
         // Query shop items based on category
         std::string query =
             "SELECT id, collection_type, " + shopEntryCol + ", price_tokens, price_emblems, "
-            "       discount_percent, available_until, stock_remaining, featured "
+            "       discount_percent, available_until, stock_remaining, featured, " +
+            GetShopPointsPriceExpr(useCharacterShop) + " "
             "FROM dc_collection_shop "
             "WHERE enabled = 1 AND (available_from IS NULL OR available_from <= NOW()) "
             "  AND (available_until IS NULL OR available_until >= NOW()) "
@@ -5151,6 +5172,7 @@ namespace DCCollection
                 // fields[6] = available_until (can be null)
                 int32 stock = fields[7].IsNull() ? -1 : fields[7].Get<int32>();
                 bool featured = fields[8].Get<bool>();
+                uint32 pricePoints = fields[9].Get<uint32>();
 
                 uint32 ownedEntryId = entryId;
                 uint32 appearanceId = 0;
@@ -5263,6 +5285,7 @@ namespace DCCollection
                 }
                 item.Set("priceTokens", priceTokens);
                 item.Set("priceEmblems", priceEmblems);
+                item.Set("pricePoints", pricePoints);
                 item.Set("discount", discount);
                 item.Set("stock", stock);
                 item.Set("featured", featured);
@@ -5281,6 +5304,7 @@ namespace DCCollection
         payload.Set("category", category);
         payload.Set("tokens", currencies[CURRENCY_TOKEN]);
         payload.Set("emblems", currencies[CURRENCY_EMBLEM]);
+        payload.Set("points", sPathMgr->GetPoints(accountId));
 
         SendCollectionJsonPayload(player,
             DCAddon::Opcode::Collection::SMSG_SHOP_DATA, payload);
@@ -5363,6 +5387,8 @@ namespace DCCollection
             "''" : ("COALESCE(p." + characterNameCol + ", '')");
         std::string goldExpr = purchaseGoldCol.empty() ?
             "0" : ("p." + purchaseGoldCol);
+        std::string pointsExpr = CharacterColumnExists("dc_collection_shop_purchases", "cost_points") ?
+            "p.cost_points" : "0";
 
         QueryResult totalResult = CharacterDatabase.Query(
             "SELECT COUNT(*) FROM dc_collection_shop_purchases WHERE account_id = {}",
@@ -5376,7 +5402,7 @@ namespace DCCollection
             "SELECT p." + purchaseIdCol + ", p." + purchaseShopCol +
             ", p." + purchaseTokensCol + ", p." + purchaseEmblemsCol +
             ", " + characterIdExpr + ", " + characterNameExpr +
-            ", " + goldExpr + ", UNIX_TIMESTAMP(p.purchase_date)";
+            ", " + goldExpr + ", UNIX_TIMESTAMP(p.purchase_date), " + pointsExpr;
 
         if (canJoinCharacterShop)
             query += ", COALESCE(s.collection_type, 0), COALESCE(s." +
@@ -5412,6 +5438,7 @@ namespace DCCollection
             std::string characterName;
             uint32 costGold = 0;
             uint32 purchaseDate = 0;
+            uint32 costPoints = 0;
             uint8 collType = 0;
             uint32 entryId = 0;
         };
@@ -5432,11 +5459,12 @@ namespace DCCollection
                 row.characterName = fields[5].Get<std::string>();
                 row.costGold = fields[6].Get<uint32>();
                 row.purchaseDate = fields[7].Get<uint32>();
+                row.costPoints = fields[8].Get<uint32>();
 
                 if (canJoinCharacterShop)
                 {
-                    row.collType = fields[8].Get<uint8>();
-                    row.entryId = fields[9].Get<uint32>();
+                    row.collType = fields[9].Get<uint8>();
+                    row.entryId = fields[10].Get<uint32>();
                 }
 
                 rows.push_back(std::move(row));
@@ -5574,6 +5602,7 @@ namespace DCCollection
                 item.Set("rarity", itemRarity);
                 item.Set("costTokens", costTokens);
                 item.Set("costEmblems", costEmblems);
+                item.Set("costPoints", row.costPoints);
                 item.Set("costGold", costGold);
                 item.Set("characterId", characterId);
                 item.Set("characterName", characterName);
@@ -5764,7 +5793,51 @@ namespace DCCollection
     // Handler Functions - Process Requests
     // =======================================================================
 
-    void HandleBuyItem(Player* player, uint32 shopId)
+    namespace
+    {
+        // Purchases whose dc_collection_items row may still be queued. The grant
+        // writes it asynchronously while the ownership check reads synchronously, so
+        // a second BUY arriving before that write (a double-click) found the item not
+        // owned and was charged again. Keyed by account and collection type (packed)
+        // and the entry as the grant stores it.
+        using ShopPurchaseKey = std::pair<uint64, uint32>;
+
+        constexpr uint32 RECENT_SHOP_PURCHASE_MS = 5u * 60u * 1000u;
+
+        std::mutex s_RecentShopPurchasesMutex;
+        std::map<ShopPurchaseKey, uint32> s_RecentShopPurchases; // key -> getMSTime() of the purchase
+
+        ShopPurchaseKey MakeShopPurchaseKey(uint32 accountId, uint8 type, uint32 entryId)
+        {
+            return { (uint64(accountId) << 8) | type, entryId };
+        }
+
+        bool IsRecentShopPurchase(ShopPurchaseKey const& key)
+        {
+            std::lock_guard<std::mutex> lock(s_RecentShopPurchasesMutex);
+            uint32 const now = getMSTime();
+            for (auto it = s_RecentShopPurchases.begin(); it != s_RecentShopPurchases.end();)
+            {
+                if (getMSTimeDiff(it->second, now) >= RECENT_SHOP_PURCHASE_MS)
+                    it = s_RecentShopPurchases.erase(it);
+                else
+                    ++it;
+            }
+
+            return s_RecentShopPurchases.count(key) > 0;
+        }
+
+        void RecordRecentShopPurchase(ShopPurchaseKey const& key)
+        {
+            std::lock_guard<std::mutex> lock(s_RecentShopPurchasesMutex);
+            s_RecentShopPurchases[key] = getMSTime();
+        }
+
+        // Serialises the read and the decrement of a limited row's stock.
+        std::mutex s_ShopStockMutex;
+    }
+
+    void HandleBuyItem(Player* player, uint32 shopId, bool payWithPoints)
     {
         if (!player || !player->GetSession())
             return;
@@ -5772,6 +5845,15 @@ namespace DCCollection
         if (!sConfigMgr->GetOption<bool>(Config::SHOP_ENABLED, true))
         {
             DCAddon::SendError(player, MODULE, "Shop is currently disabled",
+                DCAddon::ErrorCode::MODULE_DISABLED, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // The grant refuses everything while the collection is disabled; refuse the
+        // purchase before the currency is taken, not after.
+        if (!IsModuleEnabled())
+        {
+            DCAddon::SendError(player, MODULE, "Collection is currently disabled",
                 DCAddon::ErrorCode::MODULE_DISABLED, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
@@ -5786,12 +5868,18 @@ namespace DCCollection
             return;
         }
 
+        // The same table choice as SendShopData, so a purchase reads the row the
+        // player was shown.
         bool useCharacterShop = CharacterTableExists("dc_collection_shop") &&
             CharacterColumnExists("dc_collection_shop", "id") &&
             CharacterColumnExists("dc_collection_shop", "collection_type") &&
             CharacterColumnExists("dc_collection_shop", "price_tokens") &&
             CharacterColumnExists("dc_collection_shop", "price_emblems") &&
+            CharacterColumnExists("dc_collection_shop", "discount_percent") &&
+            CharacterColumnExists("dc_collection_shop", "available_from") &&
+            CharacterColumnExists("dc_collection_shop", "available_until") &&
             CharacterColumnExists("dc_collection_shop", "stock_remaining") &&
+            CharacterColumnExists("dc_collection_shop", "featured") &&
             CharacterColumnExists("dc_collection_shop", "enabled");
 
         std::string shopEntryCol;
@@ -5816,16 +5904,29 @@ namespace DCCollection
             return;
         }
 
-        // Get shop item details
-        QueryResult result = useCharacterShop ?
-            CharacterDatabase.Query(
-                "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining "
-                "FROM dc_collection_shop WHERE id = {} AND enabled = 1",
-                shopEntryCol, shopId) :
-            WorldDatabase.Query(
-                "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining "
-                "FROM dc_collection_shop WHERE id = {} AND enabled = 1",
-                shopEntryCol, shopId);
+        auto queryShop = [useCharacterShop](std::string const& sql) -> QueryResult
+        {
+            return useCharacterShop ? CharacterDatabase.Query(sql) : WorldDatabase.Query(sql);
+        };
+
+        auto executeShopNow = [useCharacterShop](std::string const& sql)
+        {
+            if (useCharacterShop)
+                CharacterDatabase.DirectExecute(sql);
+            else
+                WorldDatabase.DirectExecute(sql);
+        };
+
+        // Get shop item details. The availability rules are the browse query's
+        // (SendShopData): a row outside its window, or a toy, was still for sale to
+        // anyone who sent its id.
+        QueryResult result = queryShop(Acore::StringFormat(
+            "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining, discount_percent, {} "
+            "FROM dc_collection_shop WHERE id = {} AND enabled = 1 "
+            "AND (available_from IS NULL OR available_from <= NOW()) "
+            "AND (available_until IS NULL OR available_until >= NOW()) "
+            "AND collection_type != 3",
+            shopEntryCol, GetShopPointsPriceExpr(useCharacterShop), shopId));
 
         if (!result)
         {
@@ -5839,7 +5940,31 @@ namespace DCCollection
         uint32 entryId = fields[1].Get<uint32>();
         uint32 priceTokens = fields[2].Get<uint32>();
         uint32 priceEmblems = fields[3].Get<uint32>();
-        int32 stock = fields[4].IsNull() ? -1 : fields[4].Get<int32>();
+        bool const limitedStock = !fields[4].IsNull();
+        int32 const stock = limitedStock ? fields[4].Get<int32>() : 0;
+
+        // The sale the browse window advertises (discount_percent) is what is charged.
+        uint32 const discount = std::min<uint32>(fields[5].Get<uint8>(), 100u);
+        priceTokens = static_cast<uint32>(uint64(priceTokens) * (100u - discount) / 100u);
+        priceEmblems = static_cast<uint32>(uint64(priceEmblems) * (100u - discount) / 100u);
+        uint32 pricePoints = static_cast<uint32>(uint64(fields[6].Get<uint32>()) * (100u - discount) / 100u);
+
+        // Shop Points replace the tokens and essence rather than adding to them. A row priced
+        // only in points is paid that way whatever the request says: it would otherwise cost
+        // nothing to a client that asked for the default.
+        bool const pointsOnly = pricePoints > 0 && !priceTokens && !priceEmblems;
+        if (payWithPoints && !pricePoints)
+        {
+            SendPurchaseResultPayload(player, false,
+                "This item cannot be bought with Shop Points");
+            return;
+        }
+
+        bool const usePoints = payWithPoints || pointsOnly;
+        if (usePoints)
+            priceTokens = priceEmblems = 0;
+        else
+            pricePoints = 0;
 
         uint32 purchasedEntryId = entryId;
         if (collType == static_cast<uint8>(CollectionType::TRANSMOG))
@@ -5862,41 +5987,51 @@ namespace DCCollection
             }
         }
 
-        // Check stock
-        if (stock == 0)
+        // Check stock. A count below zero is an old over-sold row, not unlimited stock.
+        if (limitedStock && stock <= 0)
         {
             SendPurchaseResultPayload(player, false,
                 "Item is out of stock");
             return;
         }
 
-        // Check if already owned. HasCollectionItem is one indexed LIMIT 1
-        // lookup; the old LoadPlayerCollection call pulled the account's entire
-        // list of that type just to search it, and it also handles the title
-        // id/bit-index duality that a plain find() on the list does not.
-        if (HasCollectionItem(accountId, static_cast<CollectionType>(collType), purchasedEntryId))
-        {
-            SendPurchaseResultPayload(player, false,
-                "You already own this item");
-            return;
-        }
+        CollectionType const purchasedType =
+            static_cast<CollectionType>(collType);
 
         // Validate before charging: a misconfigured shop row must not take the
         // player's currency and hand back a collection entry that resolves to
-        // nothing.
-        if (!ValidateCollectibleEntry(static_cast<CollectionType>(collType), purchasedEntryId))
+        // nothing. Checked in the form the grant stores (a mount sold by its
+        // teaching item is owned as its spell), so ownership below is tested
+        // against the same row the grant would find.
+        uint32 const ownedEntryId = NormalizeCollectibleEntry(purchasedType, purchasedEntryId);
+        if (!ownedEntryId || !ValidateCollectibleEntry(purchasedType, ownedEntryId))
         {
             LOG_ERROR("module.dc", "DC-Collection: shop row {} offers {} {} which does not resolve to a usable collectible.",
-                shopId, CollectionTypeToName(static_cast<CollectionType>(collType)), purchasedEntryId);
+                shopId, CollectionTypeToName(purchasedType), purchasedEntryId);
 
             SendPurchaseResultPayload(player, false,
                 "This item is misconfigured - please report it");
             return;
         }
 
-        // Check currencies
+        // Check if already owned, including a purchase whose row is still queued.
+        // HasCollectionItem is one indexed LIMIT 1 lookup; the old
+        // LoadPlayerCollection call pulled the account's entire list of that type
+        // just to search it.
+        ShopPurchaseKey const purchaseKey = MakeShopPurchaseKey(accountId, collType, ownedEntryId);
+        if (IsRecentShopPurchase(purchaseKey) || HasCollectionItem(accountId, purchasedType, ownedEntryId))
+        {
+            SendPurchaseResultPayload(player, false,
+                "You already own this item");
+            return;
+        }
+
+        // Check currencies. This count includes a stack sitting in an open trade
+        // window; RemoveCurrency below checks what it can actually take
+        // (GetSpendableItemCount) and the purchase fails cleanly if that falls short.
         auto currencies = LoadCurrencies(player);
-        if (currencies[CURRENCY_TOKEN] < priceTokens || currencies[CURRENCY_EMBLEM] < priceEmblems)
+        if (currencies[CURRENCY_TOKEN] < priceTokens || currencies[CURRENCY_EMBLEM] < priceEmblems
+            || sPathMgr->GetPoints(accountId) < pricePoints)
         {
             SendPurchaseResultPayload(player, false,
                 "Insufficient currency");
@@ -5912,11 +6047,58 @@ namespace DCCollection
             return;
         }
 
+        // Limited stock is taken before the player pays, synchronously and under a
+        // lock, so the next buyer's read already sees it. The old decrement was
+        // queued after the sale: two buyers could both read the last unit, and the
+        // second decrement drove the count below zero, which read as unlimited.
+        bool reservedStock = false;
+        if (limitedStock)
+        {
+            std::lock_guard<std::mutex> lock(s_ShopStockMutex);
+            QueryResult stockResult = queryShop(Acore::StringFormat(
+                "SELECT stock_remaining FROM dc_collection_shop WHERE id = {}", shopId));
+            Field* stockField = stockResult ? stockResult->Fetch() : nullptr;
+            if (!stockField || (!stockField[0].IsNull() && stockField[0].Get<int32>() <= 0))
+            {
+                SendPurchaseResultPayload(player, false,
+                    "Item is out of stock");
+                return;
+            }
+
+            if (!stockField[0].IsNull())
+            {
+                executeShopNow(Acore::StringFormat(
+                    "UPDATE dc_collection_shop SET stock_remaining = stock_remaining - 1 "
+                    "WHERE id = {} AND stock_remaining > 0", shopId));
+                reservedStock = true;
+            }
+        }
+
+        auto releaseStock = [&]()
+        {
+            if (!reservedStock)
+                return;
+
+            std::lock_guard<std::mutex> lock(s_ShopStockMutex);
+            executeShopNow(Acore::StringFormat(
+                "UPDATE dc_collection_shop SET stock_remaining = stock_remaining + 1 "
+                "WHERE id = {} AND stock_remaining IS NOT NULL", shopId));
+        };
+
         uint32 playerGuid = player->GetGUID().GetCounter();
         uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
 
+        if (pricePoints > 0 && !sPathMgr->TrySpendPoints(player, pricePoints))
+        {
+            releaseStock();
+            SendPurchaseResultPayload(player, false,
+                "Insufficient currency");
+            return;
+        }
+
         if (priceTokens > 0 && !mgr->RemoveCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season))
         {
+            releaseStock();
             SendPurchaseResultPayload(player, false,
                 "Insufficient currency");
             return;
@@ -5927,6 +6109,7 @@ namespace DCCollection
             if (priceTokens > 0)
             mgr->AddCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season);
 
+            releaseStock();
             SendPurchaseResultPayload(player, false,
                 "Insufficient currency");
             return;
@@ -5935,9 +6118,6 @@ namespace DCCollection
         // Sync inventory ONCE after all currency operations (using centralized utility)
         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
             playerGuid, season, player, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, 0, true);
-
-        CollectionType const purchasedType =
-            static_cast<CollectionType>(collType);
 
         // Unlock through the grant API so the purchase is immediately usable:
         // the row alone left the mount/pet spell untaught until the next login
@@ -5950,33 +6130,45 @@ namespace DCCollection
         grantOptions.skipValidation = true;  // validated above, before charging
         grantOptions.notify = false;         // SMSG_PURCHASE_RESULT covers it
 
-        GrantCollectible(player, purchasedType, purchasedEntryId, grantOptions);
+        GrantResult const grant = GrantCollectible(player, purchasedType, purchasedEntryId, grantOptions);
+
+        // Paid for nothing: the grant was refused, or the item turned out to be owned
+        // already. Hand the currency back.
+        if (!WasNewlyGranted(grant))
+        {
+            bool refunded = true;
+            if (priceTokens > 0)
+                refunded = mgr->AddCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season) && refunded;
+            if (priceEmblems > 0)
+                refunded = mgr->AddCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, priceEmblems, season) && refunded;
+
+            sPathMgr->RefundPoints(player, pricePoints);
+
+            releaseStock();
+
+            LOG_ERROR("module.dc", "DC-Collection: shop row {} for account {} not granted ({}); refund of {} tokens / {} emblems / {} points {}.",
+                shopId, accountId, GrantResultToString(grant), priceTokens, priceEmblems, pricePoints,
+                refunded ? "made" : "FAILED");
+
+            SendPurchaseResultPayload(player, false,
+                refunded ? "Purchase failed - your currency was refunded"
+                         : "Purchase failed - please report it, the refund did not go through");
+            return;
+        }
+
+        RecordRecentShopPurchase(purchaseKey);
 
         // Process purchase - use transaction for recording
         auto trans = CharacterDatabase.BeginTransaction();
 
         // Record purchase
+        bool const hasPointsCost = CharacterColumnExists("dc_collection_shop_purchases", "cost_points");
         trans->Append(
-            "INSERT INTO dc_collection_shop_purchases (account_id, shop_id, character_id, character_name, purchase_date, cost_tokens, cost_emblems, cost_gold) "
-            "VALUES ({}, {}, {}, '{}', NOW(), {}, {}, 0)",
-            accountId, shopId, player->GetGUID().GetCounter(), std::string(player->GetName()), priceTokens, priceEmblems);
-
-        // Update stock if limited
-        if (stock > 0)
-        {
-            if (useCharacterShop)
-            {
-                CharacterDatabase.Execute(
-                    "UPDATE dc_collection_shop SET stock_remaining = stock_remaining - 1 WHERE id = {}",
-                    shopId);
-            }
-            else
-            {
-                WorldDatabase.Execute(
-                    "UPDATE dc_collection_shop SET stock_remaining = stock_remaining - 1 WHERE id = {}",
-                    shopId);
-            }
-        }
+            "INSERT INTO dc_collection_shop_purchases (account_id, shop_id, character_id, character_name, purchase_date, cost_tokens, cost_emblems, cost_gold{}) "
+            "VALUES ({}, {}, {}, '{}', NOW(), {}, {}, 0{})",
+            hasPointsCost ? ", cost_points" : "",
+            accountId, shopId, player->GetGUID().GetCounter(), std::string(player->GetName()), priceTokens, priceEmblems,
+            hasPointsCost ? Acore::StringFormat(", {}", pricePoints) : "");
 
         CharacterDatabase.CommitTransaction(trans);
 
@@ -5991,6 +6183,9 @@ namespace DCCollection
         // GrantCollectible above; this only adds the item to the client's
         // collection view and clears any wishlist entry).
         SendCollectibleGranted(player, purchasedType, purchasedEntryId, "SHOP", "Collection Shop");
+
+        DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+            DarkChaos::CrossSystem::FeatureKind::ShopPurchase, shopId);
     }
 
     void HandleAddWishlist(Player* player, uint8 type, uint32 entryId)
@@ -6202,6 +6397,40 @@ namespace DCCollection
         }
     }
 
+    // The collection is account-wide, so a summon re-applies the gates a character
+    // meets to learn the mount itself: the class/race rules the collection's own
+    // teaching uses (IsSpellFitByClassAndRace) and the teaching item's faction,
+    // class, race, riding-skill and level requirements, as Player::CanUseItem
+    // checks them. Without them any alt rode every mount on the account.
+    static bool CanCharacterRideMount(Player* player, uint32 spellId)
+    {
+        if (!player->IsSpellFitByClassAndRace(spellId))
+            return false;
+
+        uint32 const teachingItemId = FindMountItemIdForSpell(spellId);
+        ItemTemplate const* proto = teachingItemId ? sObjectMgr->GetItemTemplate(teachingItemId) : nullptr;
+        if (!proto)
+            return true;
+
+        if (proto->HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE)
+            return false;
+
+        if (proto->HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE)
+            return false;
+
+        if ((proto->AllowableClass & player->getClassMask()) == 0 || (proto->AllowableRace & player->getRaceMask()) == 0)
+            return false;
+
+        if (proto->RequiredSkill != 0)
+        {
+            uint32 const skillValue = player->GetSkillValue(proto->RequiredSkill);
+            if (skillValue == 0 || skillValue < proto->RequiredSkillRank)
+                return false;
+        }
+
+        return player->GetLevel() >= proto->RequiredLevel;
+    }
+
     void HandleSummonMount(Player* player, uint32 spellId, bool random)
     {
         if (!player || !player->GetSession())
@@ -6217,6 +6446,14 @@ namespace DCCollection
             if (mounts.empty())
             {
                 DCAddon::SendError(player, MODULE, "No mounts in collection",
+                    DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+                return;
+            }
+
+            std::erase_if(mounts, [player](uint32 mountSpellId) { return !CanCharacterRideMount(player, mountSpellId); });
+            if (mounts.empty())
+            {
+                DCAddon::SendError(player, MODULE, "None of your mounts can be used by this character",
                     DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
                 return;
             }
@@ -6243,7 +6480,9 @@ namespace DCCollection
                 {
                     do
                     {
-                        favorites.push_back(result->Fetch()[0].Get<uint32>());
+                        uint32 const favoriteSpellId = result->Fetch()[0].Get<uint32>();
+                        if (CanCharacterRideMount(player, favoriteSpellId))
+                            favorites.push_back(favoriteSpellId);
                     } while (result->NextRow());
                 }
 
@@ -6323,6 +6562,13 @@ namespace DCCollection
         if (!HasCollectionItem(accountId, CollectionType::MOUNT, spellId))
         {
             DCAddon::SendError(player, MODULE, "Mount not in collection",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        if (!CanCharacterRideMount(player, spellId))
+        {
+            DCAddon::SendError(player, MODULE, "This character cannot use that mount",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
@@ -6554,6 +6800,26 @@ namespace DCCollection
             return;
         }
 
+        // The summon is free and unlimited, so only gear nobody can sell: the definitions also list
+        // Arcanums and Inscriptions that vendors buy for 25-37 gold each, and a summon-and-sell loop
+        // printed gold.
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+        if (!proto || proto->InventoryType == INVTYPE_NON_EQUIP || proto->SellPrice > 0)
+        {
+            DCAddon::SendError(player, MODULE, "This item cannot be summoned",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // One copy at a time, the bank included; two of a one-hander, for dual wielding.
+        uint32 const allowed = proto->InventoryType == INVTYPE_WEAPON ? 2 : 1;
+        if (player->GetItemCount(itemId, true) >= allowed)
+        {
+            DCAddon::SendError(player, MODULE, "You already have this heirloom",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
         // Check if player has bag space
         ItemPosCountVec dest;
         InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
@@ -6683,7 +6949,7 @@ namespace DCCollection
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 shopId = json["shopId"].AsUInt32();
 
-        HandleBuyItem(player, shopId);
+        HandleBuyItem(player, shopId, json["pay"].AsString() == "points");
     }
 
     void HandleGetCurrencies(Player* player, DCAddon::ParsedMessage const& /*msg*/)
@@ -9402,96 +9668,32 @@ private:
                 switch (logicalOpcode)
                 {
                     case DCAddon::Opcode::Collection::CMSG_HANDSHAKE:
-                        DCCollection::HandleHandshake(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_FULL_COLLECTION:
-                        DCCollection::HandleGetFullCollection(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_SYNC_COLLECTION:
-                        DCCollection::HandleSyncCollection(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_STATS:
-                        DCCollection::HandleGetStats(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_BONUSES:
-                        DCCollection::HandleGetBonuses(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_COLLECTION:
-                        DCCollection::HandleGetCollectionMessage(player,
-                            parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_SHOP:
-                        DCCollection::HandleGetShop(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_BUY_ITEM:
-                        DCCollection::HandleBuyItemMessage(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_CURRENCIES:
-                        DCCollection::HandleGetCurrencies(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_SHOP_HISTORY:
-                        DCCollection::HandleGetShopHistory(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_WISHLIST:
-                        DCCollection::HandleGetWishlist(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_ADD_WISHLIST:
-                        DCCollection::HandleAddWishlistMessage(player,
-                            parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_REMOVE_WISHLIST:
-                        DCCollection::HandleRemoveWishlistMessage(player,
-                            parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_GET_SAVED_OUTFITS:
-                        DCCollection::HandleGetSavedOutfits(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_GET_LIST:
-                        DCCollection::HandleCommunityGetList(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_PUBLISH:
-                        DCCollection::HandleCommunityPublish(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_RATE:
-                        DCCollection::HandleCommunityRate(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_FAVORITE:
-                        DCCollection::HandleCommunityFavorite(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_VIEW:
-                        DCCollection::HandleCommunityView(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COPY_COMMUNITY_OUTFIT:
-                        DCCollection::HandleCopyCommunityOutfit(player,
-                            parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_UPDATE:
-                        DCCollection::HandleCommunityUpdate(player, parsed);
-                        handled = true;
-                        break;
                     case DCAddon::Opcode::Collection::CMSG_COMMUNITY_DELETE:
-                        DCCollection::HandleCommunityDelete(player, parsed);
-                        handled = true;
+                        // Through the router, as the addon channel goes: called directly these
+                        // skipped the module-enabled and security checks, the exception guard
+                        // and the slow-handler watchdog, and a BUY with the collection disabled
+                        // took the currency for a grant that then failed.
+                        handled = DCAddon::MessageRouter::Instance().Route(player, raw);
                         break;
                     default:
                         eventType = "native_unknown_logical_opcode";

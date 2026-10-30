@@ -391,6 +391,23 @@ namespace CrossSystem
         Publish(*event, SystemId::MythicPlus);
     }
 
+    void EventBus::PublishFeatureUsed(Player* player, FeatureKind kind, uint32 value)
+    {
+        if (!player)
+            return;
+
+        FeatureUsedEvent event;
+        event.type = EventType::FeatureUsed;
+        event.timestamp = GameTime::GetGameTime().count();
+        event.playerGuid = player->GetGUID();
+        event.mapId = player->GetMapId();
+        event.instanceId = player->GetInstanceId();
+        event.kind = kind;
+        event.value = value;
+
+        Publish(event, SystemId::None);
+    }
+
     // =========================================================================
     // Event History
     // =========================================================================

@@ -284,7 +284,6 @@ private:
     void SendNodeUpdate(uint8 node);
     void NodeOccupied(uint8 node);
     void NodeDeoccupied(uint8 node);
-    void ApplyPhaseMask();
     int32 _GetNodeNameId(uint8 node);
 
     struct CapturePointInfo

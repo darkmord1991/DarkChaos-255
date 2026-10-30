@@ -1248,6 +1248,10 @@ public:                                                 // opcodes handlers
         return _isBot || _headless;
     }
 
+    // The client negotiated the quest log slots past the update fields (DC capability EXTENDED_QUEST_LOG)
+    [[nodiscard]] bool HasExtendedQuestLog() const { return _extendedQuestLog; }
+    void SetExtendedQuestLog(bool extended) { _extendedQuestLog = extended; }
+
     [[nodiscard]] bool IsHeadless() const { return _headless; }
 
 private:
@@ -1329,6 +1333,7 @@ private:
     Seconds _createTime;                                // when session was created
     Seconds _previousPlayTime;                          // play time from previous session less than 5 hours ago
     time_t _logoutTime;
+    bool _extendedQuestLog = false;
     bool m_inQueue;                                     // session wait in auth.queue
     bool m_playerLoading;                               // code processed in LoginPlayer
     bool m_playerLogout;                                // code processed in LogoutPlayer

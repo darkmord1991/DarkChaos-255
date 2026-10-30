@@ -2710,7 +2710,7 @@ local function UpdateNPCIcons(frame, unit, settings)
     
     if role == "Vendor" then tex = "Interface\\Icons\\Inv_Misc_Bag_10"
     elseif role == "Innkeeper" then tex = "Interface\\Icons\\Inv_Misc_Rune_01" -- Hearthstone-ish
-    elseif role == "FlightMaster" then tex = "Interface\\Icons\\Taxi_Path"
+    elseif role == "FlightMaster" then tex = "Interface\\Icons\\Ability_Mount_Gryphon_01"
     elseif role == "Trainer" then tex = "Interface\\Icons\\Inv_Misc_Book_09"
     elseif role == "Auctioneer" then tex = "Interface\\Icons\\Inv_Misc_Coin_02"
     elseif role == "Banker" then tex = "Interface\\Icons\\Inv_Box_02"

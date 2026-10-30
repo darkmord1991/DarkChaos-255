@@ -7,6 +7,7 @@
 #include "DatabaseEnv.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "GameObject.h"
+#include "GameTime.h"
 #include "InstanceSaveMgr.h"
 #include "Log.h"
 #include "Map.h"
@@ -29,6 +30,26 @@ static std::unordered_map<uint32, GuildHouseData> s_guildHouseCache;
 // Guilds found to have no house. Without it every repop of a member of such a guild - the bot guilds
 // included - ran a blocking query on the dying player's map thread.
 static std::unordered_set<uint32> s_guildHouseMissing;
+
+// dc_guild_house_permissions per (guild, rank). HasPermission used to run a blocking query on every
+// call -- three per decoration budget refresh, one per placement/move/delete -- at whatever rate the
+// client sent them. The table is only written through SetPermission, which refreshes its entry here,
+// so the TTL only covers edits made directly in the database.
+constexpr uint64 GH_PERMISSION_CACHE_TTL_MS = 60 * IN_MILLISECONDS;
+
+struct CachedRankPermission
+{
+    uint32 mask = 0;
+    uint64 expiresAtMs = 0;
+};
+
+static std::mutex s_permissionCacheMutex;
+static std::unordered_map<uint64, CachedRankPermission> s_permissionCache;
+
+static uint64 PermissionCacheKey(uint32 guildId, uint8 rankId)
+{
+    return (uint64(guildId) << 8) | rankId;
+}
 
 namespace
 {
@@ -650,19 +671,33 @@ bool GuildHouseManager::HasPermission(Player* player, uint32 permission)
     // Guild Master always has permission
     if (player->GetRank() == 0) return true;
 
-    // Check custom permissions from DB
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT `permission` FROM `dc_guild_house_permissions` WHERE `guildId`={} AND `rankId`={}",
-        player->GetGuildId(), player->GetRank());
+    // Custom permissions from DB, through the per-rank cache (no row = none)
+    uint32 const guildId = player->GetGuildId();
+    uint8 const rankId = player->GetRank();
+    uint64 const key = PermissionCacheKey(guildId, rankId);
+    uint64 const nowMs = GameTime::GetGameTimeMS().count();
 
-    if (result)
+    std::optional<uint32> perms;
     {
-        uint32 perms = result->Fetch()[0].Get<uint32>();
-        if (perms & GH_PERM_ADMIN) return true; // Admin has all rights
-        return (perms & permission) != 0;
+        std::lock_guard<std::mutex> lock(s_permissionCacheMutex);
+        auto itr = s_permissionCache.find(key);
+        if (itr != s_permissionCache.end() && itr->second.expiresAtMs > nowMs)
+            perms = itr->second.mask;
     }
 
-    return false;
+    if (!perms)
+    {
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT `permission` FROM `dc_guild_house_permissions` WHERE `guildId`={} AND `rankId`={}",
+            guildId, rankId);
+        perms = result ? result->Fetch()[0].Get<uint32>() : 0u;
+
+        std::lock_guard<std::mutex> lock(s_permissionCacheMutex);
+        s_permissionCache[key] = { *perms, nowMs + GH_PERMISSION_CACHE_TTL_MS };
+    }
+
+    if (*perms & GH_PERM_ADMIN) return true; // Admin has all rights
+    return (*perms & permission) != 0;
 }
 
 void GuildHouseManager::SetPermission(uint32 guildId, uint8 rankId, uint32 permission)
@@ -671,6 +706,10 @@ void GuildHouseManager::SetPermission(uint32 guildId, uint8 rankId, uint32 permi
         "INSERT INTO `dc_guild_house_permissions` (`guildId`, `rankId`, `permission`) VALUES ({}, {}, {}) "
         "ON DUPLICATE KEY UPDATE `permission` = VALUES(`permission`)",
         guildId, rankId, permission);
+
+    std::lock_guard<std::mutex> lock(s_permissionCacheMutex);
+    s_permissionCache[PermissionCacheKey(guildId, rankId)] =
+        { permission, static_cast<uint64>(GameTime::GetGameTimeMS().count()) + GH_PERMISSION_CACHE_TTL_MS };
 }
 
 void GuildHouseManager::LogAction(Player* player, uint8 actionType, uint8 entityType, uint32 entry, uint32 guid, float x, float y, float z, float o)

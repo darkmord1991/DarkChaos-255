@@ -15063,6 +15063,40 @@ void Unit::SetPhaseMask(uint32 newPhaseMask, bool update)
         }
     }
 
+    if (IsPlayer())
+    {
+        // Player-owned objects (traps, fishing bobbers, ground effects) follow their owner the way
+        // pets and totems do. Creature-owned ones are left to the encounter scripts that phase them.
+        GuidList const ownedGameObjects = m_gameObj;
+        for (ObjectGuid const& goGuid : ownedGameObjects)
+            if (GameObject* go = ObjectAccessor::GetGameObject(*this, goGuid))
+                go->SetPhaseMask(newPhaseMask, true);
+
+        for (DynObjectList::const_iterator itr = m_dynObj.begin(); itr != m_dynObj.end(); )
+        {
+            DynamicObject* dynObj = *itr;
+            ++itr;
+            dynObj->SetPhaseMask(newPhaseMask, true);
+        }
+
+        // A phase the player's phase auras do not dictate (scripts, GM mode, SmartAI, commands) can
+        // leave it in combat with units it can no longer see. Revalidate on the next update, once a
+        // re-phase of several units (duel start, world boss) has settled. Aura-driven phases are left
+        // alone on purpose: Halion, Valithria and Algalon move players between phases mid-fight.
+        m_Events.AddEventAtOffset([this]()
+        {
+            if (!IsInWorld())
+                return;
+
+            uint32 auraPhaseMask = GetPhaseByAuras();
+            if (!auraPhaseMask)
+                auraPhaseMask = PHASEMASK_NORMAL;
+
+            if (GetPhaseMask() != auraPhaseMask)
+                GetCombatManager().RevalidateCombat();
+        }, 0ms);
+    }
+
     if (update)
     {
         UpdateObjectVisibility();

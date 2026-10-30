@@ -945,7 +945,8 @@ namespace
 
         uint32 const currencyId = GetVendorCurrencyItemId(vendorEntry);
         uint32 cost = GetItemCost(vendorEntry, itemTemplate->ItemLevel);
-        uint32 tokenCount = player->GetItemCount(currencyId, true);
+        // Not counting a stack in an open trade window, which DestroyItemCount skips
+        uint32 tokenCount = DarkChaos::ItemUpgrade::GetSpendableItemCount(player, currencyId, true);
         if (tokenCount < cost)
         {
             SendVendorResult(player, false, Acore::StringFormat("You need {} {} but only have {}.",
@@ -1495,7 +1496,8 @@ private:
         uint32 const vendorEntry = creature->GetEntry();
         uint32 const currencyId = GetVendorCurrencyItemId(vendorEntry);
         uint32 cost = GetItemCost(vendorEntry, itemTemplate->ItemLevel);
-        uint32 tokenCount = player->GetItemCount(currencyId);
+        // Not counting a stack in an open trade window, which DestroyItemCount skips
+        uint32 tokenCount = DarkChaos::ItemUpgrade::GetSpendableItemCount(player, currencyId);
 
         // Check affordability in THIS vendor's currency
         if (tokenCount < cost)

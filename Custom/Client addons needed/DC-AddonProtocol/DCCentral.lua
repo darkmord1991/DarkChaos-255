@@ -24,7 +24,7 @@ local function InstallDCCentral(DC)
 
     local DEFAULT_TOKEN_INFO = {
         name = "Upgrade Token",
-        icon = "Interface\\Icons\\INV_Misc_Token_ArgentCrusade",
+        icon = "Interface\\Icons\\INV_Misc_Token_ArgentDawn",
         rarity = 2,
         type = "upgrade_token",
         description = "Used to upgrade regular items",
@@ -32,7 +32,7 @@ local function InstallDCCentral(DC)
 
     local DEFAULT_ESSENCE_INFO = {
         name = "Upgrade Essence",
-        icon = "Interface\\Icons\\INV_Misc_Herb_Draenethisle",
+        icon = "Interface\\Icons\\INV_Misc_Herb_Manathistle",
         rarity = 3,
         type = "upgrade_essence",
         description = "Used to upgrade heirloom items",

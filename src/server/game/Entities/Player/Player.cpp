@@ -2298,6 +2298,55 @@ bool Player::CanBeGameMaster() const
     return GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_GM);
 }
 
+void Player::SetPhaseLayer(uint32 layerId, uint32 mask, bool exclusive)
+{
+    if (!mask)
+    {
+        ClearPhaseLayer(layerId);
+        return;
+    }
+
+    // The same layer again only re-applies the composed mask, should a raw SetPhaseMask have replaced it
+    auto const existing = m_phaseLayers.find(layerId);
+    if (existing == m_phaseLayers.end() || existing->second.mask != mask || existing->second.exclusive != exclusive)
+        m_phaseLayers[layerId] = { mask, exclusive, ++m_phaseLayerOrder };
+
+    uint32 const composed = GetComposedPhaseMask();
+    if (composed != GetPhaseMask())
+        SetPhaseMask(composed, true);
+}
+
+void Player::ClearPhaseLayer(uint32 layerId)
+{
+    if (m_phaseLayers.erase(layerId))
+        SetPhaseMask(GetComposedPhaseMask(), true);
+}
+
+uint32 Player::GetComposedPhaseMask() const
+{
+    if (IsGameMaster())
+        return PHASEMASK_ANYWHERE;
+
+    PhaseLayer const* exclusive = nullptr;
+    uint32 additive = 0;
+    for (auto const& [layerId, layer] : m_phaseLayers)
+    {
+        if (!layer.exclusive)
+            additive |= layer.mask;
+        else if (!exclusive || layer.order > exclusive->order)
+            exclusive = &layer;
+    }
+
+    if (exclusive)
+        return exclusive->mask;
+
+    uint32 phase = GetPhaseByAuras();
+    if (!phase)
+        phase = PHASEMASK_NORMAL;
+
+    return phase | additive;
+}
+
 void Player::SetGameMaster(bool on)
 {
     if (on)
@@ -2327,15 +2376,10 @@ void Player::SetGameMaster(bool on)
     }
     else
     {
-        // restore phase
-        uint32 newPhase = GetPhaseByAuras();
-
-        if (!newPhase)
-            newPhase = PHASEMASK_NORMAL;
-
-        SetPhaseMask(newPhase, false);
-
+        // restore phase: the phase auras and the phase layers, composed without the GM flag
         m_ExtraFlags &= ~ PLAYER_EXTRA_GM_ON;
+        SetPhaseMask(GetComposedPhaseMask(), false);
+
         SetFactionForRace(getRace(true));
         RemovePlayerFlag(PLAYER_FLAGS_GM);
         RemoveUnitFlag2(UNIT_FLAG2_ALLOW_CHEAT_SPELLS);

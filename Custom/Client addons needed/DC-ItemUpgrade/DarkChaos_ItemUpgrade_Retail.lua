@@ -1431,14 +1431,7 @@ function DC_ItemUpgrade_CharFrameButton_OnLoad(self)
 end
 
 function DC_ItemUpgrade_CharFrameButton_OnClick(self)
-	if UnitAffectingCombat("player") then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
-		return;
-	end
-	
-	local inInstance, instanceType = IsInInstance();
-	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+	if not DC.CanOpenItemUpgradeFrame() then
 		return;
 	end
 	
@@ -1457,14 +1450,7 @@ function DC_ItemUpgrade_HeirloomButton_OnLoad(self)
 end
 
 function DC_ItemUpgrade_HeirloomButton_OnClick(self)
-	if UnitAffectingCombat("player") then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
-		return;
-	end
-	
-	local inInstance, instanceType = IsInInstance();
-	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+	if not DC.CanOpenItemUpgradeFrame() then
 		return;
 	end
 	
@@ -1487,14 +1473,7 @@ function DC_ItemUpgrade_BagFrameButton_OnLoad(self)
 end
 
 function DC_ItemUpgrade_BagFrameButton_OnClick(self)
-	if UnitAffectingCombat("player") then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
-		return;
-	end
-	
-	local inInstance, instanceType = IsInInstance();
-	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+	if not DC.CanOpenItemUpgradeFrame() then
 		return;
 	end
 	
@@ -1808,6 +1787,10 @@ function DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, context)
 		-- Ensure OnUpdate is running to process the timer
 		if DarkChaos_ItemUpgradeFrame then
 			DarkChaos_ItemUpgradeFrame:SetScript("OnUpdate", DarkChaos_ItemUpgrade_OnUpdate);
+		end
+		-- The background driver only runs while a batch is pending.
+		if DC.backgroundQueryFrame then
+			DC.backgroundQueryFrame:Show();
 		end
 	end
 end
@@ -3743,9 +3726,11 @@ function DarkChaos_ItemUpgrade_OnShow(self)
 	self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");
 	self:RegisterEvent("UNIT_INVENTORY_CHANGED");
 	self:RegisterEvent("GET_ITEM_INFO_RECEIVED");
+	-- Server protocol text arrives as CHAT_MSG_SYSTEM only. /say and whispers
+	-- are other players: one saying "DCHEIRLOOM_SUCCESS:1:1:1:1" used to fake
+	-- a celebration, write history and cache entries, and make this client
+	-- post a chat command to /say.
 	self:RegisterEvent("CHAT_MSG_SYSTEM");
-	self:RegisterEvent("CHAT_MSG_SAY");
-	self:RegisterEvent("CHAT_MSG_WHISPER");
 	self:RegisterEvent("PLAYER_REGEN_DISABLED");
 	
 	DarkChaos_ItemUpgrade_RequestCurrencies();
@@ -3905,12 +3890,6 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 			self:Hide();
 			DEFAULT_CHAT_FRAME:AddMessage("|cffff8800Item Upgrade window closed (entered combat).|r");
 		end
-		return;
-	end
-
-	if event == "CHAT_MSG_SAY" or event == "CHAT_MSG_WHISPER" then
-		local message, sender = ...;
-		DarkChaos_ItemUpgrade_OnChatMessage(message, sender);
 		return;
 	end
 
@@ -4880,8 +4859,7 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 
 	local serverBag = DC.currentItem.serverBag or DC.currentItem.bag;
 	local serverSlot = DC.currentItem.serverSlot or math.max(0, (DC.currentItem.slot or 1) - 1);
-	local command;
-	
+
 	-- Use different command for heirloom shirt upgrades (includes package ID)
 	if isHeirloomShirt then
 		if DCProtocol and DC.useDCProtocol then
@@ -4893,8 +4871,11 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 			}) -- CMSG_HEIRLOOM_UPGRADE
 			DC.Debug(string.format("Sending heirloom upgrade: %d|%d|%d|%d", serverBag, serverSlot, targetLevel, packageId))
 		else
-			command = string.format(".dcheirloom upgrade %d %d %d %d", serverBag, serverSlot, targetLevel, packageId);
-			SendChatMessage(command, "SAY");
+			-- No chat fallback: the server has no .dcheirloom command, so for a
+			-- player the old one went out to /say as plain chat.
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000DC-ItemUpgrade:|r DCAddonProtocol not available; cannot send the heirloom upgrade.");
+			SetButtonEnabled(self, true);
+			return;
 		end
 	else
 		DC.RequestUpgrade(serverBag, serverSlot, targetLevel);
@@ -5682,9 +5663,11 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			local packageName = pkg and pkg.name or "Unknown";
 			local packageStats = pkg and table.concat(pkg.stats, ", ") or "";
 			
-			-- Update player currencies (refresh from server)
-			SendChatMessage(".dcupgrade init", "SAY");
-			
+			-- Update player currencies (refresh from server). Over the protocol:
+			-- the server has no .dcupgrade command, so for a player the old
+			-- ".dcupgrade init" went out to /say as plain chat.
+			DarkChaos_ItemUpgrade_RequestCurrencies(true);
+
 			-- Clear pending upgrade
 			local pending = DC.pendingUpgrade;
 			DC.pendingUpgrade = nil;
@@ -5955,16 +5938,20 @@ end
 	Also scans equipped items when CharacterFrame opens.
 =======================================================]]
 
--- Create a background frame for processing queries even when upgrade frame isn't open
+-- Create a background frame for processing queries even when upgrade frame isn't open.
+-- It is shown only while a batch timer is pending (the batch queue shows it when it
+-- starts the timer) and hides itself once nothing is left, instead of ticking on
+-- every frame of the session.
 local DC_BackgroundQueryFrame = CreateFrame("Frame");
 DC_BackgroundQueryFrame.elapsed = 0;
+DC_BackgroundQueryFrame:Hide();
 DC_BackgroundQueryFrame:SetScript("OnUpdate", function(self, elapsed)
 	self.elapsed = self.elapsed + elapsed;
-	
+
 	-- Process batch queries periodically (every 0.1 seconds)
 	if self.elapsed >= 0.1 then
 		self.elapsed = 0;
-		
+
 		-- Process batch query timer
 		if DC.batchQueryTimer and DC.batchQueryTimer > 0 then
 			DC.batchQueryTimer = DC.batchQueryTimer - 0.1;
@@ -5975,8 +5962,17 @@ DC_BackgroundQueryFrame:SetScript("OnUpdate", function(self, elapsed)
 				end
 			end
 		end
+
+		if not DC.batchQueryTimer or DC.batchQueryTimer <= 0 then
+			self:Hide();
+		end
 	end
 end);
+DC.backgroundQueryFrame = DC_BackgroundQueryFrame;
+-- A batch queued while this file was still loading.
+if DC.batchQueryTimer and DC.batchQueryTimer > 0 then
+	DC_BackgroundQueryFrame:Show();
+end
 
 -- Scan all equipped items and query their upgrade status
 -- This function directly sends commands to avoid dependency on local functions
@@ -6012,12 +6008,12 @@ end
 -- Make it accessible
 DC.ScanEquippedItems = DC_ScanEquippedItems;
 
--- Create a hidden frame for early initialization AND persistent chat message handling
+-- Create a hidden frame for early initialization AND persistent chat message handling.
+-- Only CHAT_MSG_SYSTEM: /say and whispers come from other players, who could
+-- fake upgrade results that way (see DarkChaos_ItemUpgrade_OnShow).
 local DC_EarlyInitFrame = CreateFrame("Frame");
 DC_EarlyInitFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
 DC_EarlyInitFrame:RegisterEvent("CHAT_MSG_SYSTEM");
-DC_EarlyInitFrame:RegisterEvent("CHAT_MSG_SAY");
-DC_EarlyInitFrame:RegisterEvent("CHAT_MSG_WHISPER");
 DC_EarlyInitFrame:SetScript("OnEvent", function(self, event, ...)
 	if event == "PLAYER_ENTERING_WORLD" then
 		self:UnregisterEvent("PLAYER_ENTERING_WORLD");
@@ -6061,15 +6057,6 @@ DC_EarlyInitFrame:SetScript("OnEvent", function(self, event, ...)
 					DarkChaos_ItemUpgrade_OnChatMessage(message, UnitName("player"));
 				end
 			end
-		end
-		return;
-	end
-	
-	if event == "CHAT_MSG_SAY" or event == "CHAT_MSG_WHISPER" then
-		local message, sender = ...;
-		if type(message) == "string" and (string.find(message, "DCUPGRADE_") or string.find(message, "DCHEIRLOOM_")) then
-			DC.Debug("EarlyInit " .. event .. ": " .. string.sub(message, 1, 60));
-			DarkChaos_ItemUpgrade_OnChatMessage(message, sender);
 		end
 		return;
 	end

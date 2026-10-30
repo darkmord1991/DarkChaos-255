@@ -20,6 +20,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "DBCStores.h"
+#include "GameTime.h"
 #include "ItemTemplate.h"
 #include "ObjectMgr.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
@@ -73,6 +74,44 @@ namespace MythicPlus
         {
             if (player)
                 s_mythicPlusAddonSessions.insert(player->GetGUID().GetCounter());
+        }
+
+        // Great Vault request floors. Both client requests reach synchronous
+        // DB work on the world thread -- a claim runs five statements whether
+        // or not anything is left to claim, and the info chain regenerates the
+        // reward pool -- so a client repeating them stalled the server. Only
+        // the client handlers are gated; the refresh after a successful claim
+        // and the vault NPC call SendVaultInfo directly.
+        constexpr uint64 VAULT_INFO_COOLDOWN_MS = 2000;
+        constexpr uint64 VAULT_CLAIM_COOLDOWN_MS = 2000;
+
+        struct VaultRequestState
+        {
+            uint64 lastInfoMs = 0;
+            uint64 lastClaimMs = 0;
+
+            // Claim week whose reward pool was last generated, and with how
+            // many unlocked slots. GenerateVaultRewardPool re-reads the week's
+            // progress with three synchronous queries on every call, even when
+            // every slot already has its reward. The claim week is over, so
+            // its unlock count only moves if late data lands -- regenerating on
+            // a change of that count is enough.
+            uint32 poolSeasonId = 0;
+            uint32 poolWeekStart = 0;
+            uint32 poolUnlocked = 0;
+        };
+
+        std::unordered_map<uint32, VaultRequestState> s_vaultRequests;
+
+        // Stamps and allows the request unless one came in under `cooldownMs` ago.
+        bool PassVaultCooldown(uint64& lastMs, uint64 cooldownMs)
+        {
+            uint64 const nowMs = GameTime::GetGameTimeMS().count();
+            if (lastMs && nowMs - lastMs < cooldownMs)
+                return false;
+
+            lastMs = nowMs;
+            return true;
         }
 
         DCAddon::TransportPolicyDecision ResolveHudTransport(Player* player)
@@ -1244,12 +1283,23 @@ namespace MythicPlus
 
                 if (!data.claimed && data.unlockedCountClaim > 0)
                 {
-                    // Intentionally synchronous: GenerateVaultRewardPool
-                    // self-skips once the pool rows exist, so this heavy
-                    // GreatVaultMgr call runs at most once per player per
-                    // week. Making GreatVaultMgr fully async is a separate
-                    // refactor.
-                    sMythicRuns->GenerateVaultRewardPool(data.guidLow, data.seasonId, data.claimWeekStart);
+                    // Intentionally synchronous (making GreatVaultMgr async is
+                    // a separate refactor). It only fills slots that have no
+                    // reward yet, but it re-reads the week's progress every
+                    // time, so it is skipped while nothing new has unlocked
+                    // since this player's last generation (see
+                    // VaultRequestState).
+                    VaultRequestState& state = s_vaultRequests[data.guidLow];
+                    bool const generated = state.poolSeasonId == data.seasonId
+                        && state.poolWeekStart == data.claimWeekStart
+                        && state.poolUnlocked == data.unlockedCountClaim;
+                    if (!generated
+                        && sMythicRuns->GenerateVaultRewardPool(data.guidLow, data.seasonId, data.claimWeekStart))
+                    {
+                        state.poolSeasonId = data.seasonId;
+                        state.poolWeekStart = data.claimWeekStart;
+                        state.poolUnlocked = data.unlockedCountClaim;
+                    }
                 }
 
                 // Stage 3: claim-week reward pool. Must run strictly AFTER
@@ -1292,12 +1342,32 @@ namespace MythicPlus
     // Handler: Get vault info
     static void HandleGetVaultInfo(Player* player, ParsedMessage const& /*msg*/)
     {
+        // A request inside the window would get the same answer as the last.
+        if (!player || !PassVaultCooldown(s_vaultRequests[player->GetGUID().GetCounter()].lastInfoMs,
+                VAULT_INFO_COOLDOWN_MS))
+            return;
+
         SendVaultInfo(player, false);
     }
 
     // Handler: Claim vault reward
     static void HandleClaimVaultReward(Player* player, ParsedMessage const& msg)
     {
+        if (!player)
+            return;
+
+        // ClaimVaultItemReward keeps its own once-per-week guard; this only
+        // stops repeated requests from each running its synchronous queries.
+        if (!PassVaultCooldown(s_vaultRequests[player->GetGUID().GetCounter()].lastClaimMs,
+                VAULT_CLAIM_COOLDOWN_MS))
+        {
+            JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_CLAIM_VAULT_RESULT)
+                .Set("success", false)
+                .Set("error", "Please wait a moment before trying again")
+                .Send(player);
+            return;
+        }
+
         uint8 slot = 0;
         uint32 itemId = 0;
 
@@ -1896,6 +1966,7 @@ namespace MythicPlus
     void ForgetMythicPlusAddonSession(ObjectGuid::LowType playerGuid)
     {
         s_mythicPlusAddonSessions.erase(playerGuid);
+        s_vaultRequests.erase(playerGuid);
     }
 
     // Send run update as JSON (for HUD)

@@ -712,7 +712,7 @@ local function PopulateFeatures(scrollChild)
         {
             id = "vault",
             name = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].name or "|cffa335eeItem Vault|r",
-            icon = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].icon or "Interface\\Icons\\INV_Misc_Bag_CoreFelcloth",
+            icon = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].icon or "Interface\\Icons\\INV_Misc_Bag_CoreFelclothBag",
             color = {0.64, 0.21, 0.93},  -- Purple
             shortDesc = "Weekly reward progress based on your successful Mythic+ activity!",
             fullDesc = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].desc or "Weekly reward caches from M+ and raids.",

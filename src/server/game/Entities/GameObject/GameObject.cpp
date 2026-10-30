@@ -1173,7 +1173,8 @@ void GameObject::SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask, bool 
     stmt->SetData(index++, GetEntry());
     stmt->SetData(index++, uint16(mapid));
     stmt->SetData(index++, spawnMask);
-    stmt->SetData(index++, GetPhaseMask());
+    // The spawn's phase (kept in step with the loaded data above), not a temporary runtime phase
+    stmt->SetData(index++, phaseMask);
     stmt->SetData(index++, GetPositionX());
     stmt->SetData(index++, GetPositionY());
     stmt->SetData(index++, GetPositionZ());

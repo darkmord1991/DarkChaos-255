@@ -142,6 +142,8 @@ namespace CrossSystem
         void PublishVaultClaim(Player* player, uint32 seasonId, uint8 slotClaimed,
                               uint32 itemId, uint32 tokens, uint32 essence);
 
+        void PublishFeatureUsed(Player* player, FeatureKind kind, uint32 value = 0);
+
         // =====================================================================
         // Event History
         // =====================================================================

@@ -16,6 +16,7 @@ addon.protocol = {
     DC = nil,  -- DCAddonProtocol reference
     featureHandlers = {},
     lastFeatureData = {},
+    nativeEnvelopeDispatcherReady = false,
     nativeEnvelopeFrame = nil,
     nativeEnvelopePollElapsed = 0,
 }
@@ -82,6 +83,45 @@ local SERVER_SETTINGS_PATH_MAP = {
     questLevelText = "interface.questLevelText",
 }
 
+-- A synced value may only land on a setting the settings UI owns: the path
+-- must name an existing non-table entry of addon.defaults (the core defaults
+-- plus every module's, merged in at registration) and the value must keep
+-- that entry's type. The profile bookkeeping is not a setting. Anything else
+-- in a SETTINGS_SYNC payload is dropped instead of written into the profile.
+local function GetDefaultSettingValue(path)
+    local current = addon.defaults
+    for part in string.gmatch(path, "[^%.]+") do
+        if type(current) ~= "table" then
+            return nil
+        end
+        current = current[part]
+    end
+    if type(current) == "table" then
+        return nil
+    end
+    return current
+end
+
+local function IsSyncableSetting(path, value)
+    if type(path) ~= "string" or path == "" or path == "profiles"
+        or string.find(path, "^profiles%.") then
+        return false
+    end
+
+    local default = GetDefaultSettingValue(path)
+    if default == nil or type(value) ~= type(default) then
+        return false
+    end
+
+    -- NaN or infinity (the JSON decoder turns "1e999" into one) is never a
+    -- usable scale, size or offset.
+    if type(value) == "number"
+        and (value ~= value or value == math.huge or value == -math.huge) then
+        return false
+    end
+    return true
+end
+
 local function ApplySettingByPath(path, value)
     if type(path) ~= "string" or path == "" then
         return
@@ -110,6 +150,47 @@ local function ApplySettingByPath(path, value)
     end
 
     current[parts[#parts]] = value
+end
+
+-- Applies the syncable leaves of a nested server table under `prefix`.
+-- Returns whether anything was applied.
+local function MergeSyncedSettings(prefix, values, depth)
+    local applied = false
+    for key, value in pairs(values) do
+        if type(key) == "string" then
+            local path = prefix .. "." .. key
+            if type(value) == "table" then
+                if depth < 4 and MergeSyncedSettings(path, value, depth + 1) then
+                    applied = true
+                end
+            elseif IsSyncableSetting(path, value) then
+                ApplySettingByPath(path, value)
+                applied = true
+            end
+        end
+    end
+    return applied
+end
+
+-- Server text printed to chat goes through DCAddonProtocol:StripChatEscapes
+-- (no clickable |H links, no |T textures); the copy below covers a protocol
+-- library that predates it.
+local function StripChatEscapes(text)
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.StripChatEscapes) == "function" then
+        return DC:StripChatEscapes(text)
+    end
+
+    text = tostring(text or "")
+    if not string.find(text, "|", 1, true) then
+        return text
+    end
+    text = string.gsub(text, "|H.-|h(.-)|h", "%1")
+    text = string.gsub(text, "|T.-|t", "")
+    text = string.gsub(text, "|", "||")
+    text = string.gsub(text, "||(c%x%x%x%x%x%x%x%x)", "|%1")
+    text = string.gsub(text, "||r", "|r")
+    return text
 end
 
 local function PruneSpellEnrichmentCache(now)
@@ -422,8 +503,8 @@ function protocol:DrainNativeEnvelopes(limit)
 end
 
 function protocol:EnsureNativeEnvelopeDispatcher()
-    if self.nativeEnvelopeFrame or type(PollDCNativeEnvelope) ~= "function" then
-        return self.nativeEnvelopeFrame ~= nil
+    if self.nativeEnvelopeDispatcherReady or type(PollDCNativeEnvelope) ~= "function" then
+        return self.nativeEnvelopeDispatcherReady
     end
 
     -- A DLL that pushes DC_NATIVE_DATA signals each queued envelope, so the
@@ -432,14 +513,34 @@ function protocol:EnsureNativeEnvelopeDispatcher()
     local pushProtocol = dcProtocol and type(dcProtocol.OnNativeData) == "function"
         and type(dcProtocol.GetNativePollInterval) == "function" and dcProtocol or nil
 
+    local function DrainAll()
+        self:DrainNativeEnvelopes(64)
+    end
+
+    self.nativeEnvelopeDispatcherReady = true
+    if pushProtocol then
+        -- The whole queue (the DLL keeps at most 64), so a burst replayed after
+        -- a loading screen does not wait for the safety net.
+        pushProtocol:OnNativeData("ENVELOPE", DrainAll)
+
+        -- The 1 s safety net, which takes everything a missed signal left
+        -- behind, rides DCAddonProtocol's own tick instead of an OnUpdate here.
+        if type(pushProtocol.RegisterNativeSafetyPoll) == "function"
+            and pushProtocol:RegisterNativeSafetyPoll(DrainAll) then
+            return true
+        end
+    end
+
+    -- Whether the DLL pushes is settled when DCAddonProtocol loads.
+    local interval = NATIVE_ENVELOPE_POLL_INTERVAL
+    if pushProtocol then
+        interval = pushProtocol:GetNativePollInterval(interval)
+    end
+
     local frame = CreateFrame("Frame")
     frame:SetScript("OnUpdate", function(_, elapsed)
         self.nativeEnvelopePollElapsed = (self.nativeEnvelopePollElapsed or 0)
             + (elapsed or 0)
-        local interval = NATIVE_ENVELOPE_POLL_INTERVAL
-        if pushProtocol then
-            interval = pushProtocol:GetNativePollInterval(interval)
-        end
         if self.nativeEnvelopePollElapsed < interval then
             return
         end
@@ -450,14 +551,6 @@ function protocol:EnsureNativeEnvelopeDispatcher()
         self:DrainNativeEnvelopes(interval > NATIVE_ENVELOPE_POLL_INTERVAL and 64 or 8)
     end)
     frame:Show()
-
-    if pushProtocol then
-        -- The whole queue (the DLL keeps at most 64), so a burst replayed after
-        -- a loading screen does not wait for the safety net.
-        pushProtocol:OnNativeData("ENVELOPE", function()
-            self:DrainNativeEnvelopes(64)
-        end)
-    end
 
     self.nativeEnvelopeFrame = frame
     return true
@@ -656,20 +749,23 @@ function protocol:HandleSettingsSync(...)
     local args = {...}
     
     if type(args[1]) == "table" then
-        -- JSON format - merge server settings
+        -- JSON format - merge server settings, only onto settings the UI has
+        -- (IsSyncableSetting); every other key is ignored.
         local serverSettings = args[1]
         local applied = false
 
         for key, value in pairs(serverSettings) do
-            if type(value) == "table" and type(addon.settings[key]) == "table" then
-                for subKey, subValue in pairs(value) do
-                    addon.settings[key][subKey] = subValue
+            if type(key) == "string" and type(value) == "table"
+                and type(addon.settings[key]) == "table" then
+                if MergeSyncedSettings(key, value, 1) then
                     applied = true
                 end
             else
                 local path = SERVER_SETTINGS_PATH_MAP[key] or key
-                ApplySettingByPath(path, value)
-                applied = true
+                if IsSyncableSetting(path, value) then
+                    ApplySettingByPath(path, value)
+                    applied = true
+                end
             end
         end
 
@@ -811,8 +907,8 @@ function protocol:HandleNotification(...)
     if type(args[1]) == "table" then
         local notification = args[1]
         local msgType = notification.type or "info"
-        local message = notification.message or ""
-        
+        local message = StripChatEscapes(notification.message or "")
+
         if msgType == "error" then
             addon:Print("|cffff0000Error:|r " .. message, true)
         elseif msgType == "warning" then

@@ -11,6 +11,7 @@
 #include "dc_addon_namespace.h"
 #include "dc_addon_utils.h"
 #include "dc_wardrobe_visuals.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DBCStores.h"
@@ -37,6 +38,7 @@
 #include <iomanip>
 #include <memory>
 #include <mutex>
+#include <chrono>
 
 namespace DCCollection
 {
@@ -83,6 +85,31 @@ namespace DCCollection
     // CSV of allowed SpellItemEnchantment IDs. Empty means "every enchant with a visual",
     // derived from the DBC.
     constexpr char const* ENCHANT_VISUAL_ALLOWED_IDS = "DCCollection.EnchantVisual.AllowedEnchantIds";
+
+    // Text a request stores in dc_account_outfits (name 50, icon 100) and
+    // dc_collection_community_outfits (name 100, tags 255). The item lists are TEXT
+    // columns, but a whole outfit is a few hundred bytes.
+    constexpr std::size_t OUTFIT_NAME_MAX_CHARS = 50;
+    constexpr std::size_t OUTFIT_ICON_MAX_CHARS = 100;
+    constexpr std::size_t COMMUNITY_NAME_MAX_CHARS = 100;
+    constexpr std::size_t COMMUNITY_TAGS_MAX_CHARS = 255;
+    constexpr std::size_t OUTFIT_ITEMS_MAX_BYTES = 4096;
+
+    // Whether text fits a column of maxChars characters, counted as MySQL counts
+    // them (UTF-8 code points), so a crafted request cannot hand the database a
+    // half-megabyte name.
+    static bool FitsTextColumn(std::string const& text, std::size_t maxChars)
+    {
+        if (text.size() > maxChars * 4) // no UTF-8 character is wider than 4 bytes
+            return false;
+
+        std::size_t chars = 0;
+        for (unsigned char const c : text)
+            if ((c & 0xC0) != 0x80)
+                ++chars;
+
+        return chars <= maxChars;
+    }
 
     // =======================================================================
     // Transmog Helper Implementations
@@ -1267,6 +1294,8 @@ namespace DCCollection
          LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} APPLIED fakeEntry={}",
              player->GetName(), static_cast<uint32>(slot), displayId, fakeEntry);
          SendTransmogState(player);
+         DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+             DarkChaos::CrossSystem::FeatureKind::Transmog);
     }
 
     void HandleGetTransmogState(Player* player, DCAddon::ParsedMessage const& /*msg*/)
@@ -1593,6 +1622,19 @@ namespace DCCollection
 
         if (byEquipSlot && hasEntries)
         {
+            // The wardrobe sends at most one entry per equipment slot. A longer list is
+            // crafted, and every planned entry becomes a statement in one transaction.
+            if (json["entries"].AsArray().size() > static_cast<std::size_t>(EQUIPMENT_SLOT_END))
+            {
+                DCAddon::JsonMessage err(MODULE, DCAddon::Opcode::Collection::SMSG_ERROR);
+                err.Set("error", "Transmog apply refused: too many entries. No changes were made.");
+                err.Set("code", 1001);
+                err.Send(player);
+
+                SendTransmogState(player);
+                return;
+            }
+
             uint32 const accountId = GetAccountId(player);
             auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
             auto const& idx = GetTransmogAppearanceIndexCached();
@@ -1659,13 +1701,16 @@ namespace DCCollection
                 if (!entry.IsObject() || !entry.HasKey("slot"))
                     continue;
 
-                uint8 const equipmentSlot = static_cast<uint8>(entry["slot"].AsUInt32());
-                if (equipmentSlot >= EQUIPMENT_SLOT_END)
+                // Checked before narrowing: slot 256 used to wrap round to the head.
+                uint32 const rawSlot = entry["slot"].AsUInt32();
+                if (rawSlot >= static_cast<uint32>(EQUIPMENT_SLOT_END))
                 {
                     skippedBadSlot++;
-                    perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("invalid_slot"));
+                    perSlot.Set(std::to_string(rawSlot), DCAddon::JsonValue("invalid_slot"));
                     continue;
                 }
+
+                uint8 const equipmentSlot = static_cast<uint8>(rawSlot);
 
                 requested++;
 
@@ -1800,6 +1845,10 @@ namespace DCCollection
                 }
                 CharacterDatabase.CommitTransaction(trans);
 
+                // As the single-slot path does: the slot hooks would otherwise keep
+                // dressing a gear swap from the rows cached before this batch.
+                InvalidateCharacterTransmogCache(guid);
+
                 for (auto const& planned : plan)
                 {
                     if (planned.action == PlannedAction::Clear)
@@ -1809,6 +1858,12 @@ namespace DCCollection
 
                     applied++;
                 }
+
+                bool const setAppearance = std::any_of(plan.begin(), plan.end(),
+                    [](auto const& planned) { return planned.action == PlannedAction::Set; });
+                if (setAppearance)
+                    DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+                        DarkChaos::CrossSystem::FeatureKind::Transmog);
             }
 
             // ---------------------------------------------------------------
@@ -1910,12 +1965,18 @@ namespace DCCollection
         uint32 accountId = GetAccountId(player);
         uint32 guid = player->GetGUID().GetCounter();
 
+        // Keys such as "1", "01" and "001" all name one slot; writing each equipment
+        // slot once keeps the transaction to one statement per slot.
+        std::vector<bool> handledSlots(EQUIPMENT_SLOT_END, false);
+
         auto trans = CharacterDatabase.BeginTransaction();
         for (auto const& kv : preview.AsObject())
         {
              uint32 visualSlot = std::stoul(kv.first);
              uint8 equipmentSlot = VisualSlotToEquipmentSlot(visualSlot);
              if (equipmentSlot >= EQUIPMENT_SLOT_END) continue;
+             if (handledSlots[equipmentSlot]) continue;
+             handledSlots[equipmentSlot] = true;
 
              Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot);
              if (!equippedItem) continue;
@@ -2300,6 +2361,18 @@ namespace DCCollection
         std::string tags = "";
         if (json.HasKey("tags")) tags = json["tags"].AsString();
 
+        if (!FitsTextColumn(name, COMMUNITY_NAME_MAX_CHARS) || !FitsTextColumn(tags, COMMUNITY_TAGS_MAX_CHARS) ||
+            items.size() > OUTFIT_ITEMS_MAX_BYTES)
+        {
+            DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT);
+            res.Set("success", false);
+            res.Set("error", "Outfit name, tags or items are too long");
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT,
+                ExtractJsonPayload(res));
+            return;
+        }
+
         uint32 accountId = GetAccountId(player);
 
         CharacterDatabase.EscapeString(name);
@@ -2478,6 +2551,18 @@ namespace DCCollection
         std::string tags = "";
         if (json.HasKey("tags")) tags = json["tags"].AsString();
 
+        if (!FitsTextColumn(name, COMMUNITY_NAME_MAX_CHARS) || !FitsTextColumn(tags, COMMUNITY_TAGS_MAX_CHARS) ||
+            items.size() > OUTFIT_ITEMS_MAX_BYTES)
+        {
+            DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT);
+            res.Set("success", false);
+            res.Set("error", "Outfit name, tags or items are too long");
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+                ExtractJsonPayload(res));
+            return;
+        }
+
         uint32 playerGuidLow = player->GetGUID().GetCounter();
         uint32 accountId = GetAccountId(player);
 
@@ -2628,7 +2713,20 @@ namespace DCCollection
             return;
 
         std::string targetStr = json["target"].IsString() ? json["target"].AsString() : std::to_string(static_cast<uint64>(json["target"].AsNumber()));
-        if (!IsDigitsOnly(targetStr))
+
+        // The addon sends UnitGUID(), a "0x" hex string; decimal is accepted too
+        int base = 10;
+        if (targetStr.size() > 2 && targetStr[0] == '0' && (targetStr[1] == 'x' || targetStr[1] == 'X'))
+        {
+            targetStr.erase(0, 2);
+            base = 16;
+        }
+        bool const validDigits = !targetStr.empty() && targetStr.size() <= 16 &&
+            std::all_of(targetStr.begin(), targetStr.end(), [base](unsigned char c)
+            {
+                return base == 16 ? std::isxdigit(c) != 0 : (c >= '0' && c <= '9');
+            });
+        if (!validDigits)
         {
             LOG_DEBUG("module.dc", "[DCWardrobe] InspectTransmog rejected invalid target format from player={}", player->GetName());
             return;
@@ -2637,7 +2735,7 @@ namespace DCCollection
         uint64 targetGuid = 0;
         try
         {
-            targetGuid = std::stoull(targetStr);
+            targetGuid = std::stoull(targetStr, nullptr, base);
         }
         catch (...)
         {
@@ -2645,10 +2743,23 @@ namespace DCCollection
             return;
         }
 
+        // Only a character the core would let this player inspect
+        // (WorldSession::HandleInspectOpcode): on the same map, visible to this
+        // client, within inspect range and not attackable. Any GUID used to read
+        // the transmog of any character, online or not, wherever they were.
+        Player* target = ObjectAccessor::GetPlayer(*player, ObjectGuid(targetGuid));
+        if (!target || !player->HaveAtClient(target) ||
+            !player->IsWithinDistInMap(target, INSPECT_DISTANCE, false) || player->IsValidAttackTarget(target))
+        {
+            LOG_DEBUG("module.dc", "[DCWardrobe] InspectTransmog refused: target {} is not inspectable by player={}",
+                targetGuid, player->GetName());
+            return;
+        }
+
         // Query DB for transmog entries (async, response is built in the callback)
         std::string sql = Acore::StringFormat(
             "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
-            static_cast<uint32>(targetGuid));
+            target->GetGUID().GetCounter());
 
         ObjectGuid playerGuid = player->GetGUID();
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
@@ -3007,6 +3118,16 @@ namespace DCCollection
         std::string name = json["name"].AsString();
         std::string icon = json["icon"].AsString();
         std::string items = json["items"].IsString() ? json["items"].AsString() : json["items"].Encode();
+
+        if (!FitsTextColumn(name, OUTFIT_NAME_MAX_CHARS) || !FitsTextColumn(icon, OUTFIT_ICON_MAX_CHARS) ||
+            items.size() > OUTFIT_ITEMS_MAX_BYTES)
+        {
+            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+            res.Set("error", "Outfit name, icon or items are too long");
+            res.Send(player);
+            return;
+        }
+
         items = NormalizeSavedOutfitItemsJson(items);
         uint32 accountId = player->GetSession()->GetAccountId();
 
@@ -3454,6 +3575,44 @@ namespace DCCollection
 
 } // namespace DCCollection
 
+// The addon channel reaches these handlers through MessageRouter::Route, which
+// refuses requests while the collection module is disabled, contains a handler
+// exception and logs a slow handler. The native opcodes below call their handler
+// directly, so they apply the same three checks here.
+template <typename Handler>
+static bool RunNativeCollectionRequest(Player* player, uint16 nativeOpcode, Handler&& handler)
+{
+    if (!DCAddon::MessageRouter::Instance().IsModuleEnabled(DCAddon::Module::COLLECTION))
+    {
+        DCAddon::SendError(player, DCAddon::Module::COLLECTION, "Module is disabled on server",
+            DCAddon::ErrorCode::MODULE_DISABLED, DCAddon::Opcode::Core::SMSG_ERROR);
+        return false;
+    }
+
+    try
+    {
+        auto const handlerStart = std::chrono::steady_clock::now();
+
+        handler();
+
+        auto const handlerMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - handlerStart).count();
+        if (handlerMs >= DCAddon::MessageRouter::SLOW_HANDLER_WARN_MS)
+            LOG_WARN("module.dc", "[DCWardrobe] SLOW native handler 0x{:04X} took {} ms (player={})",
+                nativeOpcode, handlerMs, player->GetName());
+    }
+    catch (...)
+    {
+        LOG_ERROR("module.dc", "[DCWardrobe] Native handler exception: opcode=0x{:04X}, player={}",
+            nativeOpcode, player->GetName());
+        DCAddon::SendError(player, DCAddon::Module::COLLECTION, "Internal handler error",
+            DCAddon::ErrorCode::UNKNOWN, DCAddon::Opcode::Core::SMSG_ERROR);
+        return false;
+    }
+
+    return true;
+}
+
 class CollectionTransmogNativeServerScript : public ServerScript
 {
 public:
@@ -3478,12 +3637,14 @@ private:
         if (!player || !player->IsInWorld())
             return false;
 
-        DCCollection::SendTransmogState(player);
+        bool const handled = RunNativeCollectionRequest(player,
+            DCCollection::BridgeOpcode::CMSG_REQUEST_TRANSMOG_STATE,
+            [player]() { DCCollection::SendTransmogState(player); });
         DCAddon::AuditNativeC2SRequest(player,
             DCAddon::Module::COLLECTION,
             DCAddon::Opcode::Collection::CMSG_GET_TRANSMOG_STATE,
             DCCollection::BridgeOpcode::CMSG_REQUEST_TRANSMOG_STATE,
-            packet.size(), "request");
+            packet.size(), "request", handled);
         return false;
     }
 };
@@ -3544,13 +3705,18 @@ private:
             + "|limit=" + std::to_string(limit)
             + "|sync=" + std::to_string(clientSyncVersion)
             + "|packed=" + std::to_string(packedFlag);
-        DCCollection::HandleNativeItemSetsRequest(player, offset, limit,
-            clientSyncVersion, packedFlag != 0);
+        bool const handled = RunNativeCollectionRequest(player,
+            DCCollection::BridgeOpcode::CMSG_REQUEST_ITEM_SETS,
+            [&]()
+            {
+                DCCollection::HandleNativeItemSetsRequest(player, offset, limit,
+                    clientSyncVersion, packedFlag != 0);
+            });
         DCAddon::AuditNativeC2SRequest(player,
             DCAddon::Module::COLLECTION,
             DCAddon::Opcode::Collection::CMSG_GET_ITEM_SETS,
             DCCollection::BridgeOpcode::CMSG_REQUEST_ITEM_SETS, packet.size(),
-            preview, true, "",
+            preview, handled, "",
             parseOk ? "" : "native_bad_format",
             parseOk ? "" : "Malformed native collection item-sets request");
         return false;

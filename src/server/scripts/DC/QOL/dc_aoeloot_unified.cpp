@@ -615,6 +615,9 @@ float GetPlayerLootRange(ObjectGuid playerGuid)
 
 void SetPlayerLootRange(ObjectGuid playerGuid, float value)
 {
+    // NaN passes both clamps below (it compares false)
+    if (!std::isfinite(value))
+        value = sConfig.range;
     if (value < 5.0f)
         value = 5.0f;
     if (value > 100.0f)
@@ -814,6 +817,89 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
     return true;
 }
 
+// The AoE path hands items out itself (merging them into one window, auto-storing,
+// filtering, auto-vendoring), so it may only touch an item the core would let this
+// player pick up with nothing to track beyond is_looted. Everything else stays on its
+// corpse for the normal loot window:
+// - free-for-all items (emblems) are tracked per looter in the core's FFA lists;
+//   handing one out from the raw flags let a player take it twice and, by marking it
+//   looted, took every other raid member's copy away;
+// - quest and conditional items exist only for the players whose lists name them;
+// - an item under a roll or won by someone else belongs to that roll; with group,
+//   need-before-greed or master loot an item over the threshold belongs to the roll
+//   or the master looter, and the rest of a round-robin corpse to its looter.
+static bool CanAoETakeLootItem(Player* player, Loot const& loot, LootItem const& item, ObjectGuid source)
+{
+    if (item.is_looted || item.is_blocked || item.freeforall || item.needs_quest || !item.conditions.empty())
+        return false;
+
+    bool const wonByPlayer = item.rollWinnerGUID == player->GetGUID();
+    if (item.rollWinnerGUID && !wonByPlayer)
+        return false;
+
+    if (Group* group = player->GetGroup())
+    {
+        bool const holdsRoundRobin = !loot.roundRobinPlayer || loot.roundRobinPlayer == player->GetGUID();
+        switch (group->GetLootMethod())
+        {
+            case FREE_FOR_ALL:
+                break;
+            case ROUND_ROBIN:
+                if (!holdsRoundRobin)
+                    return false;
+                break;
+            default:
+                if (!wonByPlayer && (!item.is_underthreshold || !holdsRoundRobin))
+                    return false;
+                break;
+        }
+    }
+
+    return item.AllowedForPlayer(player, source);
+}
+
+// Whether the AoE path has anything to take from this corpse: an item it may hand
+// out, or the coin of a solo looter. A corpse holding only emblems, quest or
+// conditional items is left to the player's own loot window.
+static bool HasAoETakeableLoot(Player* player, Creature* creature)
+{
+    Loot const& loot = creature->loot;
+    if (loot.gold > 0 && !player->GetGroup())
+        return true;
+
+    for (LootItem const& item : loot.items)
+        if (CanAoETakeLootItem(player, loot, item, creature->GetGUID()))
+            return true;
+
+    return false;
+}
+
+// Takes one item out of a loot without erasing it: the per-player FFA, quest and
+// conditional lists and any running roll address items by index, so erasing shifted
+// them onto the wrong item.
+static void MarkLootItemTaken(Loot& loot, uint32 slot)
+{
+    loot.items[slot].is_looted = true;
+    if (loot.unlootedCount > 0)
+        --loot.unlootedCount;
+    loot.NotifyItemRemoved(static_cast<uint8>(slot));
+}
+
+// What the core's loot release does to a corpse (WorldSession::DoLootRelease):
+// emptied, it stops sparkling and starts to decay; otherwise viewers re-evaluate
+// whether anything on it is still theirs.
+static void FinishAoELootedCorpse(Creature* corpse)
+{
+    if (corpse->loot.isLooted())
+    {
+        corpse->AllLootRemovedFromCorpse();
+        corpse->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+        corpse->loot.clear();
+    }
+    else
+        corpse->ForceValuesUpdateAtIndex(UNIT_DYNAMIC_FLAGS);
+}
+
 static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAutoLoot = false)
 {
     if (!player || !mainCreature) return false;
@@ -823,8 +909,12 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         return false;
     }
 
+    // The core's loot handlers refuse a fully play-time-restricted player; the looter
+    // pet gets here without going through them.
+    if (player->HasPlayerFlag(PLAYER_FLAGS_NO_PLAY_TIME))
+        return false;
+
     Loot* mainLoot = &mainCreature->loot;
-    if (!mainLoot) return false;
 
     // Snapshot the preferences this call needs and drop the lock: everything
     // below walks the grid and manipulates loot, and must not hold a global lock
@@ -930,96 +1020,17 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         return false;
     };
 
-    if (nearby.empty())
+    bool const filtersActive = playerMinQuality > 0 || goldOnly || autoVendorPoor || hasIgnoredItems;
+
+    // Filters only ever discard an item the player could have taken for themselves.
+    if (filtersActive)
     {
-        if (playerMinQuality > 0 || goldOnly || autoVendorPoor || hasIgnoredItems)
+        for (uint32 slot = 0; slot < mainLoot->items.size(); ++slot)
         {
-            size_t initialItems = mainLoot->items.size();
-            mainLoot->items.erase(
-                std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
-                    [&](LootItem const& item)
-                    {
-                        return shouldSkipItem(item, true);
-                    }),
-                mainLoot->items.end()
-            );
-            size_t const removedCount = initialItems - mainLoot->items.size();
-            if (removedCount >= mainLoot->unlootedCount)
-                mainLoot->unlootedCount = 0;
-            else
-                mainLoot->unlootedCount -= removedCount;
-
-            if (mainLoot->items.empty() && mainLoot->quest_items.empty() && mainLoot->gold == 0)
-            {
-                mainLoot->clear();
-                mainCreature->AllLootRemovedFromCorpse();
-                mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-                if (autoVendoredCopper > 0)
-                    CreditAutoVendorGold(player, autoVendoredCopper, autoVendoredItems);
-                return true;
-            }
+            LootItem const& item = mainLoot->items[slot];
+            if (CanAoETakeLootItem(player, *mainLoot, item, mainCreature->GetGUID()) && shouldSkipItem(item, true))
+                MarkLootItemTaken(*mainLoot, slot);
         }
-
-        if (autoVendoredCopper > 0)
-            CreditAutoVendorGold(player, autoVendoredCopper, autoVendoredItems);
-
-        if (shouldAutoLootForPlayer(player))
-        {
-            std::vector<std::pair<uint32, uint32>> mailItems;
-            auto storeOrMail = [&](LootItem& li) {
-                if (li.is_blocked || li.is_looted) return;
-                ItemPosCountVec dest;
-                InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
-                if (msg == EQUIP_ERR_OK)
-                {
-                    Item* newItem = player->StoreNewItem(dest, li.itemid, true, li.randomPropertyId);
-                    if (newItem) player->SendNewItem(newItem, uint32(li.count), false, false, true);
-                }
-                else
-                    mailItems.emplace_back(li.itemid, uint32(li.count));
-
-                li.is_looted = true;
-                li.count = 0;
-                if (mainLoot->unlootedCount > 0) --mainLoot->unlootedCount;
-            };
-
-            for (auto& li : mainLoot->items) storeOrMail(li);
-            for (auto& li : mainLoot->quest_items) storeOrMail(li);
-
-            if (mainLoot->gold > 0)
-            {
-                player->ModifyMoney(mainLoot->gold);
-                player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, mainLoot->gold);
-                mainLoot->gold = 0;
-            }
-            if (!mailItems.empty())
-            {
-                CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-                MailSender sender(mainCreature);
-                MailDraft draft("Recovered Items", "Some items could not fit in your bags.");
-                for (auto const& p : mailItems)
-                {
-                    if (Item* mailItem = Item::CreateItem(p.first, p.second))
-                    {
-                        mailItem->SaveToDB(trans);
-                        draft.AddItem(mailItem);
-                    }
-                }
-                draft.SendMailTo(trans, MailReceiver(player), sender);
-                CharacterDatabase.CommitTransaction(trans);
-            }
-            if (mainLoot->isLooted())
-            {
-                mainLoot->clear();
-                mainCreature->AllLootRemovedFromCorpse();
-                mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-                return true;
-            }
-            player->SendLootRelease(mainCreature->GetGUID());
-            return true;
-        }
-        player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
-        return true;
     }
 
     std::vector<Creature*> corpses;
@@ -1030,89 +1041,78 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         corpses.push_back(c);
     }
 
-    std::vector<LootItem> itemsToAdd;
-    std::vector<LootItem> questItemsToAdd;
-    uint32 totalGold = mainLoot->gold;
-    const size_t MAX_MERGE_SLOTS = sConfig.maxMergeSlots;
+    size_t const MAX_MERGE_SLOTS = sConfig.maxMergeSlots;
 
-    // Filter main loot
-    if (playerMinQuality > 0 || goldOnly || autoVendorPoor || hasIgnoredItems)
-    {
-        size_t initialItems = mainLoot->items.size();
-        mainLoot->items.erase(
-            std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
-                [&](LootItem const& item)
-                {
-                    return shouldSkipItem(item, true);
-                }),
-            mainLoot->items.end()
-        );
-        size_t const removedCount = initialItems - mainLoot->items.size();
-        if (removedCount >= mainLoot->unlootedCount)
-            mainLoot->unlootedCount = 0;
-        else
-            mainLoot->unlootedCount -= removedCount;
-    }
+    // Appending to the main loot renumbers its quest-item slots (they follow the
+    // items), which a group member's open window or a running quest-item roll would
+    // then resolve to the wrong item. Solo, nobody else can be looking at the corpse.
+    bool const canMergeItems = !player->GetGroup() || mainLoot->quest_items.empty();
 
+    uint32 mergedItems = 0;
     size_t processed = 0;
     for (Creature* corpse : corpses)
     {
-        if (!corpse) continue;
         Loot* loot = &corpse->loot;
-        if (!loot || loot->isLooted()) continue;
+        if (loot->isLooted()) continue;
 
-        if (loot->gold > 0 && totalGold < std::numeric_limits<uint32>::max() - loot->gold)
-            totalGold += loot->gold;
-
-        for (auto const& it : loot->items)
+        bool touched = false;
+        for (uint32 slot = 0; slot < loot->items.size(); ++slot)
         {
-            if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
-            if (!sConfig.questItems && it.needs_quest) continue;
-            if (shouldSkipItem(it, true))
+            LootItem const& item = loot->items[slot];
+            if (!CanAoETakeLootItem(player, *loot, item, corpse->GetGUID()))
+                continue;
+
+            if (filtersActive && shouldSkipItem(item, true))
             {
+                MarkLootItemTaken(*loot, slot);
+                touched = true;
                 continue;
             }
-            size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
-            if (projected >= MAX_MERGE_SLOTS) break;
-            itemsToAdd.push_back(it);
-            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(it.itemid);
-            if (proto) UpdateQualityStats(player->GetGUID(), proto->Quality);
+
+            // Past the merge limit an item stays on its own corpse instead of being
+            // thrown away with it. So does one the player won in a roll: on a main
+            // corpse nobody has opened yet the core's first-open GroupLoot would put
+            // it up for a new roll.
+            if (!canMergeItems || item.rollWinnerGUID ||
+                mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS)
+                continue;
+
+            // It has to be the player's on the main corpse as well: under a
+            // round-robin method that corpse can belong to another group member.
+            LootItem merged = item;
+            merged.itemIndex = static_cast<uint32>(mainLoot->items.size());
+            if (!CanAoETakeLootItem(player, *mainLoot, merged, mainCreature->GetGUID()))
+                continue;
+
+            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.itemid))
+                UpdateQualityStats(player->GetGUID(), proto->Quality);
+
+            mainLoot->items.push_back(std::move(merged));
+            mainLoot->unlootedCount++;
+            MarkLootItemTaken(*loot, slot);
+            ++mergedItems;
+            touched = true;
         }
-        for (auto const& it : loot->quest_items)
+
+        if (loot->gold > 0 && mainLoot->gold <= std::numeric_limits<uint32>::max() - loot->gold)
         {
-            if (!it.AllowedForPlayer(player, corpse->GetGUID())) continue;
-            size_t projected = mainLoot->items.size() + itemsToAdd.size() + mainLoot->quest_items.size() + questItemsToAdd.size();
-            if (projected >= MAX_MERGE_SLOTS) break;
-            questItemsToAdd.push_back(it);
-            UpdateQualityStats(player->GetGUID(), 1);
+            mainLoot->gold += loot->gold;
+            loot->gold = 0;
+            loot->NotifyMoneyRemoved();
+            touched = true;
         }
-        loot->clear();
-        corpse->AllLootRemovedFromCorpse();
-        corpse->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+
+        if (!touched)
+            continue;
+
+        FinishAoELootedCorpse(corpse);
         processed++;
     }
 
     if (autoVendoredCopper > 0)
         CreditAutoVendorGold(player, autoVendoredCopper, autoVendoredItems);
 
-    // Do not abort if no extra corpses were merged; main corpse loot should
-    // still be processed (important for autonomous looter-pet pulses).
-
-    for (auto const& it : itemsToAdd)
-    {
-        if (mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS) break;
-        mainLoot->items.push_back(it);
-        mainLoot->unlootedCount++;
-    }
-    for (auto const& it : questItemsToAdd)
-    {
-        if (mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS) break;
-        mainLoot->quest_items.push_back(it);
-        mainLoot->unlootedCount++;
-    }
-
-    mainLoot->gold = totalGold;
-    uint32 mergedGold = totalGold;
+    uint32 const mergedGold = mainLoot->gold;
 
     {
         std::lock_guard<std::mutex> lock(sAoELootStateMutex);
@@ -1132,24 +1132,16 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         data.accumulatedCreditedGold += credited;
     };
 
-    if (Group* group = player->GetGroup())
-    {
-        LootMethod method = group->GetLootMethod();
-        if (method == MASTER_LOOT)
-        {
-            group->MasterLoot(mainLoot, mainCreature);
-        }
-        else if (method == NEED_BEFORE_GREED || method == GROUP_LOOT || method == FREE_FOR_ALL)
-        {
-            group->GroupLoot(mainLoot, mainCreature);
-        }
-    }
-
-    if (shouldAutoLootForPlayer(player))
+    bool const autoLoot = shouldAutoLootForPlayer(player);
+    if (autoLoot)
     {
         std::vector<std::pair<uint32, uint32>> mailItems;
-        auto storeOrMail = [&](LootItem& li) {
-            if (li.is_blocked || li.is_looted) return;
+        for (uint32 slot = 0; slot < mainLoot->items.size(); ++slot)
+        {
+            LootItem const& li = mainLoot->items[slot];
+            if (!CanAoETakeLootItem(player, *mainLoot, li, mainCreature->GetGUID()))
+                continue;
+
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
             if (msg == EQUIP_ERR_OK)
@@ -1157,22 +1149,14 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
                 Item* newItem = player->StoreNewItem(dest, li.itemid, true, li.randomPropertyId);
                 if (newItem) player->SendNewItem(newItem, uint32(li.count), false, false, true);
             }
-            else
+            // Only a full bag goes to the mailbox. A unique or limit-category item
+            // stays in the loot window, which tells the player why it cannot be taken.
+            else if (msg == EQUIP_ERR_INVENTORY_FULL)
                 mailItems.emplace_back(li.itemid, uint32(li.count));
+            else
+                continue;
 
-            li.is_looted = true;
-            li.count = 0;
-            if (mainLoot->unlootedCount > 0) --mainLoot->unlootedCount;
-        };
-        for (auto& it : mainLoot->items) storeOrMail(it);
-        for (auto& it : mainLoot->quest_items) storeOrMail(it);
-
-        if (mainLoot->gold > 0)
-        {
-            uint32 const credited = mainLoot->gold;
-            player->ModifyMoney(credited);
-            recordCreditedGold(credited);
-            mainLoot->gold = 0;
+            MarkLootItemTaken(*mainLoot, slot);
         }
 
         if (!mailItems.empty())
@@ -1191,37 +1175,45 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
             draft.SendMailTo(trans, MailReceiver(player), sender);
             CharacterDatabase.CommitTransaction(trans);
         }
-        if (mainLoot->isLooted())
-        {
-            mainLoot->clear();
-            mainCreature->AllLootRemovedFromCorpse();
-            mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-            return true;
-        }
     }
 
-    // Auto-credit gold to solo looter
-    if (mainLoot->gold > 0 && !player->GetGroup())
+    // A solo looter is credited the coin directly. A group's stays on the corpse,
+    // where the core's CMSG_LOOT_MONEY handler splits it between the members in range.
+    if (mainLoot->gold > 0 && !player->GetGroup() && (autoLoot || !corpses.empty()))
     {
-        uint32 credited = mainLoot->gold;
+        uint32 const credited = mainLoot->gold;
         player->ModifyMoney(credited);
+        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, credited);
         mainLoot->gold = 0;
+        mainLoot->NotifyMoneyRemoved();
         recordCreditedGold(credited);
     }
 
-    if (shouldAutoLootForPlayer(player))
+    // What the AoE path may not hand out (emblems, quest and conditional items,
+    // anything a roll decides) is shown in the core's own window, which applies every
+    // per-player rule. Its range check stays in force, so a corpse the looter pet
+    // reached on its own does not open.
+    if (mainLoot->isLooted())
+    {
+        FinishAoELootedCorpse(mainCreature);
         player->SendLootRelease(mainCreature->GetGUID());
-    else
+    }
+    else if (!autoLoot || (!forceAutoLoot && player->isAllowedToLoot(mainCreature)))
         player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
+    else
+    {
+        player->SendLootRelease(mainCreature->GetGUID());
+        mainCreature->ForceValuesUpdateAtIndex(UNIT_DYNAMIC_FLAGS);
+    }
 
     if (processed > 0)
-        UpdateDetailedStats(player->GetGUID(), static_cast<uint32>(itemsToAdd.size()), mergedGold, 0);
+        UpdateDetailedStats(player->GetGUID(), mergedItems, mergedGold, 0);
 
     if (ShouldShowMessage(player) && processed > 0)
     {
         std::ostringstream ss;
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " corpses. ";
-        if (!itemsToAdd.empty()) ss << "Items: " << itemsToAdd.size() << ". ";
+        if (mergedItems > 0) ss << "Items: " << mergedItems << ". ";
         if (mergedGold > 0) ss << "Gold: " << DCUtils::FormatCoinsVerbose(mergedGold);
         ChatHandler(player->GetSession()).PSendSysMessage("{}", ss.str());
     }
@@ -1322,6 +1314,10 @@ bool TriggerLooterPetLootPulse(Player* player, WorldObject* searchAnchor)
         if (!CanPlayerLootCorpse(player, creature))
             continue;
         if (player->GetGroup() && !sConfig.allowInGroup)
+            continue;
+        // A corpse left with only emblems, quest or conditional items waits for the
+        // player's own loot window; picking it again would stall the pet on it.
+        if (!HasAoETakeableLoot(player, creature))
             continue;
 
         candidates.emplace_back(creature, searchAnchor->GetDistance(creature));
@@ -1498,6 +1494,11 @@ public:
         Player* player = session->GetPlayer();
         if (!player) return true;
 
+        // Leave to the core whatever it refuses (HandleLootOpcode, Player::SendLoot):
+        // looting while dead or play-time restricted, and a corpse out of reach -
+        // GetCreature finds it anywhere on the map.
+        if (!player->IsAlive() || player->HasPlayerFlag(PLAYER_FLAGS_NO_PLAY_TIME)) return true;
+
         WorldPacket p(packet);
         p.rpos(0);
         ObjectGuid guid;
@@ -1506,7 +1507,7 @@ public:
         if (!guid || !guid.IsCreature()) return true;
 
         Creature* creature = ObjectAccessor::GetCreature(*player, guid);
-        if (!creature) return true;
+        if (!creature || !creature->IsWithinDistInMap(player, INTERACTION_DISTANCE)) return true;
 
         if (!IsPlayerAoELootEnabled(player->GetGUID())) return true;
         if (!creature->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)) return true;

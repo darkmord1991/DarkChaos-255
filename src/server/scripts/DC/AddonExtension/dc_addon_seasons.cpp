@@ -21,10 +21,12 @@
 #include <unordered_set>
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "DC/Seasons/SeasonalRewardSystem.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
 #include <algorithm>
 #include <limits>
+#include <mutex>
 
 namespace DCAddon
 {
@@ -482,32 +484,47 @@ namespace Seasons
             return;
         }
 
-        // In-flight guard (world thread only): the read below is async, so
-        // without it a double-click could read collected=0 twice and award
-        // the chest twice. (The old synchronous read had the same race with
-        // its async UPDATE - this closes it for good.)
-        static std::unordered_set<uint32> s_claimsInFlight;
-        if (!s_claimsInFlight.insert(rewardId).second)
+        // Claim guard. The read below is async, and so is the collected=1 write
+        // after the payout: clearing the guard when the read returned let a
+        // claim whose read was queued behind that write still see collected=0
+        // and pay the chest again. A chest therefore stays marked from the
+        // moment it is claimed until the process ends; only a claim that did
+        // not pay releases it, so it can be retried.
+        static std::unordered_set<uint32> s_claimedRewards;
+        static std::mutex s_claimedRewardsMutex;
+
         {
-            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
-            return;
+            std::lock_guard<std::mutex> lock(s_claimedRewardsMutex);
+            if (!s_claimedRewards.insert(rewardId).second)
+            {
+                SendRewardClaimed(player, rewardId, CLAIM_ALREADY_CLAIMED, 0, 0);
+                return;
+            }
         }
+
+        auto releaseClaim = [rewardId]()
+        {
+            std::lock_guard<std::mutex> lock(s_claimedRewardsMutex);
+            s_claimedRewards.erase(rewardId);
+        };
 
         ObjectGuid const playerGuid = player->GetGUID();
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, slot3_tokens, slot3_essence, collected "
             "FROM dc_player_seasonal_chests WHERE id = {} AND player_guid = {}",
             rewardId, playerGuid.GetCounter()))
-            .WithCallback([playerGuid, rewardId](QueryResult result)
+            .WithCallback([playerGuid, rewardId, releaseClaim](QueryResult result)
         {
-            s_claimsInFlight.erase(rewardId);
-
             Player* player = ObjectAccessor::FindPlayer(playerGuid);
             if (!player || !player->GetSession())
+            {
+                releaseClaim();
                 return;
+            }
 
             if (!result)
             {
+                releaseClaim();
                 SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
                 return;
             }
@@ -528,6 +545,7 @@ namespace Seasons
 
             if (!awarded && (totalTokens > 0 || totalEssence > 0))
             {
+                releaseClaim();
                 SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
                 return;
             }
@@ -537,6 +555,9 @@ namespace Seasons
                 rewardId);
 
             SendRewardClaimed(player, rewardId, CLAIM_SUCCESS, 0, 0);
+
+            DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+                DarkChaos::CrossSystem::FeatureKind::SeasonChest);
         }));
     }
 

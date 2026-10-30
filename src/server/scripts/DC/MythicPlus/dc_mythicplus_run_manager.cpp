@@ -25,7 +25,9 @@
 #include "MapMgr.h"
 #include "DC/CrossSystem/CrossSystemAffixes.h"
 #include "DC/CrossSystem/CrossSystemCommon.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "DC/CrossSystem/SeasonResolver.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "ObjectGuid.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_constants.h"
@@ -499,8 +501,10 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
             uint32 lockedItemId =
                 MythicPlusConstants::GetItemIdFromKeystoneLevel(lockedInventoryLevel);
 
+            // A key parked in an open trade window counts for HasItemCount, but
+            // DestroyItemCount skips it: the run would start and keep the key
             if (!lockedItemId ||
-                !keyOwner->HasItemCount(lockedItemId, 1, false))
+                DarkChaos::ItemUpgrade::GetSpendableItemCount(keyOwner, lockedItemId) < 1)
             {
                 std::string const ownerLabel = keyOwner == player
                     ? std::string("your inventory")
@@ -898,6 +902,20 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     // Automate keystone upgrade
     AutoUpgradeKeystone(state);
 
+    // The success path only: RecordRunResult also runs for a failed run.
+    DarkChaos::CrossSystem::DungeonCompleteEvent runEvent;
+    runEvent.type = DarkChaos::CrossSystem::EventType::MythicPlusComplete;
+    runEvent.timestamp = completionTime;
+    runEvent.mapId = state->mapId;
+    runEvent.instanceId = state->instanceId;
+    runEvent.difficulty = DarkChaos::CrossSystem::ContentDifficulty::MythicPlus;
+    runEvent.keystoneLevel = state->keystoneLevel;
+    runEvent.timedSuccess = !state->timerExpired;
+    runEvent.participants.reserve(state->participants.size());
+    for (ObjectGuid::LowType const guidLow : state->participants)
+        runEvent.participants.push_back(ObjectGuid::Create<HighGuid::Player>(guidLow));
+    DarkChaos::CrossSystem::EventBus::instance()->PublishDungeonComplete(runEvent);
+
     // Send comprehensive run summary to all participants
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
@@ -1086,7 +1104,8 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
         if (!keystoneItemId)
             continue;
 
-        if (!player->HasItemCount(keystoneItemId, 1, false))
+        // Not a key in an open trade window: DestroyItemCount skips it
+        if (DarkChaos::ItemUpgrade::GetSpendableItemCount(player, keystoneItemId) < 1)
             continue;
 
         selectedLevel = level;
@@ -1176,7 +1195,8 @@ void MythicPlusRunManager::ConsumePlayerKeystone(Player* player, uint32* consume
         if (!keystoneItemId)
             continue;
 
-        if (!player->HasItemCount(keystoneItemId, 1, false))
+        // Not a key in an open trade window: DestroyItemCount skips it
+        if (DarkChaos::ItemUpgrade::GetSpendableItemCount(player, keystoneItemId) < 1)
             continue;
 
         selectedLevel = level;

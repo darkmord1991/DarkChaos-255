@@ -198,10 +198,16 @@ local function UpdateDeathPinsInternal()
     end
 end
 
+-- Created below; it only runs while an update is pending.
+local deathPinTicker
+
 function namespace.ScheduleDeathPinUpdate()
     deathPins.pending = true
     deathPins.elapsed = 0
     deathPins.forceUpdate = true
+    if deathPinTicker then
+        deathPinTicker:Show()
+    end
 end
 
 local deathPinWatcher = CreateFrame("Frame")
@@ -217,9 +223,12 @@ if WorldMapFrame and WorldMapFrame.HookScript then
     WorldMapFrame:HookScript("OnSizeChanged", function() namespace.ScheduleDeathPinUpdate() end)
 end
 
-local deathPinTicker = CreateFrame("Frame")
-deathPinTicker:SetScript("OnUpdate", function(_, elapsed)
+-- Shown by ScheduleDeathPinUpdate and hidden again once the update ran, so it
+-- does not tick on every frame of the session.
+deathPinTicker = CreateFrame("Frame")
+deathPinTicker:SetScript("OnUpdate", function(self, elapsed)
     if not deathPins.pending then
+        self:Hide()
         return
     end
     deathPins.elapsed = deathPins.elapsed + elapsed
@@ -227,5 +236,11 @@ deathPinTicker:SetScript("OnUpdate", function(_, elapsed)
         deathPins.elapsed = 0
         deathPins.pending = false
         UpdateDeathPinsInternal()
+        if not deathPins.pending then
+            self:Hide()
+        end
     end
 end)
+if not deathPins.pending then
+    deathPinTicker:Hide()
+end

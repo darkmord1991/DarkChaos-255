@@ -640,6 +640,19 @@ bool MythicSpectatorManager::CanSpectate(Player* player, uint32 instanceId, std:
         return false;
     }
 
+    // ...in any system. Registry::StartById enforces one session at a time,
+    // but the .spectate commands and the group finder reach StartSpectating
+    // directly. A duel spectator already holds the spectator flag, so the
+    // teleport below was refused, and the failure path's SetGameMaster(false)
+    // reset their phase: they dropped out of the duel's phase into the open
+    // world still flagged un-attackable until that duel ended.
+    if (sSpectatorRegistry.IsSpectating(player->GetGUID()) || player->IsSpectator()
+        || DCSpectator::IsHoldingSpectatorFlag(player))
+    {
+        error = "You are already spectating. Leave first.";
+        return false;
+    }
+
     // Check run exists
     auto it = _activeRuns.find(instanceId);
     if (it == _activeRuns.end())
@@ -802,6 +815,9 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
     if (!player->TeleportTo(run.mapId, targetPlayer->GetPositionX(), targetPlayer->GetPositionY(),
                             z, targetPlayer->GetOrientation(), TELE_TO_GM_MODE))
     {
+        // Undo everything StartSpectating set, the flag included: CanSpectate
+        // guarantees no other system holds it, so nothing here may survive.
+        DCSpectator::ReleaseSpectatorFlag(player);
         player->SetPendingSpectatorForBG(0);
         player->SetGameMaster(false);
         player->SetGMVisible(true);

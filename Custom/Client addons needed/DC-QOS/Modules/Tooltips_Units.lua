@@ -532,6 +532,18 @@ function TT.EnsureNativeTooltipPollFrame()
 
         TT.PollCompareItem(GameTooltip)
     end)
+
+    -- Both polls act only while GameTooltip is shown, so the 20 Hz driver runs
+    -- only then instead of on every frame of the session.
+    if not GameTooltip:IsShown() then
+        nativeTooltipPollFrame:Hide()
+    end
+    GameTooltip:HookScript("OnShow", function()
+        nativeTooltipPollFrame:Show()
+    end)
+    GameTooltip:HookScript("OnHide", function()
+        nativeTooltipPollFrame:Hide()
+    end)
 end
 
 -- Equipped side-by-side comparison for the native item path. The C++ item

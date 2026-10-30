@@ -16,6 +16,7 @@
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 #include "DBCEnums.h"
@@ -1221,7 +1222,11 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         return;
 
     if (notify)
+    {
         ChatHandler(player->GetSession()).SendNotification("Hotspot joined: +{}% experience", sHotspotsConfig.experienceBonus);
+        DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+            DarkChaos::CrossSystem::FeatureKind::HotspotVisit, targetId);
+    }
 
     if (surviveGoalHit && sHotspotsConfig.showObjectivesProgress)
         ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Survived {} minutes in the hotspot!|r",

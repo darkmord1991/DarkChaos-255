@@ -1409,7 +1409,10 @@ void Creature::SaveToDB()
     }
 
     uint32 mapId = GetTransport() && GetTransport()->ToMotionTransport() ? GetTransport()->GetGOInfo()->moTransport.mapID : GetMapId();
-    SaveToDB(mapId, data->spawnMask, GetPhaseMask());
+    // Save the spawn's phase, not the runtime one: phase auras and scripts move creatures between
+    // phases temporarily, and an unrelated save must not make that permanent. Code that changes the
+    // spawn phase on purpose (.npc set phase) updates the spawn data first.
+    SaveToDB(mapId, data->spawnMask, data->phaseMask);
 }
 
 void Creature::SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask)
@@ -1491,7 +1494,7 @@ void Creature::SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask)
     stmt->SetData(index++, GetEntry());
     stmt->SetData(index++, uint16(mapid));
     stmt->SetData(index++, spawnMask);
-    stmt->SetData(index++, GetPhaseMask());
+    stmt->SetData(index++, phaseMask);
     stmt->SetData(index++, int32(GetCurrentEquipmentId()));
     stmt->SetData(index++, GetPositionX());
     stmt->SetData(index++, GetPositionY());

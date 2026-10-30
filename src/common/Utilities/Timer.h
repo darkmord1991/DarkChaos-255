@@ -68,6 +68,14 @@ namespace Acore::Time
     AC_COMMON_API uint32 GetDayInYear(Seconds time = 0s);    // days since January 1 - [0, 365]
     AC_COMMON_API uint32 GetMonth(Seconds time = 0s);        // months since January - [0, 11]
     AC_COMMON_API uint32 GetYear(Seconds time = 0s);         // years since 1900
+
+    // DarkChaos: the client's packed time keeps the year since 2000 in 5 bits (24-28), 31 meaning any year, so it
+    // ends with 2030, and the plain year - 2000 spilled 2032 into the flags. Both ends now store the year modulo 31
+    // (the stock value through 2030) and read it back as the year with that residue in a window of 20 years back and
+    // 10 ahead of the clock, from 2031 on (as stock before that); the native client does the same (WowTime)
+    AC_COMMON_API uint32 PackTimeYear(int yearsSince2000);   // the field value
+    AC_COMMON_API int UnpackTimeYear(uint32 field);          // years since 2000
+    AC_COMMON_API int LastPackedTimeYear();                  // the last year since 2000 a packed time reaches
 }
 
 AC_COMMON_API struct tm* localtime_r(time_t const* time, struct tm* result);

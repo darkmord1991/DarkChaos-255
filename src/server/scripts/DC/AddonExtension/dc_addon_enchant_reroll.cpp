@@ -10,7 +10,8 @@
  *   CMSG_DO_ENCHANT_REROLL (0x23)  { bag, slot, action = "reroll" | "add" | "rerollAll", line,
  *                                    expected = [id, id, id] }
  *   SMSG_ENCHANT_INFO      (0x33)  the item's lines (id, tier, text), whether and why it can hold
- *                                  them, the price of every action, the reroll count, the balance
+ *                                  them, the price of every action, the reroll count and limit
+ *                                  (maxRerolls, 0 = none), the balance
  *   SMSG_ENCHANT_RESULT    (0x34)  success / errorCode / error, the lines before and after, what
  *                                  was paid; followed by a fresh SMSG_ENCHANT_INFO
  *
@@ -23,6 +24,7 @@
 #include "dc_addon_transmutation.h"
 #include "Chat.h"
 #include "DBCStores.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
@@ -271,6 +273,7 @@ namespace EnchantReroll
                 .Set("maxLines", uint32(RE::GetMaxLines()))
                 .Set("lines", std::move(lineArray))
                 .Set("rerollCount", rerollCount)
+                .Set("maxRerolls", RR::GetMaxRerolls())
                 .Set("costIncrease", RR::GetCostIncrease())
                 .Set("allowAdd", RR::IsActionAllowed(RR::Action::AddLine))
                 .Set("allowRerollAll", RR::IsActionAllowed(RR::Action::RerollAll))
@@ -451,6 +454,8 @@ namespace EnchantReroll
             {
                 AnnounceResult(owner, current, request, outcome);
                 DCAddon::Upgrade::SendCurrencyUpdate(owner);
+                DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(owner,
+                    DarkChaos::CrossSystem::FeatureKind::EnchantReroll);
             }
 
             // A success changed the lines and the prices; a refusal may have been priced on a

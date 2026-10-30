@@ -4,6 +4,7 @@
  */
 
 #include "CrossSystemWorldBossMgr.h"
+#include "PhaseLayers.h"
 
 #include "Config.h"
 #include "GameTime.h"
@@ -486,12 +487,9 @@ namespace DC
         {
             if (!p || !p->IsInWorld())
                 return;
-            // Save each player's original mask once so RestoreBossPhase can put them back exactly.
-            if (info->phasedPlayers.find(p->GetGUID()) == info->phasedPlayers.end())
-            {
-                info->phasedPlayers[p->GetGUID()] = p->GetPhaseMask();
-                p->SetPhaseMask(phaseMask, true);
-            }
+            // An exclusive layer: the fight's bit is the player's whole mask until RestoreBossPhase
+            if (info->phasedPlayers.insert(p->GetGUID()).second)
+                p->SetPhaseLayer(DarkChaos::PhaseLayers::WorldBossFight, phaseMask, true);
         };
 
         if (Group* group = leader->GetGroup())
@@ -522,10 +520,10 @@ namespace DC
         if (!info)
             return;
 
-        for (auto const& [guid, originalMask] : info->phasedPlayers)
+        for (ObjectGuid const& guid : info->phasedPlayers)
         {
             if (Player* p = ObjectAccessor::FindPlayer(guid))
-                p->SetPhaseMask(originalMask, true);
+                p->ClearPhaseLayer(DarkChaos::PhaseLayers::WorldBossFight);
         }
         info->phasedPlayers.clear();
     }

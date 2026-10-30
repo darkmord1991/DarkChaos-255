@@ -3,12 +3,15 @@
 
 #include "Group.h"
 #include "GroupMgr.h"
+#include "GroupReference.h"
 #include "InstanceMapScript.h"
+#include "InstanceSaveMgr.h"
 #include "InstanceScript.h"
 #include "Player.h"
 
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 // Instanced guild housing (Phase B migration) - per-instance script for the
 // dedicated guild-house map (GUILD_HOUSE_MAP_ID). Every guild teleports into its
@@ -92,6 +95,17 @@ namespace
             group->AddMember(player);
     }
 
+    // The player's bind to the house instance they are standing in, or nullptr.
+    InstancePlayerBind* GetHouseBind(Player* player, Map* map)
+    {
+        InstancePlayerBind* bind =
+            sInstanceSaveMgr->PlayerGetBoundInstance(player->GetGUID(), map->GetId(), map->GetDifficulty());
+        if (!bind || !bind->save || bind->save->GetInstanceId() != map->GetInstanceId())
+            return nullptr;
+
+        return bind;
+    }
+
     void LeaveHouseGroup(Player* player)
     {
         uint32 guildId = player->GetGuildId();
@@ -106,8 +120,37 @@ namespace
         if (player->GetGroup() != group || !group->IsMember(player->GetGUID()))
             return;
 
+        // Group::RemoveMember - and Disband/ForcedDisband when the group has two
+        // or fewer members - runs Group::_homebindIfInstance on every member on
+        // a dungeon map, clearing m_InstanceValid. That arms the stock "You are
+        // not in this instance's group" boot: members who stay in the house get
+        // ported to a graveyard 60s later, and the leaver keeps the flag through
+        // the teleport out whenever the destination has an instance_template row
+        // (any dungeon), because the worldport ack only resets it otherwise.
+        // The house group is cosmetic - entry is the guild's permanent bind - so
+        // leaving it must not change anyone's instance validity. Restore it for
+        // members bound to this house; the leaver only on a permanent bind, since
+        // a valid flag skips the ack's cleanup of a temporary one.
+        std::vector<Player*> keepValid;
+        if (Map* map = player->FindMap())
+        {
+            for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
+            {
+                Player* member = itr->GetSource();
+                if (!member || !member->m_InstanceValid || member->FindMap() != map)
+                    continue;
+
+                InstancePlayerBind* bind = GetHouseBind(member, map);
+                if (bind && (member != player || bind->perm))
+                    keepValid.push_back(member);
+            }
+        }
+
         ObjectGuid groupGuid = group->GetGUID();
         group->RemoveMember(player->GetGUID());
+
+        for (Player* member : keepValid)
+            member->m_InstanceValid = true;
 
         // RemoveMember may have disbanded (and deleted) the group when it
         // emptied; drop our handle in that case.

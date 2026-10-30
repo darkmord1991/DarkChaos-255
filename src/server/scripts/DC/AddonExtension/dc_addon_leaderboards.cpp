@@ -29,6 +29,7 @@
 
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
+#include "Chat.h"
 #include "Player.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -2275,8 +2276,18 @@ namespace
 
     void HandleTestTables(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
-        if (!player)
+        if (!player || !player->GetSession())
             return;
+
+        // Diagnostic: eleven COUNT(*) scans over the largest DC tables per
+        // request. It was open to every player, which made it a free way to
+        // load the database; the client only offers it as a debug button.
+        if (player->GetSession()->GetSecurity() < SEC_GAMEMASTER)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "The leaderboard table test is only available to game masters.");
+            return;
+        }
 
         LOG_INFO("server.scripts", "DC-Leaderboards: Testing database tables for player {}", player->GetName());
 

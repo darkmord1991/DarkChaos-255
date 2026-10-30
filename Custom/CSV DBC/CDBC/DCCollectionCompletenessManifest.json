@@ -5,8 +5,8 @@
       "collectionType": 1,
       "serverType": "mount",
       "serverSource": "table+index",
-      "definitionCount": 1944,
-      "expectedCount": 1944,
+      "definitionCount": 1954,
+      "expectedCount": 1954,
       "indexAvailable": true,
       "authoritative": true,
       "requestSkip": true,
@@ -17,8 +17,8 @@
       "collectionType": 2,
       "serverType": "pet",
       "serverSource": "table",
-      "definitionCount": 2061,
-      "expectedCount": 2061,
+      "definitionCount": 2064,
+      "expectedCount": 2064,
       "indexAvailable": true,
       "authoritative": true,
       "requestSkip": true,
@@ -53,8 +53,8 @@
       "collectionType": 6,
       "serverType": "transmog",
       "serverSource": "item_template",
-      "definitionCount": 59837,
-      "expectedCount": 59837,
+      "definitionCount": 59973,
+      "expectedCount": 59973,
       "indexAvailable": false,
       "authoritative": true,
       "requestSkip": true,
@@ -83,8 +83,8 @@
   },
   "dataRevisions": {
     "collectionCategories": 1684590543,
-    "collectionSources": 262840868,
-    "collectionShop": 1474972074,
+    "collectionSources": 302606372,
+    "collectionShop": 2009008687,
     "collectionSets": 786799120
   }
 }

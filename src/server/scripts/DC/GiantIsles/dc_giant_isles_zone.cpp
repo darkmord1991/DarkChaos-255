@@ -13,6 +13,8 @@
 #include "Player.h"
 #include "Creature.h"
 #include "CreatureAI.h"
+#include "ScriptedCreature.h"
+#include "ScriptedGossip.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "World.h"
@@ -35,17 +37,10 @@
 
 enum GiantIslesData
 {
-    // Zone/Area IDs (placeholder - needs actual custom zone ID)
-    ZONE_GIANT_ISLES            = 5000,  // Custom zone ID
-
-    // Subzone Area IDs
-    AREA_DINOTAMER_CAMP         = 5001,
-    AREA_PRIMAL_BASIN           = 5002,
-    AREA_DEVILSAUR_GORGE        = 5003,
-    AREA_RAPTOR_RIDGE           = 5004,
-    AREA_THUNDERING_PEAKS       = 5005,
-    AREA_BONE_WASTES            = 5006,
-    AREA_ANCIENT_RUINS          = 5007,
+    // Map and top-level zone (AreaTable). The world bosses are registered under
+    // this zone in CrossSystemScripts.cpp.
+    MAP_GIANT_ISLES             = 1405,
+    ZONE_GIANT_ISLES            = 5006,
 
     // World Boss Entries
     NPC_OONDASTA                = 400100,
@@ -81,6 +76,7 @@ enum GiantIslesData
     RARE_SPAWN_TIMER_MIN        = 30 * 60 * 1000,    // 30 minutes minimum
     RARE_SPAWN_TIMER_MAX        = 90 * 60 * 1000,    // 90 minutes maximum
     RARE_DESPAWN_TIMER          = 30 * 60 * 1000,    // 30 minutes if not killed
+    RARE_ALIVE_CHECK_MS         = 10 * 1000,
 };
 
 // ============================================================================
@@ -92,18 +88,18 @@ constexpr char const* ZONE_ENTER_MESSAGE = "|cFFFF8000[Giant Isles]|r Welcome to
 
 // These messages are for future world boss spawn announcements
 [[maybe_unused]] constexpr char const* BOSS_OONDASTA_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta, King of Dinosaurs|r "
-    "has awakened in |cFF00FF00Devilsaur Gorge|r! Rally your forces!";
+    "has awakened in |cFF00FF00Slippy Quagmire|r! Rally your forces!";
 
 [[maybe_unused]] constexpr char const* BOSS_THOK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Thok the Bloodthirsty|r "
-    "stalks the hunt in |cFF00FF00Raptor Ridge|r! Prepare for battle!";
+    "stalks the hunt in |cFF00FF00Oozing Overgrowth|r! Prepare for battle!";
 
 [[maybe_unused]] constexpr char const* BOSS_NALAK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Nalak the Storm Lord|r "
-    "descends upon |cFF00FF00Thundering Peaks|r! The storm is coming!";
+    "descends upon |cFF00FF00Moist Ridge|r! The storm is coming!";
 
 [[maybe_unused]] constexpr char const* BOSS_KILLED_MESSAGE = "|cFFFF8000[Giant Isles]|r |cFF00FF00%s|r has been defeated! "
     "A new world boss will appear tomorrow.";
 
-[[maybe_unused]] constexpr char const* RARE_SPAWN_MESSAGE = "|cFFFF8000[Giant Isles]|r A rare creature |cFF00FF00%s|r "
+constexpr char const* RARE_SPAWN_MESSAGE = "|cFFFF8000[Giant Isles]|r A rare creature |cFF00FF00{}|r "
     "has been spotted! Hunt it down for valuable rewards!";
 
 // ============================================================================
@@ -118,16 +114,17 @@ struct RareSpawnLocation
     float o;
 };
 
-// Potential spawn locations for random rares (placeholder coords - update with actual zone coords)
+// Potential spawn locations for random rares, on MoP's own dinosaur grounds and
+// clear of the camps, the tar pits and the invasion's beach.
 static const std::vector<RareSpawnLocation> RareSpawnPoints = {
-    { 0.0f, 0.0f, 0.0f, 0.0f },  // Devilsaur Gorge spawn point 1
-    { 50.0f, 50.0f, 0.0f, 0.0f },  // Devilsaur Gorge spawn point 2
-    { 100.0f, -50.0f, 0.0f, 0.0f },  // Raptor Ridge spawn point 1
-    { -100.0f, 100.0f, 0.0f, 0.0f },  // Primal Basin spawn point 1
-    { 200.0f, 200.0f, 0.0f, 0.0f },  // Bone Wastes spawn point 1
-    { -150.0f, -150.0f, 0.0f, 0.0f },  // Ancient Ruins spawn point 1
-    { 75.0f, -100.0f, 0.0f, 0.0f },  // Thundering Peaks spawn point 1
-    { -200.0f, 50.0f, 0.0f, 0.0f },  // Beach area spawn point 1
+    { 6147.5f, 1073.3f, 61.2f, 3.13f },  // Slippy Quagmire, east bank
+    { 6155.8f, 1142.7f, 61.3f, 6.05f },  // Slippy Quagmire, north bank
+    { 6102.3f, 1243.7f, 64.1f, 1.16f },  // Oozing Overgrowth, south slope
+    { 5979.1f, 1397.9f, 86.3f, 4.65f },  // Oozing Overgrowth, plateau
+    { 6118.2f, 1550.2f, 31.9f, 0.44f },  // Sticky Puddles, lower shelf
+    { 5967.4f,  852.1f, 44.5f, 2.19f },  // Weeping Swallow
+    { 6119.0f, 1517.4f, 43.7f, 0.40f },  // Sticky Puddles, upper shelf
+    { 5924.0f,  709.9f, 24.4f, 1.60f },  // Slimer Bay heights
 };
 
 // Random rare NPC entries that can spawn dynamically
@@ -427,15 +424,15 @@ public:
         {
             case NPC_OONDASTA:
                 bossName = "Oondasta, King of Dinosaurs";
-                location = "Devilsaur Gorge";
+                location = "Slippy Quagmire";
                 break;
             case NPC_THOK:
                 bossName = "Thok the Bloodthirsty";
-                location = "Raptor Ridge";
+                location = "Oozing Overgrowth";
                 break;
             case NPC_NALAK:
                 bossName = "Nalak the Storm Lord";
-                location = "Thundering Peaks";
+                location = "Moist Ridge";
                 break;
         }
 
@@ -473,6 +470,7 @@ public:
     world_giant_isles_manager() : WorldScript("world_giant_isles_manager")
     {
         _nextRareSpawnTime = Milliseconds(0);
+        _nextRareCheckTime = Milliseconds(0);
         _currentRareGUID = ObjectGuid::Empty;
         _rareIsAlive = false;
         _lastRotationDay = 255;
@@ -506,6 +504,10 @@ public:
         {
             TrySpawnRandomRare();
         }
+        else if (_rareIsAlive && currentTime >= _nextRareCheckTime)
+        {
+            CheckCurrentRare();
+        }
 
         // Check and apply daily boss rotation.
         ApplyBossRotation(false);
@@ -513,6 +515,7 @@ public:
 
 private:
     Milliseconds _nextRareSpawnTime;
+    Milliseconds _nextRareCheckTime;
     ObjectGuid _currentRareGUID;
     bool _rareIsAlive;
     uint8 _lastRotationDay;
@@ -583,7 +586,7 @@ private:
     {
         // Get a random rare entry and spawn location
         uint32 rareEntry = GetRandomRareEntry();
-        [[maybe_unused]] RareSpawnLocation loc = GetRandomSpawnLocation();
+        RareSpawnLocation loc = GetRandomSpawnLocation();
 
         if (rareEntry == 0)
         {
@@ -591,27 +594,49 @@ private:
             return;
         }
 
-        // NOTE: This is currently a placeholder manager. It logs spawn attempts,
-        // but does not actually spawn anything until mapId/coords are finalized.
-        // LOG_INFO("scripts.dc", "Giant Isles: Attempting to spawn random rare {} at ({}, {}, {})",
-        //     rareEntry, loc.x, loc.y, loc.z);
-
-        // Get the creature name for announcement
-        std::string rareName;
-        switch (rareEntry)
+        // A rare nobody can hunt would only burn its despawn timer: an empty
+        // island rolls again later.
+        Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+        if (!map || !map->HavePlayers())
         {
-            case 400055: rareName = "Bonecrusher"; break;
-            case 400056: rareName = "Gorespine the Impaler"; break;
-            case 400057: rareName = "Venomfang"; break;
-            case 400058: rareName = "Skyscreamer"; break;
-            case 400059: rareName = "Gul'rok the Cursed"; break;
-            default: rareName = "Unknown Rare"; break;
+            ScheduleNextRareSpawn();
+            return;
         }
 
-        // Placeholder manager: do not announce "spawned" since no creature is actually spawned yet.
-        // LOG_INFO("scripts.dc", "Giant Isles: Rare {} spawned", rareName);
+        Creature* rare = map->SummonCreature(rareEntry, Position(loc.x, loc.y, loc.z, loc.o), nullptr, RARE_DESPAWN_TIMER);
+        if (!rare)
+        {
+            LOG_WARN("scripts.dc", "Giant Isles: failed to spawn random rare {}", rareEntry);
+            ScheduleNextRareSpawn();
+            return;
+        }
 
-        // Schedule next attempt
+        rare->setActive(true);
+        _currentRareGUID = rare->GetGUID();
+        _rareIsAlive = true;
+        _nextRareCheckTime = GameTime::GetGameTimeMS() + Milliseconds(RARE_ALIVE_CHECK_MS);
+
+        std::string const name = rare->GetName();
+        map->DoForAllPlayers([&](Player* player)
+        {
+            if (player && player->GetSession())
+                ChatHandler(player->GetSession()).PSendSysMessage(RARE_SPAWN_MESSAGE, name);
+        });
+
+        LOG_INFO("scripts.dc", "Giant Isles: random rare {} spawned at ({}, {}, {})", name, loc.x, loc.y, loc.z);
+    }
+
+    // The next rare is only rolled once the current one has died or despawned.
+    void CheckCurrentRare()
+    {
+        _nextRareCheckTime = GameTime::GetGameTimeMS() + Milliseconds(RARE_ALIVE_CHECK_MS);
+
+        Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+        Creature* rare = map ? map->GetCreature(_currentRareGUID) : nullptr;
+        if (rare && rare->IsAlive())
+            return;
+
+        _currentRareGUID.Clear();
         ScheduleNextRareSpawn();
     }
 

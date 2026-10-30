@@ -36,12 +36,15 @@ local SETTLE_DELAY     = 0.6      -- seconds after the shot before moving on
 -- first, against this list. Keep the two in the same order.
 local QUEUE = {
     -- Timbermaw Hold (map 819)
-    { name = "GatewardenMorthak",     display = 503739, boss = "Gatewarden Mor'thak" },
-    { name = "TheSunderedChieftain",  display = 503737, boss = "The Sundered Chieftain" },
-    { name = "DenMotherUrsara",       display = 23773,  boss = "Den Mother Ursara" },
-    { name = "XanthirTheDefiler",     display = 503743, boss = "Xanthir the Defiler" },
-    { name = "TheNightmareGivenRoot", display = 503770, boss = "The Nightmare Given Root" },
-    { name = "Ursol",                 display = 503735, boss = "Ursol" },
+    { name = "KarrshTheSentinel",     display = 4010003, boss = "Karrsh the Sentinel" },
+    { name = "Rotgrowl",              display = 4010005, boss = "Rotgrowl and Kodiak" },
+    { name = "LoktanagTheVile",       display = 4010001, boss = "Loktanag the Vile" },
+    { name = "OrmanosTheCracked",     display = 4010004, boss = "Ormanos the Cracked" },
+    { name = "ChieftainPartath",      display = 4010008, boss = "Chieftain Partath" },
+    { name = "ArchdruidKronn",        display = 4010006, boss = "Archdruid Kronn" },
+    { name = "SelenaxxFoulheart",     display = 4010007, boss = "Selenaxx Foulheart" },
+    { name = "TriochTheDevourer",     display = 4010009, boss = "Trioch the Devourer" },
+    { name = "Ursol",                 display = 4010010, boss = "Ursol" },
     -- Crescent Grove (map 823)
     { name = "KeeperRanathos",        display = 503751, boss = "Keeper Ranathos" },
     { name = "GrovetenderEngryss",    display = 503737, boss = "Grovetender Engryss" },

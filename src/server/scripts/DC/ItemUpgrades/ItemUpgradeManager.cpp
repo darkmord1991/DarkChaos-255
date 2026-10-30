@@ -25,8 +25,10 @@
 #include "Player.h"
 #include "StringFormat.h"
 #include "Config.h"
+#include "TradeData.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
+#include <algorithm>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -201,6 +203,25 @@ namespace DarkChaos
                 return mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_FRONTIER_SAP, season);
             }
             return player->GetItemCount(GetFrontierSapItemId());
+        }
+
+        uint32 GetSpendableItemCount(Player const* player, uint32 itemId, bool inBankAlso)
+        {
+            if (!player || !itemId)
+                return 0;
+
+            uint32 count = player->GetItemCount(itemId, inBankAlso);
+            if (TradeData const* trade = player->GetTradeData())
+            {
+                for (uint8 slot = 0; slot < TRADE_SLOT_COUNT; ++slot)
+                {
+                    Item const* tradeItem = trade->GetItem(TradeSlots(slot));
+                    if (tradeItem && tradeItem->GetEntry() == itemId)
+                        count -= std::min(count, tradeItem->GetCount());
+                }
+            }
+
+            return count;
         }
 
         // =====================================================================
@@ -744,8 +765,8 @@ namespace DarkChaos
 
                 uint32 itemId = GetCurrencyItemId(currency);
 
-                // Check if player has enough
-                if (player->GetItemCount(itemId) < amount)
+                // Check if player has enough that the destroy below can actually take
+                if (GetSpendableItemCount(player, itemId) < amount)
                     return false;
 
                 player->DestroyItemCount(itemId, amount, true);

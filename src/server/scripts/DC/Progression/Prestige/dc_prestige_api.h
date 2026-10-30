@@ -30,7 +30,8 @@ namespace PrestigeAPI
     // The level a prestige restarts this character at: Prestige.ResetLevel plus Head Start.
     uint32 GetRestartLevel(Player* player);
     // Prestige.FreshStart: a prestige also unlearns class spells above the restart level, unequips
-    // gear the character can no longer use and makes completed zone quests available again.
+    // gear the character can no longer use and makes completed zone quests and looted worldforged
+    // pickups available again.
     bool IsFreshStartEnabled();
 
     // Challenges

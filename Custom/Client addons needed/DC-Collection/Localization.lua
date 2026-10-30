@@ -107,6 +107,10 @@ L.SHOP_ERROR_LIMIT = "Purchase limit reached!"
 L.SHOP_ERROR_STOCK = "Out of stock!"
 L.SHOP_TOKENS = "Collection Tokens"
 L.SHOP_EMBLEMS = "Essence"
+L.SHOP_POINTS = "Shop Points"
+L.SHOP_BUY_POINTS = "Use Points"
+L.SHOP_EARN_POINTS = "Earn"
+L.SHOP_OR = "or"
 L.SHOP_REQUIRES = "Requires:"
 L.SHOP_REQUIRES_MOUNTS = "%d mounts collected"
 L.SHOP_REQUIRES_PETS = "%d pets collected"
@@ -200,7 +204,11 @@ if GetLocale() == "deDE" then
     L.SHOP_BUY = "Kaufen"
     L.SHOP_TOKENS = "Sammelmarken"
     L.SHOP_EMBLEMS = "Essenz"
-    
+    L.SHOP_POINTS = "Shop-Punkte"
+    L.SHOP_BUY_POINTS = "Punkte"
+    L.SHOP_EARN_POINTS = "Verdienen"
+    L.SHOP_OR = "oder"
+
     L.STATS_COLLECTED = "Gesammelt: %d / %d"
     L.STATS_PROGRESS = "%.1f%% Abgeschlossen"
 

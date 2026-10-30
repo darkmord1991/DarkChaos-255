@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "DC/CrossSystem/PhaseLayers.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
@@ -143,8 +144,11 @@ namespace
     static std::unordered_map<ObjectGuid, uint32> s_spawnRequestByPlayer;
     static std::unordered_map<ObjectGuid, Position> s_spawnCenterOverrideByPlayer;
 
-    // Personal phasing to avoid players seeing each other's spawned configurations.
-    // Uses a small set of high bits to reduce collision with existing content.
+    // Personal phasing so other players neither see nor hit someone's training dummies. A bit is
+    // taken only while a training session runs: it is allocated when dummies are spawned and given
+    // back when the session ends (despawn, restart, all dummies timed out, leaving map 745, logout).
+    // The player wears 1|bit (normal world plus own dummies); the dummies and their helpers wear
+    // only the bit. Uses a small set of high bits to reduce collision with existing content.
     static constexpr uint32 PERSONAL_PHASE_BITS[] =
     {
         (1u << 30), (1u << 29), (1u << 28), (1u << 27), (1u << 26),
@@ -161,31 +165,35 @@ namespace
         if (!player)
             return 0;
 
-        std::lock_guard<std::mutex> lock(s_trainingMutex);
-
-        auto it = s_personalPhaseByPlayer.find(player->GetGUID());
-        if (it != s_personalPhaseByPlayer.end())
+        uint32 bit = 0;
         {
-            // Ensure the player retains the bit (in case some other system updated phase mask).
-            uint32 bit = it->second;
-            if (bit)
-                player->SetPhaseMask(player->GetPhaseMask() | bit, true);
-            return bit;
-        }
+            std::lock_guard<std::mutex> lock(s_trainingMutex);
 
-        for (uint32 bit : PERSONAL_PHASE_BITS)
-        {
-            if (bit && !s_usedPersonalPhaseBits.count(bit))
+            auto it = s_personalPhaseByPlayer.find(player->GetGUID());
+            if (it != s_personalPhaseByPlayer.end())
+                bit = it->second;
+            else
             {
-                s_usedPersonalPhaseBits.insert(bit);
-                s_personalPhaseByPlayer[player->GetGUID()] = bit;
-                player->SetPhaseMask(player->GetPhaseMask() | bit, true);
-                return bit;
+                for (uint32 candidate : PERSONAL_PHASE_BITS)
+                {
+                    if (s_usedPersonalPhaseBits.count(candidate))
+                        continue;
+
+                    s_usedPersonalPhaseBits.insert(candidate);
+                    s_personalPhaseByPlayer[player->GetGUID()] = candidate;
+                    bit = candidate;
+                    break;
+                }
             }
         }
 
-        // No free bit available.
-        return 0;
+        // Phase changes run outside the lock (they trigger visibility work). An additive layer: the
+        // player keeps the normal world and whatever other systems add, plus the dummies' bit.
+        if (bit)
+            player->SetPhaseLayer(DarkChaos::PhaseLayers::TrainingGrounds, bit, false);
+
+        // 0 = no free bit available.
+        return bit;
     }
 
     void ReleasePlayerPersonalPhase(Player* player)
@@ -193,19 +201,38 @@ namespace
         if (!player)
             return;
 
-        std::lock_guard<std::mutex> lock(s_trainingMutex);
-
-        auto it = s_personalPhaseByPlayer.find(player->GetGUID());
-        if (it == s_personalPhaseByPlayer.end())
-            return;
-
-        uint32 bit = it->second;
-        s_personalPhaseByPlayer.erase(it);
-        if (bit)
+        uint32 bit = 0;
         {
+            std::lock_guard<std::mutex> lock(s_trainingMutex);
+
+            auto it = s_personalPhaseByPlayer.find(player->GetGUID());
+            if (it == s_personalPhaseByPlayer.end())
+                return;
+
+            bit = it->second;
+            s_personalPhaseByPlayer.erase(it);
             s_usedPersonalPhaseBits.erase(bit);
-            player->SetPhaseMask(player->GetPhaseMask() & ~bit, true);
         }
+
+        if (bit)
+            player->ClearPhaseLayer(DarkChaos::PhaseLayers::TrainingGrounds);
+    }
+
+    // Phase for a dummy's helpers (totem, adds): the owner's personal bit while the session holds
+    // one. A totem is summoned from the dummy's Reset(), i.e. before the dummy itself is moved out
+    // of the owner's 1|bit phase, so the dummy's own mask is only the fallback.
+    uint32 GetTrainingPhaseMask(Creature const* dummy, Player const* owner)
+    {
+        if (owner)
+        {
+            std::lock_guard<std::mutex> lock(s_trainingMutex);
+
+            auto it = s_personalPhaseByPlayer.find(owner->GetGUID());
+            if (it != s_personalPhaseByPlayer.end() && it->second)
+                return it->second;
+        }
+
+        return dummy->GetPhaseMask();
     }
 
     Position GetTrainingSpawnCenter()
@@ -442,24 +469,45 @@ namespace
         return it->second;
     }
 
+    // Ends the player's training session: despawns everything it tracked (dummies, totems, adds) and
+    // gives the personal phase bit back.
     void DespawnSession(Player* player)
     {
         auto it = s_sessionByPlayer.find(player->GetGUID());
-        if (it == s_sessionByPlayer.end())
-            return;
-
-        for (ObjectGuid guid : it->second.spawned)
+        if (it != s_sessionByPlayer.end())
         {
-            if (Creature* c = ObjectAccessor::GetCreature(*player, guid))
-                c->DespawnOrUnsummon(Milliseconds(1));
+            for (ObjectGuid guid : it->second.spawned)
+            {
+                if (Creature* c = ObjectAccessor::GetCreature(*player, guid))
+                    c->DespawnOrUnsummon(Milliseconds(1));
+            }
+
+            it->second.spawned.clear();
         }
 
-        it->second.spawned.clear();
+        ReleasePlayerPersonalPhase(player);
     }
 
     void TrackSpawn(Player* player, Creature* creature)
     {
         s_sessionByPlayer[player->GetGUID()].spawned.push_back(creature->GetGUID());
+    }
+
+    // The session lasts as long as one of its dummies; totems and adds alone do not keep it open.
+    bool HasLiveTrainingDummy(Player* owner)
+    {
+        auto it = s_sessionByPlayer.find(owner->GetGUID());
+        if (it == s_sessionByPlayer.end())
+            return false;
+
+        for (ObjectGuid const& guid : it->second.spawned)
+        {
+            if (Creature* c = ObjectAccessor::GetCreature(*owner, guid))
+                if (c->GetEntry() == NPC_BOSS_TRAINING_DUMMY && c->IsInWorld())
+                    return true;
+        }
+
+        return false;
     }
 
     void SpawnTrainingDummies(Player* player, Creature* master)
@@ -497,8 +545,8 @@ namespace
             }
         }
 
-        // Put the player in a personal phase bit (adds to their phase mask) so spawned dummies
-        // can be hidden from other players without writing any DB spawns.
+        // Start the session: put the player in a personal phase bit (added to their phase mask) so
+        // the dummies can be hidden from other players without writing any DB spawns.
         uint32 personalPhaseBit = EnsurePlayerPersonalPhase(player);
         if (!personalPhaseBit)
         {
@@ -545,11 +593,10 @@ namespace
 
             if (Creature* dummy = player->SummonCreature(NPC_BOSS_TRAINING_DUMMY, pos, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 300000, 0, nullptr, true))
             {
-                // Keep personal phase behavior, but ensure the creature matches the player's full phase mask.
-                if (personalPhaseBit)
-                    dummy->SetPhaseMask(player->GetPhaseMask(), true);
-                else
-                    dummy->SetPhaseMask(player->GetPhaseMask(), true);
+                // Only the personal bit: the owner (1|bit) sees and fights it, players in the normal
+                // phase neither see it nor reach it with their spells. "Visible by summoner only"
+                // alone hid it visually but left it targetable by other players' AoE.
+                dummy->SetPhaseMask(personalPhaseBit, true);
 
                 // Apply level immediately (in case AI Reset hasn't run yet).
                 dummy->SetLevel(chosenLevel);
@@ -1061,6 +1108,13 @@ public:
             {
                 checkTimer = 250;
 
+                // The owner left the map: do not linger in a phase bit that may be handed out again.
+                if (playerGuid.IsPlayer() && !ObjectAccessor::GetPlayer(me->GetMap(), playerGuid))
+                {
+                    me->DespawnOrUnsummon(Milliseconds(1));
+                    return;
+                }
+
                 if (!totemGuid.IsEmpty())
                 {
                     if (Creature* totem = ObjectAccessor::GetCreature(*me, totemGuid))
@@ -1158,11 +1212,13 @@ public:
                     p.m_positionZ += 0.25f;
                     if (Creature* totem = me->SummonCreature(NPC_TRAINING_TOTEM, p, TEMPSUMMON_TIMED_DESPAWN, 300000))
                     {
-                        totem->SetPhaseMask(me->GetPhaseMask(), true);
+                        totem->SetPhaseMask(GetTrainingPhaseMask(me, owner), true);
                         totem->SetReactState(REACT_PASSIVE);
                         totem->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                         totem->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         totemGuid = totem->GetGUID();
+                        // Part of the owner's session, so it goes away with it
+                        TrackSpawn(owner, totem);
                     }
                 }
             }
@@ -1192,8 +1248,25 @@ public:
             inactivityTimer = INACTIVITY_DESPAWN_MS;
         }
 
+        ObjectGuid GetSummonerGuid()
+        {
+            if (TempSummon* ts = me->ToTempSummon())
+                return ts->GetSummonerGUID();
+
+            return me->GetOwnerGUID();
+        }
+
         void UpdateAI(uint32 diff) override
         {
+            // The owner left the map (teleport, logout): go with them, so nothing of the session
+            // lingers in a phase bit that may already have been handed to another player.
+            ObjectGuid const summonerGuid = GetSummonerGuid();
+            if (summonerGuid.IsPlayer() && !ObjectAccessor::GetPlayer(me->GetMap(), summonerGuid))
+            {
+                me->DespawnOrUnsummon(Milliseconds(1));
+                return;
+            }
+
             // Despawn after a period of inactivity/out of combat.
             // We tick this even if there is no victim, so passive dummies still clean up.
             if (me->IsInCombat())
@@ -1212,12 +1285,6 @@ public:
 
             if (!UpdateVictim())
                 return;
-
-            ObjectGuid summonerGuid;
-            if (TempSummon* ts = me->ToTempSummon())
-                summonerGuid = ts->GetSummonerGUID();
-            else
-                summonerGuid = me->GetOwnerGUID();
 
             Player* owner = ObjectAccessor::GetPlayer(me->GetMap(), summonerGuid);
             if (!owner)
@@ -1296,7 +1363,8 @@ public:
                             Position spawn = RandomPosAround(totem->GetPosition(), 18.0f);
                             if (Creature* add = me->SummonCreature(NPC_TRAINING_ADD, spawn, TEMPSUMMON_TIMED_DESPAWN, 60000))
                             {
-                                add->SetPhaseMask(me->GetPhaseMask(), true);
+                                add->SetPhaseMask(GetTrainingPhaseMask(me, owner), true);
+                                TrackSpawn(owner, add);
                                 add->SetReactState(REACT_AGGRESSIVE);
                                 add->GetMotionMaster()->MovePoint(1, totem->GetPosition());
 
@@ -1319,6 +1387,29 @@ public:
         }
 
         void MoveInLineOfSight(Unit* /*who*/) override { }
+
+        // Dummies also time out on their own (inactivity or the summon timer). Once the owner's last
+        // one is gone the session ends: its totems and adds despawn and the personal phase bit is
+        // given back. Checked a moment later on the owner, after this removal has completed.
+        void OnDespawn() override
+        {
+            // The totem belongs to this dummy; it must not outlive it in a reusable phase bit.
+            if (!totemGuid.IsEmpty())
+                if (Creature* totem = ObjectAccessor::GetCreature(*me, totemGuid))
+                    totem->DespawnOrUnsummon(Milliseconds(1));
+
+            ObjectGuid const summonerGuid = GetSummonerGuid();
+            Player* owner = ObjectAccessor::GetPlayer(me->GetMap(), summonerGuid);
+            if (!owner)
+                return;
+
+            owner->m_Events.AddEventAtOffset([summonerGuid]
+            {
+                Player* player = ObjectAccessor::FindPlayer(summonerGuid);
+                if (player && !HasLiveTrainingDummy(player))
+                    DespawnSession(player);
+            }, 1s);
+        }
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -1680,17 +1771,17 @@ public:
         PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_MAP_CHANGED
     }) { }
 
+    // No personal phase bit on login or on entering map 745: one is taken only when a training
+    // session starts (SpawnTrainingDummies), so idle players and bots do not drain the small pool.
     void OnPlayerLogin(Player* player) override
     {
-        if (player && player->GetMapId() == 745)
-            EnsurePlayerPersonalPhase(player);
         EnsureBossPadDummies(player);
     }
 
     void OnPlayerLogout(Player* player) override
     {
+        // Ends the session and gives the personal phase bit back
         DespawnSession(player);
-        ReleasePlayerPersonalPhase(player);
         s_sessionByPlayer.erase(player->GetGUID());
         s_configByPlayer.erase(player->GetGUID());
         s_spawnRequestByPlayer.erase(player->GetGUID());
@@ -1699,15 +1790,11 @@ public:
 
     void OnPlayerMapChanged(Player* player) override
     {
-        // Avoid leaving training summons behind when teleporting away.
+        // Leaving the map ends the session and frees the personal phase bit; the session's
+        // creatures left on the old map despawn themselves once their owner is gone.
         DespawnSession(player);
         s_spawnRequestByPlayer.erase(player->GetGUID());
         s_spawnCenterOverrideByPlayer.erase(player->GetGUID());
-
-        if (player && player->GetMapId() == 745)
-            EnsurePlayerPersonalPhase(player);
-        else
-            ReleasePlayerPersonalPhase(player);
 
         // Ensure random boss-display dummies exist when entering the training map.
         EnsureBossPadDummies(player);

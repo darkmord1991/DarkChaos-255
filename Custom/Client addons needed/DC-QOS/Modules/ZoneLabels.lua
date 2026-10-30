@@ -18,7 +18,7 @@ end
 local ZoneLabels = {
     displayName = "ZoneLabels",
     settingKey = "zoneLabels",
-    icon = "Interface\\Icons\\INV_Misc_Map02_01",
+    icon = "Interface\\Icons\\INV_Misc_Map02",
     defaults = {
         zoneLabels = {
             enabled = true,

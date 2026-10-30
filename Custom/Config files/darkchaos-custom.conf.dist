@@ -2036,6 +2036,17 @@ DC.RandomEnchants.Reroll.CostIncrease = 1
 DC.RandomEnchants.Reroll.MaxCost = 20
 
 #
+#    DC.RandomEnchants.Reroll.MaxRerolls
+#        Description: How many lines one item can have rerolled in its
+#                     lifetime. A Reroll All uses one per line it rerolls and
+#                     is refused when fewer are left; adding a line uses none.
+#                     The count is kept per item, so it survives trades.
+#                     0 = unlimited.
+#        Default:     15
+#
+DC.RandomEnchants.Reroll.MaxRerolls = 15
+
+#
 #    DC.RandomEnchants.Reroll.AddCost
 #        Description: Price of adding a line: AddCost times the number of
 #                     lines the item will hold afterwards (5 / 10 / 15 by
@@ -2074,6 +2085,22 @@ DC.RandomEnchants.Reroll.QualityCostFactor = "1 1 1 2 3 4"
 #  heirlooms with account-wide progression.
 #
 ###############################################################################
+
+# -----------------------------------------------------------------------------
+# Path of Chaos
+# -----------------------------------------------------------------------------
+
+#
+#    DCPath.Enable
+#        Description: Master toggle for the Path of Chaos, the account-wide task
+#                     book paying Shop Points for the Collection shop. Tasks live
+#                     in the world tables dc_path_categories and dc_path_tasks
+#                     (`.path reload` after editing them). With this off the book
+#                     is empty, nothing is recorded and points cannot be spent.
+#                     Read at startup and on `.path reload`.
+#        Default:     1 (Enabled)
+#
+DCPath.Enable = 1
 
 # -----------------------------------------------------------------------------
 # Core Collection Settings
@@ -3641,13 +3668,15 @@ Prestige.StatBonusPercent = 1
 #                     the hearthstone is bound to the starting area, and
 #                     completed zone quests up to Prestige.RequiredLevel can be
 #                     done again. Class, profession, dungeon, raid, PvP, event
-#                     and repeatable quests stay done. Each action bar spell goes
-#                     back to its button when it is learned again (needs
-#                     EnablePlayerSettings = 1).
+#                     and repeatable quests stay done. The worldforged pickups
+#                     of maps 750/751 the character has looted can be looted
+#                     again. Each action bar spell goes back to its button when
+#                     it is learned again (needs EnablePlayerSettings = 1).
 #                     Always, whatever this option says: the quest log is
 #                     emptied and talents reset to the restart level's points.
 #        Default:     1 (Enabled)
-#                     0 (Disabled - keep spells, equipped gear and completed quests)
+#                     0 (Disabled - keep spells, equipped gear, completed quests
+#                        and looted worldforged pickups)
 #
 Prestige.FreshStart = 1
 

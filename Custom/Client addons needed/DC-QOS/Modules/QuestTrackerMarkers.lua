@@ -579,6 +579,79 @@ local function SetTrackerFontColor(fontString, r, g, b)
     end
 end
 
+-- In-range arrival pulse. When the super-tracked objective is within arrival
+-- distance, animate the pulse texture (mirrors the HUD arrival pulse in
+-- Navigation.UpdateMarker). Queried live here because tracker chrome updates
+-- are event-based and would go stale as the player walks; the arrival state
+-- and the pulseOnArrival setting are read from the Navigation module.
+--
+-- One driver serves every tracker row. Each row used to run an OnUpdate of
+-- its own and set its pulse alpha on every frame even when nothing changed;
+-- now only rows in range animate per frame, a row leaving range gets its
+-- resting alpha back once, and the driver hides itself while no visible row
+-- is tracked or pulsing (a row becoming visible or tracked wakes it).
+local pulseRows = {}
+local pulseDriver
+
+local function SetRowPulseAlpha(chrome, alpha)
+    if chrome.__dcqosPulseAlpha ~= alpha then
+        chrome.__dcqosPulseAlpha = alpha
+        chrome.trackPulse:SetAlpha(alpha)
+    end
+end
+
+local function UpdatePulseRows(self, elapsed)
+    -- Throttle the range check (a distance calc) to ~10Hz; only the cheap
+    -- alpha animation runs per frame, and only for rows in range.
+    self.rangeCheckIn = (self.rangeCheckIn or 0) - (elapsed or 0)
+    local checkRange = self.rangeCheckIn <= 0
+    if checkRange then
+        self.rangeCheckIn = 0.1
+    end
+
+    local busy = false
+    local now
+    for chrome in pairs(pulseRows) do
+        if chrome.trackPulse and chrome:IsVisible() then
+            if checkRange then
+                local inRange = false
+                if chrome.__dcqosPulseEligible and chrome.__dcqosQuestId then
+                    local navSettings = addon and addon.settings and addon.settings.navigation
+                    local pulseOnArrival = not navSettings or navSettings.pulseOnArrival ~= false
+                    local nav = addon and addon.Navigation
+                    if pulseOnArrival and nav and type(nav.IsQuestInArrivalRange) == "function" then
+                        inRange = nav:IsQuestInArrivalRange(chrome.__dcqosQuestId)
+                    end
+                end
+                chrome.__dcqosPulseInRange = inRange
+            end
+
+            if chrome.__dcqosPulseInRange then
+                now = now or (GetTime and GetTime() or 0)
+                SetRowPulseAlpha(chrome, 0.55 + 0.45 * (0.5 + 0.5 * math.sin(now * 7.5)))
+            else
+                SetRowPulseAlpha(chrome, chrome.__dcqosPulseBase or 0)
+            end
+
+            if chrome.__dcqosPulseEligible or chrome.__dcqosPulseInRange then
+                busy = true
+            end
+        end
+    end
+
+    if not busy then
+        self:Hide()
+    end
+end
+
+local function WakePulseDriver()
+    if not pulseDriver then
+        pulseDriver = CreateFrame("Frame")
+        pulseDriver:SetScript("OnUpdate", UpdatePulseRows)
+    end
+    pulseDriver:Show()
+end
+
 function Markers.EnsureWatchFrameQuestChrome(root)
     if not root then
         return nil
@@ -673,42 +746,10 @@ function Markers.EnsureWatchFrameQuestChrome(root)
     routeText:Hide()
     chrome.routeText = routeText
 
-    -- In-range arrival pulse. When the super-tracked objective is within arrival
-    -- distance, animate the pulse texture (mirrors the HUD arrival pulse in
-    -- Navigation.UpdateMarker). Queried live here per-frame because tracker chrome
-    -- updates are event-based and would go stale as the player walks; the arrival
-    -- state and the pulseOnArrival setting are read from the Navigation module.
-    chrome:SetScript("OnUpdate", function(self, elapsed)
-        local pulse = self.trackPulse
-        if not pulse then
-            return
-        end
-
-        -- Throttle the range check (a distance calc) to ~10Hz; only the
-        -- cheap alpha animation runs per frame while in range.
-        self.__dcqosRangeCheckIn = (self.__dcqosRangeCheckIn or 0) - (elapsed or 0)
-        if self.__dcqosRangeCheckIn <= 0 then
-            self.__dcqosRangeCheckIn = 0.1
-
-            local inRange = false
-            if self.__dcqosPulseEligible and self.__dcqosQuestId then
-                local navSettings = addon and addon.settings and addon.settings.navigation
-                local pulseOnArrival = not navSettings or navSettings.pulseOnArrival ~= false
-                local nav = addon and addon.Navigation
-                if pulseOnArrival and nav and type(nav.IsQuestInArrivalRange) == "function" then
-                    inRange = nav:IsQuestInArrivalRange(self.__dcqosQuestId)
-                end
-            end
-            self.__dcqosPulseInRange = inRange
-        end
-
-        if self.__dcqosPulseInRange then
-            local now = GetTime and GetTime() or 0
-            pulse:SetAlpha(0.55 + 0.45 * (0.5 + 0.5 * math.sin(now * 7.5)))
-        else
-            pulse:SetAlpha(self.__dcqosPulseBase or 0)
-        end
-    end)
+    -- The arrival pulse runs on the shared driver above.
+    chrome.__dcqosPulseAlpha = 0
+    pulseRows[chrome] = true
+    chrome:SetScript("OnShow", WakePulseDriver)
 
     root.__dcqosWatchQuestBullets = {}
     root.__dcqosWatchQuestExtraSpacing = 4
@@ -819,9 +860,13 @@ function Markers.UpdateWatchFrameQuestChrome(root, options)
     chrome.trackPulse:SetPoint("CENTER", chrome.trackBox, "CENTER", 0, 0)
     chrome.trackPulse:SetVertexColor(borderR, borderG, borderB, 1)
     chrome.trackPulse:SetAlpha(pulseAlpha)
+    chrome.__dcqosPulseAlpha = pulseAlpha
     chrome.__dcqosPulseBase = pulseAlpha
     chrome.__dcqosQuestId = tonumber(opts.questId)
     chrome.__dcqosPulseEligible = isTracked and true or false
+    if isTracked or chrome.__dcqosPulseInRange then
+        WakePulseDriver()
+    end
     chrome.completeDot:ClearAllPoints()
     chrome.completeDot:SetPoint("CENTER", chrome.trackBox, "CENTER", 0, 0)
     chrome.completeDot:SetAlpha(dotAlpha)

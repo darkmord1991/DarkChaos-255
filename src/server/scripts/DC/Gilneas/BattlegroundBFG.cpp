@@ -305,9 +305,12 @@ void BattlegroundBFG::SendNodeUpdate(uint8 node)
     }
 }
 
+// Node ownership is shown by respawning the banner/aura objects, not by phasing. Every BFG spawn is
+// created in phase 1 (Battleground::AddObject/AddCreature) and map 761 has no DB spawns in other
+// phases, so the per-node player phase mask inherited from an old Arathi Basin port only leaked:
+// it was never cleared when a player left the battleground.
 void BattlegroundBFG::NodeOccupied(uint8 node)
 {
-    ApplyPhaseMask();
     AddSpiritGuide(node, GILNEAS_BG_SpiritGuidePos[node][0], GILNEAS_BG_SpiritGuidePos[node][1], GILNEAS_BG_SpiritGuidePos[node][2], GILNEAS_BG_SpiritGuidePos[node][3], _capturePointInfo[node]._ownerTeamId);
 
     ++_controlledPoints[_capturePointInfo[node]._ownerTeamId];
@@ -347,8 +350,6 @@ void BattlegroundBFG::NodeDeoccupied(uint8 node)
         // Mark node neutral
         _capturePointInfo[node]._ownerTeamId = TEAM_NEUTRAL;
         _capturePointInfo[node]._state = GILNEAS_BG_NODE_TYPE_NEUTRAL;
-
-        ApplyPhaseMask();
     }
 }
 
@@ -574,21 +575,6 @@ bool BattlegroundBFG::AllNodesConrolledByTeam(TeamId teamId) const
 //     //return CheckAchievementCriteriaMeet(criteriaId, player, target, miscvalue);
 //     return false;
 // }
-
-void BattlegroundBFG::ApplyPhaseMask()
-{
-    uint32 phaseMask = 1;
-    for (uint32 i = GILNEAS_BG_NODE_LIGHTHOUSE; i < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++i)
-        if (_capturePointInfo[i]._ownerTeamId != TEAM_NEUTRAL)
-            phaseMask |= 1u << (i*2+1 + static_cast<uint32>(_capturePointInfo[i]._ownerTeamId));
-
-    BattlegroundPlayerMap const& bgPlayerMap = GetPlayers();
-    for (BattlegroundPlayerMap::const_iterator itr = bgPlayerMap.begin(); itr != bgPlayerMap.end(); ++itr)
-    {
-        itr->second->SetPhaseMask(phaseMask, false);
-        itr->second->UpdateObjectVisibility(true, false);
-    }
-}
 
 int32 BattlegroundBFG::_GetNodeNameId(uint8 node)
 {

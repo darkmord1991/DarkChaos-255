@@ -27,9 +27,11 @@
 #include "DC/MythicPlus/dc_mythicplus_spectator.h"
 #include "DC/Spectator/dc_spectator_core.h"
 
+#include <algorithm>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include "dc_update_profiler.h"
 
 namespace DCAddon
@@ -84,6 +86,52 @@ namespace GroupFinder
     namespace
     {
         constexpr uint64 GROUP_FINDER_SEARCH_CACHE_TTL_MS = 1000;
+        // The cache key is made of client-chosen filter values, so the map is
+        // swept and capped on insert -- nothing else ever removes an entry.
+        constexpr std::size_t GROUP_FINDER_SEARCH_CACHE_MAX_ENTRIES = 64;
+
+        // Scheduled events: furthest ahead one can be planned, and the largest
+        // signup list (a full raid). Both used to be taken from the request
+        // as-is; a far-future event never expires out of everyone's list.
+        constexpr time_t GROUP_FINDER_EVENT_MAX_LEAD_SECONDS = 30 * DAY;
+        constexpr uint8 GROUP_FINDER_EVENT_MAX_SIGNUPS = MAXRAIDSIZE;
+
+        // One scheduled-event creation in flight per player. The per-player
+        // cap is an async COUNT with the INSERT in its callback, so a burst of
+        // requests all read the same count and all inserted.
+        std::mutex sEventCreateMutex;
+        std::unordered_set<uint32> sEventCreatesInFlight;
+
+        bool BeginEventCreate(uint32 guidLow)
+        {
+            std::lock_guard<std::mutex> lock(sEventCreateMutex);
+            return sEventCreatesInFlight.insert(guidLow).second;
+        }
+
+        void EndEventCreate(uint32 guidLow)
+        {
+            std::lock_guard<std::mutex> lock(sEventCreateMutex);
+            sEventCreatesInFlight.erase(guidLow);
+        }
+
+        // Recomputes an event's signup count from its active rows, then moves
+        // it between open and full to match. Replaces the old +1/-1 updates,
+        // which drifted on every failed insert and every repeated cancel --
+        // a signup/cancel/signup loop could fill any event on its own.
+        void AppendEventSignupRecount(CharacterDatabaseTransaction trans, uint32 eventId)
+        {
+            trans->Append(
+                "UPDATE dc_group_finder_scheduled_events SET current_signups = LEAST(255, "
+                "(SELECT COUNT(*) FROM dc_group_finder_event_signups WHERE event_id = {} AND status IN (0, 1))) "
+                "WHERE id = {}",
+                eventId, eventId);
+            trans->Append(
+                "UPDATE dc_group_finder_scheduled_events SET status = CASE "
+                "WHEN status = 1 AND current_signups >= max_signups THEN 2 "
+                "WHEN status = 2 AND current_signups < max_signups THEN 1 "
+                "ELSE status END WHERE id = {}",
+                eventId);
+        }
 
         struct SearchListingsCacheKey
         {
@@ -277,6 +325,17 @@ namespace GroupFinder
             cacheEntry.expiresAtMs = nowMs + GROUP_FINDER_SEARCH_CACHE_TTL_MS;
 
             std::lock_guard<std::mutex> lock(sSearchListingsCacheMutex);
+            if (sSearchListingsPayloads.size() >= GROUP_FINDER_SEARCH_CACHE_MAX_ENTRIES)
+            {
+                std::erase_if(sSearchListingsPayloads, [nowMs](auto const& entry)
+                {
+                    return entry.second.expiresAtMs <= nowMs;
+                });
+
+                if (sSearchListingsPayloads.size() >= GROUP_FINDER_SEARCH_CACHE_MAX_ENTRIES)
+                    sSearchListingsPayloads.clear();
+            }
+
             sSearchListingsPayloads[cacheKey] = cacheEntry;
             return cacheEntry.encodedJson;
         }
@@ -628,6 +687,11 @@ namespace GroupFinder
         int32 minLevel = JsonGetInt(json, "minLevel", 0);
         int32 maxLevel = JsonGetInt(json, "maxLevel", 0);
         int32 minRating = JsonGetInt(json, "minRating", 0);
+
+        // Only a category the finder knows is kept: the string is part of the
+        // cache key and is echoed back in every result.
+        if (!category.empty() && !ListingTypeFromCategory(category))
+            category.clear();
 
         if (listingType <= 0 && !category.empty())
             listingType = ListingTypeFromCategory(category);
@@ -1215,8 +1279,14 @@ namespace GroupFinder
         std::string dungeonName = JsonGetString(json, "dungeonName", "Unknown");
         uint8 keystoneLevel = static_cast<uint8>(JsonGetInt(json, "keyLevel", 0));
         uint32 scheduledTime = static_cast<uint32>(JsonGetInt(json, "scheduledTime", 0));
-        uint8 maxSignups = static_cast<uint8>(JsonGetInt(json, "maxSignups", 5));
+        uint8 maxSignups = static_cast<uint8>(std::clamp<int32>(
+            JsonGetInt(json, "maxSignups", 5), 1, GROUP_FINDER_EVENT_MAX_SIGNUPS));
         std::string note = JsonGetString(json, "note", "");
+
+        // Cut to the column widths: both strings are cached and sent to
+        // everyone who opens the event list.
+        TruncateGroupFinderText(dungeonName, GF_MAX_NAME_CHARS);
+        TruncateGroupFinderText(note, GF_MAX_NOTE_CHARS);
 
         // Validate scheduled time (must be in the future)
         time_t now = GameTime::GetGameTime().count();
@@ -1224,6 +1294,14 @@ namespace GroupFinder
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Scheduled time must be in the future")
+                .Send(player);
+            return;
+        }
+
+        if (scheduledTime > now + GROUP_FINDER_EVENT_MAX_LEAD_SECONDS)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Events can be scheduled at most 30 days ahead")
                 .Send(player);
             return;
         }
@@ -1238,6 +1316,18 @@ namespace GroupFinder
         // thread per create request.
         ObjectGuid playerGuid = player->GetGUID();
         uint32 guidLow = playerGuid.GetCounter();
+
+        // The COUNT below cannot see an INSERT that is still in flight, so
+        // only one creation per player may be pending; it is released in
+        // whichever callback ends the chain.
+        if (!BeginEventCreate(guidLow))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Your previous event is still being created")
+                .Send(player);
+            return;
+        }
+
         std::string const countSql = Acore::StringFormat(
             "SELECT COUNT(*) FROM dc_group_finder_scheduled_events WHERE leader_guid = {} AND status IN (1, 2)",
             guidLow);
@@ -1248,13 +1338,17 @@ namespace GroupFinder
         {
             Player* player = ObjectAccessor::FindPlayer(playerGuid);
             if (!player || !player->GetSession())
+            {
+                EndEventCreate(guidLow);
                 return;
+            }
 
             if (countResult)
             {
                 uint32 count = (*countResult)[0].Get<uint32>();
                 if (count >= 5) // Max 5 active events per player
                 {
+                    EndEventCreate(guidLow);
                     JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                         .Set("error", "Maximum scheduled events reached")
                         .Set("max", 5)
@@ -1282,6 +1376,8 @@ namespace GroupFinder
                 .WithCallback([playerGuid, guidLow, eventType, dungeonId, dungeonName, keystoneLevel,
                     scheduledTime, maxSignups, note](QueryResult idResult)
             {
+                EndEventCreate(guidLow);
+
                 Player* player = ObjectAccessor::FindPlayer(playerGuid);
                 if (!player || !player->GetSession())
                     return;
@@ -1331,6 +1427,7 @@ namespace GroupFinder
         uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
         uint8 role = static_cast<uint8>(JsonGetInt(json, "role", 0));
         std::string note = JsonGetString(json, "note", "");
+        TruncateGroupFinderText(note, GF_MAX_NOTE_CHARS);
 
         // Escape user-provided note to prevent SQL injection
         std::string safeNote = note;
@@ -1341,8 +1438,13 @@ namespace GroupFinder
         // round-trip carries the duplicate check as a subquery column.
         ObjectGuid playerGuid = player->GetGUID();
         uint32 guidLow = playerGuid.GetCounter();
+        // The signup count is taken from the rows, not current_signups: older
+        // builds inflated that column, and an event it marked full would
+        // otherwise stay closed.
         std::string const eventSql = Acore::StringFormat(
-            "SELECT e.leader_guid, e.max_signups, e.current_signups, e.status, "
+            "SELECT e.leader_guid, e.max_signups, "
+            "(SELECT COUNT(*) FROM dc_group_finder_event_signups c "
+            "WHERE c.event_id = e.id AND c.status IN (0, 1)), e.status, "
             "(SELECT COUNT(*) FROM dc_group_finder_event_signups s "
             "WHERE s.event_id = e.id AND s.player_guid = {} AND s.status IN (0, 1)) "
             "FROM dc_group_finder_scheduled_events e WHERE e.id = {}",
@@ -1365,7 +1467,7 @@ namespace GroupFinder
 
             uint32 leaderGuid = (*eventResult)[0].Get<uint32>();
             uint8 maxSignups = (*eventResult)[1].Get<uint8>();
-            uint8 currentSignups = (*eventResult)[2].Get<uint8>();
+            uint64 currentSignups = (*eventResult)[2].Get<uint64>();
             uint8 status = (*eventResult)[3].Get<uint8>();
             bool alreadySignedUp = (*eventResult)[4].Get<uint64>() > 0;
 
@@ -1378,8 +1480,9 @@ namespace GroupFinder
                 return;
             }
 
-            // Check if event is still open
-            if (status != 1) // 1 = open
+            // Check if event is still open (1 = open, 2 = full - which the
+            // live count below decides, since the stored flag may be stale)
+            if (status != 1 && status != 2)
             {
                 JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                     .Set("error", "Event is no longer accepting signups")
@@ -1405,28 +1508,6 @@ namespace GroupFinder
                 return;
             }
 
-            std::string safePlayerName = player->GetName();
-            CharacterDatabase.EscapeString(safePlayerName);
-
-            // Insert signup
-            CharacterDatabase.Execute(
-                "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
-                "VALUES ({}, {}, '{}', {}, '{}', 0)",
-                eventId, guidLow, safePlayerName, role, safeNote);
-
-            // Update current signups count
-            CharacterDatabase.Execute(
-                "UPDATE dc_group_finder_scheduled_events SET current_signups = current_signups + 1 WHERE id = {}",
-                eventId);
-
-            // Check if event is now full
-            if (currentSignups + 1 >= maxSignups)
-            {
-                CharacterDatabase.Execute(
-                    "UPDATE dc_group_finder_scheduled_events SET status = 2 WHERE id = {}",
-                    eventId);
-            }
-
             EventSignup cachedSignup;
             cachedSignup.eventId = eventId;
             cachedSignup.playerGuid = guidLow;
@@ -1436,7 +1517,33 @@ namespace GroupFinder
             cachedSignup.status = GF_APP_PENDING;
             cachedSignup.createdAt = GameTime::GetGameTime().count();
 
-            sGroupFinderMgr.CacheSignup(cachedSignup);
+            // The row read above may be stale by now -- several signups can be
+            // in flight at once. The cache check is synchronous, so it decides.
+            if (!sGroupFinderMgr.CacheSignup(cachedSignup))
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Already signed up, or the event is full")
+                    .Send(player);
+                return;
+            }
+
+            std::string safePlayerName = player->GetName();
+            CharacterDatabase.EscapeString(safePlayerName);
+
+            // The (event_id, player_guid) key is unique, so signing up again
+            // after cancelling revives the old row; the plain INSERT used to
+            // fail on it while the counter below was still bumped. The count
+            // itself is recomputed from the rows instead of +1, so no request
+            // pattern can push it past the real number of signups.
+            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+            trans->Append(
+                "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
+                "VALUES ({}, {}, '{}', {}, '{}', 0) "
+                "ON DUPLICATE KEY UPDATE player_name = '{}', role = {}, note = '{}', "
+                "status = IF(status IN (0, 1), status, 0)",
+                eventId, guidLow, safePlayerName, role, safeNote, safePlayerName, role, safeNote);
+            AppendEventSignupRecount(trans, eventId);
+            CharacterDatabase.CommitTransaction(trans);
 
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
                 .Set("success", true)
@@ -1484,20 +1591,15 @@ namespace GroupFinder
 
             uint32 signupId = (*signupResult)[0].Get<uint32>();
 
-            // Cancel signup
-            CharacterDatabase.Execute(
+            // Cancel the signup, then recount rather than decrement: several
+            // cancels in flight all found this same row and each took one
+            // off the count.
+            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+            trans->Append(
                 "UPDATE dc_group_finder_event_signups SET status = 3 WHERE id = {}",
                 signupId);
-
-            // Decrement signup count
-            CharacterDatabase.Execute(
-                "UPDATE dc_group_finder_scheduled_events SET current_signups = current_signups - 1 WHERE id = {}",
-                eventId);
-
-            // Re-open event if it was full
-            CharacterDatabase.Execute(
-                "UPDATE dc_group_finder_scheduled_events SET status = 1 WHERE id = {} AND status = 2",
-                eventId);
+            AppendEventSignupRecount(trans, eventId);
+            CharacterDatabase.CommitTransaction(trans);
 
             sGroupFinderMgr.RemoveCachedSignup(eventId, playerGuid.GetCounter());
 

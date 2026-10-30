@@ -148,7 +148,9 @@ namespace AOELoot
         {
             try
             {
-                return std::stof(value.AsString());
+                // "nan" and "inf" parse; they pass every clamp and reach SQL unquoted
+                float const parsed = std::stof(value.AsString());
+                return std::isfinite(parsed) ? parsed : defaultValue;
             }
             catch (...)
             {
@@ -325,9 +327,13 @@ namespace AOELoot
 
         if (schema.hasLootRange)
         {
+            // Formatted unquoted into the statement: anything non-finite would be read as a column
+            // name ("nan", "inf"), an unknown-column error that aborts the worldserver
             float persistedRange = snapshot.lootRange;
-            if (persistedRange < 5.0f || persistedRange > 100.0f)
+            if (!std::isfinite(persistedRange) || persistedRange < 5.0f || persistedRange > 100.0f)
                 persistedRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+            if (!std::isfinite(persistedRange) || persistedRange < 5.0f || persistedRange > 100.0f)
+                persistedRange = 30.0f;
 
             columns.push_back("loot_range");
             values.push_back(Acore::StringFormat("{}", persistedRange));
@@ -527,6 +533,7 @@ namespace AOELoot
     {
         uint32 guid = player->GetGUID().GetCounter();
         float range = GetRequestFloat(msg, "range", 30.0f);
+        if (!std::isfinite(range)) range = 30.0f;
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
 
@@ -564,6 +571,15 @@ namespace AOELoot
         SendSettingsSync(player);
     }
 
+    // Every looter-pet key except "looterPet" itself writes the realm-wide
+    // looter-pet config that all players share.
+    static bool IsServerWideLooterSetting(std::string const& key)
+    {
+        return key == "looterFallbackToPlayer" || key == "looterCompanionLeash" ||
+            key == "looterCompanionLeashDistance" || key == "looterPathfinding" ||
+            key == "looterPathAllowIncomplete" || key == "looterPathRejectShortcut";
+    }
+
     // Handler: Generic {key, value} setting. Covers the toggles that
     // previously only existed as .lp/.lpet chat commands, including the
     // looter-pet settings.
@@ -577,6 +593,15 @@ namespace AOELoot
             return;
 
         std::string const key = json["key"].AsString();
+
+        // Any player could switch the pathfinding safety or the leash off for the
+        // whole realm from the settings panel.
+        if (IsServerWideLooterSetting(key) && player->GetSession()->GetSecurity() < SEC_GAMEMASTER)
+        {
+            SendPermissionDenied(player, Module::AOE_LOOT, "Server-wide looter pet settings require GM access");
+            return;
+        }
+
         uint32 guid = player->GetGUID().GetCounter();
         bool const boolValue = JsonGetBool(json, "value", false);
 

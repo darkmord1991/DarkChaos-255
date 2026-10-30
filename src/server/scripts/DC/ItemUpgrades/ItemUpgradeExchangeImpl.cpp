@@ -15,6 +15,7 @@
 #include "ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "Player.h"
 #include "Item.h"
 #include "Config.h"
@@ -509,6 +510,9 @@ namespace DarkChaos
                     LOG_INFO("scripts.dc", "ItemUpgrade: Player {} exchanged {} of currency {} for {} of currency {}",
                             player_guid, spend_amount, static_cast<uint32>(from),
                             receive_amount, static_cast<uint32>(to));
+
+                    DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+                        DarkChaos::CrossSystem::FeatureKind::Transmutation);
 
                     return true;
                 }

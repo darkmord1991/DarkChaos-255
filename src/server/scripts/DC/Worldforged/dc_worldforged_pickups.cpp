@@ -4,7 +4,8 @@
  * The pickups are data: non-consumable chests (gameobject_template ScriptName
  * 'go_dc_worldforged_pickup', Data3 = 0) whose loot table holds exactly one item, spawned in guid
  * block 6900001+ by Custom/Documentation/scripts/worldforged/gen_worldforged_750_751.py. This
- * script adds the rule the data cannot express: each character may loot each pickup once, ever.
+ * script adds the rule the data cannot express: each character may loot each pickup once, until a
+ * prestige fresh start hands the climb back (DCWorldforged::ResetClaims).
  *
  *  - A claim is one bit per spawn in the character's "dc-worldforged" character_settings row
  *    (bit = spawn guid - WorldforgedGuidFirst). Player settings load with the login query holder
@@ -19,7 +20,9 @@
  *    cannot see (LootObject::IsLootPossible), so a claimed pickup drops off that bot's loot list.
  */
 
+#include "dc_worldforged_pickups.h"
 #include "Chat.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "GameObjectScript.h"
@@ -33,6 +36,8 @@
 #include "World.h"
 #include "WorldScript.h"
 
+#include <algorithm>
+#include <bit>
 #include <string>
 
 namespace
@@ -70,6 +75,41 @@ namespace
         setting.AddFlag(1u << (offset % 32));
         player->UpdatePlayerSetting(WorldforgedSettingSource, offset / 32, setting.value);
     }
+
+    // The claim words in use: one per 32 spawns, up to the highest pickup spawned. Pickups only arrive
+    // through a world DB update, so this is fixed for the server's lifetime.
+    uint32 ClaimWordCount()
+    {
+        static uint32 const words = []
+        {
+            ObjectGuid::LowType last = 0;
+            for (auto const& spawn : sObjectMgr->GetAllGOData())
+                if (IsWorldforgedSpawn(spawn.first))
+                    last = std::max(last, spawn.first);
+
+            return last ? (last - WorldforgedGuidFirst) / 32 + 1 : 0;
+        }();
+        return words;
+    }
+}
+
+uint32 DCWorldforged::ResetClaims(Player* player)
+{
+    if (!player)
+        return 0;
+
+    uint32 released = 0;
+    for (uint32 word = 0; word < ClaimWordCount(); ++word)
+    {
+        uint32 const claims = player->GetPlayerSetting(WorldforgedSettingSource, word).value;
+        if (!claims)
+            continue;
+
+        released += std::popcount(claims);
+        player->UpdatePlayerSetting(WorldforgedSettingSource, word, 0);
+    }
+
+    return released;
 }
 
 class go_dc_worldforged_pickup : public GameObjectScript
@@ -158,6 +198,9 @@ public:
         Claim(player, go->GetSpawnId());
         LOG_DEBUG("scripts.dc", "Worldforged: {} claimed pickup {} (item {})", player->GetName(), go->GetSpawnId(),
             item->GetEntry());
+
+        DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+            DarkChaos::CrossSystem::FeatureKind::WorldforgedPickup, go->GetSpawnId());
     }
 };
 

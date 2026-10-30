@@ -217,6 +217,7 @@ void AddDCAddonExtensionScripts();            // AddonExtension/dc_addon_extensi
 
 // --- Integration system (first-start/account-wide) ---
 void AddSC_dc_firststart();                   // Progression/FirstStart/dc_firststart.cpp
+void AddSC_dc_path();                         // Progression/Path/dc_path_scripts.cpp
 void AddSC_dc_accountwide_reputation();       // Progression/Accountwide/dc_accountwide_reputation.cpp
 void AddSC_dc_accountwide_friendlist();       // Progression/Accountwide/dc_accountwide_friendlist.cpp
 void AddSC_dc_accountwide_achievements();     // Progression/Accountwide/dc_accountwide_achievements.cpp
@@ -247,6 +248,7 @@ void AddSC_dc_challenge_modes_commandscript();
 // Commands/cs_dc_challenge_modes.cpp
 void AddSC_dc_worldboss_commandscript();       // Commands/cs_dc_worldboss.cpp
 void AddSC_dc_collection_commands();          // Commands/cs_dc_collection.cpp
+void AddSC_dc_path_commandscript();           // Commands/cs_dc_path.cpp
 
 // --- Guild housing ---
 void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
@@ -529,6 +531,7 @@ void AddDCScripts()
 
     LogSection("First-Start and Account-Wide Systems");
     DC_LOAD(AddSC_dc_firststart);
+    DC_LOAD(AddSC_dc_path);
     DC_LOAD(AddSC_dc_accountwide_reputation);
     DC_LOAD(AddSC_dc_accountwide_friendlist);
     DC_LOAD(AddSC_dc_accountwide_achievements);
@@ -575,6 +578,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_challenge_modes_commandscript);
     DC_LOAD(AddSC_dc_worldboss_commandscript);
     DC_LOAD(AddSC_dc_collection_commands);
+    DC_LOAD(AddSC_dc_path_commandscript);
 
 #undef DC_LOAD
 

@@ -195,8 +195,10 @@ GameObject * GOMove::MoveGameObject(Player* player, float x, float y, float z, f
         return nullptr;
     }
 
-    // copy paste from .gob phase command
+    // copy paste from .gob phase command: SaveToDB persists the spawn's phase, so the spawn data first
     object->SetPhaseMask(p, true);
+    if (sObjectMgr->GetGameObjectData(object->GetSpawnId()))
+        sObjectMgr->NewGOData(object->GetSpawnId()).phaseMask = p;
     object->SaveToDB();
 
     return object;

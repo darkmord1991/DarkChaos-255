@@ -38,6 +38,7 @@ DC.Module = {
     QUEST_NAV = "QNAV",
     ENCOUNTERS = "DENC",
     TALENTS = "TLNT",
+    PATH = "PATH",
     EVENTS = "EVNT",
     WORLD = "WRLD",
     COLLECTION = "COLL",
@@ -285,6 +286,19 @@ DC.Opcode = {
         SMSG_HELLO = 0x11,            -- { v, enabled, freeRespec, pet, max }
         SMSG_APPLY_RESULT = 0x12,     -- { req, ok, code, msg, spent, failed = { talentId, ... } }
         SMSG_APPLY_PET_RESULT = 0x13, -- same shape as SMSG_APPLY_RESULT
+    },
+    -- Path of Chaos (DC-Path). Progress travels as { id, progress, flags } triples,
+    -- flags being 1 = completed, 2 = claimed.
+    Path = {
+        CMSG_GET_CATALOG = 0x01,     -- { rev } send the book unless this revision is current
+        CMSG_GET_STATE = 0x02,       -- {}
+        CMSG_CLAIM = 0x03,           -- { id }
+        CMSG_CLAIM_ALL = 0x04,       -- {}
+        SMSG_CATALOG = 0x10,         -- { rev, page, pages, c, t } one page of the book
+        SMSG_CATALOG_CURRENT = 0x11, -- { rev }
+        SMSG_STATE = 0x12,           -- { enabled, points, earned, t }
+        SMSG_TASK_UPDATE = 0x13,     -- { points, u }
+        SMSG_CLAIM_RESULT = 0x14,    -- { ok, msg, points, ids, paid }
     },
     World = {
         CMSG_GET_CONTENT = 0x01,

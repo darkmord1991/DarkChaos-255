@@ -19,6 +19,8 @@
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include <algorithm>
 #include <functional>
+#include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -37,9 +39,11 @@ namespace
     constexpr uint32 SPELL_ALT_BONUS_20 = 800043;  // 20% bonus visual
     constexpr uint32 SPELL_ALT_BONUS_25 = 800044;  // 25% bonus visual
 
-    // Cache for account max level character counts. Everything here (reads,
-    // writes, warm-triggers, and the async callback below) runs on the world
-    // thread only, so no locking is needed.
+    // Cache for account max level character counts. OnPlayerGiveXP and
+    // OnPlayerLevelChanged reach it from map threads, logins and the async
+    // callback below from the world thread, so every access takes the lock.
+    // It is held for the map access only: waiters and buffs run game code.
+    std::mutex g_AccountMaxLevelMutex;
     std::unordered_map<uint32, uint32> g_AccountMaxLevelCache;
     std::unordered_set<uint32> g_AccountMaxLevelWarmInFlight;
     std::unordered_map<uint32, std::vector<std::function<void(uint32)>>> g_AccountMaxLevelWarmWaiters;
@@ -91,9 +95,12 @@ namespace
             if (!enabled)
                 return 0;
 
-            auto it = g_AccountMaxLevelCache.find(accountId);
-            if (it != g_AccountMaxLevelCache.end())
-                return it->second;
+            {
+                std::lock_guard<std::mutex> lock(g_AccountMaxLevelMutex);
+                auto it = g_AccountMaxLevelCache.find(accountId);
+                if (it != g_AccountMaxLevelCache.end())
+                    return it->second;
+            }
 
             WarmMaxLevelCharCountAsync(accountId, nullptr);
             return 0;
@@ -109,19 +116,28 @@ namespace
             if (!enabled)
                 return;
 
-            auto cached = g_AccountMaxLevelCache.find(accountId);
-            if (cached != g_AccountMaxLevelCache.end())
+            std::optional<uint32> cachedCount;
             {
-                if (onReady)
-                    onReady(cached->second);
-                return;
+                std::lock_guard<std::mutex> lock(g_AccountMaxLevelMutex);
+                auto cached = g_AccountMaxLevelCache.find(accountId);
+                if (cached != g_AccountMaxLevelCache.end())
+                    cachedCount = cached->second;
+                else
+                {
+                    if (onReady)
+                        g_AccountMaxLevelWarmWaiters[accountId].push_back(std::move(onReady));
+
+                    if (!g_AccountMaxLevelWarmInFlight.insert(accountId).second)
+                        return; // a warm-up query is already running for this account
+                }
             }
 
-            if (onReady)
-                g_AccountMaxLevelWarmWaiters[accountId].push_back(std::move(onReady));
-
-            if (!g_AccountMaxLevelWarmInFlight.insert(accountId).second)
-                return; // a warm-up query is already running for this account
+            if (cachedCount)
+            {
+                if (onReady)
+                    onReady(*cachedCount);
+                return;
+            }
 
             uint32 const capturedMaxLevel = maxLevel;
             DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
@@ -134,15 +150,20 @@ namespace
                 if (result)
                     count = result->Fetch()[0].Get<uint32>();
 
-                g_AccountMaxLevelCache[accountId] = count;
-                g_AccountMaxLevelWarmInFlight.erase(accountId);
+                std::vector<std::function<void(uint32)>> waiters;
+                {
+                    std::lock_guard<std::mutex> lock(g_AccountMaxLevelMutex);
+                    g_AccountMaxLevelCache[accountId] = count;
+                    g_AccountMaxLevelWarmInFlight.erase(accountId);
 
-                auto waitersIt = g_AccountMaxLevelWarmWaiters.find(accountId);
-                if (waitersIt == g_AccountMaxLevelWarmWaiters.end())
-                    return;
+                    auto waitersIt = g_AccountMaxLevelWarmWaiters.find(accountId);
+                    if (waitersIt == g_AccountMaxLevelWarmWaiters.end())
+                        return;
 
-                std::vector<std::function<void(uint32)>> waiters = std::move(waitersIt->second);
-                g_AccountMaxLevelWarmWaiters.erase(waitersIt);
+                    waiters = std::move(waitersIt->second);
+                    g_AccountMaxLevelWarmWaiters.erase(waitersIt);
+                }
+
                 for (auto const& waiter : waiters)
                     if (waiter)
                         waiter(count);
@@ -167,23 +188,23 @@ namespace
         // before the prestige (the character save is asynchronous). A cold cache reads it later anyway.
         void OnLeftMaxLevel(Player* player)
         {
-            auto it = g_AccountMaxLevelCache.find(player->GetSession()->GetAccountId());
-            if (it == g_AccountMaxLevelCache.end())
-                return;
+            {
+                std::lock_guard<std::mutex> lock(g_AccountMaxLevelMutex);
+                auto it = g_AccountMaxLevelCache.find(player->GetSession()->GetAccountId());
+                if (it == g_AccountMaxLevelCache.end())
+                    return;
 
-            if (it->second > 0)
-                --it->second;
+                if (it->second > 0)
+                    --it->second;
+            }
 
             ApplyVisualBuff(player);
         }
 
         void ClearAccountCache(uint32 accountId)
         {
-            auto it = g_AccountMaxLevelCache.find(accountId);
-            if (it != g_AccountMaxLevelCache.end())
-            {
-                g_AccountMaxLevelCache.erase(it);
-            }
+            std::lock_guard<std::mutex> lock(g_AccountMaxLevelMutex);
+            g_AccountMaxLevelCache.erase(accountId);
         }
 
         void InvalidateCacheForPlayer(Player* player)

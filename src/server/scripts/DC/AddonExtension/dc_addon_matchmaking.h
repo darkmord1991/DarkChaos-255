@@ -320,6 +320,8 @@ namespace Matchmaking
         void JoinQueue(Player* player, uint8 category, uint8 roles,
                        std::vector<uint32> dungeonIds, uint8 difficulty, uint32 raidSize);
         void LeaveQueue(Player* player, bool notify = true);
+        // True while the player holds a queue entry, which a ready-check keeps until it resolves.
+        bool IsQueued(Player* player);
         void SendStatus(Player* player);
         void HandleProposalResponse(Player* player, uint32 proposalId, bool accept);
 

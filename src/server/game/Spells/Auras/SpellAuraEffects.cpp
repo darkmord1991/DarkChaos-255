@@ -1961,15 +1961,9 @@ void AuraEffect::HandlePhase(AuraApplication const* aurApp, uint8 mode, bool app
 
     if (Player* player = target->ToPlayer())
     {
-        if (!newPhase)
-            newPhase = PHASEMASK_NORMAL;
-
-        // do not change phase to GM with all phases enabled
-        if (player->IsGameMaster())
-            newPhase = PHASEMASK_ANYWHERE;
-
-        player->SetPhaseMask(newPhase, false);
-        player->GetSession()->SendSetPhaseShift(newPhase);
+        // The phase auras composed with the player's phase layers (all phases for a GM). SMSG_SET_PHASE_SHIFT
+        // is sent by WorldObject::SetPhaseMask when the mask actually changes
+        player->SetPhaseMask(player->GetComposedPhaseMask(), false);
     }
     else
     {

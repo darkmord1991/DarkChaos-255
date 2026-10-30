@@ -18,9 +18,12 @@
 #include "Creature.h"
 #include "Item.h"
 #include "Chat.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "Log.h"
 
 #include "dc_giant_isles_invasion_internal.h"
+
+#include <array>
 
 using namespace DCGiantIsles;
 
@@ -35,14 +38,19 @@ namespace
         char const* label;
     };
 
-    // Reward items are all stock 3.3.5a goods (verified to exist), so nothing
-    // here depends on extra item_template inserts.
-    std::array<QuartermasterOffer, 4> const Offers =
+    // Reward items all exist in item_template and the client's Item.dbc, so
+    // nothing here depends on extra inserts. The trophies are cosmetic: gear
+    // the expedition took off the Zandalari it beat back.
+    std::array<QuartermasterOffer, 8> const Offers =
     {{
         { GOSSIP_ACTION_INFO_DEF + 1,  5, 33447, 5, "Field Medicine: 5x Runic Healing Potion (5 Tokens)" },
         { GOSSIP_ACTION_INFO_DEF + 2, 10, 46376, 2, "Battle Draughts: 2x Flask of the Frost Wyrm (10 Tokens)" },
         { GOSSIP_ACTION_INFO_DEF + 3, 25, 41599, 1, "Campaign Pack: Frostweave Bag (25 Tokens)" },
         { GOSSIP_ACTION_INFO_DEF + 4, 60, 49294, 1, "War Spoils: Ashen Sack of Gems (60 Tokens)" },
+        { GOSSIP_ACTION_INFO_DEF + 5, 40, 94028, 1, "Trophy: Zandalari Head-Cleaver (40 Tokens)" },
+        { GOSSIP_ACTION_INFO_DEF + 6, 60, 94134, 1, "Trophy: Dinomancer's Spire (60 Tokens)" },
+        { GOSSIP_ACTION_INFO_DEF + 7, 90, 94761, 1, "Trophy: Zandalari Robes of the Final Rite (90 Tokens)" },
+        { GOSSIP_ACTION_INFO_DEF + 8, 120, 94132, 1, "Trophy: Dinomancer's Spiritbinding Spire (120 Tokens)" },
     }};
 
     constexpr uint32 GOSSIP_ACTION_INFO = GOSSIP_ACTION_INFO_DEF + 100;
@@ -96,7 +104,9 @@ namespace
                 return true;
             }
 
-            uint32 balance = player->GetItemCount(WAR_TOKEN_ITEM);
+            // Counted the way DestroyItemCount takes it: tokens parked in an open trade
+            // window passed GetItemCount and were then never taken.
+            uint32 balance = DarkChaos::ItemUpgrade::GetSpendableItemCount(player, WAR_TOKEN_ITEM);
             if (balance < offer->cost)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(

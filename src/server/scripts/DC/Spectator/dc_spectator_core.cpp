@@ -6,6 +6,7 @@
  */
 
 #include "dc_spectator_core.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Opcodes.h"
@@ -165,6 +166,9 @@ void NotifySessionStarted(Player* spectator, SystemId id, uint32 sessionId,
         .Set("runId", static_cast<int32>(sessionId))
         .Set("message", message)
         .Send(spectator);
+
+    DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(spectator,
+        DarkChaos::CrossSystem::FeatureKind::Spectate);
 }
 
 void NotifySessionEnded(Player* spectator, SystemId id,
@@ -420,6 +424,11 @@ namespace
                 return true;
 
             if (!session)
+                return false;
+
+            // Loaded before the AddonExtension scripts, so their native request budget gate
+            // (dc_addon_protocol.cpp) runs after this hook: the request is counted here instead
+            if (!DCAddon::ConsumeNativeRequestBudget(session, packet.GetOpcode()))
                 return false;
 
             Player* player = session->GetPlayer();

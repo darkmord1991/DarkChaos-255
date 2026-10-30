@@ -40,6 +40,7 @@ void AddSC_dc_addon_mappois();
 void AddSC_dc_addon_questnav();
 void AddSC_dc_addon_encounters();
 void AddSC_dc_addon_talents();
+void AddSC_dc_addon_path();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -115,4 +116,7 @@ void AddDCAddonExtensionScripts()
 
     // Talent builds for DC-Talents (whole-build apply, free retail-style respec)
     AddSC_dc_addon_talents();
+
+    // Path of Chaos (DC-Path): the task book, its progress and reward claims
+    AddSC_dc_addon_path();
 }

@@ -121,6 +121,17 @@ local function OpenQoSModule(moduleName)
     return false
 end
 
+local function OpenQoSVideoPage(moduleName)
+    local qos = rawget(_G, "DCQOS")
+    if qos and type(qos.OpenVideoOptionsPage) == "function" then
+        qos:OpenVideoOptionsPage(moduleName)
+        return true
+    end
+
+    VideoOptionsFrame:Show()
+    return false
+end
+
 local function OpenQoSFrameMoverEditor()
     local qos = rawget(_G, "DCQOS")
     if qos then
@@ -205,6 +216,19 @@ local function BuildLauncherList()
             onClick = function()
                 -- Toggle the main collection window
                 RunSlashCommand("/collection")
+            end,
+        })
+    end
+
+    -- Path of Chaos
+    if IsAddOnLoaded and IsAddOnLoaded("DC-Path") then
+        table.insert(launchers, {
+            key = "path",
+            name = "Path of Chaos",
+            icon = "Interface\\Icons\\INV_Misc_Coin_16",
+            hint = "Open Path of Chaos",
+            onClick = function()
+                RunSlashCommand("/path")
             end,
         })
     end
@@ -774,7 +798,7 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
             name = "Graphics+",
             icon = "Interface\\Icons\\Spell_Nature_Farsight",
             onClick = function()
-                OpenQoSModule("GraphicsPlus")
+                OpenQoSVideoPage("GraphicsPlus")
             end,
         },
         {

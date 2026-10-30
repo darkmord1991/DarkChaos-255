@@ -73,6 +73,10 @@ namespace DCBreakingNews
         std::vector<DeliveryLogEntry>& out);
     bool SendToSession(WorldSession* session,
         char const* source = "runtime");
+    // With a character list; sent later when the account's capabilities are still loading
+    void SendWithCharacterList(WorldSession* session);
+    // Sends the news deferred by SendWithCharacterList once the capabilities have loaded (WorldScript::OnUpdate)
+    void UpdateDeferredSends(uint32 diff);
 }
 
 void AddSC_dc_addon_breaking_news();

@@ -19,6 +19,7 @@
 #include <vector>
 
 class Item;
+class Player;
 
 namespace DarkChaos
 {
@@ -85,6 +86,14 @@ namespace DarkChaos
         uint32 GetPlayerTokens(Player* player);
         uint32 GetPlayerEssence(Player* player);
         uint32 GetPlayerFrontierSap(Player* player);
+
+        // How many of an item a spend can actually take. Player::DestroyItemCount
+        // skips anything in an open trade window while GetItemCount and HasItemCount
+        // still count it, so a stack parked in the trade (its "will not be traded"
+        // slot takes soulbound items too) passed the balance check and was never
+        // taken. Check every count-then-destroy spend against this. With inBankAlso the
+        // bank counts too (DestroyItemCount takes from it).
+        uint32 GetSpendableItemCount(Player const* player, uint32 itemId, bool inBankAlso = false);
 
         // =====================================================================
         // Upgrade Cost Structure

@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS `dc_client_data_revisions` (
 DELETE FROM `dc_client_data_revisions` WHERE `feature` = 'collectionCategories';
 INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) VALUES ('collectionCategories', 1684590543);
 DELETE FROM `dc_client_data_revisions` WHERE `feature` = 'collectionSources';
-INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) VALUES ('collectionSources', 262840868);
+INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) VALUES ('collectionSources', 302606372);
 DELETE FROM `dc_client_data_revisions` WHERE `feature` = 'collectionShop';
-INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) VALUES ('collectionShop', 1474972074);
+INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) VALUES ('collectionShop', 2009008687);
 DELETE FROM `dc_client_data_revisions` WHERE `feature` = 'collectionSets';
 INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) VALUES ('collectionSets', 786799120);

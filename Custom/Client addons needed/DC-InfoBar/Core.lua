@@ -75,7 +75,7 @@ function DCInfoBar:GetTokenIcon(itemID)
     if self.TokenInfo and self.TokenInfo.GetTokenIcon then
         return self.TokenInfo:GetTokenIcon(itemID)
     end
-    return "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"  -- Fallback
+    return "Interface\\Icons\\INV_Misc_Token_ArgentDawn"  -- Fallback
 end
 
 function DCInfoBar:GetTokenInfo(itemID)

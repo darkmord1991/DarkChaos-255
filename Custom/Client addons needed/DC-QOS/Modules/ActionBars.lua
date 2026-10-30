@@ -45,6 +45,25 @@ local function HookAnchorFrameSetPoint(frame)
     end)
 end
 
+-- True when `frame` hangs by exactly one anchor that is already the one given:
+-- setting it again would only cost a layout pass.
+local function HasOnlyAnchor(frame, point, relativeTo, relativePoint, x, y)
+    if type(frame.GetNumPoints) ~= "function" or frame:GetNumPoints() ~= 1 then
+        return false
+    end
+
+    local p, rel, relPoint, px, py = frame:GetPoint(1)
+    return p == point and rel == relativeTo and relPoint == relativePoint
+        and math.abs((px or 0) - (x or 0)) < 0.01 and math.abs((py or 0) - (y or 0)) < 0.01
+end
+
+-- GetScale reports the client's 32-bit float, hence the tolerance.
+local function SetScaleIfChanged(frame, scale)
+    if math.abs((frame:GetScale() or 0) - scale) > 0.0001 then
+        frame:SetScale(scale)
+    end
+end
+
 local function IsBarActive(bar)
     if not bar or not bar.IsShown or not bar:IsShown() then
         return false
@@ -85,11 +104,13 @@ local function AnchorBarAbove(bar, stack, yOffset, leftAlign)
     if not bar or not stack then
         return false
     end
-    bar:ClearAllPoints()
+    local point, relativePoint = "BOTTOM", "TOP"
     if leftAlign then
-        bar:SetPoint("BOTTOMLEFT", stack, "TOPLEFT", 0, yOffset)
-    else
-        bar:SetPoint("BOTTOM", stack, "TOP", 0, yOffset)
+        point, relativePoint = "BOTTOMLEFT", "TOPLEFT"
+    end
+    if not HasOnlyAnchor(bar, point, stack, relativePoint, 0, yOffset) then
+        bar:ClearAllPoints()
+        bar:SetPoint(point, stack, relativePoint, 0, yOffset)
     end
     return IsBarActive(bar)
 end
@@ -180,7 +201,9 @@ local function RestoreBlizzardFormBarAnchors()
 
     for frameName, anchor in pairs(anchors) do
         local frame = _G[frameName]
-        if frame and frame.ClearAllPoints and frame.SetPoint then
+        if frame and frame.ClearAllPoints and frame.SetPoint
+            and not HasOnlyAnchor(frame, anchor.point, anchor.relativeTo,
+                anchor.relativePoint, anchor.xOfs, anchor.yOfs) then
             frame:ClearAllPoints()
             frame:SetPoint(anchor.point, anchor.relativeTo, anchor.relativePoint, anchor.xOfs, anchor.yOfs)
         end
@@ -201,8 +224,10 @@ local function ApplyBlizzardMode()
     local s = GetSetting()
     if not s.enabled then return end
 
+    -- SetScale only where it differs: re-setting the same scale on 61 frames
+    -- still dirtied all of them on every relayout.
     local scale = s.scale or 1
-    MainMenuBar:SetScale(scale)
+    SetScaleIfChanged(MainMenuBar, scale)
 
     local buttons = {
         "ActionButton",
@@ -216,7 +241,7 @@ local function ApplyBlizzardMode()
         for i = 1, 12 do
             local btn = _G[prefix .. i]
             if btn then
-                btn:SetScale(scale)
+                SetScaleIfChanged(btn, scale)
             end
         end
     end
@@ -363,6 +388,8 @@ end
 ApplyActionBars = function()
     local s = GetSetting()
     if not s.enabled then return end
+    -- What the ACTIONBAR_UPDATE_* filter in OnEnable compares against.
+    ActionBars._lastOverrideActive = IsVehicleOverrideActive()
     if s.mode == "custom" then
         ApplyCustomMode()
     else
@@ -440,6 +467,14 @@ function ActionBars.OnEnable()
     ev:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
     ev:SetScript("OnEvent", function(_, event, unit)
         if unit and unit ~= "player" then return end
+        -- These two fire constantly in combat (every cast, cooldown and
+        -- resource tick) and carry no layout information, so they only queue
+        -- a relayout when the one thing the layout reads from that moment
+        -- changed: the vehicle/possess override. Every other event queues one.
+        if (event == "ACTIONBAR_UPDATE_STATE" or event == "ACTIONBAR_UPDATE_USABLE")
+            and IsVehicleOverrideActive() == ActionBars._lastOverrideActive then
+            return
+        end
         QueueLayoutRefresh(0.2)
     end)
 

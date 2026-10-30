@@ -3005,8 +3005,17 @@ void WorldObject::MovePositionToFirstCollision(Position& pos, float dist, float 
 
 void WorldObject::SetPhaseMask(uint32 newPhaseMask, bool update)
 {
+    uint32 const oldPhaseMask = m_phaseMask;
     sScriptMgr->OnBeforeWorldObjectSetPhaseMask(this, m_phaseMask, newPhaseMask, m_useCombinedPhases, update);
     m_phaseMask = newPhaseMask;
+
+    // Single place that keeps the client's phase shift in step with the server-side mask, whoever
+    // changed it: phase auras, GM mode, SmartAI, commands or scripts. Visibility itself is decided
+    // server-side; the client only uses this value for phase-dependent UI.
+    if (m_phaseMask != oldPhaseMask)
+        if (Player* player = ToPlayer())
+            if (WorldSession* session = player->GetSession())
+                session->SendSetPhaseShift(m_phaseMask);
 
     if (update && IsInWorld())
         UpdateObjectVisibility();

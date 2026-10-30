@@ -1217,7 +1217,7 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
-events:SetScript("OnEvent", function(_, event)
+events:SetScript("OnEvent", function(self, event)
     -- Handler registration is retried on every event: DC-AddonProtocol may not
     -- have finished loading when the journal's own ADDON_LOADED fires, and
     -- RegisterHandlers latches once it succeeds.
@@ -1247,15 +1247,20 @@ events:SetScript("OnEvent", function(_, event)
     T.state.retriesLeft = 4
     T.state.nextRetryAt = (GetTime() or 0) + 4
     T.Request(true)
+    -- Arm the retry pump below for this zone-in.
+    self:Show()
 end)
 
--- Retry pump. Lives on the always-shown events frame, NOT the tracker frame:
--- the tracker is hidden exactly when nothing arrived, which would kill an
--- OnUpdate hung off it. Stops the moment any DENC message lands (including
--- SMSG_CLEAR - "nothing to track" is also an answer).
-events:SetScript("OnUpdate", function()
+-- Retry pump. Lives on the events frame, NOT the tracker frame: the tracker
+-- is hidden exactly when nothing arrived, which would kill an OnUpdate hung
+-- off it. Stops the moment any DENC message lands (including SMSG_CLEAR -
+-- "nothing to track" is also an answer) or the retries run out, and then
+-- hides the events frame (which keeps receiving its events) until the next
+-- PLAYER_ENTERING_WORLD arms it again, instead of ticking for the session.
+events:SetScript("OnUpdate", function(self)
     local s = T.state
     if s.zoneReplySeen or (s.retriesLeft or 0) <= 0 then
+        self:Hide()
         return
     end
 

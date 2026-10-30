@@ -1095,7 +1095,13 @@ public:
         creature->SetPhaseMask(phasemask, true);
 
         if (!creature->IsPet())
+        {
+            // SaveToDB persists the spawn's phase, so record the intended change in the spawn data first
+            if (sObjectMgr->GetCreatureData(creature->GetSpawnId()))
+                sObjectMgr->NewOrExistCreatureData(creature->GetSpawnId()).phaseMask = phasemask;
+
             creature->SaveToDB();
+        }
 
         return true;
     }

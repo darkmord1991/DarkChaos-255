@@ -2733,22 +2733,51 @@ local function ResolveBuffFrameOffsetX()
     return offsetX
 end
 
+-- The InfoBar inset, cached like resolvedOffsetX: GetTopBarInset reads two
+-- screen rects, and the anchor hook below runs every frame. The full
+-- re-applies and the 4 Hz layout driver re-read it.
+local function ResolveTopBarInset()
+    local inset = GetTopBarInset()
+    buffFrameState.resolvedTopInset = inset
+    return inset
+end
+
+-- Anchor offsets come back from GetPoint as the client's 32-bit floats.
+local function SameOffset(a, b)
+    return a ~= nil and b ~= nil and math.abs(a - b) < 0.01
+end
+
+-- True when `frame` hangs by its TOPRIGHT, and only by it, off relativeTo's
+-- TOPRIGHT at (offsetX, offsetY): re-anchoring it there again would only cost
+-- a layout pass.
+local function IsAnchoredTopRight(frame, relativeTo, offsetX, offsetY)
+    if type(frame.GetNumPoints) ~= "function" or frame:GetNumPoints() ~= 1 then
+        return false
+    end
+
+    local point, anchor, relativePoint, x, y = frame:GetPoint(1)
+    return point == "TOPRIGHT" and anchor == relativeTo and relativePoint == "TOPRIGHT"
+        and SameOffset(x, offsetX) and SameOffset(y, offsetY)
+end
+
 -- BuffFrame and TemporaryEnchantFrame have to move as one unit. Stock
 -- BuffFrame.lua anchors only the FIRST buff row to BuffFrame; row two
 -- (BuffButton_UpdateAnchors, index == BUFFS_PER_ROW+1) and the entire debuff
 -- row (DebuffButton_UpdateAnchors, index == 1) hang off TempEnchant1, a child
 -- of TemporaryEnchantFrame. The two are independent top-level frames, so the
 -- instant one carries a different offset than the other, row two slides out of
--- line with row one on screen. Never SetPoint one of them on its own.
+-- line with row one on screen. Never SetPoint one of them on its own -- but a
+-- frame that already sits on the pin is left alone.
 local function PinAuraFrames(offsetX, offsetY)
-    if BuffFrame then
+    if BuffFrame and not IsAnchoredTopRight(BuffFrame, UIParent, offsetX, offsetY) then
         BuffFrame._dcqosRepositioning = true
         BuffFrame:ClearAllPoints()
         BuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
         BuffFrame._dcqosRepositioning = nil
     end
 
-    if TemporaryEnchantFrame then
+    if TemporaryEnchantFrame
+        and not IsAnchoredTopRight(TemporaryEnchantFrame, UIParent, offsetX, offsetY) then
         TemporaryEnchantFrame._dcqosRepositioning = true
         TemporaryEnchantFrame:ClearAllPoints()
         TemporaryEnchantFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", offsetX, offsetY)
@@ -2760,20 +2789,28 @@ end
 -- must not be re-derived every frame -- but when it has been invalidated,
 -- measure once and cache instead of falling back to the raw setting: that
 -- fallback is what let BuffFrame snap to the configured offset while
--- TemporaryEnchantFrame stayed on the (further left) measured one.
+-- TemporaryEnchantFrame stayed on the (further left) measured one. The
+-- InfoBar inset is cached the same way (ResolveTopBarInset).
 local function CurrentAuraOffsets()
     local offsetX = buffFrameState.resolvedOffsetX
     if not offsetX then
         offsetX = ResolveBuffFrameOffsetX()
     end
 
-    return offsetX, GetTopBarInset() + buffFrameState.offsetY
+    local inset = buffFrameState.resolvedTopInset
+    if not inset then
+        inset = ResolveTopBarInset()
+    end
+
+    return offsetX, inset + buffFrameState.offsetY
 end
 
 -- Stock TemporaryEnchantFrame_OnUpdate re-anchors BuffFrame every frame while
 -- no weapon enchant is up (TemporaryEnchantFrame_Hide), so this hook is hot.
--- It re-pins BOTH frames, which is what keeps the rows aligned when the
--- InfoBar height or the minimap clearance changes between full re-applies.
+-- It re-pins whichever of the two frames is off the pin, from cached offsets
+-- (no screen-rect reads here); the 4 Hz layout driver re-reads the InfoBar
+-- inset, which keeps the rows aligned when its height changes between full
+-- re-applies.
 local function InstallAuraAnchorHook(frame)
     if not frame or frame._dcqosAnchorHooked then return end
 
@@ -2817,14 +2854,21 @@ local function AuraButtonSize(button)
     return w, h
 end
 
+-- BuffFrame_Update places every aura twice (the per-button hook, then the full
+-- sweep) and the 4 Hz driver sweeps them all again, so a button that already
+-- sits on its grid slot is left alone; only a real move re-anchors it (and
+-- counts as a placement in /dcqos auras).
 local function PlaceAuraButton(button, column, row, spacing)
-    auraGridPlacements = auraGridPlacements + 1
-
     local w, h = AuraButtonSize(button)
+    local x = -(column * (w + AURA_COLUMN_GAP))
+    local y = -(row * (h + spacing))
+    if IsAnchoredTopRight(button, BuffFrame, x, y) then
+        return
+    end
+
+    auraGridPlacements = auraGridPlacements + 1
     button:ClearAllPoints()
-    button:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT",
-        -(column * (w + AURA_COLUMN_GAP)),
-        -(row * (h + spacing)))
+    button:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT", x, y)
 end
 
 -- TemporaryEnchantFrame now shares BuffFrame's right edge (it has to, or the
@@ -2915,6 +2959,14 @@ local function StartAuraLayoutDriver()
         if self._dcqosElapsed < 0.25 then return end
         self._dcqosElapsed = 0
 
+        -- The anchor hook works from the cached InfoBar inset; follow a change
+        -- of the bar's height here, four times a second, instead of reading
+        -- two screen rects on every frame.
+        local inset = buffFrameState.resolvedTopInset
+        if inset ~= ResolveTopBarInset() then
+            PinAuraFrames(CurrentAuraOffsets())
+        end
+
         RelayoutAllAuras()
     end)
 end
@@ -2996,7 +3048,7 @@ local function ApplyBuffFramePosition()
     if InCombatLockdown() then return end
 
     local offsetX = ResolveBuffFrameOffsetX()
-    local offsetY = GetTopBarInset() + buffFrameState.offsetY
+    local offsetY = ResolveTopBarInset() + buffFrameState.offsetY
 
     if BuffFrame then
         if not buffFrameState.buffPoint then
@@ -3094,6 +3146,7 @@ local function SetupBuffFramePosition()
     buffFrameState.offsetX = settings.buffFrameOffsetX or 0
     buffFrameState.offsetY = settings.buffFrameOffsetY or 0
     buffFrameState.resolvedOffsetX = nil
+    buffFrameState.resolvedTopInset = nil
 
     -- Use a frame to handle positioning after combat/loading
     local positioner = GetManagedEventFrame("buffPositioner")

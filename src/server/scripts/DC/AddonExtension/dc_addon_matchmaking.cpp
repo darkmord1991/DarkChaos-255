@@ -307,6 +307,30 @@ namespace Matchmaking
         }
     }
 
+    namespace
+    {
+        // Difficulties the queue may form a group at: Normal/Heroic/Mythic for
+        // a 5-man, and for a raid only the difficulties the catalog lists for
+        // that map. The client only ever offers those, so anything else is a
+        // crafted request -- and it is dangerous: the value is handed to
+        // Group::Set*Difficulty and from there indexes the core's
+        // per-difficulty bind tables (m[MAX_DIFFICULTY]), while the dungeon
+        // requirement arrays above only cover three difficulties, so past them
+        // every level/item-level/attunement gate read "no requirement".
+        bool IsQueueableDifficulty(uint8 category, uint32 mapId, uint8 difficulty)
+        {
+            if (category == QUEUE_CAT_DUNGEON)
+                return difficulty < InstanceCatalog::DUNGEON_DIFFICULTY_COUNT;
+
+            for (InstanceCatalog::RaidEntry const& raid : InstanceCatalog::GetRaids())
+                if (raid.mapId == mapId)
+                    return std::find(raid.difficulties.begin(), raid.difficulties.end(), difficulty)
+                        != raid.difficulties.end();
+
+            return false;   // not a raid the catalog knows
+        }
+    }
+
     // ========================================================================
     // BOT PROVIDER REGISTRY
     // ========================================================================
@@ -494,7 +518,10 @@ namespace Matchmaking
         // dungeons against the 18 that are actually in rotation, so without
         // this the queue happily formed a Mythic group for a dungeon where the
         // party then could not use the key they queued with.
-        if (difficulty == DUNGEON_DIFFICULTY_EPIC && !sMythicRuns->IsMythicPlusDungeon(mapId))
+        // On a raid map the same value 2 is 10-player Heroic, not Mythic.
+        MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+        bool const isRaidMap = mapEntry && mapEntry->IsRaid();
+        if (!isRaidMap && difficulty == DUNGEON_DIFFICULTY_EPIC && !sMythicRuns->IsMythicPlusDungeon(mapId))
             return "Not in this season's Mythic+ rotation";
 
         if (player->HasAura(lfg::LFG_SPELL_DUNGEON_DESERTER))
@@ -560,21 +587,41 @@ namespace Matchmaking
         if (!player)
             return;
 
+        // Settle the category before the tick list is filtered: the filter
+        // below only checks maps against the catalog for dungeons, so an
+        // unknown category used to skip it and was then coerced to a dungeon
+        // queue with arbitrary map ids still in the list.
+        if (category != QUEUE_CAT_DUNGEON && category != QUEUE_CAT_RAID)
+            category = QUEUE_CAT_DUNGEON;
+
         // Normalise the tick list: drop duplicates, zeroes and anything not in
         // the catalog. An empty list is the random queue; raids keep a single
-        // map in dungeonId as before.
+        // map in dungeonId as before. (An EPIC MapDifficulty row alone is not
+        // enough: raid maps carry one too -- it is their 10-player Heroic.)
         {
+            bool const pickedSpecific = !dungeonIds.empty();
+            auto const& catalogDungeons = InstanceCatalog::GetMythicDungeonMapIds();
             std::vector<uint32> cleaned;
             for (uint32 id : dungeonIds)
             {
                 if (!id || std::find(cleaned.begin(), cleaned.end(), id) != cleaned.end())
                     continue;
                 if (category == QUEUE_CAT_DUNGEON
-                    && !InstanceCatalog::MapSupportsDifficulty(id, DUNGEON_DIFFICULTY_EPIC))
+                    && std::find(catalogDungeons.begin(), catalogDungeons.end(), id) == catalogDungeons.end())
                     continue;
                 cleaned.push_back(id);
             }
             dungeonIds.swap(cleaned);
+
+            // Every pick was dropped: refuse rather than fall through to the
+            // random queue, which is not what the player asked for.
+            if (pickedSpecific && dungeonIds.empty())
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "None of the selected dungeons can be queued for.")
+                    .Send(player);
+                return;
+            }
         }
         uint32 dungeonId = dungeonIds.size() == 1 ? dungeonIds[0] : 0u;
 
@@ -596,9 +643,6 @@ namespace Matchmaking
         if (roles == 0)
             roles = QROLE_DPS;
 
-        if (category != QUEUE_CAT_DUNGEON && category != QUEUE_CAT_RAID)
-            category = QUEUE_CAT_DUNGEON;
-
         if (category == QUEUE_CAT_RAID)
         {
             if (raidSize != 10 && raidSize != 25 && raidSize != 40)
@@ -619,6 +663,16 @@ namespace Matchmaking
         else
         {
             raidSize = 0;
+        }
+
+        // Only what the catalog offers (see IsQueueableDifficulty). This also
+        // rejects a raid queue for a map that is not a catalog raid.
+        if (!IsQueueableDifficulty(category, dungeonId, difficulty))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "That difficulty is not available for this content.")
+                .Send(player);
+            return;
         }
 
         // Bots are backfill only: they are pulled into a group that real
@@ -896,6 +950,15 @@ namespace Matchmaking
 
         if (removed)
             BroadcastStatus(category);
+    }
+
+    bool MatchmakingQueue::IsQueued(Player* player)
+    {
+        if (!player)
+            return false;
+
+        std::lock_guard<std::mutex> lock(_mutex);
+        return FindEntry(player->GetGUID().GetCounter()) != nullptr;
     }
 
     void MatchmakingQueue::SendStatus(Player* player)
@@ -2272,8 +2335,11 @@ namespace Matchmaking
             boot.reason     = reason.empty() ? "No reason given" : reason;
             boot.cancelTime = GameTime::GetGameTime().count() + _bootDurationSec;
 
-            // Everyone still in the group votes. Kicker auto-agrees, victim
-            // auto-refuses, bots agree (nothing is there to click).
+            // Every real player still in the group votes. Kicker auto-agrees,
+            // victim auto-refuses. Bots abstain: they used to auto-agree, which
+            // let one player in a group of two humans and three backfilled
+            // bots kick the other human on the spot with no one else's say.
+            uint32 possibleAgree = 0;   // real players other than the victim
             for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
                 Player* m = itr->GetSource();
@@ -2281,13 +2347,25 @@ namespace Matchmaking
                     continue;
                 uint32 low = m->GetGUID().GetCounter();
                 if (m->GetGUID() == victim)
+                {
                     boot.votes[low] = -1;
-                else if (m->GetGUID() == kicker)
-                    boot.votes[low] = 1;
-                else if (info->IsBot(low))
-                    boot.votes[low] = 1;
-                else
-                    boot.votes[low] = 0;
+                    continue;
+                }
+                if (info->IsBot(low) || PlayerIsBot(m))
+                    continue;
+
+                boot.votes[low] = (m->GetGUID() == kicker) ? 1 : 0;
+                ++possibleAgree;
+            }
+
+            // Stock refuses the vote outright when the group is too small to
+            // ever reach the threshold (ERR_PARTY_LFG_BOOT_TOO_FEW_PLAYERS).
+            // Still return true: the leader's kick must not go through either.
+            if (possibleAgree < _bootVotesNeeded)
+            {
+                ChatHandler(kickerPlayer->GetSession()).SendSysMessage(
+                    "Not enough players in the group to start a vote kick.");
+                return true;
             }
 
             _boots[group->GetGUID()] = boot;
@@ -2295,7 +2373,7 @@ namespace Matchmaking
 
         SendBootState(group);
 
-        // Bots may already have carried it over the line.
+        // A threshold of 1 is met by the kicker's own vote.
         uint8 agree = boot.CountAgree();
         if (agree >= _bootVotesNeeded)
             ResolveBoot(group->GetGUID(), true, "Vote passed.");

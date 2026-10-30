@@ -154,7 +154,27 @@ namespace CrossSystem
         HLBGMatchComplete       = 901,
         ArenaMatchComplete      = 902,
 
+        // A player used a DC system (see FeatureKind)
+        FeatureUsed             = 1000,
+
         Max
+    };
+
+    // What a FeatureUsed event reports. For systems with a success worth tracking but no event
+    // of their own; the value's meaning belongs to the kind.
+    enum class FeatureKind : uint8
+    {
+        None                = 0,
+        ShopPurchase        = 1,    // value: dc_collection_shop.id
+        EnchantReroll       = 2,
+        Transmutation       = 3,
+        HotspotVisit        = 4,    // value: hotspot id
+        Transmog            = 5,
+        GroupFinder         = 6,
+        PrestigeChallenge   = 7,    // value: challenge type
+        SeasonChest         = 8,
+        WorldforgedPickup   = 9,    // value: gameobject spawn id
+        Spectate            = 10
     };
 
     // =========================================================================
@@ -277,6 +297,13 @@ namespace CrossSystem
         uint32 itemId = 0;
         uint32 tokensClaimed = 0;
         uint32 essenceClaimed = 0;
+    };
+
+    // Feature use event
+    struct FeatureUsedEvent : EventData
+    {
+        FeatureKind kind = FeatureKind::None;
+        uint32 value = 0;
     };
 
     // =========================================================================

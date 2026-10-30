@@ -29,7 +29,9 @@
 #include "Player.h"
 #include "SharedDefines.h"
 
+#include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -44,21 +46,32 @@ namespace Beastmaster
     // a TTL, mirroring the World module's content cache.
     constexpr uint64 CATALOG_CACHE_TTL_MS = 30000;
 
+    // The catalog reply is ~185 KB for a request of a few bytes, so a client
+    // asking in a loop turned the server into a traffic amplifier. The addon
+    // re-requests at most every 20s once it has the catalog; this floor sits
+    // below that, so only a crafted flood ever meets it.
+    constexpr uint64 CATALOG_REQUEST_COOLDOWN_MS = 10000;
+
     struct CachedCatalog
     {
         std::string payloadJson;                 // {"pets":[...],"count":N}
         std::unordered_set<uint32> adoptableIds; // curated + valid-for-adopt
         uint64 expiresAtMs = 0;
-        bool built = false;
     };
 
+    // Handed out as a shared snapshot: every request and every adopt used to
+    // copy the whole payload and id set.
     static std::mutex sCatalogLock;
-    static CachedCatalog sCatalog;
+    static std::shared_ptr<CachedCatalog const> sCatalog;
+
+    // Last catalog request per player (world thread only).
+    static std::unordered_map<ObjectGuid::LowType, uint64> sLastCatalogRequestMs;
 
     // Build the catalog payload from dc_beastmaster_pets + creature_template.
-    static CachedCatalog BuildCatalog()
+    static std::shared_ptr<CachedCatalog const> BuildCatalog()
     {
-        CachedCatalog cache;
+        auto built = std::make_shared<CachedCatalog>();
+        CachedCatalog& cache = *built;
 
         JsonValue pets;
         pets.SetArray();
@@ -128,21 +141,20 @@ namespace Beastmaster
 
         cache.payloadJson = root.Encode();
         cache.expiresAtMs = static_cast<uint64>(GameTime::GetGameTimeMS().count()) + CATALOG_CACHE_TTL_MS;
-        cache.built = true;
-        return cache;
+        return built;
     }
 
-    static CachedCatalog GetCatalog()
+    static std::shared_ptr<CachedCatalog const> GetCatalog()
     {
         uint64 const nowMs = static_cast<uint64>(GameTime::GetGameTimeMS().count());
 
         {
             std::lock_guard<std::mutex> lock(sCatalogLock);
-            if (sCatalog.built && sCatalog.expiresAtMs > nowMs)
+            if (sCatalog && sCatalog->expiresAtMs > nowMs)
                 return sCatalog;
         }
 
-        CachedCatalog fresh = BuildCatalog();
+        std::shared_ptr<CachedCatalog const> fresh = BuildCatalog();
 
         std::lock_guard<std::mutex> lock(sCatalogLock);
         sCatalog = fresh;
@@ -155,10 +167,16 @@ namespace Beastmaster
         if (!player)
             return;
 
-        CachedCatalog catalog = GetCatalog();
+        uint64 const nowMs = static_cast<uint64>(GameTime::GetGameTimeMS().count());
+        uint64& lastMs = sLastCatalogRequestMs[player->GetGUID().GetCounter()];
+        if (lastMs && nowMs - lastMs < CATALOG_REQUEST_COOLDOWN_MS)
+            return;
+        lastMs = nowMs;
+
+        std::shared_ptr<CachedCatalog const> catalog = GetCatalog();
 
         JsonMessage response(Module::BEASTMASTER, Opcode::Beastmaster::SMSG_CATALOG);
-        response.SetPreEncodedJson(catalog.payloadJson);
+        response.SetPreEncodedJson(catalog->payloadJson);
         response.Send(player);
     }
 
@@ -198,8 +216,8 @@ namespace Beastmaster
         }
 
         // Only curated, catalog-listed creatures may be adopted.
-        CachedCatalog catalog = GetCatalog();
-        if (catalog.adoptableIds.find(creatureId) == catalog.adoptableIds.end())
+        std::shared_ptr<CachedCatalog const> catalog = GetCatalog();
+        if (catalog->adoptableIds.find(creatureId) == catalog->adoptableIds.end())
         {
             SendAdoptResult(player, false, "not_in_catalog", creatureId, "");
             return;

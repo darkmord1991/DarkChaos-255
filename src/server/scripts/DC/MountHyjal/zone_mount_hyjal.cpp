@@ -1467,7 +1467,9 @@ public:
         void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
-            me->SetPhaseMask(32, false);
+            // update = true: the spawn was already sent in the summoner's phase, so nearby players
+            // need the visibility refresh or they keep a stale copy of the vehicle
+            me->SetPhaseMask(32, true);
             me->setActive(true);
             me->SetControlled(true, UNIT_STATE_ROOT);
             CastWithDelay(me, 100, me, SPELL_SPEED_MINUS_90);

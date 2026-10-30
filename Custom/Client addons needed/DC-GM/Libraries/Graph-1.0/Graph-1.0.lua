@@ -18,7 +18,7 @@ if not lib then return end
 local GraphFunctions={}
 
 --Search for just Addon\\ at the front since the interface part often gets trimmed
-local TextureDirectory="Interface\\AddOns\\AzerothAdmin\\Libraries\\GraphTextures\\"
+local TextureDirectory="Interface\\AddOns\\DC-GM\\Libraries\\GraphTextures\\"
 
 local tinsert, tremove = tinsert, tremove
 local pairs, ipairs = pairs, ipairs

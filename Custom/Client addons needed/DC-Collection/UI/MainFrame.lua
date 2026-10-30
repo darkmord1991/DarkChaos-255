@@ -2071,7 +2071,7 @@ function DC:UpdateMountPreview(item)
             p.favBtn:GetNormalTexture():SetDesaturated(false)
         end
     else
-        p.favBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Star_01")
+        p.favBtn:SetNormalTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
         if p.favBtn:GetNormalTexture() then
             p.favBtn:GetNormalTexture():SetDesaturated(true)
         end
@@ -2894,21 +2894,26 @@ function DC:RequestRefreshCurrentTab(delay)
     self._refreshCurrentTabPending = true
     self._refreshCurrentTabDirty = false
     self._refreshCurrentTabDelayRemaining = delay
+    -- The timer frame runs only while a refresh is pending; it hides itself
+    -- once none is (it used to tick on every frame after the first open).
+    f:Show()
 
     if f._dcRefreshHooked then
         return
     end
 
     f._dcRefreshHooked = true
-    f:SetScript("OnUpdate", function(_, elapsed)
+    f:SetScript("OnUpdate", function(timer, elapsed)
         if not DC.MainFrame or not DC.MainFrame:IsShown() then
             DC._refreshCurrentTabPending = nil
             DC._refreshCurrentTabDirty = nil
             DC._refreshCurrentTabDelayRemaining = nil
+            timer:Hide()
             return
         end
 
         if not DC._refreshCurrentTabPending then
+            timer:Hide()
             return
         end
 
@@ -2926,6 +2931,9 @@ function DC:RequestRefreshCurrentTab(delay)
 
         if runAgain then
             DC:RequestRefreshCurrentTab(delay)
+        end
+        if not DC._refreshCurrentTabPending then
+            timer:Hide()
         end
     end)
 end

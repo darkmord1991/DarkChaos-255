@@ -358,18 +358,34 @@ local function EnsureNativeSpectatorPollFrame()
     local pushProtocol = protocol and type(protocol.OnNativeData) == "function"
         and type(protocol.GetNativePollInterval) == "function" and protocol or nil
 
+    if pushProtocol then
+        pushProtocol:OnNativeData("SPEC", ConsumeNativeSpectatorSnapshot)
+
+        -- That once-a-second safety net rides DCAddonProtocol's own tick
+        -- (ConsumeNativeSpectatorSnapshot returns at once outside a session).
+        if type(pushProtocol.RegisterNativeSafetyPoll) == "function"
+            and pushProtocol:RegisterNativeSafetyPoll(ConsumeNativeSpectatorSnapshot) then
+            nativeSpectatorPollFrame = true
+            return
+        end
+    end
+
+    local interval = NATIVE_SPECTATOR_LIVE_POLL_INTERVAL
+    if pushProtocol then
+        interval = pushProtocol:GetNativePollInterval(interval)
+    end
+
+    -- Runs only during a session: WakeNativeSpectatorPoll shows it, and it
+    -- hides itself once the session is over.
     nativeSpectatorPollFrame = CreateFrame("Frame")
     nativeSpectatorPollFrame.elapsed = 0
     nativeSpectatorPollFrame:SetScript("OnUpdate", function(self, elapsed)
         if not GF._spectatorSessionActive then
+            self:Hide()
             return
         end
 
         self.elapsed = (self.elapsed or 0) + elapsed
-        local interval = NATIVE_SPECTATOR_LIVE_POLL_INTERVAL
-        if pushProtocol then
-            interval = pushProtocol:GetNativePollInterval(interval)
-        end
         if self.elapsed < interval then
             return
         end
@@ -377,9 +393,11 @@ local function EnsureNativeSpectatorPollFrame()
         self.elapsed = 0
         ConsumeNativeSpectatorSnapshot()
     end)
+end
 
-    if pushProtocol then
-        pushProtocol:OnNativeData("SPEC", ConsumeNativeSpectatorSnapshot)
+local function WakeNativeSpectatorPoll()
+    if type(nativeSpectatorPollFrame) == "table" then
+        nativeSpectatorPollFrame:Show()
     end
 end
 
@@ -1003,6 +1021,7 @@ end
 
 function GF:ShowSpectatorHUD(runData)
     self._spectatorSessionActive = true
+    WakeNativeSpectatorPoll()
 
     local hud = self:CreateSpectatorHUD()
     if type(runData) == "table" then
@@ -1049,6 +1068,7 @@ function GF:BeginSpectateSession(data)
 
     if ShouldUseNativeSpectatorBridge() then
         EnsureNativeSpectatorPollFrame()
+        WakeNativeSpectatorPoll()
         lastNativeSpectatorRevision = 0
         pcall(RequestNativeSpectatorLiveSnapshot, "spectate-start")
     end

@@ -34,6 +34,8 @@
 #include "DatabaseEnv.h"
 #include "ObjectAccessor.h"
 
+#include <mutex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -88,6 +90,21 @@ namespace DarkChaos
 
                 return player->IsInCombat();
             }
+
+            // Level and package last applied to a heirloom by RequestHeirloomStep.
+            // The step prices itself from the dc_heirloom_upgrades row, but its own
+            // REPLACE is asynchronous: a second call whose read ran before that write
+            // landed saw the old level and paid for the same level again. An entry is
+            // dropped once the table shows the same state. The addon handler keeps the
+            // same guard for players (dc_addon_upgrade.cpp); bots only come through here.
+            struct AppliedHeirloomState
+            {
+                uint32 level = 0;
+                uint32 package = 0;
+            };
+
+            std::mutex s_AppliedHeirloomMutex;
+            std::unordered_map<uint32, AppliedHeirloomState> s_AppliedHeirloomStates; // item guid -> state
 
             class UpgradeApiProvider : public Api::Provider
             {
@@ -319,6 +336,22 @@ namespace DarkChaos
                             currentPackage = (*result)[1].Get<uint32>();
                         }
 
+                        // A step applied after this read was queued is newer than the row.
+                        {
+                            std::lock_guard<std::mutex> lock(s_AppliedHeirloomMutex);
+                            auto const applied = s_AppliedHeirloomStates.find(itemGuid);
+                            if (applied != s_AppliedHeirloomStates.end())
+                            {
+                                if (applied->second.level == currentLevel && applied->second.package == currentPackage)
+                                    s_AppliedHeirloomStates.erase(applied);
+                                else
+                                {
+                                    currentLevel = applied->second.level;
+                                    currentPackage = applied->second.package;
+                                }
+                            }
+                        }
+
                         // One level per call, so the caller paces the spend. A
                         // package switch on its own re-applies at the current level
                         // and sums an empty cost range, which is what makes
@@ -337,8 +370,8 @@ namespace DarkChaos
                         uint32 const tokenId = GetUpgradeTokenItemId();
                         uint32 const essenceId = GetArtifactEssenceItemId();
 
-                        if (owner->GetItemCount(tokenId) < tokensNeeded ||
-                            owner->GetItemCount(essenceId) < essenceNeeded)
+                        if (GetSpendableItemCount(owner, tokenId) < tokensNeeded ||
+                            GetSpendableItemCount(owner, essenceId) < essenceNeeded)
                             return;
 
                         if (tokensNeeded > 0)
@@ -363,6 +396,11 @@ namespace DarkChaos
                             "package_id, enchant_id) VALUES ({}, {}, {}, {}, {}, {})",
                             owner->GetGUID().GetCounter(), itemGuid, heirloom->GetEntry(), targetLevel, packageId,
                             enchantId);
+
+                        {
+                            std::lock_guard<std::mutex> lock(s_AppliedHeirloomMutex);
+                            s_AppliedHeirloomStates[itemGuid] = { targetLevel, static_cast<uint32>(packageId) };
+                        }
 
                         CharacterDatabase.Execute(
                             "INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, "

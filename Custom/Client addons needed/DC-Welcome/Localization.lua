@@ -128,7 +128,7 @@ L["FEATURE_PRESTIGE"] = {
 
 L["FEATURE_HOTSPOTS"] = {
     name = "|cff00ccffDynamic Hotspots|r",
-    icon = "Interface\\Icons\\INV_Misc_Map01",
+    icon = "Interface\\Icons\\INV_Misc_Map_01",
     desc = "Rotating bonus zones with world-map support, active markers, and extra world content visibility. Check .hotspot status for the current rotation.",
     unlock = "Unlocks at level 10",
 }
@@ -191,7 +191,7 @@ L["FEATURE_HOUSING"] = {
 
 L["FEATURE_VAULT"] = {
     name = "|cffa335eeItem Vault|r",
-    icon = "Interface\\Icons\\INV_Misc_Bag_CoreFelcloth",
+    icon = "Interface\\Icons\\INV_Misc_Bag_CoreFelclothBag",
     desc = "Weekly reward choices tied to successful Mythic+ activity and tracked directly in the Progress tab.",
     unlock = "Weekly progression feature",
 }

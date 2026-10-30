@@ -286,6 +286,27 @@ DCWelcome.RegisteredAddons = {
         end,
     },
     {
+        id = "dc-path",
+        name = "Path of Chaos",
+        description = "Tasks and milestones across every Dark Chaos system, paying Shop Points for the Collection shop.",
+        icon = "Interface\\Icons\\INV_Misc_Coin_16",
+        color = {1.0, 0.82, 0.0},  -- Gold
+        category = "World",
+        minLevel = 1,
+        openCommand = "/path",
+        settingsCommand = nil,
+        openFunc = function()
+            if DCPath and DCPath.Toggle then
+                DCPath:Toggle()
+            else
+                DCWelcome.Print("Path of Chaos addon not loaded")
+            end
+        end,
+        isLoaded = function()
+            return DCPath ~= nil
+        end,
+    },
+    {
         id = "dc-qos",
         name = "Quality of Service",
         description = "Tooltip upgrades, automation helpers, cooldowns, vendor/mail tools, and other QoL modules.",

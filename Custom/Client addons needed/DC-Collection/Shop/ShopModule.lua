@@ -132,15 +132,35 @@ function ShopModule:GetEmblems()
     return tonumber(essence) or (DC.currency and DC.currency.emblems) or 0
 end
 
+function ShopModule:GetPoints()
+    return tonumber(DC.currency and DC.currency.points) or 0
+end
+
+-- Shop Points are a second way to pay for a row, not an addition to its price.
+function ShopModule:IsPointsOnly(item)
+    return (item.costPoints or 0) > 0 and (item.costTokens or 0) == 0 and (item.costEmblems or 0) == 0
+end
+
+function ShopModule:CanAffordPoints(item)
+    if not item then return false end
+
+    local costPoints = item.costPoints or 0
+    return costPoints > 0 and self:GetPoints() >= costPoints
+end
+
 function ShopModule:CanAfford(item)
     if not item then return false end
-    
+
+    if self:IsPointsOnly(item) then
+        return self:CanAffordPoints(item)
+    end
+
     local tokens = self:GetTokens()
     local emblems = self:GetEmblems()
-    
+
     local costTokens = item.costTokens or 0
     local costEmblems = item.costEmblems or 0
-    
+
     return tokens >= costTokens and emblems >= costEmblems
 end
 
@@ -152,24 +172,32 @@ end
 -- PURCHASING
 -- ============================================================================
 
-function ShopModule:Purchase(shopItemId)
+function ShopModule:Purchase(shopItemId, payWithPoints)
     local item = self:GetShopItem(shopItemId)
     if not item then
         DC:Print(L["ERR_ITEM_NOT_FOUND"] or "Item not found in shop")
         return false
     end
-    
-    if not self:CanAfford(item) then
+
+    local usePoints = payWithPoints or self:IsPointsOnly(item)
+    local canPay
+    if usePoints then
+        canPay = self:CanAffordPoints(item)
+    else
+        canPay = self:CanAfford(item)
+    end
+
+    if not canPay then
         DC:Print(L["ERR_NOT_ENOUGH_CURRENCY"] or "Not enough currency")
         return false
     end
-    
+
     if item.maxPurchases and item.purchaseCount >= item.maxPurchases then
         DC:Print(L["ERR_ALREADY_PURCHASED"] or "Already purchased maximum amount")
         return false
     end
-    
-    DC:RequestShopPurchase(shopItemId)
+
+    DC:RequestShopPurchase(shopItemId, usePoints)
     return true
 end
 
@@ -225,11 +253,21 @@ function ShopModule:FormatCost(item)
         table.insert(parts, item.costEmblems .. " " .. (L["EMBLEMS"] or "Emblems"))
     end
     
-    if #parts == 0 then
-        return L["FREE"] or "Free"
+    local pointsText = nil
+    if item.costPoints and item.costPoints > 0 then
+        pointsText = item.costPoints .. " " .. (L["SHOP_POINTS"] or "Shop Points")
     end
-    
-    return table.concat(parts, " + ")
+
+    if #parts == 0 then
+        return pointsText or L["FREE"] or "Free"
+    end
+
+    local cost = table.concat(parts, " + ")
+    if pointsText then
+        return cost .. " " .. (L["SHOP_OR"] or "or") .. " " .. pointsText
+    end
+
+    return cost
 end
 
 -- ============================================================================

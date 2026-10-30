@@ -1205,6 +1205,15 @@ public:
     [[nodiscard]] bool IsGameMaster() const { return m_ExtraFlags & PLAYER_EXTRA_GM_ON; }
     [[nodiscard]] bool CanBeGameMaster() const;
     void SetGameMaster(bool on);
+
+    // Phase layers. A system that phases the player owns a layer instead of writing the mask, so
+    // systems no longer overwrite each other: the newest exclusive layer is the whole mask (a duel,
+    // an anti-grief fight); otherwise the mask is the phase auras' (normal without one) OR every
+    // additive layer. A GM sees all phases. Clearing a layer gives back what the others make.
+    void SetPhaseLayer(uint32 layerId, uint32 mask, bool exclusive);
+    void ClearPhaseLayer(uint32 layerId);
+    [[nodiscard]] bool HasPhaseLayer(uint32 layerId) const { return m_phaseLayers.contains(layerId); }
+    [[nodiscard]] uint32 GetComposedPhaseMask() const;
     [[nodiscard]] bool isGMChat() const { return m_ExtraFlags & PLAYER_EXTRA_GM_CHAT; }
     void SetGMChat(bool on) { if (on) m_ExtraFlags |= PLAYER_EXTRA_GM_CHAT; else m_ExtraFlags &= ~PLAYER_EXTRA_GM_CHAT; }
     [[nodiscard]] bool IsGMSpectator() const { return m_ExtraFlags & PLAYER_EXTRA_GM_SPECTATOR; }
@@ -1542,39 +1551,69 @@ public:
     void ResetSeasonalQuestStatus(uint16 event_id);
 
     [[nodiscard]] uint16 FindQuestSlot(uint32 quest_id) const;
-    [[nodiscard]] uint32 GetQuestSlotQuestId(uint16 slot) const { return GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET); }
-    [[nodiscard]] uint32 GetQuestSlotState(uint16 slot)   const { return GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_STATE_OFFSET); }
-    [[nodiscard]] uint16 GetQuestSlotCounter(uint16 slot, uint8 counter) const { return (uint16)(GetUInt64Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNTS_OFFSET) >> (counter * 16)); }
-    [[nodiscard]] uint32 GetQuestSlotTime(uint16 slot)    const { return GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_TIME_OFFSET); }
+    // A free slot within what this session's client can show, else MAX_QUEST_LOG_SIZE
+    [[nodiscard]] uint16 FindFreeQuestSlot() const;
+    // Word `offset` of a slot, wherever the slot lives (see CLIENT_QUEST_LOG_SIZE)
+    [[nodiscard]] uint32 GetQuestSlotField(uint16 slot, uint8 offset) const
+    {
+        if (slot < CLIENT_QUEST_LOG_SIZE)
+            return GetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + offset);
+
+        return m_extendedQuestFields[(slot - CLIENT_QUEST_LOG_SIZE) * MAX_QUEST_OFFSET + offset];
+    }
+    void SetQuestSlotField(uint16 slot, uint8 offset, uint32 value)
+    {
+        if (slot < CLIENT_QUEST_LOG_SIZE)
+        {
+            SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + offset, value);
+            return;
+        }
+
+        m_extendedQuestFields[(slot - CLIENT_QUEST_LOG_SIZE) * MAX_QUEST_OFFSET + offset] = value;
+        m_extendedQuestDirty |= uint64(1) << (slot - CLIENT_QUEST_LOG_SIZE);
+    }
+    [[nodiscard]] uint32 GetQuestSlotQuestId(uint16 slot) const { return GetQuestSlotField(slot, QUEST_ID_OFFSET); }
+    [[nodiscard]] uint32 GetQuestSlotState(uint16 slot)   const { return GetQuestSlotField(slot, QUEST_STATE_OFFSET); }
+    [[nodiscard]] uint16 GetQuestSlotCounter(uint16 slot, uint8 counter) const
+    {
+        uint64 counts = (uint64(GetQuestSlotField(slot, QUEST_COUNTS_OFFSET + 1)) << 32) | GetQuestSlotField(slot, QUEST_COUNTS_OFFSET);
+        return (uint16)(counts >> (counter * 16));
+    }
+    [[nodiscard]] uint32 GetQuestSlotTime(uint16 slot)    const { return GetQuestSlotField(slot, QUEST_TIME_OFFSET); }
     void SetQuestSlot(uint16 slot, uint32 quest_id, uint32 timer = 0)
     {
-        SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_ID_OFFSET, quest_id);
-        SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_STATE_OFFSET, 0);
-        SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNTS_OFFSET, 0);
-        SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNTS_OFFSET + 1, 0);
-        SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_TIME_OFFSET, timer);
+        SetQuestSlotField(slot, QUEST_ID_OFFSET, quest_id);
+        SetQuestSlotField(slot, QUEST_STATE_OFFSET, 0);
+        SetQuestSlotField(slot, QUEST_COUNTS_OFFSET, 0);
+        SetQuestSlotField(slot, QUEST_COUNTS_OFFSET + 1, 0);
+        SetQuestSlotField(slot, QUEST_TIME_OFFSET, timer);
     }
     void SetQuestSlotCounter(uint16 slot, uint8 counter, uint16 count)
     {
-        uint64 val = GetUInt64Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNTS_OFFSET);
+        uint64 val = (uint64(GetQuestSlotField(slot, QUEST_COUNTS_OFFSET + 1)) << 32) | GetQuestSlotField(slot, QUEST_COUNTS_OFFSET);
         val &= ~((uint64)0xFFFF << (counter * 16));
         val |= ((uint64)count << (counter * 16));
-        SetUInt64Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_COUNTS_OFFSET, val);
+        SetQuestSlotField(slot, QUEST_COUNTS_OFFSET, uint32(val));
+        SetQuestSlotField(slot, QUEST_COUNTS_OFFSET + 1, uint32(val >> 32));
     }
-    void SetQuestSlotState(uint16 slot, uint32 state) { SetFlag(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_STATE_OFFSET, state); }
-    void RemoveQuestSlotState(uint16 slot, uint32 state) { RemoveFlag(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_STATE_OFFSET, state); }
-    void SetQuestSlotTimer(uint16 slot, uint32 timer) { SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + QUEST_TIME_OFFSET, timer); }
+    void SetQuestSlotState(uint16 slot, uint32 state) { SetQuestSlotField(slot, QUEST_STATE_OFFSET, GetQuestSlotState(slot) | state); }
+    void RemoveQuestSlotState(uint16 slot, uint32 state) { SetQuestSlotField(slot, QUEST_STATE_OFFSET, GetQuestSlotState(slot) & ~state); }
+    void SetQuestSlotTimer(uint16 slot, uint32 timer) { SetQuestSlotField(slot, QUEST_TIME_OFFSET, timer); }
     void SwapQuestSlot(uint16 slot1, uint16 slot2)
     {
-        for (int i = 0; i < MAX_QUEST_OFFSET; ++i)
+        for (uint8 i = 0; i < MAX_QUEST_OFFSET; ++i)
         {
-            uint32 temp1 = GetUInt32Value(PLAYER_QUEST_LOG_1_1 + MAX_QUEST_OFFSET * slot1 + i);
-            uint32 temp2 = GetUInt32Value(PLAYER_QUEST_LOG_1_1 + MAX_QUEST_OFFSET * slot2 + i);
+            uint32 temp1 = GetQuestSlotField(slot1, i);
+            uint32 temp2 = GetQuestSlotField(slot2, i);
 
-            SetUInt32Value(PLAYER_QUEST_LOG_1_1 + MAX_QUEST_OFFSET * slot1 + i, temp2);
-            SetUInt32Value(PLAYER_QUEST_LOG_1_1 + MAX_QUEST_OFFSET * slot2 + i, temp1);
+            SetQuestSlotField(slot1, i, temp2);
+            SetQuestSlotField(slot2, i, temp1);
         }
     }
+    // The client negotiated the slots past CLIENT_QUEST_LOG_SIZE, at each handshake (a /reload's too): it gets them all,
+    // the empty ones too, and from then on every change
+    void EnableExtendedQuestLog();
+    void SendExtendedQuestSlots();
     uint16 GetReqKillOrCastCurrentCount(uint32 quest_id, int32 entry);
     void AreaExploredOrEventHappens(uint32 questId);
     void GroupEventHappens(uint32 questId, WorldObject const* pEventObject);
@@ -2898,8 +2937,21 @@ protected:
 
     uint32 m_ExtraFlags;
 
+    struct PhaseLayer
+    {
+        uint32 mask;
+        bool exclusive;
+        uint32 order;   // the newest exclusive layer wins
+    };
+    std::map<uint32, PhaseLayer> m_phaseLayers;
+    uint32 m_phaseLayerOrder = 0;
+
     QuestStatusMap m_QuestStatus;
     QuestStatusSaveMap m_QuestStatusSave;
+
+    // The quest log slots past the update fields, word for word as those hold them, and which of them changed
+    uint32 m_extendedQuestFields[(MAX_QUEST_LOG_SIZE - CLIENT_QUEST_LOG_SIZE) * MAX_QUEST_OFFSET] = { };
+    uint64 m_extendedQuestDirty = 0;
 
     RewardedQuestSet m_RewardedQuests;
     QuestStatusSaveMap m_RewardedQuestsSave;

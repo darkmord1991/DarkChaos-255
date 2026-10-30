@@ -278,6 +278,33 @@ local function OnNativeData(channel, drain)
     end
 end
 
+-- Starts a native snapshot poll. With pushes it is only the once-a-second
+-- safety net, which DCAddonProtocol's own 1 s tick runs; otherwise (or with an
+-- older protocol library) a frame polls at `interval`. Returns a truthy handle
+-- (the frame, or true) for the callers' started-once checks.
+local function StartNativePoll(interval, poll)
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol and type(protocol.RegisterNativeSafetyPoll) == "function"
+        and protocol:RegisterNativeSafetyPoll(poll) then
+        return true
+    end
+
+    -- Whether the DLL pushes is settled when DCAddonProtocol loads.
+    local pollInterval = NativePollInterval(interval)
+    local frame = CreateFrame("Frame")
+    frame.elapsed = 0
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < pollInterval then
+            return
+        end
+
+        self.elapsed = 0
+        poll()
+    end)
+    return frame
+end
+
 DC._collectionTransportDiagnostics = DC._collectionTransportDiagnostics or {}
 
 local function GetTransportTimestamp()
@@ -1185,19 +1212,17 @@ local function EnsureNativeCollectionWave1PollFrame()
         return
     end
 
-    nativeCollectionWave1PollFrame = CreateFrame("Frame")
-    nativeCollectionWave1PollFrame.elapsed = 0
-    nativeCollectionWave1PollFrame:SetScript("OnUpdate", function(self,
-        elapsed)
-        self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NativePollInterval(NATIVE_COLLECTION_WAVE1_POLL_INTERVAL) then
-            return
-        end
-
-        self.elapsed = 0
-        DrainNativeCollectionWave1()
-    end)
+    nativeCollectionWave1PollFrame = StartNativePoll(
+        NATIVE_COLLECTION_WAVE1_POLL_INTERVAL, DrainNativeCollectionWave1)
     OnNativeData("COLL_WAVE1", DrainNativeCollectionWave1)
+end
+
+-- The server answers on the native wave1 channel once it has negotiated it, however the request went out. The login
+-- handshake leaves as an addon message while the capabilities are still unknown, so its reply waited in the client's
+-- queue with nothing draining it (no "Handshake acknowledged", the sync timing out). Drain from load on:
+-- ConsumeNativeCollectionWave1Snapshot leaves the queue alone until the bridge is negotiated.
+if HasNativeCollectionWave1Bridge() then
+    EnsureNativeCollectionWave1PollFrame()
 end
 
 local function ConsumeNativeCollectionSavedOutfitsSnapshot()
@@ -1253,17 +1278,8 @@ local function EnsureNativeCollectionSavedOutfitsPollFrame()
         return
     end
 
-    nativeSavedOutfitsPollFrame = CreateFrame("Frame")
-    nativeSavedOutfitsPollFrame.elapsed = 0
-    nativeSavedOutfitsPollFrame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NativePollInterval(NATIVE_SAVED_OUTFITS_POLL_INTERVAL) then
-            return
-        end
-
-        self.elapsed = 0
-        ConsumeNativeCollectionSavedOutfitsSnapshot()
-    end)
+    nativeSavedOutfitsPollFrame = StartNativePoll(
+        NATIVE_SAVED_OUTFITS_POLL_INTERVAL, ConsumeNativeCollectionSavedOutfitsSnapshot)
     -- Saved outfits arrive on the wave1 opcode; its signal covers this mirror.
     OnNativeData("COLL_WAVE1", ConsumeNativeCollectionSavedOutfitsSnapshot)
 end
@@ -1355,17 +1371,8 @@ local function EnsureNativeCollectionCommunityPollFrame()
         return
     end
 
-    nativeCommunityPollFrame = CreateFrame("Frame")
-    nativeCommunityPollFrame.elapsed = 0
-    nativeCommunityPollFrame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NativePollInterval(NATIVE_COMMUNITY_POLL_INTERVAL) then
-            return
-        end
-
-        self.elapsed = 0
-        ConsumeNativeCollectionCommunitySnapshot()
-    end)
+    nativeCommunityPollFrame = StartNativePoll(
+        NATIVE_COMMUNITY_POLL_INTERVAL, ConsumeNativeCollectionCommunitySnapshot)
     -- Community replies arrive on the wave1 opcode; its signal covers this mirror.
     OnNativeData("COLL_WAVE1", ConsumeNativeCollectionCommunitySnapshot)
 end
@@ -1883,17 +1890,8 @@ local function EnsureNativeCollectionTransmogStatePollFrame()
         return
     end
 
-    nativeTransmogStatePollFrame = CreateFrame("Frame")
-    nativeTransmogStatePollFrame.elapsed = 0
-    nativeTransmogStatePollFrame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NativePollInterval(NATIVE_TRANSMOG_STATE_POLL_INTERVAL) then
-            return
-        end
-
-        self.elapsed = 0
-        ConsumeNativeCollectionTransmogStateSnapshot()
-    end)
+    nativeTransmogStatePollFrame = StartNativePoll(
+        NATIVE_TRANSMOG_STATE_POLL_INTERVAL, ConsumeNativeCollectionTransmogStateSnapshot)
     OnNativeData("COLL_TRANSMOG", ConsumeNativeCollectionTransmogStateSnapshot)
 end
 
@@ -2065,17 +2063,8 @@ local function EnsureNativeCollectionItemSetsPollFrame()
         return
     end
 
-    nativeItemSetsPollFrame = CreateFrame("Frame")
-    nativeItemSetsPollFrame.elapsed = 0
-    nativeItemSetsPollFrame:SetScript("OnUpdate", function(self, elapsed)
-        self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NativePollInterval(NATIVE_ITEM_SETS_POLL_INTERVAL) then
-            return
-        end
-
-        self.elapsed = 0
-        ConsumeNativeCollectionItemSetsSnapshot()
-    end)
+    nativeItemSetsPollFrame = StartNativePoll(
+        NATIVE_ITEM_SETS_POLL_INTERVAL, ConsumeNativeCollectionItemSetsSnapshot)
     OnNativeData("COLL_ITEMSETS", ConsumeNativeCollectionItemSetsSnapshot)
 end
 
@@ -3862,11 +3851,12 @@ function DC:RequestShopHistory(limit, offset)
 end
 
 -- Request shop purchase
-function DC:RequestBuyItem(shopId)
+function DC:RequestBuyItem(shopId, payWithPoints)
     return SendOwnedCollectionWave1Request("purchaseResult",
         self.Opcodes.CMSG_BUY_ITEM,
         {
             shopId = shopId,
+            pay = payWithPoints and "points" or nil,
         },
         {
             owner = "shop-purchase",
@@ -4619,7 +4609,7 @@ end
 
 -- Legacy function names for backwards compatibility
 DC.RequestCurrency = DC.RequestCurrencies
-DC.RequestShopPurchase = function(self, shopId) return self:RequestBuyItem(shopId) end
+DC.RequestShopPurchase = function(self, shopId, payWithPoints) return self:RequestBuyItem(shopId, payWithPoints) end
 DC.RequestShopHistoryData = function(self, limit, offset) return self:RequestShopHistory(limit, offset) end
 
 -- ============================================================================
@@ -5687,6 +5677,7 @@ function DC:HandleShopData(data)
     self.currency = self.currency or { tokens = 0, emblems = 0 }
     self.currency.tokens = data.tokens or data.token or self.currency.tokens or 0
     self.currency.emblems = data.emblems or data.essence or data.emblem or self.currency.emblems or 0
+    self.currency.points = data.points or self.currency.points or 0
 
     -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
     local central = rawget(_G, "DCAddonProtocol")
@@ -5860,6 +5851,7 @@ function DC:HandleShopData(data)
                 (shopStatic and shopStatic.priceTokens) or 0,
             priceEmblems = it.priceEmblems or it.costEmblems or it.price_emblems or
                 (shopStatic and shopStatic.priceEmblems) or 0,
+            pricePoints = tonumber(it.pricePoints) or 0,
             discount = it.discount or (shopStatic and shopStatic.discount) or 0,
             stock = it.stock or (shopStatic and shopStatic.stock),
             featured = featured,
@@ -5878,6 +5870,7 @@ function DC:HandleShopData(data)
                 (shopStatic and shopStatic.priceTokens) or 0,
             costEmblems = it.costEmblems or it.priceEmblems or it.cost_emblems or it.price_emblems or
                 (shopStatic and shopStatic.priceEmblems) or 0,
+            costPoints = tonumber(it.pricePoints) or 0,
             isFeatured = (it.isFeatured ~= nil and it.isFeatured) or
                 featured or false,
             purchased = it.purchased or it.owned or false,
@@ -6218,7 +6211,8 @@ function DC:HandlePurchaseResult(data)
         local emblems = data.emblems or data.essence or data.emblem or self.currency.emblems or 0
         self.currency.tokens = tokens
         self.currency.emblems = emblems
-        
+        self.currency.points = data.points or self.currency.points or 0
+
         -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
         local central = rawget(_G, "DCAddonProtocol")
         if central and type(central.SetServerCurrencyBalance) == "function" then
@@ -6315,6 +6309,7 @@ function DC:HandleCurrencies(data)
         self.currency.tokens = tokens
         self.currency.emblems = emblems
     end
+    self.currency.points = data.points or self.currency.points or 0
 
     if self.MainFrame and self.MainFrame:IsShown() then
         self:UpdateHeader()

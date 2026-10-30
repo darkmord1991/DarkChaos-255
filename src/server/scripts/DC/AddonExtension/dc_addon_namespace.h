@@ -104,6 +104,7 @@ namespace DCAddon
         constexpr char const* QUEST_NAV     = "QNAV";   // Quest navigation data (kill-entry highlights, live coord resolve)
         constexpr char const* ENCOUNTERS    = "DENC";   // Dungeon/raid boss tracker (DungeonEncounter.dbc driven)
         constexpr char const* TALENTS       = "TLNT";   // Talent builds (DC-Talents: free retail-style apply/respec)
+        constexpr char const* PATH          = "PATH";   // Path of Chaos (account task book paying Shop Points)
     }
 
     // ========================================================================
@@ -610,6 +611,23 @@ namespace DCAddon
             constexpr uint8 SMSG_APPLY_PET_RESULT = 0x13; // same shape as SMSG_APPLY_RESULT
         }
 
+        // Path of Chaos opcodes (see DC/Progression/Path). The book is static data the client
+        // caches by revision; progress travels as [id, progress, flags] triples, flags being
+        // 1 = completed, 2 = claimed.
+        namespace Path
+        {
+            constexpr uint8 CMSG_GET_CATALOG     = 0x01; // {rev} send the book unless the client holds this revision
+            constexpr uint8 CMSG_GET_STATE       = 0x02; // {} this account's progress and balance
+            constexpr uint8 CMSG_CLAIM           = 0x03; // {id} collect one completed task
+            constexpr uint8 CMSG_CLAIM_ALL       = 0x04; // {} collect every completed task
+
+            constexpr uint8 SMSG_CATALOG         = 0x10; // {rev, page, pages, c:[...], t:[...]} one page of the book
+            constexpr uint8 SMSG_CATALOG_CURRENT = 0x11; // {rev} the revision the client asked about is current
+            constexpr uint8 SMSG_STATE           = 0x12; // {enabled, points, earned, t:[[id, p, f]]}
+            constexpr uint8 SMSG_TASK_UPDATE     = 0x13; // {points, u:[[id, p, f]]} pushed as progress is made
+            constexpr uint8 SMSG_CLAIM_RESULT    = 0x14; // {ok, msg, points, ids:[id], paid}
+        }
+
         // Beastmaster opcodes (hunter pet catalog: browse, preview, adopt)
         namespace Beastmaster
         {
@@ -828,6 +846,11 @@ namespace DCAddon
             // library (no DLL bit); an older server leaves it out, so the client
             // primes items one by one instead.
             constexpr uint32 ITEM_PREFETCH = 0x20000000;
+            // The native client keeps quest log slots past the 25 of the player
+            // update fields, which the server sends in SMSG_DC_QUEST_SLOTS. That
+            // first packet is the client's answer, so a server without this leaves
+            // it at 25 (Player::EnableExtendedQuestLog).
+            constexpr uint32 EXTENDED_QUEST_LOG = 0x40000000;
 
             // Default capabilities for current server version
             constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
@@ -851,7 +874,8 @@ namespace DCAddon
                 NATIVE_MODULES_EXT |
                 LARGE_NATIVE_PAYLOAD |
                 NATIVE_PUSH_EVENTS |
-                ITEM_PREFETCH;
+                ITEM_PREFETCH |
+                EXTENDED_QUEST_LOG;
         }
 
         // Version info structure for handshake
@@ -1110,7 +1134,10 @@ namespace DCAddon
         float GetFloat(size_t index) const
         {
             try {
-                return (index < _data.size()) ? std::stof(_data[index]) : 0.0f;
+                // std::stof reads "nan" and "inf" too; a non-finite value passes every clamp (NaN
+                // compares false) and reaches SQL unquoted as a column name, which aborts the server
+                float const value = (index < _data.size()) ? std::stof(_data[index]) : 0.0f;
+                return std::isfinite(value) ? value : 0.0f;
             } catch (...) {
                 return 0.0f;
             }
@@ -1564,6 +1591,45 @@ namespace DCAddon
         size_t legacyMaxBytes);
     bool HandleNativeGenericRequest(WorldSession* session,
         WorldPacket const& packet);
+
+    // Token bucket counted in thousandths of a token and refilled from real
+    // time (getMSTime): `burst` requests at once, then `perSecond`. Not locked;
+    // the owner keeps it under its own mutex.
+    struct RequestTokenBucket
+    {
+        uint32 milliTokens = 0;
+        uint32 lastRefillMs = 0;
+        bool primed = false;
+
+        bool TryConsume(uint32 burst, uint32 perSecond, uint32 nowMs)
+        {
+            uint64 const capacity = static_cast<uint64>(burst) * 1000;
+            uint64 level = capacity;
+            if (primed)
+                level = milliTokens
+                    + static_cast<uint64>(getMSTimeDiff(lastRefillMs, nowMs)) * perSecond;
+
+            primed = true;
+            lastRefillMs = nowMs;
+            milliTokens = static_cast<uint32>(level < capacity ? level : capacity);
+            if (milliTokens < 1000)
+                return false;
+
+            milliTokens -= 1000;
+            return true;
+        }
+    };
+
+    // Per-account budget shared by every DC native request opcode
+    // (CMSG 0x521-0x541). Those transports have no client-side throttle, and
+    // antidos_opcode_policies counts each opcode on its own, so this is the one
+    // cap on their sum. Returns false when the request must be dropped: the
+    // caller consumes the packet without handling or auditing it.
+    // dc_addon_protocol.cpp applies it ahead of every CanPacketReceive consumer
+    // registered after AddSC_dc_addon_protocol; one registered earlier (the
+    // spectator core) has to call it itself.
+    bool ConsumeNativeRequestBudget(WorldSession* session, uint16 nativeOpcode);
+
     bool SendNativeEnvelope(Player* player, std::string const& module,
         uint8 logicalOpcode, std::string const& feature,
         std::string const& action, uint32 revision,
@@ -2362,13 +2428,20 @@ namespace DCAddon
                     ++pos;
             }
 
-            if (hasDigits && !isFloating && !integerOverflow)
+            // "-" with no digits: strtod on the rest would read "-nan" or "-inf"
+            if (!hasDigits)
+                return JsonValue(0.0);
+
+            if (!isFloating && !integerOverflow)
             {
                 double value = static_cast<double>(integerValue);
                 return JsonValue(negative ? -value : value);
             }
 
-            return JsonValue(std::strtod(s.c_str() + start, nullptr));
+            // Only the span scanned above, and finite: "1e999" is infinity, and a non-finite number
+            // passes every clamp (NaN compares false) and reaches SQL unquoted, which aborts the server
+            double const value = std::strtod(s.substr(start, pos - start).c_str(), nullptr);
+            return JsonValue(std::isfinite(value) ? value : 0.0);
         }
 
         // Every loop iteration must either consume a ',' or leave the loop:

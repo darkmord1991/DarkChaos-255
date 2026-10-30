@@ -2153,6 +2153,8 @@ DC._nativeBridges = {
     -- Added 2026-09-30 (DC-Talents), same gate as the rows above.
     { module = "TLNT", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
       kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
+    { module = "PATH", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic", requires = DC.Capability.NATIVE_MODULES_EXT },
 }
 
 -- Precomputed subset of _nativeBridges that own a dedicated poller (kind ~=
@@ -2444,6 +2446,27 @@ function DC:GetNativePollInterval(baseInterval)
     return base
 end
 
+-- With pushes a consumer's poll is only that once-a-second safety net, so the
+-- 1 s tick of this library's OnUpdate runs it (DC:_RunNativeSafetyPolls)
+-- instead of every consumer keeping an OnUpdate script that does nothing on
+-- almost every frame. Without pushes this registers nothing and returns false:
+-- the caller keeps its own poll at its normal rate.
+DC._nativeSafetyPolls = DC._nativeSafetyPolls or {}
+
+function DC:RegisterNativeSafetyPoll(fn)
+    if type(fn) ~= "function" or not self:HasNativePushEvents() then
+        return false
+    end
+    table.insert(self._nativeSafetyPolls, fn)
+    return true
+end
+
+function DC:_RunNativeSafetyPolls()
+    for _, fn in ipairs(self._nativeSafetyPolls) do
+        self:_InvokeHandlerSafe("native-safety-poll", "CORE", 0, fn)
+    end
+end
+
 function DC:_DispatchNativeDataSignal(channel)
     if CORE_NATIVE_CHANNELS[channel] then
         self:_PollNativeResponses()
@@ -2731,6 +2754,26 @@ function DC:_IsUrgentMessage(module, opcode)
     return op == 0x01 or op == 0x02
 end
 
+-- A handshake ACK is applied only while a handshake of ours is outstanding
+-- (see the CORE 0x10 handler). Every CMSG_HANDSHAKE leaves through Send or
+-- SendJSON -- SendHandshake, the reconnect backoff, the settings panels' test
+-- buttons -- so both note it here. An ACK later than the window is dropped and
+-- the reconnect backoff sends a fresh handshake.
+local HANDSHAKE_ACK_ACCEPT_SEC = 60
+
+function DC:_NoteHandshakeSent(module, opcode)
+    if module == "CORE" and tonumber(opcode) == 0x01 then
+        self._handshakeAwaitingAckAt = GetTime()
+    end
+end
+
+-- True once per handshake sent: the first ACK inside the window consumes it.
+function DC:_TakeHandshakeAck()
+    local sentAt = self._handshakeAwaitingAckAt
+    self._handshakeAwaitingAckAt = nil
+    return sentAt ~= nil and (GetTime() - sentAt) <= HANDSHAKE_ACK_ACCEPT_SEC
+end
+
 function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     local requestId = self:NextRequestId()
     local parts = {module, tostring(opcode), "RID:" .. tostring(requestId)}
@@ -2753,6 +2796,7 @@ function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     if self._debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending: " .. msg)
     end
+    self:_NoteHandshakeSent(module, opcode)
     return self:_SendAddonWhisper(msg, self:_IsUrgentMessage(module, opcode))
 end
 
@@ -2880,6 +2924,7 @@ function DC:SendJSON(module, opcode, data)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Data: " .. string.sub(json, 1, 200) .. (string.len(json) > 200 and "..." or ""))
     end
 
+    self:_NoteHandshakeSent(module, opcode)
     if self:_ShouldHoldForHandshake(module) then
         self._preHandshakeQueue = self._preHandshakeQueue or {}
         table.insert(self._preHandshakeQueue, {
@@ -2991,6 +3036,13 @@ local J_QUOTE, J_COMMA, J_MINUS, J_COLON = 34, 44, 45, 58
 local J_LB, J_BS, J_RB, J_LBR, J_RBR = 91, 92, 93, 123, 125
 local J_0, J_9, J_t, J_f, J_n = 48, 57, 116, 102, 110
 
+-- JsonParseValue recurses once per '[' / '{'. A payload of nothing but
+-- brackets fits the 64 KB size cap and would run the Lua call stack out
+-- ("stack overflow") inside the CHAT_MSG_ADDON handler; real DC payloads nest
+-- a handful of levels. Deeper input fails the whole decode (see _DecodeJSONLua).
+local JSON_MAX_DECODE_DEPTH = 32
+local JSON_DEPTH_ERROR = "json nesting deeper than " .. JSON_MAX_DECODE_DEPTH
+
 local function JsonSkipWS()
     local b = _jbyte(_jstr, _jpos)
     while b and (b == J_SPACE or b == J_TAB or b == J_NL or b == J_CR) do
@@ -2999,7 +3051,7 @@ local function JsonSkipWS()
     end
 end
 
-local function JsonParseValue()
+local function JsonParseValue(depth)
     JsonSkipWS()
     if _jpos > _jlen then return nil end
     local b = _jbyte(_jstr, _jpos)
@@ -3057,6 +3109,9 @@ local function JsonParseValue()
 
     -- Object
     if b == J_LBR then
+        if depth >= JSON_MAX_DECODE_DEPTH then
+            error(JSON_DEPTH_ERROR, 0)
+        end
         _jpos = _jpos + 1
         local obj = {}
         JsonSkipWS()
@@ -3066,12 +3121,12 @@ local function JsonParseValue()
         end
         while _jpos <= _jlen do
             JsonSkipWS()
-            local key = JsonParseValue()
+            local key = JsonParseValue(depth + 1)
             if type(key) ~= "string" then break end
             JsonSkipWS()
             if _jbyte(_jstr, _jpos) ~= J_COLON then break end
             _jpos = _jpos + 1
-            local value = JsonParseValue()
+            local value = JsonParseValue(depth + 1)
             obj[key] = value
             JsonSkipWS()
             local sep = _jbyte(_jstr, _jpos)
@@ -3083,6 +3138,9 @@ local function JsonParseValue()
 
     -- Array
     if b == J_LB then
+        if depth >= JSON_MAX_DECODE_DEPTH then
+            error(JSON_DEPTH_ERROR, 0)
+        end
         _jpos = _jpos + 1
         local arr = {}
         local arrLen = 0
@@ -3092,7 +3150,7 @@ local function JsonParseValue()
             return arr
         end
         while _jpos <= _jlen do
-            local value = JsonParseValue()
+            local value = JsonParseValue(depth + 1)
             arrLen = arrLen + 1
             arr[arrLen] = value
             JsonSkipWS()
@@ -3130,7 +3188,15 @@ function DC:_DecodeJSONLua(str)
     _jpos = 1
     _jlen = #str
 
-    local result = JsonParseValue()
+    -- Malformed or hostile input (nesting past JSON_MAX_DECODE_DEPTH) must not
+    -- raise out of the CHAT_MSG_ADDON handler: a failed parse is "no data",
+    -- which every caller already handles.
+    local parsed, result = pcall(JsonParseValue, 0)
+    if not parsed then
+        self:LogNetEvent("error", "json", "JSON decode failed: " .. tostring(result),
+            { len = _jlen })
+        return nil
+    end
     JsonSkipWS()
     if _jpos <= _jlen then
         return nil
@@ -3274,6 +3340,7 @@ frame:SetScript("OnUpdate", function(self, elapsed)
     if type(DC._CleanupChunkBuffers) == "function" then
         DC:_CleanupChunkBuffers()
     end
+    DC:_RunNativeSafetyPolls()
     -- A handshake whose ACK never comes back (dropped by the server rate
     -- limiter, protocol reloaded mid-flight) used to leave _handshakePending
     -- set for good. Both reconnect paths require it clear, so the session
@@ -3317,10 +3384,13 @@ frame:SetScript("OnEvent", function()
         return
     end
     if event == "CHAT_MSG_ADDON" then
-        -- Accept DC protocol whispers regardless of sender name.
-        -- Some server packets can arrive with sender != UnitName("player"),
-        -- and filtering on sender would drop all server->client messages.
-        if arg1 == DC.PREFIX and (arg3 == "WHISPER" or arg3 == "WHISPER_INFORM" or not arg3) then
+        -- The server sends every DC frame as a whisper from the player to the
+        -- player (BuildChatPacket(..., player, player, ...)). A DC whisper from
+        -- anyone else is another player forging server messages (settings
+        -- overwrites, fake system text, chat links), so only the player's own
+        -- name is accepted; a local call without a sender still passes.
+        if arg1 == DC.PREFIX and (arg3 == "WHISPER" or arg3 == "WHISPER_INFORM" or not arg3)
+            and (arg4 == nil or arg4 == UnitName("player")) then
             -- Chunked payload support (server may split large messages into INDEX|TOTAL|DATA chunks)
             -- Reassemble before normal parsing.
             local payload = arg2 or ""
@@ -3505,7 +3575,12 @@ frame:SetScript("OnEvent", function()
                         table.insert(jsonParts, parts[i])
                     end
                     local jsonStr = table.concat(jsonParts, "|")
-                    local data = DC:DecodeJSON(jsonStr)
+                    -- A payload that breaks the decoder is dropped below as a
+                    -- failed decode instead of raising out of this handler.
+                    local decoded, data = pcall(DC.DecodeJSON, DC, jsonStr)
+                    if not decoded then
+                        data = nil
+                    end
 
                     if data == nil then
                         local trimmed = string.gsub(jsonStr, "^%s+", "")
@@ -4083,6 +4158,14 @@ end
 
 -- Register built-in handlers for CORE module
 DC:RegisterHandler("CORE", 0x10, function(...)
+    -- An ACK answers a handshake this client sent. Applied with none
+    -- outstanding, any CORE|16 frame (a forged `CORE|16|1.0|1|0`) rewrote the
+    -- negotiated capabilities and connection state mid-session.
+    if not DC:_TakeHandshakeAck() then
+        DC:LogNetEvent("warn", "handshake", "Ignored a handshake ACK with no handshake pending")
+        return
+    end
+
     local arg1, arg2, arg3, arg4 = ...
     local parserMode = "unknown"
     local serverHandshakeMetadata = nil
@@ -4266,6 +4349,26 @@ DC:RegisterHandler("CORE", 0x15, function(data)
     end
 end)
 
+-- Text from the wire that is printed to a chat frame must not carry escapes
+-- that act when shown or clicked: |H<data>|h<text>|h hyperlinks run their
+-- handler on a click (DC-GM's Linkifier turns its own link types into GM
+-- commands) and |T...|t draws any texture. A well-formed link keeps its
+-- visible text and a texture is dropped; every other pipe is then shown
+-- literally ("||") except colour codes. Escaping rather than deleting markers
+-- one by one, because a deletion can join the bytes around it into a new one.
+function DC:StripChatEscapes(text)
+    text = tostring(text or "")
+    if not string.find(text, "|", 1, true) then
+        return text
+    end
+    text = string.gsub(text, "|H.-|h(.-)|h", "%1")
+    text = string.gsub(text, "|T.-|t", "")
+    text = string.gsub(text, "|", "||")
+    text = string.gsub(text, "||(c%x%x%x%x%x%x%x%x)", "|%1")
+    text = string.gsub(text, "||r", "|r")
+    return text
+end
+
 -- Test response handler (opcode 0x63 = 99 decimal) - for debug panel testing
 DC:RegisterHandler("CORE", 0x63, function(...)
     local args = {...}
@@ -4274,11 +4377,13 @@ DC:RegisterHandler("CORE", 0x63, function(...)
         local json = args[1]
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Test Response]|r Received JSON response from server:")
         for k, v in pairs(json) do
-            DEFAULT_CHAT_FRAME:AddMessage("  |cffffff00" .. tostring(k) .. "|r = " .. tostring(v))
+            DEFAULT_CHAT_FRAME:AddMessage("  |cffffff00" .. DC:StripChatEscapes(k) .. "|r = "
+                .. DC:StripChatEscapes(v))
         end
     else
         -- Pipe-delimited response
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Test Response]|r Server replied: " .. table.concat(args, ", "))
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Test Response]|r Server replied: "
+            .. DC:StripChatEscapes(table.concat(args, ", ")))
     end
 end)
 
@@ -4315,15 +4420,22 @@ DC:RegisterHandler("MPLUS", 0x17, function(data)
     end
 end)
 
--- Generic echo handler for any module test (opcode 0xFF)
+-- Generic echo handler for any module test (opcode 0xFF). The fields are
+-- joined with ", ": re-joining them with "|" rebuilt whatever escapes the
+-- sender had split across fields, |H...|h links included.
 DC:RegisterHandler("CORE", 0xFF, function(...)
     local args = {...}
     if type(args[1]) == "table" then
         local json = args[1]
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Echo]|r Server echoed back:")
-        DEFAULT_CHAT_FRAME:AddMessage("  " .. DC:EncodeJSON(json))
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. DC:StripChatEscapes(DC:EncodeJSON(json)))
     else
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Echo]|r " .. table.concat(args, "|"))
+        local fields = {}
+        for i = 1, select("#", ...) do
+            fields[i] = tostring(select(i, ...))
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Echo]|r "
+            .. DC:StripChatEscapes(table.concat(fields, ", ")))
     end
 end)
 

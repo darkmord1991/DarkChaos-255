@@ -3289,7 +3289,7 @@ local function CreateMinimapButton()
     local AzerothAdminLDB = ldb:NewDataObject("AzerothAdmin", {
         type = "launcher",
         text = "AzerothAdmin",
-        icon = "Interface\\AddOns\\AzerothAdmin\\Textures\\MinimapIcon",
+        icon = "Interface\\AddOns\\DC-GM\\Textures\\MinimapIcon",
         OnClick = function(self, button)
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
@@ -3328,7 +3328,7 @@ else
 
     -- Set the minimap button icon
     local buttonIcon = minimapButton:CreateTexture(nil, "BACKGROUND")
-    buttonIcon:SetTexture("Interface\\AddOns\\AzerothAdmin\\Textures\\MinimapIcon")
+    buttonIcon:SetTexture("Interface\\AddOns\\DC-GM\\Textures\\MinimapIcon")
     buttonIcon:SetSize(20, 20)
     buttonIcon:SetPoint("CENTER")
 

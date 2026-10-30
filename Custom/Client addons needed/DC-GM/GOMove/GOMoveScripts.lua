@@ -914,7 +914,7 @@ for i = 1, SelFrame.ButtonCount do
     FavButton:SetSize(16, 16)
     FavButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
     FavButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
-    FavButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilighted")
+    FavButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
     FavButton:SetPoint("TOPRIGHT", MiscButton, "TOPLEFT", 0, 0)
     FavButton:SetScript("OnClick", function()
         local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
@@ -988,7 +988,7 @@ for i = 1, SelFrame.ButtonCount do
     UseEntryButton:SetSize(16, 16)
     UseEntryButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
     UseEntryButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
-    UseEntryButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilighted")
+    UseEntryButton:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
     UseEntryButton:SetPoint("TOPRIGHT", SpawnButton, "TOPLEFT", 0, 0)
     UseEntryButton:SetScript("OnClick", function()
         local DATAID = FauxScrollFrame_GetOffset(SelFrame.ScrollBar) + rowIndex
@@ -1154,6 +1154,12 @@ EventFrame:RegisterEvent("CHAT_MSG_ADDON")
 EventFrame:SetScript("OnEvent",
     function(self, event, MSG, MSG2, Type, Sender)
         if(event == "CHAT_MSG_ADDON") then
+            -- Everything this frame acts on comes from the server, and the
+            -- server sends it as the player: GOMOVE/NPCMOVE frames as a system
+            -- message carrying the player's own GUID, DC frames as a whisper
+            -- from the player to the player. Any other sender is another
+            -- client, e.g. one printing fake errors here.
+            if Sender ~= UnitName("player") then return end
             -- Compatibility: handle DC protocol error responses for GOMove
             if MSG == "DC" then
                 -- Format: MODULE|OPCODE|... - module for GOMove is GOMV
@@ -1173,7 +1179,6 @@ EventFrame:SetScript("OnEvent",
                 end
             end
             -- Legacy behaviour: original GOMove channel uses prefix "GOMOVE"
-            if Sender ~= UnitName("player") then return end
             local activePrefix = GOMove.ActiveChannel or "GOMOVE"
             if MSG ~= activePrefix then return end
             local ID, ENTRYORGUID, ARG2, ARG3, ARG4, ARG5, ARG6 = strsplit("|", MSG2)

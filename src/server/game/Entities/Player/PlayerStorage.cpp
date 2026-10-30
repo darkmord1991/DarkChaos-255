@@ -5039,6 +5039,12 @@ void Player::SetHomebind(WorldLocation const& loc, uint32 areaId)
     stmt->SetData (4, m_homebindZ);
     stmt->SetData(5, GetGUID().GetRawValue());
     CharacterDatabase.Execute(stmt);
+
+    WorldPacket data(SMSG_BINDPOINTUPDATE, 4 + 4 + 4 + 4 + 4);
+    data << m_homebindX << m_homebindY << m_homebindZ;
+    data << uint32(m_homebindMapId);
+    data << uint32(m_homebindAreaId);
+    SendDirectMessage(&data);
 }
 
 bool Player::isBeingLoaded() const
@@ -5486,6 +5492,13 @@ bool Player::LoadFromDB(ObjectGuid playerGuid, CharacterDatabaseQueryHolder cons
     // skips effect application; otherwise the next SaveToDB writes 0
     // over them.
     m_ExtraFlags = extraflags;
+
+    // A player account never carries GM state. Mythic+ spectating runs
+    // players through SetGameMaster, so a save while spectating (then a
+    // crash before the spectator cleanup) left PLAYER_EXTRA_GM_ON in the
+    // row, and IsGameMaster() reads the mirrored bit with no GM state set.
+    if (GetSession()->GetSecurity() == SEC_PLAYER)
+        m_ExtraFlags &= ~(PLAYER_EXTRA_GM_ON | PLAYER_EXTRA_GM_INVISIBLE | PLAYER_EXTRA_GM_CHAT);
 
     _LoadPetStable(fields[37].Get<uint8>(), holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_PET_SLOTS));
 

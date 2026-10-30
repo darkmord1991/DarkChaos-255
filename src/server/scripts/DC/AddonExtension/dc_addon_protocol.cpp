@@ -1028,8 +1028,13 @@ namespace DCAddon
         state.dataRevisions = metadata.dataRevisions;
         state.metadataJson = metadata.metadataJson;
 
-        std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
-        s_SessionCapabilityRegistry[key] = std::move(state);
+        {
+            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+            s_SessionCapabilityRegistry[key] = std::move(state);
+        }
+
+        if (clientCaps & ProtocolVersion::Capability::EXTENDED_QUEST_LOG)
+            player->EnableExtendedQuestLog();
     }
 
     bool TryGetLiveSessionCapabilityState(uint32 accountId,
@@ -2048,9 +2053,10 @@ static uint8 ExtractOpcode(std::string const& payload)
     }
 }
 
-// Some small, UI-critical requests should bypass rate limiting.
-// This prevents prior high-volume transfers (e.g., transmog paging) from starving Outfits/Community.
-static bool ShouldBypassRateLimit(std::string const& payload)
+// Some small, UI-critical requests draw on a bucket of their own rather than the
+// shared per-second limit (CheckUiCriticalRateLimit), so prior high-volume
+// transfers (e.g., transmog paging) cannot starve Outfits/Community.
+static bool IsUiCriticalCollectionRequest(std::string const& payload)
 {
     std::string moduleCode = ExtractModuleCode(payload);
     if (moduleCode != DCAddon::Module::COLLECTION)
@@ -2695,6 +2701,7 @@ namespace DCAddon
             { Module::DECORATION, EXT }, { Module::ENCOUNTERS, EXT },
             { Module::QUEST_NAV, EXT },  { Module::GRAVEYARD, EXT },
             { Module::BEASTMASTER, EXT }, { Module::TALENTS, EXT },
+            { Module::PATH, EXT },
         };
         return s_map;
     }
@@ -3014,6 +3021,93 @@ static bool CheckRateLimit(Player* player)
     return true;
 }
 
+// The requests IsUiCriticalCollectionRequest names used to skip rate limiting
+// altogether, so they could be sent without any bound. They keep the separate
+// lane that stops a transmog-paging burst on the shared limit from starving
+// them, but as a bucket: an outfit apply sends one SET_TRANSMOG per slot (19),
+// and the client's own throttle sends at most 20 at once, then 10 per second.
+// Guarded by s_MessageTrackersMutex.
+constexpr uint32 UI_CRITICAL_REQUEST_BURST = 40;
+constexpr uint32 UI_CRITICAL_REQUESTS_PER_SECOND = 10;
+
+static std::unordered_map<uint32, DCAddon::RequestTokenBucket> s_UiCriticalBuckets;
+
+static bool CheckUiCriticalRateLimit(Player* player)
+{
+    uint32 const accountId = player->GetSession()->GetAccountId();
+
+    std::lock_guard<std::mutex> lock(s_MessageTrackersMutex);
+    if (s_UiCriticalBuckets[accountId].TryConsume(UI_CRITICAL_REQUEST_BURST,
+            UI_CRITICAL_REQUESTS_PER_SECOND, getMSTime()))
+        return true;
+
+    g_ProtocolMetrics.rateLimitDrops++;
+    return false;
+}
+
+static bool CheckAddonRequestRateLimit(Player* player, std::string const& payload)
+{
+    return IsUiCriticalCollectionRequest(payload)
+        ? CheckUiCriticalRateLimit(player)
+        : CheckRateLimit(player);
+}
+
+// Native requests (CMSG 0x521-0x541) skip all of the above. A login sends up to
+// ~50 of them within a second or two and a bag sweep a few dozen tooltip
+// requests (dc_addon_protocol_log, 2026-10-28); the bucket sits well above both,
+// against an unthrottled 150 packets per session update before.
+constexpr uint32 NATIVE_REQUEST_BURST = 120;
+constexpr uint32 NATIVE_REQUESTS_PER_SECOND = 40;
+// A flood is reported once per this many ms with a count, not once per packet
+constexpr uint32 NATIVE_REQUEST_DROP_REPORT_MS = 10 * IN_MILLISECONDS;
+
+struct NativeRequestBudget
+{
+    DCAddon::RequestTokenBucket bucket;
+    uint32 unreportedDrops = 0;
+    uint32 lastReportMs = 0;
+    bool reported = false;
+};
+
+static std::unordered_map<uint32, NativeRequestBudget> s_NativeRequestBudgets;
+static std::mutex s_NativeRequestBudgetsMutex;
+
+namespace DCAddon
+{
+    bool ConsumeNativeRequestBudget(WorldSession* session, uint16 nativeOpcode)
+    {
+        if (!session)
+            return false;
+
+        uint32 const accountId = session->GetAccountId();
+        uint32 const nowMs = getMSTime();
+        uint32 dropsToReport = 0;
+        {
+            std::lock_guard<std::mutex> lock(s_NativeRequestBudgetsMutex);
+            NativeRequestBudget& budget = s_NativeRequestBudgets[accountId];
+            if (budget.bucket.TryConsume(NATIVE_REQUEST_BURST, NATIVE_REQUESTS_PER_SECOND, nowMs))
+                return true;
+
+            ++budget.unreportedDrops;
+            if (!budget.reported || getMSTimeDiff(budget.lastReportMs, nowMs) >= NATIVE_REQUEST_DROP_REPORT_MS)
+            {
+                dropsToReport = budget.unreportedDrops;
+                budget.unreportedDrops = 0;
+                budget.lastReportMs = nowMs;
+                budget.reported = true;
+            }
+        }
+
+        g_ProtocolMetrics.rateLimitDrops++;
+        if (dropsToReport)
+            LOG_WARN("module.dc", "[RateLimit] Dropped {} native request(s) from account {} ({}): more than {} "
+                "per second (latest opcode 0x{:X})", dropsToReport, accountId, session->GetPlayerName(),
+                NATIVE_REQUESTS_PER_SECOND, nativeOpcode);
+
+        return false;
+    }
+}
+
 // ============================================================================
 // CORE HANDLERS (Handshake, Version, Feature Query)
 // ============================================================================
@@ -3239,16 +3333,12 @@ static void HandleBatch(Player* player, DCAddon::ParsedMessage const& msg)
         if (entry.module != DCAddon::Batch::MODULE)
         {
             // Apply rate limiting per logical sub-message to avoid bypass via batching.
-            if (!ShouldBypassRateLimit(subMsg))
+            if (!CheckAddonRequestRateLimit(player, subMsg))
             {
-                bool passedRateLimit = CheckRateLimit(player);
-                if (!passedRateLimit)
-                {
-                    uint8 droppedOpcode = ExtractOpcode(subMsg);
-                    LOG_WARN("module.dc", "[RateLimit] DROPPED batch sub-message from {}: module={}, opcode=0x{:02X}",
-                        player->GetName(), entry.module, droppedOpcode);
-                    continue;
-                }
+                uint8 droppedOpcode = ExtractOpcode(subMsg);
+                LOG_WARN("module.dc", "[RateLimit] DROPPED batch sub-message from {}: module={}, opcode=0x{:02X}",
+                    player->GetName(), entry.module, droppedOpcode);
+                continue;
             }
 
             DCAddon::MessageRouter::Instance().Route(player, subMsg);
@@ -3490,28 +3580,31 @@ static void RegisterCoreHandlers()
 // ============================================================================
 
 static std::unordered_map<uint32, DCAddon::ChunkedMessage> s_ChunkedMessages;
-static std::unordered_map<uint32, uint32> s_ChunkStartTimes;
+// getMSTime() of each buffer's latest chunk. The timeout runs from there rather
+// than from the first chunk: the client sends at most 10 chunks a second after
+// a burst of 20, so a large upload legitimately outlasts the timeout.
+static std::unordered_map<uint32, uint32> s_ChunkLastActivityMs;
 static std::mutex s_ChunkedMessagesMutex;  // Thread safety for chunked message tracking
+
+// Caller holds s_ChunkedMessagesMutex
+static void CleanupExpiredChunksLocked(uint32 nowMs)
+{
+    for (auto itr = s_ChunkLastActivityMs.begin(); itr != s_ChunkLastActivityMs.end();)
+    {
+        if (getMSTimeDiff(itr->second, nowMs) > s_AddonConfig.ChunkTimeoutMs)
+        {
+            s_ChunkedMessages.erase(itr->first);
+            itr = s_ChunkLastActivityMs.erase(itr);
+        }
+        else
+            ++itr;
+    }
+}
 
 static void CleanupExpiredChunks()
 {
-    uint32 now = GameTime::GetGameTime().count() * 1000;  // Convert to ms
-
     std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
-    std::vector<uint32> toRemove;
-    for (auto const& [accountId, startTime] : s_ChunkStartTimes)
-    {
-        if (now - startTime > s_AddonConfig.ChunkTimeoutMs)
-        {
-            toRemove.push_back(accountId);
-        }
-    }
-
-    for (uint32 id : toRemove)
-    {
-        s_ChunkedMessages.erase(id);
-        s_ChunkStartTimes.erase(id);
-    }
+    CleanupExpiredChunksLocked(getMSTime());
 }
 
 // ============================================================================
@@ -3544,7 +3637,7 @@ public:
         bool hadPendingChunks = false;
         {
             std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
-            hadPendingChunks = s_ChunkStartTimes.find(accountId) != s_ChunkStartTimes.end();
+            hadPendingChunks = s_ChunkLastActivityMs.find(accountId) != s_ChunkLastActivityMs.end();
         }
 
         if (s_AddonConfig.EnableProtocolLogging && hadPendingChunks &&
@@ -3566,11 +3659,16 @@ public:
         {
             std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
             s_ChunkedMessages.erase(accountId);
-            s_ChunkStartTimes.erase(accountId);
+            s_ChunkLastActivityMs.erase(accountId);
         }
         {
             std::lock_guard<std::mutex> lock(s_MessageTrackersMutex);
             s_MessageTrackers.erase(accountId);
+            s_UiCriticalBuckets.erase(accountId);
+        }
+        {
+            std::lock_guard<std::mutex> lock(s_NativeRequestBudgetsMutex);
+            s_NativeRequestBudgets.erase(accountId);
         }
         {
             std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
@@ -3602,10 +3700,17 @@ public:
     // consumed a DC frame (msg cleared), the core still delivered that whisper
     // back to the sender -- an empty packet per frame and per chunk -- and a
     // frame no handler took came back verbatim into the client's own
-    // CHAT_MSG_ADDON handler. Player-to-player addon whispers are untouched.
-    bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 lang, std::string& msg, Player* receiver) override
+    // CHAT_MSG_ADDON handler.
+    //
+    // A DC frame only ever travels between a client and this server, whose
+    // frames name the player as their sender. One whispered to ANOTHER player
+    // reached that client's protocol handler as if the server had sent it:
+    // QOS settings merged and saved, fake system messages, chat links. So no
+    // DC frame, handled or not, goes player to player. Other prefixes do.
+    bool OnPlayerCanUseChat(Player* /*player*/, uint32 type, uint32 lang, std::string& msg,
+        Player* /*receiver*/) override
     {
-        if (lang != LANG_ADDON || type != CHAT_MSG_WHISPER || receiver != player)
+        if (lang != LANG_ADDON || type != CHAT_MSG_WHISPER)
             return true;
 
         return !msg.empty() && msg.rfind("DC\t", 0) != 0;
@@ -3686,38 +3791,46 @@ public:
         LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, chunk={}/{}, dataLen={}",
             player->GetName(), chunkIndex + 1, totalChunks, chunkData.length());
 
+        uint32 const nowMs = getMSTime();
+
         // Store chunk with thread safety
         std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
-        if (chunkIndex == 0)
+        auto chunkIt = s_ChunkedMessages.find(accountId);
+
+        // A buffer opens on index 0, or on whatever index a stream starts at.
+        // Both take a slot of the global cap and carry an activity time; a
+        // stream that started past index 0 used to have neither, so it never
+        // expired and was never counted.
+        if (chunkIndex == 0 || chunkIt == s_ChunkedMessages.end())
         {
-            // Security: bound how many DISTINCT accounts may have an in-flight
-            // chunked message at once. s_ChunkedMessages is keyed by accountId,
-            // so .size() is the number of accounts currently mid-reassembly (not
-            // a chunk count). The global ceiling is MaxPendingChunks * 10.
-            if (s_ChunkedMessages.find(accountId) == s_ChunkedMessages.end() &&
-                s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)
+            if (chunkIt == s_ChunkedMessages.end())
             {
-                g_ProtocolMetrics.parseErrors++;
-                LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
-                    player->GetName(), s_ChunkedMessages.size());
-                if (s_AddonConfig.EnableProtocolLogging)
+                // Abandoned streams used to hold their slot until their owner
+                // logged out; free them before judging the cap.
+                CleanupExpiredChunksLocked(nowMs);
+
+                // Security: bound how many DISTINCT accounts may have an in-flight
+                // chunked message at once. s_ChunkedMessages is keyed by accountId,
+                // so .size() is the number of accounts currently mid-reassembly (not
+                // a chunk count). The global ceiling is MaxPendingChunks * 10.
+                if (s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)
                 {
-                    LogProtocolErrorEvent(player, payload, "chunk_pending_limit", "Too many pending chunked messages");
+                    g_ProtocolMetrics.parseErrors++;
+                    LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
+                        player->GetName(), s_ChunkedMessages.size());
+                    if (s_AddonConfig.EnableProtocolLogging)
+                        LogProtocolErrorEvent(player, payload, "chunk_pending_limit",
+                            "Too many pending chunked messages");
+
+                    return false;
                 }
-                return false;
             }
 
             // First chunk - reset buffer
-            s_ChunkedMessages[accountId] = DCAddon::ChunkedMessage();
-            s_ChunkStartTimes[accountId] = GameTime::GetGameTime().count() * 1000;
+            chunkIt = s_ChunkedMessages.insert_or_assign(accountId, DCAddon::ChunkedMessage()).first;
         }
 
-        auto chunkIt = s_ChunkedMessages.find(accountId);
-        if (chunkIt == s_ChunkedMessages.end())
-        {
-            s_ChunkedMessages[accountId] = DCAddon::ChunkedMessage();
-            chunkIt = s_ChunkedMessages.find(accountId);
-        }
+        s_ChunkLastActivityMs[accountId] = nowMs;
 
         auto& chunkedMsg = chunkIt->second;
 
@@ -3727,7 +3840,7 @@ public:
         {
             outPayload = chunkedMsg.GetCompleteMessage();
             s_ChunkedMessages.erase(accountId);
-            s_ChunkStartTimes.erase(accountId);
+            s_ChunkLastActivityMs.erase(accountId);
 
             LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, COMPLETE! reassembledLen={}",
                 player->GetName(), outPayload.length());
@@ -3750,6 +3863,12 @@ public:
         // Check if message starts with "DC\t"
         static const std::string dcPrefix = "DC\t";
         if (msg.rfind(dcPrefix, 0) != 0)
+            return;
+
+        // mod-dungeon-clear shares the "DC" prefix: its companion addon sends
+        // "DC\tCMD\t<sub>" as a self-whisper when the player has no group, and
+        // the module's own hook handles it. Not a DC protocol frame.
+        if (msg.rfind("DC\tCMD\t", 0) == 0)
             return;
 
         // Skip the "DC\t" prefix
@@ -3812,21 +3931,16 @@ public:
             LOG_DEBUG("module.dc", "[DC-INCOMING] player={}, module={}, opcode=0x{:02X}, payloadLen={}",
                 player->GetName(), ExtractModuleCode(payload), incomingOpcode, payload.length());
 
-        // Check rate limit before processing. Allow a small bypass list for UI-critical requests.
-        // Bypassed messages don't count against the rate limit.
-        bool shouldBypass = ShouldBypassRateLimit(payload);
-        if (!shouldBypass)
+        // Check rate limit before processing. A small list of UI-critical requests
+        // draws on its own bucket and does not count against the shared limit.
+        if (!CheckAddonRequestRateLimit(player, payload))
         {
-            bool passedRateLimit = CheckRateLimit(player);
-            if (!passedRateLimit)
-            {
-                // Log dropped messages for diagnostics
-                uint8 droppedOpcode = ExtractOpcode(payload);
-                LOG_WARN("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X}",
-                    player->GetName(), ExtractModuleCode(payload), droppedOpcode);
-                msg.clear();
-                return;
-            }
+            // Log dropped messages for diagnostics
+            uint8 droppedOpcode = ExtractOpcode(payload);
+            LOG_WARN("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X}",
+                player->GetName(), ExtractModuleCode(payload), droppedOpcode);
+            msg.clear();
+            return;
         }
 
         if (s_AddonConfig.EnableDebugLog)
@@ -4007,6 +4121,11 @@ namespace
     // The same bar as the MessageRouter's slow-handler warning.
     constexpr int64 SLOW_QUERY_CALLBACKS_WARN_MS = 100;
 
+    // A tick runs continuations until it has spent this long; the rest keep their place for the next tick.
+    // Bots log in by the dozen and each login prefetch ends in a full stat re-apply (~1.5 ms), which stacked
+    // 60 of them into single 100 ms ticks (Server.log, 2026-10-30).
+    constexpr int64 QUERY_CALLBACKS_BUDGET_US = 20000;
+
     // Names the enqueue sites a slow tick went to, busiest first. One site can queue many callbacks
     // that complete together, so the time is summed per site.
     void LogSlowQueryCallbacks(int64 totalMs, std::vector<AddonQueryCost> const& costs)
@@ -4084,6 +4203,13 @@ namespace DCAddon
         for (AddonQueryCallback& query : active)
         {
             auto const start = std::chrono::steady_clock::now();
+            int64 const spentUs = std::chrono::duration_cast<std::chrono::microseconds>(start - tickStart).count();
+            if (spentUs >= QUERY_CALLBACKS_BUDGET_US)
+            {
+                s_DCAddonActiveQueries.push_back(std::move(query));
+                continue;
+            }
+
             bool const finished = query.callback.InvokeIfReady();
             int64 const us = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start).count();
@@ -4192,7 +4318,11 @@ public:
 
         LOG_INFO("dc.addon", "===========================================");
         LOG_INFO("dc.addon", "Dark Chaos Addon Protocol v{} loaded", s_AddonConfig.ProtocolVersion);
-        LOG_INFO("dc.addon", "RateLimit bypass enabled for: COLL|0x3B (SavedOutfits), COLL|0x53 (CommunityList), COLL|0x38 (ApplyTransmog), COLL|0x33 (SetTransmog), COLL|0x37 (GetTransmogState)");
+        LOG_INFO("dc.addon", "RateLimit: {} msg/s shared; own lane ({} burst, {}/s) for COLL|0x3B (SavedOutfits), "
+            "COLL|0x39 (SaveOutfit), COLL|0x53 (CommunityList), COLL|0x38 (ApplyTransmog), COLL|0x33 (SetTransmog), "
+            "COLL|0x37 (GetTransmogState); native requests {} burst, {}/s", s_AddonConfig.MaxMessagesPerSecond,
+            UI_CRITICAL_REQUEST_BURST, UI_CRITICAL_REQUESTS_PER_SECOND,
+            NATIVE_REQUEST_BURST, NATIVE_REQUESTS_PER_SECOND);
         LOG_INFO("dc.addon", "Enabled modules:");
         LOG_INFO("dc.addon", "  Core:        {}", s_AddonConfig.EnableCore ? "Yes" : "No");
         LOG_INFO("dc.addon", "  AOE Loot:    {}", s_AddonConfig.EnableAOELoot ? "Yes" : "No");
@@ -4226,6 +4356,34 @@ private:
     uint32 _statsFlushTimer = 0;
 };
 
+// Budget gate for every DC native request opcode (CMSG 0x521-0x541), see
+// DCAddon::ConsumeNativeRequestBudget. CanPacketReceive hooks run in
+// registration order and stop at the first one that consumes the packet, so
+// this one is registered first in AddSC_dc_addon_protocol, which
+// AddDCAddonExtensionScripts loads ahead of every module consumer. A packet
+// over budget is consumed here and reaches no handler and no audit row.
+class DcNativeRequestBudgetServerScript : public ServerScript
+{
+public:
+    DcNativeRequestBudgetServerScript()
+        : ServerScript("DcNativeRequestBudgetServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        uint16 const opcode = packet.GetOpcode();
+        if (opcode < ::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT
+            || opcode > ::CMSG_DC_NATIVE_REQUEST)
+            return true;
+
+        return DCAddon::ConsumeNativeRequestBudget(session, opcode);
+    }
+};
+
 // Native transport receive hook for the generic DC native message bridge.
 // Decodes CMSG_DC_NATIVE_REQUEST (module + opcode + body) and routes it through
 // the shared MessageRouter, so any module with a registered native capability
@@ -4256,6 +4414,8 @@ private:
 
 void AddSC_dc_addon_protocol()
 {
+    // First: it must see every DC native request before any consumer does
+    new DcNativeRequestBudgetServerScript();
     new DCAddonProtocolScript();
     new DCAddonMessageRouterScript();
     new DCAddonWorldScript();

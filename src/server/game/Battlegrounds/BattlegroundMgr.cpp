@@ -416,6 +416,15 @@ Battleground* BattlegroundMgr::CreateNewBattleground(BattlegroundTypeId original
     bool isRandom = bgTypeId != originalBgTypeId && !bg->isArena();
 
     bg->SetBracket(bracketEntry);
+
+    // DarkChaos: GetBattlegroundBracketByLevel puts every level above a map's highest bracket into that bracket (the
+    // level cap is 255, PvPDifficulty ends at 85-89), so a battleground of that bracket takes them too. Its range
+    // stopped at the bracket's MaxLevel, and HandleBattleFieldPortOpcode refused those players at the invitation.
+    uint32 maxPlayerLevel = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+    if (!bg->isArena() && bracketEntry->maxLevel < maxPlayerLevel &&
+        GetBattlegroundBracketByLevel(bracketEntry->mapId, maxPlayerLevel) == bracketEntry)
+        bg->SetLevelRange(bracketEntry->minLevel, maxPlayerLevel);
+
     bg->SetInstanceID(sMapMgr->GenerateInstanceId());
     bg->SetClientInstanceID(CreateClientVisibleInstanceId(originalBgTypeId, bracketEntry->GetBracketId()));
     bg->Init();

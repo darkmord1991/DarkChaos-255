@@ -18,6 +18,18 @@ local NATIVE_MPLUS_HUD_POLL_INTERVAL = 0.10
 local lastNativeHudRevision = 0
 local nativeHudPollFrame
 
+-- Whether the player is in an instance only changes across a loading screen,
+-- so it is read on the world/zone events here instead of every frame by the
+-- two OnUpdate scripts below that pick their rate from it.
+local inInstanceCached = false
+local instanceStateFrame = CreateFrame("Frame")
+instanceStateFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+instanceStateFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+instanceStateFrame:SetScript("OnEvent", function()
+    inInstanceCached = (IsInInstance and IsInInstance()) and true or false
+end)
+inInstanceCached = (IsInInstance and IsInInstance()) and true or false
+
 local function HasCapabilityBit(mask, capability)
     mask = tonumber(mask) or 0
     capability = tonumber(capability) or 0
@@ -592,15 +604,15 @@ local function NowSeconds()
     return 0
 end
 
--- The vanilla 40-man Naxxramas (map 2921) occupies RAID_DIFFICULTY_10MAN_HEROIC,
--- the same server slot DC uses for its Mythic tier, so the client reports it as
--- difficultyID 3 and the badge would read "M0". Player cap tells them apart:
--- DC Mythic is 5 (dungeons) or 20 (Timbermaw 819 / Emerald Sanctum 824); only the
--- vanilla raid is 40. If a real 40-player Mythic tier is ever added, drop this.
-local MYTHIC_BADGE_EXCLUDED_RAID_SIZE = 40
+-- difficultyID 3 is the server's RAID_DIFFICULTY_10MAN_HEROIC slot, which DC also
+-- uses for its Mythic tier, so on a raid the id alone does not mean Mythic: ICC or
+-- Castle Nathria on 10 Heroic and the vanilla 40-man Naxxramas (map 2921) report it
+-- too, and the badge would read "M0". Player cap tells them apart: DC Mythic raids
+-- are the 20-players (Timbermaw 819 / Emerald Sanctum 824).
+local DC_MYTHIC_RAID_SIZE = 20
 
-local function IsFortyManRaid(maxPlayers)
-    return (tonumber(maxPlayers) or 0) == MYTHIC_BADGE_EXCLUDED_RAID_SIZE
+local function IsPlainRaid(instanceType, maxPlayers)
+    return instanceType == "raid" and (tonumber(maxPlayers) or 0) ~= DC_MYTHIC_RAID_SIZE
 end
 
 local function IsMythicDifficulty(id, label)
@@ -629,13 +641,13 @@ local function GetTrackableInstanceInfo()
         return nil
     end
 
-    local name, instanceType, difficultyID, difficultyName = GetInstanceInfo()
+    local name, instanceType, difficultyID, difficultyName, maxPlayers = GetInstanceInfo()
     if instanceType ~= "party" and instanceType ~= "raid" then
         return nil
     end
 
     -- Local timer is strictly for non-Mythic runs.
-    if IsMythicDifficulty(difficultyID, difficultyName) then
+    if IsMythicDifficulty(difficultyID, difficultyName) and not IsPlainRaid(instanceType, maxPlayers) then
         return nil
     end
 
@@ -1205,7 +1217,7 @@ local function GetMythicMinimapBadgeDisplay()
         return "M+" .. tostring(keyLevel)
     end
 
-    if IsMythicDifficulty(difficultyID, difficultyName) and not IsFortyManRaid(maxPlayers) then
+    if IsMythicDifficulty(difficultyID, difficultyName) and not IsPlainRaid(instanceType, maxPlayers) then
         return "M0"
     end
 
@@ -1439,11 +1451,15 @@ local function GetTopDeathSummary(maxPlayers)
 end
 
 local trackerFrame = CreateFrame("Frame")
-trackerFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+-- 3.3.5 has no GROUP_ROSTER_UPDATE (5.0): party and raid changes arrive as
+-- PARTY_MEMBERS_CHANGED and RAID_ROSTER_UPDATE.
+trackerFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+trackerFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 trackerFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 trackerFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 trackerFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+    if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE"
+        or event == "PLAYER_ENTERING_WORLD" then
         UpdateGroupRosterCache()
         return
     end
@@ -1465,11 +1481,13 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
         return
     end
 
-    -- COMBAT_LOG_EVENT_UNFILTERED signature differs slightly across clients,
-    -- but for 3.3.5 we can rely on positional args.
+    -- The 3.3.5 layout: timestamp, event, sourceGUID, sourceName, sourceFlags,
+    -- destGUID, destName, destFlags, then the subevent's own fields from the
+    -- 9th argument. The raid-flag arguments only came with 4.2; unpacking them
+    -- here put destName into destGUID, so no group member ever matched.
     local timestamp, _,
-        sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
-        destGUID, destName, destFlags, destRaidFlags = ...
+        sourceGUID, sourceName, sourceFlags,
+        destGUID, destName, destFlags = ...
 
     -- Group-membership check without constructing a closure per event.
     if not (destGUID and groupGuidToName[destGUID]) then
@@ -1488,18 +1506,18 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
         local school
 
         if subevent == "SWING_DAMAGE" then
-            -- ... destRaidFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
-            amount, overkill, school = select(11, ...)
+            -- ... destFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
+            amount, overkill, school = select(9, ...)
             spellName = "Melee"
         elseif subevent == "ENVIRONMENTAL_DAMAGE" then
-            -- ... destRaidFlags, environmentalType, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
+            -- ... destFlags, environmentalType, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
             local envType
-            envType, amount, overkill, school = select(11, ...)
+            envType, amount, overkill, school = select(9, ...)
             spellName = tostring(envType or "Environmental")
         else
-            -- ... destRaidFlags, spellId, spellName, spellSchool, amount, overkill, ...
+            -- ... destFlags, spellId, spellName, spellSchool, amount, overkill, ...
             local spellId
-            spellId, spellName, school, amount, overkill = select(11, ...)
+            spellId, spellName, school, amount, overkill = select(9, ...)
         end
 
         lastHit[destGUID] = {
@@ -3006,21 +3024,35 @@ local function EnsureNativeHudPollFrame()
     local pushProtocol = protocol and type(protocol.OnNativeData) == "function"
         and type(protocol.GetNativePollInterval) == "function" and protocol or nil
 
+    if pushProtocol then
+        pushProtocol:OnNativeData("MPLUS_HUD", ConsumeNativeHudSnapshot)
+
+        -- That safety net is once a second in and out of instances alike, and
+        -- rides DCAddonProtocol's own tick instead of an OnUpdate here.
+        if type(pushProtocol.RegisterNativeSafetyPoll) == "function"
+            and pushProtocol:RegisterNativeSafetyPoll(ConsumeNativeHudSnapshot) then
+            nativeHudPollFrame = true
+            return
+        end
+    end
+
+    -- Outside an instance there can be no run to report, so fall back to a
+    -- 1s heartbeat instead of polling the native bridge ten times a second
+    -- for the whole session. Whether the DLL pushes is settled at load.
+    local instanceInterval = NATIVE_MPLUS_HUD_POLL_INTERVAL
+    local idleInterval = 1.0
+    if pushProtocol then
+        instanceInterval = pushProtocol:GetNativePollInterval(instanceInterval)
+        idleInterval = pushProtocol:GetNativePollInterval(idleInterval)
+    end
+
     nativeHudPollFrame = CreateFrame("Frame")
     nativeHudPollFrame.elapsed = 0
     nativeHudPollFrame.idleElapsed = 0
     nativeHudPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
 
-        -- Outside an instance there can be no run to report, so fall back to a
-        -- 1s heartbeat instead of polling the native bridge ten times a second
-        -- for the whole session.
-        local inInstance = IsInInstance and IsInInstance() or false
-        local interval = inInstance and NATIVE_MPLUS_HUD_POLL_INTERVAL or 1.0
-        if pushProtocol then
-            interval = pushProtocol:GetNativePollInterval(interval)
-        end
-
+        local interval = inInstanceCached and instanceInterval or idleInterval
         if self.elapsed < interval then
             return
         end
@@ -3028,10 +3060,6 @@ local function EnsureNativeHudPollFrame()
         self.elapsed = 0
         ConsumeNativeHudSnapshot()
     end)
-
-    if pushProtocol then
-        pushProtocol:OnNativeData("MPLUS_HUD", ConsumeNativeHudSnapshot)
-    end
 end
 
 local function HandleTimerUpdatePayload(...)
@@ -3509,7 +3537,7 @@ localTicker:SetScript("OnUpdate", function(self, elapsed)
     -- This used to run the full tracking refresh four times a second for the
     -- entire session - in cities, in raids, with the HUD hidden. Outside an
     -- instance nothing it computes can change, so drop to a 1s idle beat.
-    local inInstance = IsInInstance and IsInInstance() or false
+    local inInstance = inInstanceCached
     if self.elapsed < (inInstance and 0.25 or 1.0) then
         return
     end

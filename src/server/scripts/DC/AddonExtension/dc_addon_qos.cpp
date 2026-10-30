@@ -46,6 +46,10 @@
 #include "ItemTemplate.h"
 #include "Group.h"
 #include "Map.h"
+#include "CellImpl.h"
+#include "GameTime.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "RaceMgr.h"
 #include "DC/AddonExtension/dc_addon_spell_template.h"
 #include "DC/ItemUpgrades/HeirloomItemLevel.h"
@@ -128,35 +132,15 @@ namespace DCQoS
     {
         constexpr char PING[] = "ping";
         constexpr char PING_STATE[] = "ping_state";
-        constexpr char GRAPHICS_PROFILE[] = "graphics_profile";
-        constexpr char GRAPHICS_PROFILE_STATE[] = "graphics_profile_state";
         constexpr char SERVER_TIME[] = "server_time";
         constexpr char PLAYER_STATS[] = "player_stats";
         constexpr char ACTION_RELAY[] = "relay";
         constexpr char ACTION_RELAY_ACK[] = "relay_ack";
-        constexpr char ACTION_APPLY[] = "apply";
         constexpr char ACTION_INVALIDATE[] = "invalidate";
         constexpr char ACTION_RESPONSE[] = "response";
     }
 
-    namespace RuntimeProfile
-    {
-        constexpr char SAFE[] = "SAFE";
-        constexpr char WORLD[] = "WORLD";
-        constexpr char RAID[] = "RAID";
-        constexpr char BATTLEGROUND[] = "BATTLEGROUND";
-    }
-
-    struct RuntimeProfileSelection
-    {
-        std::string profileKey;
-        std::string context;
-    };
-
-    static std::atomic<uint32> s_RuntimeProfileRevision{0};
     static std::atomic<uint32> s_FeatureResponseRevision{0};
-    static std::unordered_map<uint32, std::string> s_LastRuntimeProfileByGuid;
-    static std::mutex s_RuntimeProfileMutex;
 
     enum class SpellTooltipTransport
     {
@@ -193,139 +177,12 @@ namespace DCQoS
         return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
     }
 
-    static uint32 NextRuntimeProfileRevision()
-    {
-        uint32 revision = ++s_RuntimeProfileRevision;
-        if (revision == 0)
-            revision = ++s_RuntimeProfileRevision;
-        return revision;
-    }
-
     static uint32 NextFeatureResponseRevision()
     {
         uint32 revision = ++s_FeatureResponseRevision;
         if (revision == 0)
             revision = ++s_FeatureResponseRevision;
         return revision;
-    }
-
-    static RuntimeProfileSelection SelectRuntimeProfile(Player* player)
-    {
-        RuntimeProfileSelection selection;
-        selection.profileKey = RuntimeProfile::SAFE;
-        selection.context = "fallback";
-
-        if (!player)
-            return selection;
-
-        Map* map = player->GetMap();
-        if (!map)
-        {
-            selection.context = "missing-map";
-            return selection;
-        }
-
-        if (map->IsBattlegroundOrArena())
-        {
-            selection.profileKey = RuntimeProfile::BATTLEGROUND;
-            selection.context = "battleground";
-            return selection;
-        }
-
-        if (map->IsRaid())
-        {
-            selection.profileKey = RuntimeProfile::RAID;
-            selection.context = "raid";
-            return selection;
-        }
-
-        if (map->IsDungeon())
-        {
-            selection.profileKey = RuntimeProfile::WORLD;
-            selection.context = "dungeon";
-            return selection;
-        }
-
-        selection.profileKey = RuntimeProfile::WORLD;
-        selection.context = "world";
-        return selection;
-    }
-
-    static DCAddon::JsonValue BuildRuntimeProfileStatePayload(Player* player,
-        RuntimeProfileSelection const& selection)
-    {
-        DCAddon::JsonValue payload;
-        payload.SetObject();
-        payload.Set("profile", selection.profileKey);
-        payload.Set("profileContext", selection.context);
-
-        if (!player)
-            return payload;
-
-        payload.Set("level", static_cast<int32>(player->GetLevel()));
-        payload.Set("areaId", static_cast<int32>(player->GetAreaId()));
-        payload.Set("zoneId", static_cast<int32>(player->GetZoneId()));
-
-        Group* group = player->GetGroup();
-        payload.Set("inGroup", group != nullptr);
-        payload.Set("inRaidGroup", group && group->isRaidGroup());
-
-        Map* map = player->GetMap();
-        payload.Set("hasMap", map != nullptr);
-        if (!map)
-            return payload;
-
-        payload.Set("mapId", static_cast<int32>(map->GetId()));
-        payload.Set("instanceId", static_cast<int32>(map->GetInstanceId()));
-        payload.Set("isDungeon", map->IsDungeon());
-        payload.Set("isRaid", map->IsRaid());
-        payload.Set("isBattleground", map->IsBattlegroundOrArena());
-        payload.Set("isWorldMap",
-            !map->IsDungeon() && !map->IsRaid()
-                && !map->IsBattlegroundOrArena());
-
-        return payload;
-    }
-
-    static void SendRuntimeProfileFallback(Player* player,
-        std::string const& action, RuntimeProfileSelection const& selection,
-        uint32 revision)
-    {
-        if (!player)
-            return;
-
-        DCAddon::JsonMessage message(MODULE, Opcode::SMSG_FEATURE_DATA);
-        message.Set("feature", NativeEnvelopeFeature::GRAPHICS_PROFILE);
-        message.Set("action", action);
-        message.Set("profile", selection.profileKey);
-        message.Set("context", selection.context);
-        message.Set("revision", static_cast<int32>(revision));
-        message.Send(player);
-    }
-
-    static void SendRuntimeProfileNative(Player* player,
-        std::string const& action, RuntimeProfileSelection const& selection,
-        uint32 revision)
-    {
-        DCAddon::SendNativeEnvelope(player, MODULE, Opcode::SMSG_FEATURE_DATA,
-            NativeEnvelopeFeature::GRAPHICS_PROFILE, action, revision,
-            selection.profileKey, selection.context);
-    }
-
-    static void SendRuntimeProfileMessage(Player* player,
-        std::string const& action, RuntimeProfileSelection const& selection,
-        uint32 revision)
-    {
-        if (!player)
-            return;
-
-        if (SupportsNativeEnvelopeTransport(player))
-        {
-            SendRuntimeProfileNative(player, action, selection, revision);
-            return;
-        }
-
-        SendRuntimeProfileFallback(player, action, selection, revision);
     }
 
     static DCAddon::JsonValue BuildFeatureEnvelope(
@@ -406,54 +263,6 @@ namespace DCQoS
             NativeEnvelopeFeature::ACTION_RESPONSE, payload, context);
     }
 
-    static void PushRuntimeProfile(Player* player, bool forceResend,
-        std::string const& triggerContext)
-    {
-        if (!player)
-            return;
-
-        // Same reasoning as ScheduleFeatureInvalidation: bots have no client
-        // to apply a runtime graphics profile to.
-        if (DCAddon::IsBotRecipient(player))
-            return;
-
-        RuntimeProfileSelection selection = SelectRuntimeProfile(player);
-        if (!triggerContext.empty())
-            selection.context = triggerContext + ":" + selection.context;
-
-        uint32 guidLow = player->GetGUID().GetCounter();
-        std::string previousProfile;
-        bool shouldSend = forceResend;
-
-        {
-            std::lock_guard<std::mutex> lock(s_RuntimeProfileMutex);
-            auto itr = s_LastRuntimeProfileByGuid.find(guidLow);
-            if (itr != s_LastRuntimeProfileByGuid.end())
-                previousProfile = itr->second;
-
-            if (!shouldSend)
-                shouldSend = previousProfile != selection.profileKey;
-
-            s_LastRuntimeProfileByGuid[guidLow] = selection.profileKey;
-        }
-
-        if (!shouldSend)
-            return;
-
-        if (!previousProfile.empty() && previousProfile != selection.profileKey)
-        {
-            RuntimeProfileSelection invalidation;
-            invalidation.profileKey = previousProfile;
-            invalidation.context = triggerContext + ":profile-changed";
-            SendRuntimeProfileMessage(player,
-                NativeEnvelopeFeature::ACTION_INVALIDATE,
-                invalidation, NextRuntimeProfileRevision());
-        }
-
-        SendRuntimeProfileMessage(player, NativeEnvelopeFeature::ACTION_APPLY,
-            selection, NextRuntimeProfileRevision());
-    }
-
     // Configuration keys
     namespace Config
     {
@@ -518,6 +327,11 @@ namespace DCQoS
     // the cache is keyed PER PLAYER -- sharing across players would leak one
     // player's gear-scaled numbers to another with the same context. A short
     // TTL bounds staleness when gear changes without a contextHash change.
+    //
+    // The key's contextHash is computed on the server from the same inputs
+    // (BuildSpellTooltipCacheContext), never taken from the request: a client
+    // could send any number of distinct hashes for one spell and push the
+    // shared cache past its cap, which clears it for every player.
     struct SpellTooltipLineKey
     {
         uint32 guid;
@@ -566,6 +380,8 @@ namespace DCQoS
         SpellTooltipLineKeyHash> s_SpellTooltipLineCache;
     static std::mutex s_SpellTooltipLineCacheMutex;
     static constexpr std::size_t SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP = 8192;
+
+    static uint32 BuildSpellTooltipCacheContext(Player* player, uint32 spellId);
 
     // =======================================================================
     // Helper Functions
@@ -2420,6 +2236,10 @@ namespace DCQoS
         return rows;
     }
 
+    // Another player counts as an owner only where the core would let the
+    // viewer inspect them (WorldSession::HandleInspectOpcode): in the same map,
+    // within inspect range and not attackable -- and visible to the viewer's
+    // client. This used to accept any online player anywhere.
     static Player* ResolveItemTooltipSnapshotOwner(Player* player,
         ItemTooltipSnapshotNativeRequest const& request, uint32& outStatus)
     {
@@ -2435,9 +2255,11 @@ namespace DCQoS
             return player;
         }
 
-        Player* owner = ObjectAccessor::FindConnectedPlayer(
+        Player* owner = ObjectAccessor::GetPlayer(*player,
             ObjectGuid::Create<HighGuid::Player>(request.ownerGuidLow));
-        if (!owner)
+        if (!owner || !player->HaveAtClient(owner)
+            || !player->IsWithinDistInMap(owner, INSPECT_DISTANCE, false)
+            || player->IsValidAttackTarget(owner))
         {
             outStatus = ItemTooltipSnapshotStatus::NOT_VISIBLE;
             return nullptr;
@@ -2493,11 +2315,28 @@ namespace DCQoS
             trader->GetGUID().GetCounter());
     }
 
-    static Item* ResolveItemTooltipSnapshotItemFromOwner(Player* owner,
-        ItemTooltipSnapshotNativeRequest const& request)
+    static Item* ResolveItemTooltipSnapshotItemFromOwner(Player* player,
+        Player* owner, ItemTooltipSnapshotNativeRequest const& request)
     {
         if (!owner)
             return nullptr;
+
+        // Of another player, only what an inspect shows: equipped items. Their
+        // bags, bank and mail were readable here by guid or by position.
+        if (owner != player)
+        {
+            Item* item = request.itemGuidLow
+                ? owner->GetItemByGuid(
+                    ObjectGuid::Create<HighGuid::Item>(request.itemGuidLow))
+                : nullptr;
+            if (!item && request.bag == INVENTORY_SLOT_BAG_0
+                && request.slot < EQUIPMENT_SLOT_END)
+            {
+                item = owner->GetItemByPos(request.bag, request.slot);
+            }
+
+            return (item && item->IsEquipped()) ? item : nullptr;
+        }
 
         if (request.itemGuidLow != 0)
         {
@@ -2516,6 +2355,8 @@ namespace DCQoS
 
         return nullptr;
     }
+
+    static bool ItemTooltipExceedsLink(Item* item);
 
     static Item* ResolveItemTooltipSnapshotItem(Player* player,
         ItemTooltipSnapshotNativeRequest const& request, uint32& outStatus)
@@ -2536,21 +2377,27 @@ namespace DCQoS
         // A chat link names someone else's item by owner + item guid (see
         // ExtendChatItemLinks). The link is public, so is what it points at --
         // but only what that player carries (equipped, bags, bank; never their
-        // mail), and only the item the link is actually for.
+        // mail), only the item the link is actually for, and only an item whose
+        // link the server extends. The owner may be anywhere: links travel
+        // through every chat channel.
         if (request.contextKind == ItemTooltipSnapshotContextKind::LINK
             && request.ownerGuidLow != 0
             && request.ownerGuidLow != player->GetGUID().GetCounter())
         {
-            Player* owner = ResolveItemTooltipSnapshotOwner(player, request,
-                outStatus);
+            Player* owner = ObjectAccessor::FindConnectedPlayer(
+                ObjectGuid::Create<HighGuid::Player>(request.ownerGuidLow));
             if (!owner)
+            {
+                outStatus = ItemTooltipSnapshotStatus::NOT_VISIBLE;
                 return nullptr;
+            }
 
             Item* item = request.itemGuidLow
                 ? owner->GetItemByGuid(
                     ObjectGuid::Create<HighGuid::Item>(request.itemGuidLow))
                 : nullptr;
-            if (!item || item->GetEntry() != request.itemEntry)
+            if (!item || item->GetEntry() != request.itemEntry
+                || !ItemTooltipExceedsLink(item))
             {
                 outStatus = ItemTooltipSnapshotStatus::ITEM_NOT_FOUND;
                 return nullptr;
@@ -2567,7 +2414,7 @@ namespace DCQoS
         if (!owner)
             return nullptr;
 
-        if (Item* item = ResolveItemTooltipSnapshotItemFromOwner(owner,
+        if (Item* item = ResolveItemTooltipSnapshotItemFromOwner(player, owner,
                 request))
         {
             return item;
@@ -2961,7 +2808,7 @@ namespace DCQoS
         Creature* pet = player
             ? ObjectAccessor::GetCreatureOrPetOrVehicle(*player, guid)
             : nullptr;
-        return pet ? pet->GetEntry() : 0;
+        return (pet && player->HaveAtClient(pet)) ? pet->GetEntry() : 0;
     }
 
     static void SendNpcTooltipInfoNativeError(Player* player,
@@ -3246,10 +3093,10 @@ namespace DCQoS
         if (!player)
             return;
 
-        // A roaming bot crosses zone borders constantly, and each crossing
-        // would otherwise allocate a delayed event whose only job is to push a
-        // graphics-profile invalidation at a session with no graphics. Drop it
-        // here rather than at the send, so the event never gets scheduled.
+        // Bots join and leave groups constantly, and each change would otherwise
+        // allocate a delayed event whose only job is to push a state invalidation
+        // at a session with no client. Drop it here rather than at the send, so
+        // the event never gets scheduled.
         if (DCAddon::IsBotRecipient(player))
             return;
 
@@ -3317,32 +3164,6 @@ namespace DCQoS
     {
         ScheduleFeatureInvalidationForGroup(group,
             NativeEnvelopeFeature::PING_STATE, context, delay, skipGuid);
-    }
-
-    static void ScheduleRuntimeProfileStateInvalidation(Player* player,
-        std::string const& context,
-        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
-    {
-        ScheduleFeatureInvalidation(player,
-            NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE, context, delay);
-    }
-
-    static void ScheduleRuntimeProfileStateInvalidation(ObjectGuid guid,
-        std::string const& context,
-        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
-    {
-        ScheduleFeatureInvalidation(guid,
-            NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE, context, delay);
-    }
-
-    static void ScheduleRuntimeProfileStateInvalidationForGroup(Group* group,
-        std::string const& context,
-        std::chrono::milliseconds delay = std::chrono::milliseconds(250),
-        ObjectGuid skipGuid = ObjectGuid::Empty)
-    {
-        ScheduleFeatureInvalidationForGroup(group,
-            NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE, context, delay,
-            skipGuid);
     }
 
     static void SendNativePingRelayPayload(Player* player,
@@ -3415,48 +3236,82 @@ namespace DCQoS
             "feature-request:relay_ack");
     }
 
-    static void SendPingRelayMessage(Player* recipient, Player* sender,
-        std::string const& resolvedDistribution,
+    // Every recipient gets the same relay, so it is built and encoded once per
+    // request rather than once per group member: the native JSON on the first
+    // native recipient, the addon message by JsonMessage, which encodes once
+    // and reuses it on every Send.
+    static void SendPingRelayMessages(std::vector<Player*> const& recipients,
+        Player* sender, std::string const& resolvedDistribution,
         std::string const& payload)
     {
-        if (!recipient || payload.empty())
+        if (payload.empty())
             return;
 
-        std::string source = sender ? sender->GetName() : "";
-        uint32 sourceGuid = sender
-            ? static_cast<uint32>(sender->GetGUID().GetCounter())
-            : 0;
-        uint32 timestamp = static_cast<uint32>(time(nullptr));
-
-        if (SupportsNativePingRelayTransport(recipient))
-        {
-            DCAddon::JsonValue nativePayload;
-            nativePayload.SetObject();
-            nativePayload.Set("feature",
-                std::string(NativeEnvelopeFeature::PING));
-            nativePayload.Set("action",
-                std::string(NativeEnvelopeFeature::ACTION_RELAY));
-            nativePayload.Set("distribution", resolvedDistribution);
-            nativePayload.Set("payload", payload);
-            nativePayload.Set("syncPayload", payload);
-            nativePayload.Set("source", source);
-            nativePayload.Set("sourceGuid", sourceGuid);
-            nativePayload.Set("timestamp", timestamp);
-
-            SendNativePingRelayPayload(recipient, nativePayload.Encode());
-            return;
-        }
-
-        DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
-        relay.Set("feature", NativeEnvelopeFeature::PING);
-        relay.Set("action", NativeEnvelopeFeature::ACTION_RELAY);
+        DCAddon::JsonValue relay;
+        relay.SetObject();
+        relay.Set("feature", std::string(NativeEnvelopeFeature::PING));
+        relay.Set("action", std::string(NativeEnvelopeFeature::ACTION_RELAY));
         relay.Set("distribution", resolvedDistribution);
         relay.Set("payload", payload);
         relay.Set("syncPayload", payload);
-        relay.Set("source", source);
-        relay.Set("sourceGuid", sourceGuid);
-        relay.Set("timestamp", timestamp);
-        relay.Send(recipient);
+        relay.Set("source", sender ? sender->GetName() : std::string());
+        relay.Set("sourceGuid", sender
+            ? static_cast<uint32>(sender->GetGUID().GetCounter())
+            : 0u);
+        relay.Set("timestamp", static_cast<uint32>(time(nullptr)));
+
+        std::string nativeRelay;
+        DCAddon::JsonMessage addonRelay(MODULE, Opcode::SMSG_FEATURE_DATA, relay);
+        for (Player* recipient : recipients)
+        {
+            if (!recipient)
+                continue;
+
+            if (SupportsNativePingRelayTransport(recipient))
+            {
+                if (nativeRelay.empty())
+                    nativeRelay = relay.Encode();
+
+                SendNativePingRelayPayload(recipient, nativeRelay);
+            }
+            else
+                addonRelay.Send(recipient);
+        }
+    }
+
+    // A relay fans one request out to the whole group, so it is bounded where
+    // it comes in. The payload is relayed verbatim and is always the client's
+    // native ping encoding (WotLK-Extensions CustomLua.cpp: "v1|..." in a
+    // 192-byte buffer, "dcps1|..." in 224), so nothing else is accepted.
+    constexpr std::size_t PING_RELAY_MAX_PAYLOAD_BYTES = 256;
+    // Relays per sender, whichever transport they arrive on: this many at once,
+    // then this many per second
+    constexpr uint32 PING_RELAY_BURST = 5;
+    constexpr uint32 PING_RELAY_PER_SECOND = 5;
+
+    // guid low -> relay bucket. Erased on logout.
+    static std::unordered_map<uint32, DCAddon::RequestTokenBucket> s_PingRelayBuckets;
+    static std::mutex s_PingRelayBucketsMutex;
+
+    static bool IsRelayablePingPayload(std::string const& payload)
+    {
+        if (payload.size() > PING_RELAY_MAX_PAYLOAD_BYTES)
+            return false;
+
+        return payload.rfind("v1|", 0) == 0 || payload.rfind("dcps1|", 0) == 0;
+    }
+
+    static bool AllowPingRelay(Player* player)
+    {
+        std::lock_guard<std::mutex> lock(s_PingRelayBucketsMutex);
+        return s_PingRelayBuckets[player->GetGUID().GetCounter()].TryConsume(
+            PING_RELAY_BURST, PING_RELAY_PER_SECOND, getMSTime());
+    }
+
+    static void ForgetPingRelayBucket(uint32 guidLow)
+    {
+        std::lock_guard<std::mutex> lock(s_PingRelayBucketsMutex);
+        s_PingRelayBuckets.erase(guidLow);
     }
 
     static void RelayPingPayload(Player* player,
@@ -3489,6 +3344,20 @@ namespace DCQoS
             return;
         }
 
+        if (!IsRelayablePingPayload(payload))
+        {
+            sendAck(false, "", 0,
+                "Malformed ping relay payload.");
+            return;
+        }
+
+        if (!AllowPingRelay(player))
+        {
+            sendAck(false, "", 0,
+                "Pinging too fast.");
+            return;
+        }
+
         std::string resolvedDistribution;
         std::vector<Player*> recipients;
         std::string relayError;
@@ -3501,9 +3370,8 @@ namespace DCQoS
             return;
         }
 
-        for (Player* recipient : recipients)
-            SendPingRelayMessage(recipient, player, resolvedDistribution,
-                payload);
+        SendPingRelayMessages(recipients, player, resolvedDistribution,
+            payload);
 
         sendAck(true, resolvedDistribution,
             static_cast<uint32>(recipients.size()), "");
@@ -3513,7 +3381,11 @@ namespace DCQoS
     // Settings Database Functions
     // =======================================================================
 
-    static void ApplyPlayerSetting(QoSSettings& settings,
+    // Every value ApplyPlayerSetting reads is a "0"/"1" flag or a short number
+    constexpr std::size_t QOS_SETTING_VALUE_MAX_LENGTH = 32;
+
+    // Returns false for a key this parser does not know.
+    static bool ApplyPlayerSetting(QoSSettings& settings,
                                    std::string const& key,
                                    std::string const& value)
     {
@@ -3531,7 +3403,9 @@ namespace DCQoS
         {
             try
             {
-                settings.tooltipScale = std::stof(value);
+                float const scale = std::stof(value);
+                if (std::isfinite(scale))
+                    settings.tooltipScale = std::clamp(scale, 0.25f, 4.0f);
             }
             catch (...)
             {
@@ -3553,6 +3427,10 @@ namespace DCQoS
         else if (key == "interface.enabled") settings.interfaceEnabled = (value == "1");
         else if (key == "interface.combatPlates") settings.combatPlates = (value == "1");
         else if (key == "interface.questLevelText") settings.questLevelText = (value == "1");
+        else
+            return false;
+
+        return true;
     }
 
     QoSSettings LoadPlayerSettingsFromDb(Player* player)
@@ -3674,7 +3552,14 @@ namespace DCQoS
             escapedValue
         );
 
-        InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
+        // Apply the change to the cached copy. Dropping the copy instead made
+        // the next tooltip request reload every setting with a blocking SELECT,
+        // once per update. No copy yet means the login warm-up is still in
+        // flight, and there is nothing to update.
+        std::lock_guard<std::mutex> lock(s_PlayerSettingsCacheMutex);
+        auto itr = s_PlayerSettingsCache.find(player->GetGUID().GetCounter());
+        if (itr != s_PlayerSettingsCache.end())
+            ApplyPlayerSetting(itr->second, key, value);
     }
 
     // =======================================================================
@@ -3893,13 +3778,18 @@ namespace DCQoS
     // summons, event spawns): there used to be one that scanned every creature
     // spawn row per request and then reported the first spawn sharing the
     // entry -- another creature's DB guid.
+    //
+    // Only a creature the player's client has: any GUID in the map used to
+    // answer with its spawn row and position, across phases and for hidden
+    // creatures alike.
     static CreatureData const* ResolveNpcTooltipSpawnData(Player* player,
         ObjectGuid const& guid,
         uint32& spawnId)
     {
         if (player && guid.IsCreatureOrVehicle())
         {
-            if (Creature* creature = ObjectAccessor::GetCreature(*player, guid))
+            Creature* creature = ObjectAccessor::GetCreature(*player, guid);
+            if (creature && player->HaveAtClient(creature))
             {
                 spawnId = creature->GetSpawnId();
 
@@ -5514,7 +5404,7 @@ namespace DCQoS
             return build();
 
         SpellTooltipLineKey const key{ player->GetGUID().GetCounter(), spellId,
-            contextHash };
+            BuildSpellTooltipCacheContext(player, spellId) };
         time_t const now = time(nullptr);
 
         {
@@ -5620,11 +5510,12 @@ namespace DCQoS
         msg.Send(player);
     }
 
-    // Returns the enrichment line for (player, spellId, contextHash), building
-    // it on a cache miss. See s_SpellTooltipLineCache for the keying rationale.
+    // Returns the enrichment line for (player, spellId, the player's current
+    // context), building it on a cache miss. See s_SpellTooltipLineCache for
+    // the keying rationale.
     // Set DC.QoS.TooltipEnrichment.CacheTtlSeconds = 0 to bypass the cache.
     static std::string GetOrBuildSpellTooltipLine(Player* player, uint32 spellId,
-        uint32 contextHash, SpellInfo const* spellInfo)
+        SpellInfo const* spellInfo)
     {
         uint32 const ttlSeconds = sConfigMgr->GetOption<uint32>(
             "DC.QoS.TooltipEnrichment.CacheTtlSeconds", 60);
@@ -5632,7 +5523,7 @@ namespace DCQoS
             return BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
 
         SpellTooltipLineKey const key{ player->GetGUID().GetCounter(), spellId,
-            contextHash };
+            BuildSpellTooltipCacheContext(player, spellId) };
         time_t const now = time(nullptr);
 
         {
@@ -5691,8 +5582,7 @@ namespace DCQoS
             return;
         }
 
-        std::string line = GetOrBuildSpellTooltipLine(player, spellId,
-            contextHash, spellInfo);
+        std::string line = GetOrBuildSpellTooltipLine(player, spellId, spellInfo);
         if (line.empty())
         {
             SendSpellTooltipEnrichment(player, requestId, spellId,
@@ -5797,6 +5687,15 @@ namespace DCQoS
             else
                 value = val.AsString();
         }
+
+        // Only what the settings parser reads is stored. The client syncs every
+        // DC-QOS setting through here, so other paths are dropped quietly (the
+        // confirmation has no listener); any path used to be accepted and kept
+        // a row in dc_player_qos_settings that nothing ever read.
+        QoSSettings probe;
+        if (value.size() > QOS_SETTING_VALUE_MAX_LENGTH
+            || !ApplyPlayerSetting(probe, path, value))
+            return;
 
         if (!path.empty())
         {
@@ -5960,6 +5859,21 @@ namespace DCQoS
         if (DarkChaos::ItemUpgrade::UpgradeManager* mgr =
                 DarkChaos::ItemUpgrade::GetUpgradeManager())
         {
+            // A cold upgrade state is read with blocking SELECTs. The viewer's
+            // own items are warmed at login; anyone else's are warmed async
+            // here instead, and the client retries a SERVER_ERROR on its own.
+            uint32 const itemGuidLow = item->GetGUID().GetCounter();
+            if (item->GetOwnerGUID() != player->GetGUID()
+                && !mgr->GetCachedItemUpgradeState(itemGuidLow))
+            {
+                mgr->PrefetchItemStatesAsync({ { itemGuidLow, item->GetEntry() } },
+                    item->GetOwnerGUID().GetCounter());
+                SendItemTooltipSnapshotNative(player, snapshotRequest, nullptr, {},
+                    ItemTooltipSnapshotStatus::SERVER_ERROR,
+                    "Item state is loading");
+                return;
+            }
+
             DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot snapshot;
             if (!mgr->BuildTooltipSnapshot(item, snapshot))
             {
@@ -6127,21 +6041,6 @@ namespace DCQoS
             return;
         }
 
-        if (feature == NativeEnvelopeFeature::GRAPHICS_PROFILE)
-        {
-            PushRuntimeProfile(player, true, "feature-request");
-            return;
-        }
-
-        if (feature == NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE)
-        {
-            RuntimeProfileSelection selection = SelectRuntimeProfile(player);
-            SendFeatureResponse(player, feature,
-                BuildRuntimeProfileStatePayload(player, selection),
-                "feature-request:profile-state");
-            return;
-        }
-
         if (feature == NativeEnvelopeFeature::SERVER_TIME)
         {
             DCAddon::JsonValue payload;
@@ -6176,82 +6075,115 @@ namespace DCQoS
         response.Send(player);
     }
 
+    // Mailbox objects are usable from 10 yards of their model's bounds
+    // (GameObject::GetInteractionDistance); search a little wider and let the
+    // core's own check decide.
+    constexpr float MAILBOX_SEARCH_RANGE = 15.0f;
+
+    // Creatures that act as a mailbox (Katy Stampwhistle, the Argent pony in
+    // its postman mode) carry the flag WorldSession::CanOpenMailBox checks.
+    class MailboxCreatureInRangeCheck
+    {
+    public:
+        explicit MailboxCreatureInRangeCheck(Player const* player) : _player(player) { }
+
+        bool operator()(Creature* creature) const
+        {
+            return creature->HasNpcFlag(UNIT_NPC_FLAG_MAILBOX)
+                && _player->IsWithinDistInMap(creature, INTERACTION_DISTANCE);
+        }
+
+    private:
+        Player const* _player;
+    };
+
+    // CMSG_COLLECT_ALL_MAIL names no mailbox, so look for one the core would
+    // let this player open right now (WorldSession::CanOpenMailBox).
+    static bool IsAtMailbox(Player* player)
+    {
+        WorldSession* session = player->GetSession();
+
+        // .mailbox: the core opens a GM's own mailbox from anywhere
+        if (session->HasPermission(rbac::RBAC_PERM_COMMAND_MAILBOX))
+            return true;
+
+        if (GameObject* mailbox = player->FindNearestGameObjectOfType(GAMEOBJECT_TYPE_MAILBOX,
+                MAILBOX_SEARCH_RANGE))
+        {
+            if (session->CanOpenMailBox(mailbox->GetGUID()))
+                return true;
+        }
+
+        Creature* mailboxCreature = nullptr;
+        MailboxCreatureInRangeCheck check(player);
+        Acore::CreatureSearcher<MailboxCreatureInRangeCheck> searcher(player, mailboxCreature, check);
+        Cell::VisitObjects(player, searcher, INTERACTION_DISTANCE);
+        return mailboxCreature && session->CanOpenMailBox(mailboxCreature->GetGUID());
+    }
+
+    // Takes the money out of every mail in the inbox, under the core's rules for
+    // CMSG_MAIL_TAKE_MONEY (WorldSession::HandleMailTakeMoney): only at a
+    // mailbox, never from a deleted mail or one still in transit (an auction's
+    // proceeds wait out their delivery delay), never past the gold cap. Items
+    // stay in the mail. This used to work from anywhere, collect undelivered
+    // and expired mail, and ignore ModifyMoney failing at the cap -- the mail
+    // was emptied either way and the gold destroyed.
     void HandleCollectAllMail(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
 
-        // Iterate over player's mail
-        PlayerMails const& mailCache = player->GetMails();
-
-        uint32 collectedGold = 0;
-
-        // Transaction safety:
-        // We will execute DB updates directly but we must be careful with in-memory state.
-        // It's safer to process one by one in a loop that simulates standard taking.
-
-        // Note: Direct manipulation of mail is risky. We should check if we can call "TakeMoney" and "TakeItem" methods.
-        // But since we are inside a script, let's try to be respectful of core logic.
-
-        // LIMITATION: Use a naive approach that just collects money and returns success message.
-        // Implementing full item collection safely without access to core headers/methods for "AutoStoreMailItem" is hard.
-        // However, we can try to implement the logic for Money at least, which is the most common use case.
-
-        SQLTransaction trans = CharacterDatabase.BeginTransaction();
-        bool changes = false;
-
-        for (Mail* mail : mailCache)
+        if (!IsAtMailbox(player))
         {
-            uint32 mailId = mail->messageID;
-            // Collect Money
-            if (mail->money > 0)
-            {
-                // Give money
-                player->ModifyMoney(mail->money);
-                collectedGold += mail->money;
-
-                // Update DB
-                trans->Append("UPDATE mail SET money = 0 WHERE id = {}", mailId);
-
-                // Update in-memory
-                // const_cast is ugly but necessary here if we don't have a specific setter
-                const_cast<Mail*>(mail)->money = 0;
-
-                changes = true;
-            }
-
-            // Collect Items
-            // This is complex because of bag space.
-            // Simplified logic: If we have space, take it.
-
-            // For now, let's stick to money and maybe simple items if we can access the item list securely.
-            // Accessing items inside a Mail object depends on the core version.
-
-            /*
-            if (!mail->items.empty())
-            {
-               // ... item logic would go here ...
-            }
-            */
-
-            // If mail is now empty (no items, no money, no COD, no text), mark for deletion?
-            // Usually we don't delete automatically unless it's a temp mail.
+            SendNotification(player, "error", "You need to be at a mailbox to collect your mail.");
+            return;
         }
 
-        if (changes)
+        WorldSession* session = player->GetSession();
+        time_t const now = GameTime::GetGameTime().count();
+        CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+        uint32 collectedMoney = 0;
+
+        for (Mail* mail : player->GetMails())
         {
-            CharacterDatabase.CommitTransaction(trans);
+            // What the inbox lists (WorldSession::SendMailList): no deleted,
+            // undelivered or expired mail
+            if (!mail->money || mail->state == MAIL_STATE_DELETED
+                || mail->deliver_time > now || mail->expire_time < now)
+                continue;
 
-            // Send client update
-            player->SendMailResult(0, MAIL_SEND, MAIL_OK);
+            if (!player->ModifyMoney(mail->money, false))
+            {
+                player->SendMailResult(mail->messageID, MAIL_MONEY_TAKEN, MAIL_ERR_EQUIP_ERROR,
+                    EQUIP_ERR_TOO_MUCH_GOLD);
+                break;
+            }
 
-            DCAddon::JsonMessage notification(MODULE, Opcode::SMSG_NOTIFICATION);
-            notification.Set("type", "success");
+            if (session->HasPermission(rbac::RBAC_PERM_LOG_GM_TRADE))
+            {
+                LOG_GM(session->GetAccountId(), "GM {} (Account: {}) took mail money: {} from mailbox",
+                    player->GetName(), session->GetAccountId(), mail->money);
+            }
 
-            std::string msg = "Collected " + std::to_string(collectedGold / 10000) + "g";
-            notification.Set("message", msg);
-            notification.Send(player);
+            collectedMoney += mail->money;
+            trans->Append("UPDATE mail SET money = 0 WHERE id = {}", mail->messageID);
+            mail->money = 0;
+            mail->state = MAIL_STATE_CHANGED;
+            player->m_mailsUpdated = true;
+            player->SendMailResult(mail->messageID, MAIL_MONEY_TAKEN, MAIL_OK);
         }
+
+        if (!collectedMoney)
+            return;
+
+        // Gold and mail commit together, as in the core
+        player->SaveGoldToDB(trans);
+        CharacterDatabase.CommitTransaction(trans);
+
+        DCAddon::JsonMessage notification(MODULE, Opcode::SMSG_NOTIFICATION);
+        notification.Set("type", "success");
+        notification.Set("message", "Collected " + std::to_string(collectedMoney / GOLD) + "g");
+        notification.Send(player);
     }
 
     // -----------------------------------------------------------------------
@@ -6420,6 +6352,18 @@ namespace DCQoS
         return hash;
     }
 
+    // The spell-tooltip cache key's context: the client's hash over the
+    // server's view of the player (see SpellTooltipLineKey).
+    static uint32 BuildSpellTooltipCacheContext(Player* player, uint32 spellId)
+    {
+        // Client GetActiveTalentGroup() is 1-indexed; server GetActiveSpec() is 0-indexed.
+        return BuildSpellTooltipContextHashForPlayer(spellId,
+            static_cast<uint8>(player->GetLevel()),
+            static_cast<uint8>(player->getClass()),
+            static_cast<uint8>(player->GetShapeshiftForm()),
+            static_cast<uint8>(player->GetActiveSpec() + 1));
+    }
+
     // Push enrichment data for spells the player is likely to hover soon.
     // Scope "actionbar" (default) covers the current spec's action bars only;
     // "full" pushes every active, non-passive spell in the spellbook. The
@@ -6468,7 +6412,7 @@ namespace DCQoS
             uint32 contextHash = BuildSpellTooltipContextHashForPlayer(spellId,
                 level, classId, shapeshiftForm, activeTalentGroup);
 
-            std::string line = GetOrBuildSpellTooltipLine(player, spellId, contextHash, spellInfo);
+            std::string line = GetOrBuildSpellTooltipLine(player, spellId, spellInfo);
             if (line.empty())
                 continue;
 
@@ -6534,7 +6478,7 @@ class DCQoSPlayerScript : public PlayerScript
 public:
     DCQoSPlayerScript() : PlayerScript("DCQoSPlayerScript",
     {
-        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_UPDATE_ZONE
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT
     }) {}
 
     void OnPlayerLogin(Player* player) override
@@ -6565,41 +6509,12 @@ public:
         {
             if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
             {
-                DCQoS::PushRuntimeProfile(online, true, "login");
-                DCQoS::ScheduleRuntimeProfileStateInvalidation(online,
-                    "login");
                 DCQoS::SchedulePingRelayStateInvalidation(online, "login");
                 DCQoS::SchedulePingRelayStateInvalidationForGroup(
                     online->GetGroup(), "group-login",
                     std::chrono::milliseconds(250), online->GetGUID());
             }
         }, std::chrono::milliseconds(4500));
-    }
-
-    void OnPlayerMapChanged(Player* player) override
-    {
-        if (!DCQoS::IsEnabled() || !player)
-            return;
-
-        player->m_Events.AddEventAtOffset([guid = player->GetGUID()]
-        {
-            if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
-            {
-                DCQoS::PushRuntimeProfile(online, false, "map-change");
-                DCQoS::ScheduleRuntimeProfileStateInvalidation(online,
-                    "map-change");
-            }
-        }, std::chrono::milliseconds(1250));
-    }
-
-    void OnPlayerUpdateZone(Player* player, uint32 /*newZone*/,
-        uint32 /*newArea*/) override
-    {
-        if (!DCQoS::IsEnabled() || !player)
-            return;
-
-        DCQoS::ScheduleRuntimeProfileStateInvalidation(player,
-            "zone-change", std::chrono::milliseconds(350));
     }
 
     void OnPlayerLogout(Player* player) override
@@ -6613,10 +6528,7 @@ public:
 
         DCQoS::InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
         DCQoS::ForgetItemPrefetchWindow(player->GetGUID().GetCounter());
-
-        std::lock_guard<std::mutex> lock(DCQoS::s_RuntimeProfileMutex);
-        DCQoS::s_LastRuntimeProfileByGuid.erase(
-            player->GetGUID().GetCounter());
+        DCQoS::ForgetPingRelayBucket(player->GetGUID().GetCounter());
     }
 };
 
@@ -6630,8 +6542,6 @@ public:
         if (!DCQoS::IsEnabled() || !group)
             return;
 
-        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
-            "group-add");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-add");
     }
@@ -6643,10 +6553,6 @@ public:
         if (!DCQoS::IsEnabled())
             return;
 
-        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
-            "group-remove");
-        DCQoS::ScheduleRuntimeProfileStateInvalidation(guid,
-            "group-remove:self");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-remove");
         DCQoS::SchedulePingRelayStateInvalidation(guid,
@@ -6658,8 +6564,6 @@ public:
         if (!DCQoS::IsEnabled() || !group)
             return;
 
-        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
-            "group-disband");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-disband");
     }
@@ -6669,8 +6573,6 @@ public:
         if (!DCQoS::IsEnabled() || !group)
             return;
 
-        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
-            "group-convert-raid");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-convert-raid");
     }

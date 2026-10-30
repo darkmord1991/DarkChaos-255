@@ -35,6 +35,7 @@
 #include "dc_addon_namespace.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -130,30 +131,56 @@ namespace QuestNav
     }
 
     // ------------------------------------------------------------------------
-    // quest -> creature quest-ender reverse index over the involved-relation
-    // multimap (keyed entry -> quest). Built once on first use (world thread),
-    // immutable afterwards - static world data. Gameobject enders are skipped:
-    // rings render on units only.
+    // quest -> entry reverse indexes over the four relation multimaps (keyed
+    // entry -> quest): creature/gameobject starters and enders. Built once on
+    // first use (world thread), immutable afterwards - static world data. The
+    // ring set below only uses creature enders (rings render on units only);
+    // the live resolve uses all four, and used to walk each multimap per
+    // request to find them.
     // ------------------------------------------------------------------------
-    static std::unordered_map<uint32, std::vector<uint32>> const& GetTurnInIndex()
-    {
-        static std::unordered_map<uint32, std::vector<uint32>> const index = []()
-        {
-            std::unordered_map<uint32, std::vector<uint32>> map;
-            if (QuestRelations const* relations = sObjectMgr->GetCreatureQuestInvolvedRelationMap())
-            {
-                for (auto const& [entry, questId] : *relations)
-                {
-                    std::vector<uint32>& enders = map[questId];
-                    if (std::find(enders.begin(), enders.end(), entry) == enders.end())
-                        enders.push_back(entry);
-                }
-            }
+    using QuestEntryIndex = std::unordered_map<uint32, std::vector<uint32>>;
 
-            LOG_INFO("dc.addon", "QuestNav (QNAV): indexed creature quest enders for {} quests", map.size());
-            return map;
+    struct RelationIndexes
+    {
+        QuestEntryIndex creatureStarters;
+        QuestEntryIndex goStarters;
+        QuestEntryIndex creatureEnders;
+        QuestEntryIndex goEnders;
+    };
+
+    static void IndexRelations(QuestRelations const* relations, QuestEntryIndex& out)
+    {
+        if (!relations)
+            return;
+
+        for (auto const& [entry, questId] : *relations)
+        {
+            std::vector<uint32>& entries = out[questId];
+            if (std::find(entries.begin(), entries.end(), entry) == entries.end())
+                entries.push_back(entry);
+        }
+    }
+
+    static RelationIndexes const& GetRelationIndexes()
+    {
+        static RelationIndexes const indexes = []()
+        {
+            RelationIndexes built;
+            IndexRelations(sObjectMgr->GetCreatureQuestRelationMap(), built.creatureStarters);
+            IndexRelations(sObjectMgr->GetGOQuestRelationMap(), built.goStarters);
+            IndexRelations(sObjectMgr->GetCreatureQuestInvolvedRelationMap(), built.creatureEnders);
+            IndexRelations(sObjectMgr->GetGOQuestInvolvedRelationMap(), built.goEnders);
+
+            LOG_INFO("dc.addon", "QuestNav (QNAV): indexed creature quest enders for {} quests",
+                built.creatureEnders.size());
+            return built;
         }();
-        return index;
+        return indexes;
+    }
+
+    static QuestEntryIndex const& GetTurnInIndex()
+    {
+        return GetRelationIndexes().creatureEnders;
     }
 
     static std::vector<uint32> ResolveTurnInEntries(uint32 questId)
@@ -239,46 +266,129 @@ namespace QuestNav
         char const* kind = "npc"; // "npc" | "object"
     };
 
-    // First spawn position of each wanted creature/gameobject entry. Single
-    // pass over the spawn stores (same access pattern as MPOI's BuildPOIList,
-    // but only on the rare resolve request).
+    // Floor between two resolve requests from one player. The client already
+    // spaces QNAV requests 2s apart, so this only ever stops a crafted flood.
+    constexpr uint64 RESOLVE_COOLDOWN_MS = 1000;
+    // Encoded replies kept at most; the cache is dropped whole past this.
+    constexpr size_t MAX_CACHED_RESOLVES = 4096;
+
+    // ------------------------------------------------------------------------
+    // entry -> spawn ids over the creature and gameobject spawn stores. Built
+    // once on first use (world thread). The resolve request used to walk all
+    // ~195k creature spawns once per quest POI and again per starter/ender
+    // list. Spawn ids rather than positions: a spawn deleted at runtime then
+    // resolves to nothing instead of a stale point, and one added after the
+    // build is simply not offered - fine for a navigation hint.
+    // ------------------------------------------------------------------------
+    struct SpawnIndex
+    {
+        std::unordered_map<uint32, std::vector<ObjectGuid::LowType>> creatures;
+        std::unordered_map<uint32, std::vector<ObjectGuid::LowType>> gameObjects;
+    };
+
+    static SpawnIndex const& GetSpawnIndex()
+    {
+        static SpawnIndex const index = []()
+        {
+            SpawnIndex built;
+            for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+                built.creatures[data.id].push_back(spawnId);
+            for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
+                built.gameObjects[data.id].push_back(spawnId);
+
+            LOG_INFO("dc.addon", "QuestNav (QNAV): indexed spawns of {} creature and {} gameobject entries",
+                built.creatures.size(), built.gameObjects.size());
+            return built;
+        }();
+        return index;
+    }
+
+    static SpawnData const* LookupSpawn(ObjectGuid::LowType spawnId, bool creature)
+    {
+        if (creature)
+            return sObjectMgr->GetCreatureData(spawnId);
+        return sObjectMgr->GetGameObjectData(spawnId);
+    }
+
+    // Up to MAX_SPAWNS_PER_LIST spawn positions for the wanted entries: the
+    // first spawn of each entry, then further spawns while room is left.
     static std::vector<SpawnPoint> FindSpawns(std::vector<uint32> const& creatureEntries,
         std::vector<uint32> const& goEntries)
     {
         std::vector<SpawnPoint> spawns;
+        SpawnIndex const& index = GetSpawnIndex();
 
-        auto wanted = [](std::vector<uint32> const& list, uint32 entry)
+        struct Source
         {
-            return std::find(list.begin(), list.end(), entry) != list.end();
+            std::vector<ObjectGuid::LowType> const* spawnIds;
+            bool creature;
         };
 
-        if (!creatureEntries.empty())
+        std::vector<Source> sources;
+        auto addSources = [&sources](std::vector<uint32> const& entries,
+            std::unordered_map<uint32, std::vector<ObjectGuid::LowType>> const& byEntry, bool creature)
         {
-            for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+            for (uint32 entry : entries)
+                if (auto it = byEntry.find(entry); it != byEntry.end())
+                    sources.push_back({ &it->second, creature });
+        };
+        addSources(creatureEntries, index.creatures, true);
+        addSources(goEntries, index.gameObjects, false);
+
+        // Round r takes the r-th spawn of every entry that has one.
+        for (size_t round = 0; spawns.size() < MAX_SPAWNS_PER_LIST; ++round)
+        {
+            bool anyLeft = false;
+            for (Source const& source : sources)
             {
                 if (spawns.size() >= MAX_SPAWNS_PER_LIST)
                     break;
-                if (!wanted(creatureEntries, data.id))
+                if (round >= source.spawnIds->size())
                     continue;
 
-                spawns.push_back({ data.mapid, data.posX, data.posY, data.posZ, "npc" });
+                anyLeft = true;
+                if (SpawnData const* data = LookupSpawn((*source.spawnIds)[round], source.creature))
+                    spawns.push_back({ data->mapid, data->posX, data->posY, data->posZ,
+                        source.creature ? "npc" : "object" });
             }
-        }
 
-        if (!goEntries.empty())
-        {
-            for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
-            {
-                if (spawns.size() >= MAX_SPAWNS_PER_LIST)
-                    break;
-                if (!wanted(goEntries, data.id))
-                    continue;
-
-                spawns.push_back({ data.mapid, data.posX, data.posY, data.posZ, "object" });
-            }
+            if (!anyLeft)
+                break;
         }
 
         return spawns;
+    }
+
+    // Z of the kill-target spawn on `mapId` nearest to (x, y), if any.
+    static bool FindNearestKillTargetZ(std::vector<uint32> const& killEntries, uint32 mapId,
+        double x, double y, float& outZ)
+    {
+        SpawnIndex const& index = GetSpawnIndex();
+        double bestDistSq = -1.0;
+        for (uint32 entry : killEntries)
+        {
+            auto it = index.creatures.find(entry);
+            if (it == index.creatures.end())
+                continue;
+
+            for (ObjectGuid::LowType spawnId : it->second)
+            {
+                CreatureData const* data = sObjectMgr->GetCreatureData(spawnId);
+                if (!data || data->mapid != mapId)
+                    continue;
+
+                double dx = data->posX - x;
+                double dy = data->posY - y;
+                double distSq = dx * dx + dy * dy;
+                if (bestDistSq < 0.0 || distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    outZ = data->posZ;
+                }
+            }
+        }
+
+        return bestDistSq >= 0.0;
     }
 
     static JsonValue SpawnListJson(std::vector<SpawnPoint> const& spawns)
@@ -299,37 +409,31 @@ namespace QuestNav
         return list;
     }
 
-    // Quest giver / turn-in entries for a quest, scanned from the relation
-    // multimaps (they are keyed entry -> quest, so a reverse lookup walks
-    // them; fine for a rare, change-gated request).
-    static void CollectRelationEntries(QuestRelations const* relations, uint32 questId,
-        std::vector<uint32>& outEntries)
+    // Quest giver / turn-in entries for a quest, from the relation indexes.
+    static std::vector<uint32> RelationEntries(QuestEntryIndex const& index, uint32 questId)
     {
-        for (auto const& [entry, relQuestId] : *relations)
-            if (relQuestId == questId && outEntries.size() < MAX_SPAWNS_PER_LIST)
-                outEntries.push_back(entry);
+        std::vector<uint32> entries;
+        if (auto it = index.find(questId); it != index.end())
+            for (uint32 entry : it->second)
+                if (entries.size() < MAX_SPAWNS_PER_LIST)
+                    entries.push_back(entry);
+        return entries;
     }
 
-    static void HandleResolveQuest(Player* player, ParsedMessage const& msg)
+    // The full SMSG_QUEST_COORDS body for a quest. Depends on static world
+    // data only, so it is built once per quest and served from the cache.
+    static std::string BuildQuestCoords(uint32 questId, Quest const* quest)
     {
-        if (!player || !IsEnabled() || !IsJsonMessage(msg))
-            return;
-
-        JsonValue req = GetJsonData(msg);
-        if (!req.IsObject() || !req.HasKey("q") || !req["q"].IsNumber())
-            return;
-
-        uint32 questId = req["q"].AsUInt32();
-        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-
-        JsonMessage reply(Module::QUEST_NAV, Opcode::QuestNav::SMSG_QUEST_COORDS);
-        reply.Set("q", questId);
+        JsonValue body;
+        body.SetObject();
+        body.Set("q", JsonValue(questId));
 
         if (!quest)
         {
-            reply.Set("o", JsonValue()).Set("s", JsonValue()).Set("r", JsonValue());
-            reply.Send(player);
-            return;
+            body.Set("o", JsonValue());
+            body.Set("s", JsonValue());
+            body.Set("r", JsonValue());
+            return body.Encode();
         }
 
         // Objectives: quest POI centroids (raw world coordinates in 3.3.5).
@@ -368,47 +472,67 @@ namespace QuestNav
 
                 // Nearest kill-target spawn on the same map supplies real Z.
                 float bestZ = 0.0f;
-                double bestDistSq = -1.0;
-                if (!killEntries.empty())
-                {
-                    for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
-                    {
-                        if (data.mapid != poi.MapId)
-                            continue;
-                        if (std::find(killEntries.begin(), killEntries.end(), data.id) == killEntries.end())
-                            continue;
-
-                        double dx = data.posX - cx;
-                        double dy = data.posY - cy;
-                        double distSq = dx * dx + dy * dy;
-                        if (bestDistSq < 0.0 || distSq < bestDistSq)
-                        {
-                            bestDistSq = distSq;
-                            bestZ = data.posZ;
-                        }
-                    }
-                }
-                if (bestDistSq >= 0.0)
+                if (FindNearestKillTargetZ(killEntries, poi.MapId, cx, cy, bestZ))
                     obj.Set("z", JsonValue(static_cast<double>(bestZ)));
 
                 objectives.Push(std::move(obj));
             }
         }
-        reply.Set("o", objectives);
+        body.Set("o", std::move(objectives));
 
         // Starters and enders from the quest relations + spawn stores.
-        std::vector<uint32> starterCreatures;
-        std::vector<uint32> starterGOs;
-        CollectRelationEntries(sObjectMgr->GetCreatureQuestRelationMap(), questId, starterCreatures);
-        CollectRelationEntries(sObjectMgr->GetGOQuestRelationMap(), questId, starterGOs);
-        reply.Set("s", SpawnListJson(FindSpawns(starterCreatures, starterGOs)));
+        RelationIndexes const& relations = GetRelationIndexes();
+        body.Set("s", SpawnListJson(FindSpawns(RelationEntries(relations.creatureStarters, questId),
+            RelationEntries(relations.goStarters, questId))));
+        body.Set("r", SpawnListJson(FindSpawns(RelationEntries(relations.creatureEnders, questId),
+            RelationEntries(relations.goEnders, questId))));
 
-        std::vector<uint32> enderCreatures;
-        std::vector<uint32> enderGOs;
-        CollectRelationEntries(sObjectMgr->GetCreatureQuestInvolvedRelationMap(), questId, enderCreatures);
-        CollectRelationEntries(sObjectMgr->GetGOQuestInvolvedRelationMap(), questId, enderGOs);
-        reply.Set("r", SpawnListJson(FindSpawns(enderCreatures, enderGOs)));
+        return body.Encode();
+    }
 
+    // World thread only (addon handlers and the logout hook).
+    static std::unordered_map<uint32, std::string> sResolveCache;
+    static std::unordered_map<ObjectGuid::LowType, uint64> sLastResolveMs;
+
+    static void HandleResolveQuest(Player* player, ParsedMessage const& msg)
+    {
+        if (!player || !IsEnabled() || !IsJsonMessage(msg))
+            return;
+
+        JsonValue req = GetJsonData(msg);
+        if (!req.IsObject() || !req.HasKey("q") || !req["q"].IsNumber())
+            return;
+
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        uint64& lastMs = sLastResolveMs[player->GetGUID().GetCounter()];
+        if (lastMs && nowMs - lastMs < RESOLVE_COOLDOWN_MS)
+            return;
+        lastMs = nowMs;
+
+        // The client only resolves quests it is navigating to, i.e. quests in
+        // its log. Anything else gets the same empty answer as an unknown id,
+        // which keeps a client from walking the whole quest table through here.
+        uint32 questId = req["q"].AsUInt32();
+        Quest const* quest = player->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE
+            ? sObjectMgr->GetQuestTemplate(questId) : nullptr;
+
+        JsonMessage reply(Module::QUEST_NAV, Opcode::QuestNav::SMSG_QUEST_COORDS);
+        if (!quest)
+        {
+            reply.SetPreEncodedJson(BuildQuestCoords(questId, nullptr));
+            reply.Send(player);
+            return;
+        }
+
+        auto cached = sResolveCache.find(questId);
+        if (cached == sResolveCache.end())
+        {
+            if (sResolveCache.size() >= MAX_CACHED_RESOLVES)
+                sResolveCache.clear();
+            cached = sResolveCache.emplace(questId, BuildQuestCoords(questId, quest)).first;
+        }
+
+        reply.SetPreEncodedJson(cached->second);
         reply.Send(player);
     }
 
@@ -426,6 +550,11 @@ namespace QuestNav
         DC_REGISTER_HANDLER(Module::QUEST_NAV, Opcode::QuestNav::CMSG_KILL_ENTRIES, HandleKillEntries);
         DC_REGISTER_HANDLER(Module::QUEST_NAV, Opcode::QuestNav::CMSG_RESOLVE_QUEST, HandleResolveQuest);
     }
+
+    static void ForgetPlayer(ObjectGuid::LowType guidLow)
+    {
+        sLastResolveMs.erase(guidLow);
+    }
 } // namespace QuestNav
 } // namespace DCAddon
 
@@ -435,7 +564,14 @@ class DCQuestNavPlayerScript : public PlayerScript
 {
 public:
     DCQuestNavPlayerScript() : PlayerScript("DCQuestNavPlayerScript",
-        { PLAYERHOOK_ON_BEFORE_QUEST_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_QUEST_ABANDON }) { }
+        { PLAYERHOOK_ON_BEFORE_QUEST_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_QUEST_ABANDON,
+          PLAYERHOOK_ON_LOGOUT }) { }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        if (player)
+            DCAddon::QuestNav::ForgetPlayer(player->GetGUID().GetCounter());
+    }
 
     // Fires inside Player::CompleteQuest BEFORE the status flips to COMPLETE,
     // so the turn-in set is resolved explicitly rather than via GetQuestStatus.

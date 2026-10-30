@@ -585,15 +585,20 @@ namespace DCCollection
         if (!HasCollectionItem(accountId, type, normalized))
             return false;
 
-        // Titles were historically stored by id or by bit index; clear both.
+        // Titles were historically stored by id or by bit index. The bit-index row
+        // goes too, but only when that number cannot also be read as a title ID:
+        // dozens of titles have a bit_index equal to another title's ID, and
+        // deleting it took the other title's row with it. The same rule decides
+        // ownership in HasCollectionItem.
         std::string entryFilter = Acore::StringFormat("{} = {}", itemsEntryCol, normalized);
         if (type == CollectionType::TITLE)
         {
             if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(normalized))
             {
-                uint32 const altEntry = (titleEntry->ID == normalized) ? titleEntry->bit_index : titleEntry->ID;
-                if (altEntry && altEntry != normalized)
-                    entryFilter = Acore::StringFormat("{} IN ({}, {})", itemsEntryCol, normalized, altEntry);
+                uint32 const legacyBitIndex = titleEntry->bit_index;
+                if (titleEntry->ID == normalized && legacyBitIndex && legacyBitIndex != normalized &&
+                    !sCharTitlesStore.LookupEntry(legacyBitIndex))
+                    entryFilter = Acore::StringFormat("{} IN ({}, {})", itemsEntryCol, normalized, legacyBitIndex);
             }
         }
 

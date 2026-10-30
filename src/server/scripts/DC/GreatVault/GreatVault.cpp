@@ -20,6 +20,7 @@
 #include "StringFormat.h"
 #include "ScriptMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "DC/CrossSystem/RewardDistributor.h"
 #include "DC/CrossSystem/CrossSystemCommon.h"
 #include "ObjectGuid.h"
@@ -578,5 +579,7 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
         now, guidLow, seasonId, weekStart, slot);
 
     LOG_INFO("mythic.vault", "Player {} claimed vault reward item {} from slot {}", player->GetName(), itemId, slot);
+
+    DarkChaos::CrossSystem::EventBus::instance()->PublishVaultClaim(player, seasonId, slot, itemId, 0, 0);
     return true;
 }

@@ -35,7 +35,7 @@ DC.STAT_PACKAGES = {
 	[4] = {
 		name = "Swiftblade",
 		stats = { "Haste Rating", "Armor Penetration Rating" },
-		icon = "Interface\\Icons\\Ability_Rogue_CuttingToTheChase",
+		icon = "Interface\\Icons\\Ability_Rogue_CutToTheChase",
 		description = "Haste and Armor Penetration for sustained damage.",
 		color = { r = 0.5, g = 0.8, b = 0.5 },
 	},
@@ -825,11 +825,10 @@ function DarkChaos_ItemUpgrade_PerformHeirloomUpgrade(item, targetLevel)
 		}) -- CMSG_HEIRLOOM_UPGRADE
 		DC.Debug(string.format("Sending heirloom upgrade via Protocol: %d|%d|%d|%d", serverBag, serverSlot, targetLevel, DC.selectedStatPackage))
 	else
-		-- Fallback to chat command
-		local command = string.format(".dcheirloom upgrade %d %d %d %d", 
-			serverBag, serverSlot, targetLevel, DC.selectedStatPackage);
-		SendChatMessage(command, "SAY");
-		DC.Debug("Sending heirloom upgrade via chat: " .. command)
+		-- No chat fallback: the server has no .dcheirloom command, so for a
+		-- player the old one went out to /say as plain chat.
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000DC-ItemUpgrade:|r DCAddonProtocol not available; cannot send the heirloom upgrade.")
+		return
 	end
 	
 	DC.pendingUpgrade = {

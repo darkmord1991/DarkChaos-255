@@ -1012,9 +1012,11 @@ end
 
 -- ---------------------------------------------------------------------
 --  Timbermaw Hold -- map 819, 20-player raid, Dark Chaos tier.
---  Bosses, ability kits and loot below come from the live encounter scripts
---  (src/server/scripts/DC/TimbermawHold/) and the applied world DB, not from
---  retail trivia -- this instance has no retail counterpart.
+--  Turtle WoW's own raid, ported from tortoise-wow's world data
+--  (Custom/TimbermawHold/tortoise_port): Turtle's creatures, spawns, loot
+--  and quests, re-scaled to level 130. Turtle shipped no AI, so the ability
+--  kits below are the live encounter scripts in
+--  src/server/scripts/DC/TimbermawHold/, not Turtle's.
 --  No hand-made art: the nightmare-corrupted woodland set from Darkheart
 --  Thicket is reused (a missing .blp renders as a green/black block).
 -- ---------------------------------------------------------------------
@@ -1025,7 +1027,7 @@ DCJournal.AddInstance({
     tier           = 80,
     isRaid         = true,
     name           = "Timbermaw Hold",
-    lore           = "The tunnels beneath Felwood were the last ground the Timbermaw tribe held clean, and the Emerald Nightmare has taken them anyway. The gatewarden and the chieftain fight for it now rather than against it, the deep dens have been turned over to nightmare growth, and past them both of the ancient bear gods lie waiting -- Ursol dreaming, Ursoc awake and furious, and the blood of an Old God running under all of it.",
+    lore           = "The deep hold of the Timbermaw has fallen to the Withermaw -- furbolgs of the tribe's own blood, twisted by the Emerald Nightmare and by the satyrs of the Foulheart who carried it in. Four braziers of corruption now burn in the hold, each kept by one of its fallen guardians, and while they burn the Barrier of Ursol stays sealed. Past it, in the room above the tunnels, the demigod Ursol dreams the Nightmare into the whole tribe.",
     buttonIcon     = "Interface\\EncounterJournal\\UI-EJ-DUNGEONBUTTON-DarkheartThicket",
     background     = "Interface\\EncounterJournal\\UI-EJ-BACKGROUND-DarkheartThicket",
     loreBackground = "Interface\\EncounterJournal\\UI-EJ-LOREBG-DarkheartThicket",
@@ -1034,97 +1036,179 @@ DCJournal.AddInstance({
     difficulties   = { players = 20, modes = { "Normal", "Heroic", "Mythic" } },
 })
 
-AddDCBoss(TIMBERMAW_HOLD, {
-    encID = 901001, rootID = 901100, order = 1,
-    name = "Gatewarden Mor'thak", display = 503739, entry = 4010001,
-    lore = "Mor'thak kept the hold's outer gate for longer than most of the tribe has been alive, and he keeps it still -- only now he keeps it against the living. Nothing reaches the deeper dens until he falls.",
-    overview = "The hold's corrupted gatekeeper, and a straightforward tank-and-spank opener built around heavy melee pressure.",
-    abilities = {
-        { "Mortal Strike", "A crushing blow on his current target that halves the healing they receive, landing roughly every 14 seconds.", 32736 },
-        { "Cleave", "A wide swing every 10 seconds or so that carries into anyone standing beside the tank.", 15496 },
-        { "Thunderclap", "A shockwave every 20 seconds that damages and slows everyone in melee range.", 23931 },
-    },
-    loot = { 410015, 410018, 410024, 410043 },
-})
+-- Karrsh, Rotgrowl and Kodiak, Kronn and Partath share this drop.
+local TIMBERMAW_SHARED_LOOT = { 410277, 410278, 410285, 410286, 410287, 410288, 410289, 410290 }
+
+local function TimbermawLoot(own)
+    local loot = {}
+    for _, itemID in ipairs(own) do loot[#loot + 1] = itemID end
+    for _, itemID in ipairs(TIMBERMAW_SHARED_LOOT) do loot[#loot + 1] = itemID end
+    return loot
+end
 
 AddDCBoss(TIMBERMAW_HOLD, {
-    encID = 901002, rootID = 901120, order = 2,
-    name = "The Sundered Chieftain", display = 503737, entry = 4010002,
-    lore = "What is left of the tribe's chieftain no longer answers to a name. He led the defence of the hold until the corruption finished taking him, and he fights on out of the same fury that made him worth following.",
-    overview = "A melee brawler who becomes markedly more dangerous once the fight is most of the way through.",
+    encID = 901001, rootID = 901100, order = 1,
+    name = "Karrsh the Sentinel", display = 4010003, entry = 4010001,
+    lore = "Karrsh kept the hold's gate when it still belonged to the Timbermaw, and he keeps the Brazier of Corruption beside it now. Its flame goes out when he falls.",
+    overview = "A melee guardian and the first brazier. Halfway down he calls two Withermaw Shadowkeepers, and below 30% he enrages.",
     abilities = {
-        { "War Stomp", "Slams the ground every 18 seconds, stunning everyone standing near him.", 46026 },
-        { "Whirlwind", "Spins through everything in melee range roughly every 22 seconds.", 33238 },
-        { "Enrage", "At 30% health he goes berserk for the rest of the fight, hitting far harder than before.", 8599 },
+        { "Cleave", "A wide swing every 8 to 10 seconds that carries into anyone beside the tank.", 15284 },
+        { "Mortal Strike", "A heavy blow on his target every 15 seconds that halves the healing they receive.", 16856 },
+        { "Thunderclap", "Every 20 seconds or so a shockwave damages and slows everyone close to him.", 8078 },
+        { "Call the Shadowkeepers", "At 50% health two Withermaw Shadowkeepers join the fight.", 0 },
+        { "Enrage", "At 30% health he fights harder and faster for the rest of the encounter.", 8599 },
     },
-    loot = { 410004, 410026, 410049, 410050 },
+    loot = TimbermawLoot({ 410202, 410203, 410204, 410205, 410206, 410207 }),
+})
+
+AddDCGroupBoss(TIMBERMAW_HOLD, {
+    encID = 901002, rootID = 901120, order = 2,
+    name = "Rotgrowl and Kodiak",
+    lore = "Rotgrowl tracked for the tribe, and his bear Kodiak never left his side. The Nightmare took them together, and together they guard the Brazier of Defilement.",
+    overview = "A pair: whichever dies first, the other frenzies. The encounter -- and the brazier -- only ends when both are down.",
+    members = {
+        {
+            headerID = 901121, name = "Rotgrowl", display = 4010005, entry = 4010002,
+            blurb = "The tracker. He nets anyone who strays from the group and frenzies if Kodiak dies first.",
+            abilities = {
+                { "Cleave", "Swings through everyone in front of him every 9 to 11 seconds.", 40504 },
+                { "Net", "Roots a random player in place every 16 to 20 seconds.", 12024 },
+                { "Mortal Strike", "Halves the healing his target receives, every 12 to 15 seconds.", 32736 },
+            },
+        },
+        {
+            headerID = 901130, name = "Kodiak", display = 9276, entry = 4010003,
+            blurb = "The bear. A hard melee hitter of his own, and far worse if Rotgrowl falls first.",
+            abilities = {
+                { "Maul", "A savage bite on his target every 6 to 8 seconds.", 26996 },
+                { "Infected Bite", "Leaves a festering wound on the tank that keeps ticking.", 16128 },
+                { "Trample", "Tramples everyone around him every 12 to 15 seconds.", 5568 },
+            },
+        },
+    },
+    loot = TimbermawLoot({ 410208, 410209, 410210, 410211, 410212, 410213 }),
 })
 
 AddDCBoss(TIMBERMAW_HOLD, {
     encID = 901003, rootID = 901140, order = 3,
-    name = "Den Mother Ursara", display = 23773, entry = 4010003,
-    lore = "Ursara guarded the cubs of the hold, and the nightmare did not have to work hard to turn that into something murderous. Everything that enters the den is a threat to her young, and she has stopped being able to tell the difference.",
-    overview = "A bear that will not stay on the tank -- expect her to leave melee for whoever is standing furthest back.",
+    name = "Loktanag the Vile", display = 4010001, entry = 4010005,
+    lore = "Something old and rooted grew in the lower tunnels long before the furbolgs came, and the Nightmare found it first. Loktanag does not hunt the hold so much as rot it from below.",
+    overview = "A poison fight. Every quarter of his health spills two more Corruptions of Loktanag into the room.",
     abilities = {
-        { "Maul", "A savage bite on her current target every 12 seconds.", 26996 },
-        { "Rend", "Opens a bleeding wound on the tank that keeps ticking, reapplied every 15 seconds.", 13738 },
-        { "Charge", "Roughly every 21 seconds she picks a player at range and closes on them at speed.", 22120 },
+        { "Poison Bolt Volley", "Every 14 to 16 seconds he poisons everyone within 30 yards, damaging them now and over time.", 24099 },
+        { "Entangling Roots", "Roots a random player and keeps damaging them while they are held.", 22415 },
+        { "Black Sludge", "Every 25 seconds a sludge slows the movement and attack speed of everyone near him.", 7279 },
+        { "Spilled Corruption", "At 75%, 50% and 25% health two Corruptions of Loktanag join the fight.", 0 },
     },
-    loot = { 410031, 410034, 410048, 410053 },
+    loot = { 410214, 410215, 410216, 410217, 410218, 410219, 410220, 410221 },
 })
 
 AddDCBoss(TIMBERMAW_HOLD, {
     encID = 901004, rootID = 901160, order = 4,
-    name = "Xanthir the Defiler", display = 503743, entry = 4010004,
-    lore = "Xanthir is the one who let the nightmare in. He worked the rituals that opened the deep dens to it and he has been rewarded for the work, which is why he is still recognisably himself where the rest of the hold is not.",
-    overview = "A caster fight: the damage is spread across the raid, and his crowd control is what actually kills groups.",
+    name = "Ormanos the Cracked", display = 4010004, entry = 4010004,
+    lore = "A giant of the old mountains, cracked open by draenethyst corruption. Pieces of him walk the village on their own now, and more break off every time he is wounded.",
+    overview = "The hardest single hitter in the hold, with a stacking armour debuff on the tank. At two thirds and one third health, three Twisted Rumblers break off him.",
     abilities = {
-        { "Shadow Bolt Volley", "Fires shadow bolts at everyone in range every 12 seconds.", 27383 },
-        { "Curse of Tongues", "Curses a random player every 20 seconds, slowing their casting badly until it is dispelled.", 12889 },
-        { "Fear", "Every 28 seconds he panics everyone near him, scattering the raid into whatever else is in the room.", 26070 },
+        { "Crush Armor", "Every 8 seconds a blow lowers his target's armour, stacking for as long as one tank holds him.", 33661 },
+        { "Knock Away", "Every 18 to 22 seconds he hurls his target backwards.", 10101 },
+        { "War Stomp", "Every 30 seconds or so a stomp damages and stuns everyone within 10 yards.", 31408 },
+        { "Crumble", "At 66% and 33% health three Twisted Rumblers break free of him.", 0 },
     },
-    loot = { 410009, 410012, 410037, 410044 },
+    loot = { 410201, 410222, 410223, 410224, 410225, 410226, 410227, 410228 },
 })
 
 AddDCBoss(TIMBERMAW_HOLD, {
     encID = 901005, rootID = 901180, order = 5,
-    name = "The Nightmare Given Root", display = 503770, entry = 4010005,
-    lore = "The corruption stopped needing a host somewhere in the lower dens and simply grew a body for itself out of the hold. It does not hunt so much as spread, and the room fills with it while the raid works.",
-    overview = "A stationary fight where the room, rather than the boss, does most of the damage.",
+    name = "Chieftain Partath", display = 4010008, entry = 4010011,
+    lore = "The high chieftain of the Timbermaw, and the first to drink from the Nightmare. He keeps the Brazier of Putrification in the heart of the village, with two Withermaw Illuminators at his side.",
+    overview = "A melee brawler who brings his two Illuminators into the fight with him. Below 25% he frenzies.",
     abilities = {
-        { "Entangling Roots", "Roots a random player in place every 13 seconds -- being pinned in a nightmare cloud is what makes this lethal.", 33844 },
-        { "Thorns", "Wraps itself in thorns every 30 seconds, punishing every melee swing that lands on it.", 25777 },
-        { "Nightmare Cloud", "Vents a cloud of nightmare across everyone nearby every 24 seconds.", 71939 },
+        { "Battle Shout", "On the pull he rallies himself and the Illuminators around him.", 9128 },
+        { "Mortal Strike", "Halves the healing his target receives, every 10 to 12 seconds.", 32736 },
+        { "Demoralizing Shout", "Every 30 seconds he weakens the attack power of everyone near him.", 23511 },
+        { "Whirlwind", "Spins through everyone within 8 yards every 18 to 22 seconds.", 15589 },
+        { "War Stomp", "Every 30 seconds a stomp damages and stuns everyone within 15 yards.", 24375 },
+        { "Gluttony", "At 25% health he frenzies for the rest of the fight.", 24318 },
     },
-    loot = { 410011, 410025, 410032, 410045 },
+    loot = { 410236, 410237, 410238, 410239, 410240, 410241, 410242, 410243 },
 })
 
 AddDCBoss(TIMBERMAW_HOLD, {
     encID = 901006, rootID = 901200, order = 6,
-    name = "Ursol", display = 503735, entry = 4010006,
-    lore = "Ursol the sleeping twin never woke properly, and the nightmare reached him through the dream instead. He fights from inside it, and pulls the raid in after him.",
-    overview = "The dream phases are the fight: control is thrown around constantly and anyone left in it stops contributing.",
+    name = "Archdruid Kronn", display = 4010006, entry = 4010009,
+    lore = "Kronn walked the Emerald Dream for the tribe and came back with the Nightmare in him. He keeps the Brazier of Decay, and he keeps calling shadowkeepers out of the dark to guard it.",
+    overview = "A caster who adds pressure over time. Interrupt his two Healing Touches; kill or control the Shadowkeepers he summons.",
     abilities = {
-        { "Creature of Nightmare", "Every 25 seconds he shows a player their worst fear and sends them fleeing in terror.", 25806 },
-        { "Nightmare Cloud", "A cloud of nightmare over everyone near him roughly every 18 seconds.", 71939 },
-        { "Immersed in the Emerald Nightmare", "Pulls a random player under into the dream every 32 seconds. The victim can break out on their own -- they have to act rather than wait for a dispel.", 57413 },
+        { "Moonfire", "Burns a random player every 6 to 8 seconds, with lingering damage.", 20690 },
+        { "Entangling Roots", "Roots a random player and damages them while they are held.", 22415 },
+        { "Call the Shadowkeepers", "Every 40 seconds two Withermaw Shadowkeepers join the fight.", 0 },
+        { "Nightmare Sleep", "Every 25 to 30 seconds he sends a player other than the tank wandering in confusion.", 21060 },
+        { "Healing Touch", "At 50% and 25% health he begins a long self-heal. Interrupt it.", 25297 },
     },
-    loot = { 410023, 410029, 410030, 410051 },
+    loot = TimbermawLoot({ 410229, 410230, 410231, 410232, 410233, 410234, 410235 }),
+})
+
+AddDCGroupBoss(TIMBERMAW_HOLD, {
+    encID = 901007, rootID = 901220, order = 7,
+    name = "Selenaxx Foulheart",
+    lore = "The satyrs of the Foulheart carried the Nightmare into the hold, and Selenaxx leads them. She draws her power from a Corrupted Draenethyst Geode -- and while it stands, very little reaches her.",
+    overview = "Break the Geode first: while it lives Selenaxx takes a quarter damage and the crystal pulses shadow through the whole room. At 50% she summons two Foulheart Warlocks.",
+    members = {
+        {
+            headerID = 901221, name = "Selenaxx Foulheart", display = 4010007, entry = 4010006,
+            blurb = "The satyr. A caster fight with a fear that punishes anyone too close to her.",
+            abilities = {
+                { "Shadow Bolt", "Hits a random player hard every 6 to 8 seconds.", 34344 },
+                { "Shadow Bolt Volley", "Every 16 to 18 seconds shadow bolts strike everyone within 30 yards.", 27383 },
+                { "Curse of Tongues", "Slows a random player's casting badly until dispelled.", 13338 },
+                { "Psychic Scream", "Every 30 seconds everyone near her flees in terror.", 13704 },
+                { "Foulheart Warlocks", "At 50% health two Foulheart Warlocks arrive, each with an imp.", 0 },
+            },
+        },
+        {
+            headerID = 901230, name = "Corrupted Draenethyst Geode", display = 4010002, entry = 4010008,
+            blurb = "The crystal she feeds on. It cannot move or strike, but while it stands she is all but untouchable.",
+            abilities = {
+                { "Corrupted Pulse", "Every 8 seconds the Geode pulses shadow damage through the whole room.", 21341 },
+                { "Draenethyst Shield", "Selenaxx takes only a quarter of all damage while the Geode lives.", 0 },
+            },
+        },
+    },
+    loot = { 410244, 410245, 410246, 410247, 410248, 410249, 410250, 410251 },
 })
 
 AddDCBoss(TIMBERMAW_HOLD, {
-    encID = 901007, rootID = 901220, order = 7,
-    name = "Ursoc", display = 21631, entry = 4010007,
-    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Ursoc",
-    lore = "Ursoc the raging twin woke, and what woke with him was not only a bear god. Drive him low enough and the thing that has been feeding on the hold answers his call directly.",
-    overview = "A hard-hitting melee fight with a damage check at the end -- the last quarter of his health is the whole encounter.",
+    encID = 901008, rootID = 901240, order = 8,
+    name = "Trioch the Devourer", display = 4010009, entry = 4010010,
+    lore = "A three-headed hydra that came up out of the deep water when the hold fell, and has been eating its way through the corruption wing ever since.",
+    overview = "Light melee, heavy breath: the three heads breathe in turn on whoever is in front of him, so position matters more than anything. Below 30% he frenzies.",
     abilities = {
-        { "Maul", "A heavy bite on his current target every 9 seconds -- the fastest tank hit in the instance.", 26996 },
-        { "Charge", "Every 18 seconds he picks a player at range and slams into them.", 22120 },
-        { "Enrage", "He works himself into a fury every 40 seconds, raising his damage each time.", 8599 },
-        { "Blood of the Old God", "At 25% health he calls the blood of the Old God to his aid, and the last stretch of the fight becomes markedly worse.", 52560 },
+        { "Flame Breath", "The first head scorches everything in front of him.", 16390 },
+        { "Frost Breath", "The second head freezes everything in front of him, slowing it.", 16340 },
+        { "Acid Breath", "The third head sprays acid that keeps burning afterwards.", 24839 },
+        { "Trample", "Tramples everyone around him every 14 to 16 seconds.", 5568 },
+        { "Frenzy", "At 30% health he attacks faster and harder.", 28131 },
     },
-    loot = { 410000, 410001, 410008, 410014, 410035, 410046 },
+    loot = { 410200, 410252, 410253, 410254, 410255, 410256, 410257, 410258 },
+})
+
+AddDCBoss(TIMBERMAW_HOLD, {
+    encID = 901009, rootID = 901260, order = 9,
+    name = "Ursol", display = 4010010, entry = 4010007,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Ursoc",
+    lore = "The bear demigod of the furbolgs, dreaming in the room above the hold. The Nightmare reached him through that dream, and every furbolg of the tribe dreams it with him. He wakes only when the last of the four braziers goes out.",
+    overview = "The final boss, behind the Barrier of Ursol. Heavy tank damage, a raid-wide shockwave, his sons at every quarter, a frenzy at 20% and a berserk at ten minutes.",
+    abilities = {
+        { "Maul", "A savage bite on his target every 6 to 8 seconds.", 26996 },
+        { "Cleave", "Swings through everyone in front of him every 9 seconds.", 40504 },
+        { "Crush Armor", "Every 10 seconds lowers his target's armour, stacking.", 33661 },
+        { "Nightmare Shockwave", "Every 22 to 26 seconds shadow strikes the entire raid.", 21341 },
+        { "Intimidating Roar", "Every 35 seconds everyone close to him flees in fear.", 16508 },
+        { "Sons of Ursol", "At 75%, 50% and 25% health three Sons of Ursol join the fight.", 0 },
+        { "Frenzy", "At 20% health he frenzies for the rest of the fight.", 24318 },
+        { "Berserk", "After ten minutes he goes berserk.", 26662 },
+    },
+    loot = { 410259, 410260, 410261, 410262, 410263, 410264, 410265, 410266, 410267, 410268, 410269, 410270 },
 })
 
 -- ---------------------------------------------------------------------

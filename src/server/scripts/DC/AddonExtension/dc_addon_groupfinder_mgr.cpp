@@ -19,7 +19,12 @@
 #include "Group.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/EventBus.h"
 #include "GroupMgr.h"
+#include "CharacterCache.h"
+#include "ScriptMgr.h"
+#include "SocialMgr.h"
+#include "WorldSession.h"
 #include <algorithm>
 
 namespace DCAddon
@@ -102,6 +107,150 @@ void ApplyAcceptedRole(GroupFinderListing& listing, uint8 role)
         default:
             break;
     }
+}
+
+// The need counts come from the client (0-255 each). Cap their sum at what
+// the activity can hold -- a party, or a raid for raid listings -- with the
+// leader's own slot included, as the client counts it (1/1/3, 2/5/18).
+void ClampRoleNeeds(GroupFinderListing& listing)
+{
+    uint32 budget = listing.listingType == GF_LISTING_RAID ? MAXRAIDSIZE : MAXGROUPSIZE;
+    for (uint8* need : { &listing.needTank, &listing.needHealer, &listing.needDps })
+    {
+        *need = static_cast<uint8>(std::min<uint32>(*need, budget));
+        budget -= *need;
+    }
+}
+
+// The Group Finder puts an applicant into the leader's party with
+// Group::AddMember directly, and AddMember itself only refuses a full *raid*.
+// Everything else WorldSession::HandleGroupInviteOpcode / HandleGroupAcceptOpcode
+// check was skipped, which made a listing a way around it: parties past five,
+// cross-faction parties, outsiders pulled into a battleground raid, a player
+// in two groups at once, Iron Man's no-grouping rule. Same checks, same stock
+// party results. On success `outGroup` is the party to join, or nullptr when
+// the leader has none yet (JoinLeaderParty then creates it).
+PartyResult CheckGroupFinderJoin(Player* leader, Player* applicant, bool crossFaction, Group*& outGroup)
+{
+    outGroup = nullptr;
+    if (!leader || !applicant || leader == applicant || !leader->GetSession() || !applicant->GetSession())
+        return ERR_BAD_PLAYER_NAME_S;
+
+    if (leader->IsSpectator() || applicant->IsSpectator())
+        return ERR_INVITE_RESTRICTED;
+
+    if (!sWorld->getBoolConfig(CONFIG_ALLOW_GM_GROUP) && !leader->IsGameMaster() && applicant->IsGameMaster())
+        return ERR_BAD_PLAYER_NAME_S;
+
+    // DC.GroupFinder.CrossFaction opens the finder itself; the core's
+    // AllowTwoSide.Interaction.Group still decides whether mixed parties exist.
+    bool const twoSide = crossFaction && sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GROUP);
+    if (!leader->IsGameMaster() && !twoSide && leader->GetTeamId() != applicant->GetTeamId())
+        return ERR_PLAYER_WRONG_FACTION;
+
+    if (leader->GetInstanceId() != 0 && applicant->GetInstanceId() != 0
+        && leader->GetInstanceId() != applicant->GetInstanceId() && leader->GetMapId() == applicant->GetMapId())
+        return ERR_TARGET_NOT_IN_INSTANCE_S;
+
+    if (!applicant->GetSocial()->HasFriend(leader->GetGUID())
+        && leader->GetLevel() < sWorld->getIntConfig(CONFIG_PARTY_LEVEL_REQ))
+        return ERR_INVITE_RESTRICTED;
+
+    // A battleground raid is not the leader's own party: the one waiting
+    // outside the battleground is. A battlefield raid takes nobody this way.
+    Group* group = leader->GetGroup();
+    if (group && group->isBGGroup())
+        group = leader->GetOriginalGroup();
+    if (group && group->isBFGroup())
+        return ERR_NOT_LEADER;
+
+    // Stock reuses a party the leader is still inviting people to.
+    if (!group && leader->GetGroupInvite() && leader->GetGroupInvite()->GetLeaderGUID() == leader->GetGUID())
+        group = leader->GetGroupInvite();
+
+    Group* applicantGroup = applicant->GetGroup();
+    if (applicantGroup && applicantGroup->isBGGroup())
+        applicantGroup = applicant->GetOriginalGroup();
+    if (applicantGroup || applicant->GetGroupInvite())
+        return ERR_ALREADY_IN_GROUP_S;
+
+    if (group)
+    {
+        if (!group->IsLeader(leader->GetGUID()) && !group->IsAssistant(leader->GetGUID()))
+            return ERR_NOT_LEADER;
+        if (group->IsFull())
+            return ERR_GROUP_FULL;
+    }
+
+    // Trial accounts may not invite, and may only join a party in which nobody
+    // is above the trial level cap.
+    if (sWorld->getBoolConfig(CONFIG_TRIAL_RESTRICTION_PARTY))
+    {
+        if (leader->GetSession()->IsTrialAccount())
+            return ERR_INVITE_RESTRICTED;
+
+        uint32 const trialLevelCap = sWorld->getIntConfig(CONFIG_TRIAL_LEVEL_CAP);
+        if (applicant->GetSession()->IsTrialAccount() && trialLevelCap)
+        {
+            if (leader->GetLevel() > trialLevelCap)
+                return ERR_INVITE_RESTRICTED;
+
+            if (group)
+            {
+                for (Group::MemberSlot const& slot : group->GetMemberSlots())
+                {
+                    Player* member = ObjectAccessor::FindConnectedPlayer(slot.guid);
+                    uint8 level = member ? member->GetLevel() : sCharacterCache->GetCharacterLevelByGuid(slot.guid);
+                    if (level > trialLevelCap)
+                        return ERR_INVITE_RESTRICTED;
+                }
+            }
+        }
+    }
+
+    std::string applicantName = applicant->GetName();
+    if (!sScriptMgr->OnPlayerCanGroupInvite(leader, applicantName))
+        return ERR_INVITE_RESTRICTED;
+
+    outGroup = group;
+    return ERR_PARTY_RESULT_OK;
+}
+
+// Second half of the stock accept path, for a join CheckGroupFinderJoin
+// cleared. Returns the party the applicant is now in, or nullptr.
+Group* JoinLeaderParty(Player* leader, Player* applicant, Group* group)
+{
+    bool const fresh = !group;
+    if (fresh)
+        group = new Group();
+
+    if (!sScriptMgr->OnPlayerCanGroupAccept(applicant, group))
+    {
+        if (fresh)
+            delete group;
+        return nullptr;
+    }
+
+    if (!group->IsCreated())
+    {
+        if (!fresh)
+            group->RemoveInvite(leader);
+
+        if (!group->Create(leader))
+        {
+            if (fresh)
+                delete group;
+            return nullptr;
+        }
+
+        sGroupMgr->AddGroup(group);
+    }
+
+    if (!group->AddMember(applicant))
+        return nullptr;
+
+    group->BroadcastGroupUpdate();
+    return group;
 }
 }
 
@@ -285,6 +434,21 @@ void GroupFinderMgr::LoadFromDatabase()
     }
 
     LOG_INFO("dc.groupfinder", "Loaded {} active event signups", count);
+
+    // current_signups used to be kept with +1/-1 updates that drifted (a
+    // failed insert still counted), so an event could read full with free
+    // slots. Trust the signup rows just loaded instead.
+    for (auto& [eventId, event] : _events)
+    {
+        auto signupsIt = _eventSignups.find(eventId);
+        size_t const active = signupsIt != _eventSignups.end() ? signupsIt->second.size() : 0;
+        event.currentSignups = static_cast<uint8>(std::min<size_t>(active, 255));
+
+        if (event.status == GF_EVENT_FULL && event.currentSignups < event.maxSignups)
+            event.status = GF_EVENT_OPEN;
+        else if (event.status == GF_EVENT_OPEN && event.currentSignups >= event.maxSignups)
+            event.status = GF_EVENT_FULL;
+    }
 }
 
 void GroupFinderMgr::Initialize()
@@ -384,6 +548,13 @@ void GroupFinderMgr::CleanupExpiredApplications()
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
+    // Apply cooldowns long past are of no use
+    uint32 const nowMs = getMSTime();
+    std::erase_if(_lastApplyMs, [nowMs](auto const& entry)
+    {
+        return getMSTimeDiff(entry.second, nowMs) >= GF_APPLY_COOLDOWN_MS;
+    });
+
     time_t cutoff = GameTime::GetGameTime().count() - (_applicationExpireMinutes * 60);
 
     for (auto appsIt = _applications.begin(); appsIt != _applications.end();)
@@ -442,9 +613,19 @@ void GroupFinderMgr::CleanupExpiredEvents()
 
     time_t now = GameTime::GetGameTime().count();
     std::vector<uint32> toRemove;
+    std::vector<uint32> cancelled;
 
     for (auto& [id, event] : _events)
     {
+        // Cancelled events are already closed in the DB (CancelCachedEvent)
+        // and no longer count against the per-player cap, so create/cancel
+        // loops would otherwise pile them up here until the next restart.
+        if (event.status == GF_EVENT_CANCELLED)
+        {
+            cancelled.push_back(id);
+            continue;
+        }
+
         // Events that have passed their scheduled time by 1 hour are marked completed
         if (event.scheduledTime + 3600 < now && event.status < GF_EVENT_STARTED)
         {
@@ -456,6 +637,13 @@ void GroupFinderMgr::CleanupExpiredEvents()
     {
         CharacterDatabase.Execute("UPDATE dc_group_finder_scheduled_events SET status = 5 WHERE id = {}", id);
         _events.erase(id);
+        _eventSignups.erase(id);
+    }
+
+    for (uint32 id : cancelled)
+    {
+        _events.erase(id);
+        _eventSignups.erase(id);
     }
 }
 
@@ -478,19 +666,24 @@ uint32 GroupFinderMgr::CreateListing(Player* player, GroupFinderListing const& l
     if (Group* group = player->GetGroup())
         groupGuid = group->GetGUID().GetCounter();
 
-    std::string safeNote = listing.note;
-    std::string safeDungeonName = listing.dungeonName;
+    GroupFinderListing storedListing = listing;
+    TruncateGroupFinderText(storedListing.dungeonName, GF_MAX_NAME_CHARS);
+    TruncateGroupFinderText(storedListing.note, GF_MAX_NOTE_CHARS);
+    ClampRoleNeeds(storedListing);
+
+    std::string safeNote = storedListing.note;
+    std::string safeDungeonName = storedListing.dungeonName;
     CharacterDatabase.EscapeString(safeNote);
     CharacterDatabase.EscapeString(safeDungeonName);
 
-    GroupFinderListing storedListing = listing;
     uint8 leaderRole = SelectAcceptedRole(storedListing, GuessLeaderRoleMask(player));
     if (leaderRole == GF_ROLE_NONE)
         leaderRole = SelectAcceptedRole(storedListing, GF_ROLE_TANK | GF_ROLE_HEALER | GF_ROLE_DPS);
 
     ApplyAcceptedRole(storedListing, leaderRole);
 
-    CharacterDatabase.Execute(
+    // Synchronous: Execute() only queues the insert, and the id lookup below could run before it
+    CharacterDatabase.DirectExecute(
         "INSERT INTO dc_group_finder_listings "
         "(leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, "
         "keystone_level, min_ilvl, current_tank, current_healer, current_dps, "
@@ -661,6 +854,22 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
                 return false;
         }
 
+        // At most DC.GroupFinder.MaxApplicationsPerPlayer pending applications, and one apply every
+        // GF_APPLY_COOLDOWN_MS: each apply writes and reads the database synchronously
+        uint32 pending = 0;
+        for (auto const& [otherListingId, otherApps] : _applications)
+            for (auto const& app : otherApps)
+                if (app.playerGuid == guid && app.status == GF_APP_PENDING)
+                    ++pending;
+        if (_maxApplicationsPerPlayer && pending >= _maxApplicationsPerPlayer)
+            return false;
+
+        uint32 const nowMs = getMSTime();
+        auto lastApply = _lastApplyMs.find(guid);
+        if (lastApply != _lastApplyMs.end() && getMSTimeDiff(lastApply->second, nowMs) < GF_APPLY_COOLDOWN_MS)
+            return false;
+        _lastApplyMs[guid] = nowMs;
+
         // Check item level requirement
         uint16 playerIlvl = GetPlayerItemLevel(player);
         if (it->second.minIlvl > 0 && playerIlvl < it->second.minIlvl)
@@ -676,13 +885,16 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
                 return false;
         }
 
-        std::string safeNote = note;
+        std::string storedNote = note;
+        TruncateGroupFinderText(storedNote, GF_MAX_NOTE_CHARS);
+        std::string safeNote = storedNote;
         CharacterDatabase.EscapeString(safeNote);
         std::string safePlayerName = player->GetName();
         CharacterDatabase.EscapeString(safePlayerName);
 
-        // Insert application
-        CharacterDatabase.Execute(
+        // Insert application. Synchronous: Execute() only queues it, and the id lookup below could
+        // run first, leaving the application in the table but not in memory.
+        CharacterDatabase.DirectExecute(
             "INSERT INTO dc_group_finder_applications "
             "(listing_id, player_guid, player_name, role, player_class, player_level, player_ilvl, note, status) "
             "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
@@ -712,7 +924,7 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
             app.playerLevel = player->GetLevel();
             app.playerIlvl = playerIlvl;
             app.playerRating = playerRating;
-            app.note = note;
+            app.note = storedNote;
             app.status = GF_APP_PENDING;
             app.createdAt = GameTime::GetGameTime().count();
 
@@ -730,7 +942,7 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
     return applied;
 }
 
-bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid)
+bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid, bool quiet)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
@@ -748,6 +960,26 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
         {
             uint8 acceptedRole = SelectAcceptedRole(listingIt->second, app.role);
             if (acceptedRole == GF_ROLE_NONE)
+                return false;
+
+            // Join the party first: the application only counts as accepted
+            // once the applicant is really in it, after the same checks a
+            // stock invite + accept makes (see CheckGroupFinderJoin).
+            Player* applicant = FindConnectedPlayerByGuidLow(applicantGuid);
+            if (!applicant)
+                return false;
+
+            Group* group = nullptr;
+            PartyResult const joinResult = CheckGroupFinderJoin(leader, applicant, _crossFaction, group);
+            if (joinResult != ERR_PARTY_RESULT_OK)
+            {
+                if (!quiet)
+                    leader->GetSession()->SendPartyResult(PARTY_OP_INVITE, applicant->GetName(), joinResult);
+                return false;
+            }
+
+            group = JoinLeaderParty(leader, applicant, group);
+            if (!group)
                 return false;
 
             app.status = GF_APP_ACCEPTED;
@@ -770,40 +1002,16 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
             // Notify applicant
             NotifyApplicationStatus(applicantGuid, listingId, GF_APP_ACCEPTED, "Your application was accepted!");
 
-            // Invite to group
-            if (Player* applicant = FindConnectedPlayerByGuidLow(applicantGuid))
-            {
-                if (Group* group = leader->GetGroup())
-                {
-                    group->AddMember(applicant);
-                }
-                else
-                {
-                    Group* newGroup = new Group();
-                    if (newGroup->Create(leader))
-                    {
-                        sGroupMgr->AddGroup(newGroup);
-                        newGroup->AddMember(applicant);
-                    }
-                    else
-                    {
-                        delete newGroup;
-                    }
-                }
-            }
-
             // Persist the final group GUID so completion rewards can verify
-            // this run was created through Group Finder.
-            if (Group* group = leader->GetGroup())
+            // this run was created through Group Finder. (The party joined,
+            // not leader->GetGroup(): inside a battleground that is the BG raid.)
+            uint32 groupGuid = group->GetGUID().GetCounter();
+            if (groupGuid != listingIt->second.groupGuid)
             {
-                uint32 groupGuid = group->GetGUID().GetCounter();
-                if (groupGuid != listingIt->second.groupGuid)
-                {
-                    listingIt->second.groupGuid = groupGuid;
-                    CharacterDatabase.Execute(
-                        "UPDATE dc_group_finder_listings SET group_guid = {} WHERE id = {}",
-                        groupGuid, listingId);
-                }
+                listingIt->second.groupGuid = groupGuid;
+                CharacterDatabase.Execute(
+                    "UPDATE dc_group_finder_listings SET group_guid = {} WHERE id = {}",
+                    groupGuid, listingId);
             }
 
             // Check if group is now complete
@@ -811,6 +1019,12 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
             {
                 NotifyGroupReady(listingId);
             }
+
+            // _mutex is held and is not recursive; nothing on the bus calls back in here.
+            DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(leader,
+                DarkChaos::CrossSystem::FeatureKind::GroupFinder, listingId);
+            DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(applicant,
+                DarkChaos::CrossSystem::FeatureKind::GroupFinder, listingId);
 
             return true;
         }
@@ -1054,37 +1268,58 @@ void GroupFinderMgr::CacheEvent(ScheduledEvent const& event)
     _events[event.id] = event;
 }
 
-void GroupFinderMgr::CacheSignup(EventSignup const& signup)
+bool GroupFinderMgr::CacheSignup(EventSignup const& signup)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
-    _eventSignups[signup.eventId].push_back(signup);
-
     auto it = _events.find(signup.eventId);
+    if (it != _events.end()
+        && (it->second.status != GF_EVENT_OPEN || it->second.currentSignups >= it->second.maxSignups))
+        return false;
+
+    std::vector<EventSignup>& signups = _eventSignups[signup.eventId];
+    for (EventSignup const& existing : signups)
+        if (existing.playerGuid == signup.playerGuid
+            && (existing.status == GF_APP_PENDING || existing.status == GF_APP_ACCEPTED))
+            return false;
+
+    signups.push_back(signup);
+
     if (it != _events.end())
     {
         ++it->second.currentSignups;
         if (it->second.currentSignups >= it->second.maxSignups)
             it->second.status = GF_EVENT_FULL;
     }
+
+    return true;
 }
 
 void GroupFinderMgr::RemoveCachedSignup(uint32 eventId, uint32 playerGuid)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
+    // Only a signup that was really active frees a slot (a repeated cancel
+    // used to decrement the count every time), and it is dropped rather than
+    // kept as a cancelled entry so signup/cancel loops cannot grow the cache.
+    bool cancelled = false;
     auto signupsIt = _eventSignups.find(eventId);
     if (signupsIt != _eventSignups.end())
     {
-        for (EventSignup& signup : signupsIt->second)
+        std::vector<EventSignup>& signups = signupsIt->second;
+        for (auto itr = signups.begin(); itr != signups.end(); ++itr)
         {
-            if (signup.playerGuid == playerGuid && signup.status == GF_APP_PENDING)
+            if (itr->playerGuid == playerGuid && itr->status == GF_APP_PENDING)
             {
-                signup.status = GF_APP_CANCELLED;
+                signups.erase(itr);
+                cancelled = true;
                 break;
             }
         }
     }
+
+    if (!cancelled)
+        return;
 
     auto eventIt = _events.find(eventId);
     if (eventIt != _events.end())
@@ -1544,7 +1779,8 @@ void GroupFinderMgr::TryAutoMatch(uint32 listingId)
             return;
 
         leaderGuid = listingIt->second.leaderGuid;
-        if (!FindConnectedPlayerByGuidLow(leaderGuid))
+        Player* leader = FindConnectedPlayerByGuidLow(leaderGuid);
+        if (!leader)
             return;
 
         auto appsIt = _applications.find(listingId);
@@ -1557,7 +1793,15 @@ void GroupFinderMgr::TryAutoMatch(uint32 listingId)
             if (app.status != GF_APP_PENDING)
                 continue;
 
-            if (!FindConnectedPlayerByGuidLow(app.playerGuid))
+            Player* applicant = FindConnectedPlayerByGuidLow(app.playerGuid);
+            if (!applicant)
+                continue;
+
+            // Leave anyone the party cannot take right now pending (the leader
+            // can still accept by hand later) instead of letting them use up
+            // a projected role slot. AcceptApplication checks again for real.
+            Group* target = nullptr;
+            if (CheckGroupFinderJoin(leader, applicant, _crossFaction, target) != ERR_PARTY_RESULT_OK)
                 continue;
 
             uint8 acceptedRole = SelectAcceptedRole(projectedListing, app.role);
@@ -1578,7 +1822,7 @@ void GroupFinderMgr::TryAutoMatch(uint32 listingId)
         if (!leader)
             break;
 
-        if (!AcceptApplication(leader, listingId, applicantGuid))
+        if (!AcceptApplication(leader, listingId, applicantGuid, true))
             continue;
 
         auto listing = GetListing(listingId);

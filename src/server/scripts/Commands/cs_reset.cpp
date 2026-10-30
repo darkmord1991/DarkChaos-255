@@ -81,7 +81,7 @@ public:
         return true;
     }
 
-    static bool HandleResetHonorCommand(ChatHandler*, Optional<PlayerIdentifier> target)
+    static bool HandleResetHonorCommand(ChatHandler* handler, Optional<PlayerIdentifier> target)
     {
         if (!target)
         {
@@ -89,6 +89,12 @@ public:
         }
 
         Player* playerTarget = target->GetConnectedPlayer();
+
+        if (!playerTarget)
+        {
+            handler->SendErrorMessage(LANG_PLAYER_NOT_FOUND);
+            return false;
+        }
 
         playerTarget->SetHonorPoints(0);
         playerTarget->SetUInt32Value(PLAYER_FIELD_KILLS, 0);
@@ -132,7 +138,7 @@ public:
         return true;
     }
 
-    static bool HandleResetLevelCommand(ChatHandler*, Optional<PlayerIdentifier> target)
+    static bool HandleResetLevelCommand(ChatHandler* handler, Optional<PlayerIdentifier> target)
     {
         if (!target)
         {
@@ -140,6 +146,12 @@ public:
         }
 
         Player* playerTarget = target->GetConnectedPlayer();
+
+        if (!playerTarget)
+        {
+            handler->SendErrorMessage(LANG_PLAYER_NOT_FOUND);
+            return false;
+        }
 
         if (!HandleResetStatsOrLevelHelper(playerTarget))
             return false;
@@ -185,7 +197,7 @@ public:
 
         Player* playerTarget = target->GetConnectedPlayer();
 
-        if (target)
+        if (playerTarget)
         {
             playerTarget->resetSpells(/* bool myClassOnly */);
 
@@ -197,7 +209,7 @@ public:
         {
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ADD_AT_LOGIN_FLAG);
             stmt->SetData(0, uint16(AT_LOGIN_RESET_SPELLS));
-            stmt->SetData(1, playerTarget->GetGUID().GetCounter());
+            stmt->SetData(1, target->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
 
             handler->PSendSysMessage(LANG_RESET_SPELLS_OFFLINE, target->GetName());
@@ -206,7 +218,7 @@ public:
         return true;
     }
 
-    static bool HandleResetStatsCommand(ChatHandler*, Optional<PlayerIdentifier> target)
+    static bool HandleResetStatsCommand(ChatHandler* handler, Optional<PlayerIdentifier> target)
     {
         if (!target)
         {
@@ -214,6 +226,12 @@ public:
         }
 
         Player* playerTarget = target->GetConnectedPlayer();
+
+        if (!playerTarget)
+        {
+            handler->SendErrorMessage(LANG_PLAYER_NOT_FOUND);
+            return false;
+        }
 
         if (!HandleResetStatsOrLevelHelper(playerTarget))
             return false;

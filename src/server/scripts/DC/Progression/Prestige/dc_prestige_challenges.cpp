@@ -25,6 +25,10 @@
 #include "dc_prestige_api.h"
 #include "DC/AddonExtension/dc_addon_death_markers.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/CrossSystem/EventBus.h"
+#include <algorithm>
+#include <mutex>
+#include <optional>
 #include <sstream>
 
 namespace
@@ -74,6 +78,11 @@ namespace
     // one row per character and type, so the stat bonus is earned once per type.
     std::unordered_map<uint32, uint8> g_ChallengeRewardedTypes;
 
+    // Guards the three caches above: deaths, level-ups and the prestige aura read and change them on
+    // map threads, logins and logouts on the world thread. Held for the map access only, never across
+    // game code, since recalculating the aura reads the bonus back.
+    std::mutex g_ChallengeCacheMutex;
+
     class PrestigeChallengeSystem
     {
     public:
@@ -110,7 +119,10 @@ namespace
 
             ObjectGuid const playerGuid = player->GetGUID();
             uint32 const guid = playerGuid.GetCounter();
-            g_ActiveChallenges[guid].clear();
+            {
+                std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                g_ActiveChallenges[guid].clear();
+            }
 
             // Load asynchronously so login never blocks the world thread; the
             // continuation runs on the world thread and announces the count.
@@ -127,8 +139,7 @@ namespace
                 if (!player || !player->GetSession())
                     return;
 
-                auto& challenges = g_ActiveChallenges[guid];
-                challenges.clear();
+                std::vector<ChallengeProgress> challenges;
 
                 do
                 {
@@ -146,6 +157,11 @@ namespace
 
                     challenges.push_back(progress);
                 } while (result->NextRow());
+
+                {
+                    std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                    g_ActiveChallenges[guid] = challenges;
+                }
 
                 LOG_INFO("scripts.dc", "Prestige Challenges: Loaded {} active challenge(s) for player {}",
                     challenges.size(), player->GetName());
@@ -191,8 +207,11 @@ namespace
                     } while (result->NextRow());
                 }
 
-                g_ChallengeStatBonusCache[guid] = totalBonus;
-                g_ChallengeRewardedTypes[guid] = rewardedTypes;
+                {
+                    std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                    g_ChallengeStatBonusCache[guid] = totalBonus;
+                    g_ChallengeRewardedTypes[guid] = rewardedTypes;
+                }
 
                 // The prestige aura can be on the player already, worked out without this bonus:
                 // both loads run at login and either can finish first.
@@ -206,6 +225,7 @@ namespace
                 return false;
 
             uint32 guid = player->GetGUID().GetCounter();
+            std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
             auto it = g_ActiveChallenges.find(guid);
             if (it == g_ActiveChallenges.end())
                 return false;
@@ -268,7 +288,10 @@ namespace
             progress.deathCount = 0;
             progress.groupCount = 0;
 
-            g_ActiveChallenges[guid].push_back(progress);
+            {
+                std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                g_ActiveChallenges[guid].push_back(progress);
+            }
 
             LOG_INFO("scripts.dc", "Prestige Challenges: Player {} started challenge {} for prestige {}",
                 player->GetName(), static_cast<uint32>(challengeType), prestigeLevel);
@@ -291,16 +314,7 @@ namespace
             );
 
             // Remove from cache
-            auto it = g_ActiveChallenges.find(guid);
-            if (it != g_ActiveChallenges.end())
-            {
-                auto& challenges = it->second;
-                challenges.erase(
-                    std::remove_if(challenges.begin(), challenges.end(),
-                        [challengeType](ChallengeProgress const& c) { return c.challengeType == challengeType; }),
-                    challenges.end()
-                );
-            }
+            RemoveActiveChallenge(guid, challengeType);
 
             // Notify player
             std::string challengeName = GetChallengeName(challengeType);
@@ -328,16 +342,7 @@ namespace
             );
 
             // Remove from active cache
-            auto it = g_ActiveChallenges.find(guid);
-            if (it != g_ActiveChallenges.end())
-            {
-                auto& challenges = it->second;
-                challenges.erase(
-                    std::remove_if(challenges.begin(), challenges.end(),
-                        [challengeType](ChallengeProgress const& c) { return c.challengeType == challengeType; }),
-                    challenges.end()
-                );
-            }
+            RemoveActiveChallenge(guid, challengeType);
 
             // Grant rewards
             GrantChallengeRewards(player, challengeType);
@@ -350,6 +355,9 @@ namespace
 
             LOG_INFO("scripts.dc", "Prestige Challenges: Player {} completed challenge {}",
                 player->GetName(), static_cast<uint32>(challengeType));
+
+            DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
+                DarkChaos::CrossSystem::FeatureKind::PrestigeChallenge, static_cast<uint32>(challengeType));
         }
 
         void OnDeath(Player* player, Unit* killer)
@@ -392,29 +400,38 @@ namespace
                 return;
 
             uint32 guid = player->GetGUID().GetCounter();
-            auto it = g_ActiveChallenges.find(guid);
-            if (it == g_ActiveChallenges.end())
+            std::optional<uint32> startPlayTime;
+            {
+                std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                auto it = g_ActiveChallenges.find(guid);
+                if (it == g_ActiveChallenges.end())
+                    return;
+
+                for (auto const& challenge : it->second)
+                {
+                    if (challenge.challengeType == CHALLENGE_SPEED && challenge.active)
+                    {
+                        startPlayTime = challenge.startPlayTime;
+                        break;
+                    }
+                }
+            }
+
+            if (!startPlayTime)
                 return;
 
-            for (auto const& challenge : it->second)
-            {
-                if (challenge.challengeType == CHALLENGE_SPEED && challenge.active)
-                {
-                    uint32 totalPlayed = player->GetTotalPlayedTime();
-                    uint32 playedTime = (totalPlayed >= challenge.startPlayTime) ? (totalPlayed - challenge.startPlayTime) : 0;
+            uint32 totalPlayed = player->GetTotalPlayedTime();
+            uint32 playedTime = (totalPlayed >= *startPlayTime) ? (totalPlayed - *startPlayTime) : 0;
 
-                    if (playedTime <= speedTimeLimit)
-                    {
-                        CompleteChallenge(player, CHALLENGE_SPEED);
-                    }
-                    else
-                    {
-                        FailChallenge(player, CHALLENGE_SPEED,
-                            Acore::StringFormat("Took too long ({}h > {}h)",
-                                playedTime / 3600, speedTimeLimit / 3600));
-                    }
-                    break;
-                }
+            if (playedTime <= speedTimeLimit)
+            {
+                CompleteChallenge(player, CHALLENGE_SPEED);
+            }
+            else
+            {
+                FailChallenge(player, CHALLENGE_SPEED,
+                    Acore::StringFormat("Took too long ({}h > {}h)",
+                        playedTime / 3600, speedTimeLimit / 3600));
             }
         }
 
@@ -428,21 +445,25 @@ namespace
                 return;
 
             uint32 guid = player->GetGUID().GetCounter();
-            auto it = g_ActiveChallenges.find(guid);
-            if (it == g_ActiveChallenges.end())
-                return;
 
             // Check Iron and Solo challenges (they complete at max level if still active)
             std::vector<PrestigeChallenge> toComplete;
 
-            for (auto const& challenge : it->second)
             {
-                if (!challenge.active)
-                    continue;
+                std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                auto it = g_ActiveChallenges.find(guid);
+                if (it == g_ActiveChallenges.end())
+                    return;
 
-                if (challenge.challengeType == CHALLENGE_IRON || challenge.challengeType == CHALLENGE_SOLO)
+                for (auto const& challenge : it->second)
                 {
-                    toComplete.push_back(static_cast<PrestigeChallenge>(challenge.challengeType));
+                    if (!challenge.active)
+                        continue;
+
+                    if (challenge.challengeType == CHALLENGE_IRON || challenge.challengeType == CHALLENGE_SOLO)
+                    {
+                        toComplete.push_back(static_cast<PrestigeChallenge>(challenge.challengeType));
+                    }
                 }
             }
 
@@ -509,25 +530,34 @@ namespace
             // character and type, so the bonus is earned once per type; a later completion of the
             // same type only grants the title again.
             uint32 const guid = player->GetGUID().GetCounter();
-            uint8& rewardedTypes = g_ChallengeRewardedTypes[guid];
             uint8 const typeBit = uint8(1 << challengeType);
-            if (rewardedTypes & typeBit)
+            bool alreadyRewarded = false;
+            {
+                std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+                uint8& rewardedTypes = g_ChallengeRewardedTypes[guid];
+                alreadyRewarded = rewardedTypes & typeBit;
+                rewardedTypes |= typeBit;
+
+                // Keep the cached total in sync with the reward row written below.
+                if (!alreadyRewarded)
+                    g_ChallengeStatBonusCache[guid] += statBonus;
+            }
+
+            if (alreadyRewarded)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFFFFD700You already have the {} stat bonus.|r", GetChallengeName(challengeType));
                 return;
             }
 
-            rewardedTypes |= typeBit;
             CharacterDatabase.Execute(
                 "INSERT IGNORE INTO dc_prestige_challenge_rewards (guid, challenge_type, stat_bonus_percent, "
                 "granted_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
                 guid, static_cast<uint32>(challengeType), statBonus
             );
 
-            // Keep the cached total in sync, and recalculate the prestige aura, which worked out its
-            // amount when it was applied: the bonus shows at once, not only after a re-login.
-            g_ChallengeStatBonusCache[guid] += statBonus;
+            // Recalculate the prestige aura, which worked out its amount when it was applied: the
+            // bonus shows at once, not only after a re-login.
             PrestigeAPI::RecalculatePrestigeBuffs(player);
 
             ChatHandler(player->GetSession()).PSendSysMessage(
@@ -539,11 +569,27 @@ namespace
             if (!player)
                 return 0;
 
+            std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
             auto it = g_ChallengeStatBonusCache.find(player->GetGUID().GetCounter());
             return it != g_ChallengeStatBonusCache.end() ? it->second : 0;
         }
 
     private:
+        static void RemoveActiveChallenge(uint32 guid, PrestigeChallenge challengeType)
+        {
+            std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
+            auto it = g_ActiveChallenges.find(guid);
+            if (it == g_ActiveChallenges.end())
+                return;
+
+            auto& challenges = it->second;
+            challenges.erase(
+                std::remove_if(challenges.begin(), challenges.end(),
+                    [challengeType](ChallengeProgress const& c) { return c.challengeType == challengeType; }),
+                challenges.end()
+            );
+        }
+
         bool enabled;
         bool ironEnabled;
         bool speedEnabled;
@@ -578,6 +624,7 @@ namespace
             if (player)
             {
                 uint32 const guid = player->GetGUID().GetCounter();
+                std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
                 g_ActiveChallenges.erase(guid);
                 g_ChallengeStatBonusCache.erase(guid);
                 g_ChallengeRewardedTypes.erase(guid);
@@ -675,6 +722,7 @@ namespace PrestigeAPI
         if (!player) return result;
 
         uint32 guid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(g_ChallengeCacheMutex);
         auto it = g_ActiveChallenges.find(guid);
 
         if (it != g_ActiveChallenges.end())

@@ -25,6 +25,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DC
@@ -42,9 +43,9 @@ namespace DC
         bool isActive = false;
         int32 respawnCountdown = 0; // seconds until respawn (-1 if unknown)
         ObjectGuid currentGuid;
-        // Players moved into the boss combat phase (anti-grief phasing): guid -> original phase mask,
-        // so RestoreBossPhase touches only players we phased and puts each back exactly where it was.
-        std::unordered_map<ObjectGuid, uint32> phasedPlayers;
+        // Players moved into the boss combat phase (anti-grief phasing), each by an exclusive phase
+        // layer (PhaseLayers::WorldBossFight) that RestoreBossPhase takes off again.
+        std::unordered_set<ObjectGuid> phasedPlayers;
     };
 
     class WorldBossMgr

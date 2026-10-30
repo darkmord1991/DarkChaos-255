@@ -1388,19 +1388,40 @@ function TalentManager:SendTemplateToPlayer(templateName, targetPlayer)
     return true
 end
 
+-- A template is only ever sent as a whisper (SendTemplateToPlayer). Taken from
+-- GUILD/RAID/BATTLEGROUND as well, one message popped the prompt for every
+-- member at once; the cooldown stops one sender from re-popping it in a loop.
+local TEMPLATE_RECEIVE_COOLDOWN = 15
+local lastTemplateFrom = {}
+
 function TalentManager:OnAddonMessage(prefix, msg, channel, sender)
     if prefix ~= COMM_PREFIX then return end
-    if sender == UnitName("player") then return end
-    
+    if channel ~= "WHISPER" then return end
+    if not sender or sender == "" or sender == UnitName("player") then return end
+
+    local now = GetTime()
+    local last = lastTemplateFrom[sender]
+    if last and now - last < TEMPLATE_RECEIVE_COOLDOWN then
+        return
+    end
+    for name, at in pairs(lastTemplateFrom) do
+        if now - at >= TEMPLATE_RECEIVE_COOLDOWN then
+            lastTemplateFrom[name] = nil
+        end
+    end
+    lastTemplateFrom[sender] = now
+
     -- Parse: DCQOS_TM:CLASS:NAME:TALENTS
     local data = msg:gsub("^" .. COMM_PREFIX .. ":", "")
     local parts = { strsplit(":", data) }
-    
+
     if #parts >= 3 then
-        local class = parts[1]
-        local name = parts[2]
+        -- Shown in the prompt (the name also becomes the template name): no
+        -- escape sequences (|T textures, |H links) from another player's text.
+        local class = string.gsub(parts[1], "|", "")
+        local name = string.gsub(parts[2], "|", "")
         local encoded = parts[3]
-        
+
         -- Show confirmation dialog
         StaticPopupDialogs["DCQOS_RECEIVE_TEMPLATE"] = StaticPopupDialogs["DCQOS_RECEIVE_TEMPLATE"] or {
             text = "%s sent you a %s talent template: %s\n\nSave it?",

@@ -35,6 +35,7 @@
 #include <ctime>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 // Local includes to reuse hotspot helper functions
@@ -309,9 +310,39 @@ namespace World
         SendWorldContentSnapshot(player);
     }
 
+    // RESOLVE_SPAWN request floors, world thread only. The client sends it
+    // from a manual /dcmap command, so one a second is plenty. A spawn id
+    // that is not in the spawn store can only be answered by the resolver's
+    // blocking world-DB fallback, so such lookups get one try per half minute.
+    constexpr uint64 RESOLVE_SPAWN_COOLDOWN_MS = 1000;
+    constexpr uint64 RESOLVE_SPAWN_DB_COOLDOWN_MS = 30 * IN_MILLISECONDS;
+
+    struct ResolveSpawnTimes
+    {
+        uint64 lastMs = 0;
+        uint64 lastDbMs = 0;
+    };
+
+    static std::unordered_map<ObjectGuid::LowType, ResolveSpawnTimes> sResolveSpawnTimes;
+
+    static void SendResolveError(Player* player, uint32 entityId, uint32 spawnId, uint32 entry,
+        char const* error)
+    {
+        JsonMessage reply(Module::WORLD, Opcode::World::SMSG_RESOLVE_RESULT);
+        reply.Set("entityId", JsonValue(entityId));
+        reply.Set("spawnId", JsonValue(spawnId));
+        reply.Set("entry", JsonValue(entry));
+        reply.Set("success", JsonValue(false));
+        reply.Set("error", JsonValue(error));
+        SendWorldMessage(player, reply);
+    }
+
     static void HandleResolveSpawn(Player* player, ParsedMessage const& msg)
     {
         using namespace DCAddon;
+
+        if (!player)
+            return;
 
         JsonValue req = GetJsonData(msg);
         if (!req.IsObject())
@@ -326,6 +357,34 @@ namespace World
         uint32 entityId = req.HasKey("entityId") ? req["entityId"].AsUInt32() : 0;
         uint32 spawnId = req.HasKey("spawnId") ? req["spawnId"].AsUInt32() : 0;
         uint32 entry = req.HasKey("entry") ? req["entry"].AsUInt32() : 0;
+
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        ResolveSpawnTimes& times = sResolveSpawnTimes[player->GetGUID().GetCounter()];
+        if (times.lastMs && nowMs - times.lastMs < RESOLVE_SPAWN_COOLDOWN_MS)
+        {
+            SendResolveError(player, entityId, spawnId, entry, "rate_limited");
+            return;
+        }
+        times.lastMs = nowMs;
+
+        // Only real creatures are resolvable (the map pins are world bosses
+        // and rares): an entry must have a template, and a spawn id missing
+        // from the spawn store is the one case that reaches the DB fallback.
+        if (spawnId == 0 && (entry == 0 || !sObjectMgr->GetCreatureTemplate(entry)))
+        {
+            SendResolveError(player, entityId, spawnId, entry, "not_found");
+            return;
+        }
+
+        if (spawnId != 0 && !sObjectMgr->GetCreatureData(spawnId))
+        {
+            if (times.lastDbMs && nowMs - times.lastDbMs < RESOLVE_SPAWN_DB_COOLDOWN_MS)
+            {
+                SendResolveError(player, entityId, spawnId, entry, "rate_limited");
+                return;
+            }
+            times.lastDbMs = nowMs;
+        }
 
         // Centralized spawn position resolution.
         // preferLive=true helps when the target is currently moving and loaded near the player.

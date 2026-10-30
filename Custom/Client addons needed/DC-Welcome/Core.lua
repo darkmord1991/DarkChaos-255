@@ -1272,7 +1272,7 @@ function DCWelcome:ShowLevelMilestone(level, feature, message)
             icon = "Interface\\Icons\\INV_Misc_Gem_Pearl_03"
         elseif level == 80 then
             message = "Congratulations! You've reached the current live bracket cap and unlocked |cffff8000Mythic+ Dungeons|r. Future brackets continue at 100, 130, 160, 200, and 255."
-            icon = "Interface\\Icons\\Achievement_Dungeon_GlssDtDngeon_HeroicMc"
+            icon = "Interface\\Icons\\Achievement_Dungeon_GloryoftheHERO"
             title = "|cffff8000CURRENT BRACKET CAP REACHED!|r"
         elseif level == 100 then
             message = "Level 100! New custom dungeons available: |cff00ccffThe Nexus|r & |cff00ccffThe Oculus|r!"

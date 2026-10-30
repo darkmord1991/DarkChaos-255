@@ -16,6 +16,7 @@
 #include "Creature.h"
 #include "GossipDef.h"
 #include "DC/CrossSystem/RewardDistributor.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "Item.h"
@@ -63,9 +64,11 @@ namespace DarkChaos::GiantIsles
         uint32 rewardId, uint32 rewardCount,
         char const* successMsg)
     {
+        // Counted the way DestroyItemCount takes them: fish parked in an open trade
+        // window passed HasItemCount and were then never taken.
         for (auto const& [id, count] : costs)
         {
-            if (!player->HasItemCount(id, count))
+            if (DarkChaos::ItemUpgrade::GetSpendableItemCount(player, id) < count)
             {
                 creature->Whisper("Ya don't have enough of da ancient fish for dat recipe, mon.",
                     LANG_UNIVERSAL, player);

@@ -1924,7 +1924,7 @@
 		<FontHeight val="24"/>
 	</Font>
 
-	<Font name="ShadowlandsButtonFont" font="Interface\CustomFonts\futurademic.ttf" virtual="true">
+	<Font name="ShadowlandsButtonFont" font="Fonts\FRIZQT__.TTF" virtual="true">
 		<FontHeight val="17"/>
 		<Color r="0" g="0" b="0"/>
 	</Font>

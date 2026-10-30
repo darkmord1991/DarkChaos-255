@@ -113,6 +113,19 @@ local state = {
     lastPlayerY = nil,
     lastPlayerMapId = nil,
     lastPlayerTime = 0,
+    -- What the pins were last placed from (see Reposition): while none of it
+    -- changes, every pin already sits where a new pass would put it.
+    candidatesChanged = true,
+    placementValid = false,
+    placedMode = nil,
+    placedA = nil,
+    placedB = nil,
+    placedMapId = nil,
+    placedFacing = nil,
+    placedRadiusPx = nil,
+    placedHalfYards = nil,
+    placedPinSize = nil,
+    placedMouse = nil,
 }
 
 local function GetSettings()
@@ -144,6 +157,10 @@ local function IsTypeOnMinimap(poiData, poiType)
 end
 
 local function HidePinsFrom(startIndex)
+    if startIndex <= 1 then
+        -- Every pin is going away, so the next pass has to place them afresh.
+        state.placementValid = false
+    end
     for index = startIndex, #state.pins do
         local pin = state.pins[index]
         if pin then
@@ -336,6 +353,9 @@ end
 local function RebuildCandidates(poiData, mapUtils, mode, anchorA, anchorB, mapId, scanRadiusYards)
     local candidates = state.candidates
     local count = 0
+    -- Whether any slot now holds a different POI (or position), so Reposition
+    -- knows the throttled rescan found something new to place.
+    local changed = false
 
     local typeKeys = poiData:GetTypeKeys()
     for keyIndex = 1, #typeKeys do
@@ -379,6 +399,11 @@ local function RebuildCandidates(poiData, mapUtils, mode, anchorA, anchorB, mapI
                             entry = {}
                             candidates[count] = entry
                         end
+                        if entry.poi ~= poi or entry.poiType ~= poiType
+                            or entry.typeInfo ~= typeInfo
+                            or entry.normX ~= normX or entry.normY ~= normY then
+                            changed = true
+                        end
                         entry.poi = poi
                         entry.poiType = poiType
                         entry.typeInfo = typeInfo
@@ -390,6 +415,9 @@ local function RebuildCandidates(poiData, mapUtils, mode, anchorA, anchorB, mapI
         end
     end
 
+    if changed or count ~= state.candidateCount then
+        state.candidatesChanged = true
+    end
     state.candidateCount = count
     state.candidateMapId = mapId
     state.candidateMode = mode
@@ -481,6 +509,29 @@ local function Reposition()
     local pinSize = GetPinSize()
     local mouseEnabled = settings.showTooltips ~= false
 
+    -- Every input of the projection below: the player's position, the
+    -- minimap's facing (only while it rotates), zoom and size, the candidate
+    -- set and the pin settings. While none of them changed -- standing still
+    -- with the minimap untouched, which is most frames -- every pin already
+    -- sits where this pass would put it, so there is nothing to do.
+    local facing = 0
+    if type(mapUtils.IsMinimapRotating) == "function" and mapUtils.IsMinimapRotating() then
+        facing = (type(GetPlayerFacing) == "function" and GetPlayerFacing()) or 0
+    end
+    if state.placementValid and not state.candidatesChanged
+        and state.placedMode == mode and state.placedA == anchorA
+        and state.placedB == anchorB and state.placedMapId == mapId
+        and state.placedFacing == facing and state.placedRadiusPx == radiusPx
+        and state.placedHalfYards == halfDiameterYards
+        and state.placedPinSize == pinSize and state.placedMouse == mouseEnabled then
+        return
+    end
+    state.placementValid = true
+    state.candidatesChanged = false
+    state.placedMode, state.placedA, state.placedB, state.placedMapId = mode, anchorA, anchorB, mapId
+    state.placedFacing, state.placedRadiusPx, state.placedHalfYards = facing, radiusPx, halfDiameterYards
+    state.placedPinSize, state.placedMouse = pinSize, mouseEnabled
+
     for index = 1, state.candidateCount do
         local entry = state.candidates[index]
         local pin = AcquirePin(index)
@@ -510,12 +561,25 @@ local function Reposition()
                 poiInfo.label = entry.typeInfo.label
                 poiInfo.distanceYards = distanceYards
 
+                -- Size, mouse and icon only change with the settings or the
+                -- POI a pin shows, so they are set on a change, not each pass.
                 ApplyPinIcon(pin, entry.poiType, entry.typeInfo)
-                pin:SetSize(pinSize, pinSize)
-                pin:EnableMouse(mouseEnabled)
-                pin:ClearAllPoints()
-                pin:SetPoint("CENTER", container, "CENTER", pixelX, pixelY)
-                pin:Show()
+                if pin.appliedSize ~= pinSize then
+                    pin.appliedSize = pinSize
+                    pin:SetSize(pinSize, pinSize)
+                end
+                if pin.appliedMouse ~= mouseEnabled then
+                    pin.appliedMouse = mouseEnabled
+                    pin:EnableMouse(mouseEnabled)
+                end
+                if pin.placedX ~= pixelX or pin.placedY ~= pixelY then
+                    pin.placedX, pin.placedY = pixelX, pixelY
+                    pin:ClearAllPoints()
+                    pin:SetPoint("CENTER", container, "CENTER", pixelX, pixelY)
+                end
+                if not pin:IsShown() then
+                    pin:Show()
+                end
             else
                 pin:Hide()
             end
@@ -529,6 +593,7 @@ end
 -- the discovered flight points change.
 function MapPOIMinimap:Refresh()
     state.candidatesStale = true
+    state.placementValid = false
     Reposition()
 end
 

@@ -474,6 +474,12 @@ local function EnsureNativeHLBGLivePollFrame()
 
         nativeHLBGLiveWasViewActive = viewActive
     end)
+    -- Going idle is the view closing, as a tick would have recorded it: the
+    -- next open re-requests at once.
+    nativeHLBGLivePollFrame:SetScript('OnHide', function(self)
+        self.requestElapsed = 0
+        nativeHLBGLiveWasViewActive = false
+    end)
 
     -- A DLL that pushes DC_NATIVE_DATA signals each new snapshot, so an open
     -- view takes it at once. The tick above keeps its cadence: it also notices
@@ -488,7 +494,36 @@ local function EnsureNativeHLBGLivePollFrame()
     end
 end
 
+-- The view can only be active while the HLBG window is visible, so the poll
+-- driver above runs only then; it used to tick on every frame of the session,
+-- for players who never open the window as well.
+local function SyncNativeHLBGLivePollDriver()
+    local driver = nativeHLBGLivePollFrame
+    if not driver then
+        return
+    end
+
+    local view = HLBG.UI and HLBG.UI.Frame
+    if view and view.IsVisible and view:IsVisible() then
+        driver:Show()
+    else
+        driver:Hide()
+    end
+end
+
+local function WatchNativeHLBGLiveView(view)
+    if not view or view._dcNativeLiveWatched or type(view.HookScript) ~= 'function' then
+        return
+    end
+
+    view._dcNativeLiveWatched = true
+    view:HookScript('OnShow', SyncNativeHLBGLivePollDriver)
+    view:HookScript('OnHide', SyncNativeHLBGLivePollDriver)
+end
+
 EnsureNativeHLBGLivePollFrame()
+WatchNativeHLBGLiveView(HLBG.UI and HLBG.UI.Frame)
+SyncNativeHLBGLivePollDriver()
 
 -- ---------------------------------------------------------------------------
 -- Spectating a match (unified spectator core)
@@ -558,18 +593,34 @@ local function EnsureSpectatorPollFrame()
     local pushProtocol = protocol and type(protocol.OnNativeData) == 'function'
         and type(protocol.GetNativePollInterval) == 'function' and protocol or nil
 
+    if pushProtocol then
+        pushProtocol:OnNativeData('SPEC', ConsumeSpectatorSnapshot)
+
+        -- That once-a-second safety net rides DCAddonProtocol's own tick
+        -- (ConsumeSpectatorSnapshot returns at once outside a session).
+        if type(pushProtocol.RegisterNativeSafetyPoll) == 'function'
+            and pushProtocol:RegisterNativeSafetyPoll(ConsumeSpectatorSnapshot) then
+            spectatorPollFrame = true
+            return
+        end
+    end
+
+    local interval = SPECTATOR_POLL_INTERVAL
+    if pushProtocol then
+        interval = pushProtocol:GetNativePollInterval(interval)
+    end
+
+    -- Runs only during a session: SetSpectating shows it, and it hides itself
+    -- once the session is over.
     spectatorPollFrame = CreateFrame('Frame')
     spectatorPollFrame.elapsed = 0
     spectatorPollFrame:SetScript('OnUpdate', function(self, elapsed)
         if not HLBG._spectating then
+            self:Hide()
             return
         end
 
         self.elapsed = (self.elapsed or 0) + elapsed
-        local interval = SPECTATOR_POLL_INTERVAL
-        if pushProtocol then
-            interval = pushProtocol:GetNativePollInterval(interval)
-        end
         if self.elapsed < interval then
             return
         end
@@ -577,10 +628,6 @@ local function EnsureSpectatorPollFrame()
 
         ConsumeSpectatorSnapshot()
     end)
-
-    if pushProtocol then
-        pushProtocol:OnNativeData('SPEC', ConsumeSpectatorSnapshot)
-    end
 end
 
 local function RequestSpectatorOpcode(opcode, payload)
@@ -596,6 +643,9 @@ end
 local function SetSpectating(active)
     HLBG._spectating = active and true or false
     lastNativeSpectatorRevision = 0
+    if active and type(spectatorPollFrame) == 'table' then
+        spectatorPollFrame:Show()
+    end
     CallIfPresent(HLBG.UpdateHUDVisibility)
     CallIfPresent(HLBG.UpdateSpectateButton)
 end
@@ -1744,6 +1794,7 @@ SlashCmdList['HLBGFULLFIX'] = function()
         })
         HLBG.UI.Frame:SetBackdropColor(0, 0, 0, 0.8)
     end
+    WatchNativeHLBGLiveView(HLBG.UI.Frame)
     -- Step 4: Fix frame positioning and show it
     HLBG.UI.Frame:ClearAllPoints()
     HLBG.UI.Frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)

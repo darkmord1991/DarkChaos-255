@@ -259,18 +259,16 @@ void utf8truncate(std::string& utf8str, std::size_t len)
 {
     try
     {
-        std::size_t wlen = utf8::distance(utf8str.c_str(), utf8str.c_str() + utf8str.size());
-        if (wlen <= len)
-        {
-            return;
-        }
+        // Cut after `len` code points, in place. The UTF-16 round trip this replaces sized its buffer by code points,
+        // but a character outside the BMP (an emoji) takes two UTF-16 units: client text such as a friend note or a
+        // guild bank tab overflowed the heap.
+        char const* const begin = utf8str.c_str();
+        char const* const end = begin + utf8str.size();
+        char const* it = begin;
+        for (std::size_t i = 0; i < len && it != end; ++i)
+            utf8::next(it, end);
 
-        std::wstring wstr;
-        wstr.resize(wlen);
-        utf8::utf8to16(utf8str.c_str(), utf8str.c_str() + utf8str.size(), &wstr[0]);
-        wstr.resize(len);
-        char* oend = utf8::utf16to8(wstr.c_str(), wstr.c_str() + wstr.size(), &utf8str[0]);
-        utf8str.resize(oend - (&utf8str[0]));               // remove unused tail
+        utf8str.resize(it - begin);
     }
     catch (std::exception const&)
     {

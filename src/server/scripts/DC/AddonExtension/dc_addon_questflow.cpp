@@ -28,6 +28,8 @@
 #include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 #include "QuestDef.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "Log.h"
 
 #include <unordered_map>
@@ -119,6 +121,35 @@ namespace
         if (quest->HasFlag(QUEST_FLAGS_AUTOCOMPLETE))
             return true;
         return s_autoCompleteQuests.find(quest->GetQuestId()) != s_autoCompleteQuests.end();
+    }
+
+    // A remote turn-in has no NPC to hand RewardQuest, so the player stands in
+    // as the giver. RewardQuest has the giver cast every reward spell that is
+    // not learn-spell, create-item or pure self-cast, looking the giver up as a
+    // creature on the player's map - with the player there it finds nothing
+    // and the spell is skipped (reward mail without a sender entry also shows
+    // the player as sender). No remote-completable quest needs a giver-cast
+    // spell today; warn at startup if one ever does.
+    void WarnGiverCastRewardSpells()
+    {
+        for (auto const& [questId, quest] : sObjectMgr->GetQuestTemplates())
+        {
+            if (!IsRemoteCompletable(quest))
+                continue;
+
+            int32 const spellId = quest->GetRewSpellCast() > 0
+                ? quest->GetRewSpellCast() : static_cast<int32>(quest->GetRewSpell());
+            if (spellId <= 0)
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(static_cast<uint32>(spellId));
+            if (!spellInfo || spellInfo->HasEffect(SPELL_EFFECT_LEARN_SPELL)
+                || spellInfo->HasEffect(SPELL_EFFECT_CREATE_ITEM) || spellInfo->IsSelfCast())
+                continue;
+
+            LOG_WARN("module.dc", "QuestPopups: quest {} can be turned in remotely, but its reward spell {} "
+                "is cast by the quest giver and is skipped on a remote turn-in", questId, spellId);
+        }
     }
 
     bool MarkOfferedOnce(Player* player, uint32 questId)
@@ -304,8 +335,11 @@ public:
 
     void OnStartup() override
     {
-        if (IsEnabled())
-            LoadQuestFlowTables();
+        if (!IsEnabled())
+            return;
+
+        LoadQuestFlowTables();
+        WarnGiverCastRewardSpells();
     }
 };
 

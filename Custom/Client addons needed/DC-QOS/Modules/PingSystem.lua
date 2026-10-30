@@ -82,7 +82,13 @@ local NATIVE_PING_RELAY_CAPABILITY = 0x00008000
 local NATIVE_PING_RELAY_POLL_INTERVAL = 0.10
 local lastNativePingRelayRevision = 0
 local nativePingRelayPollFrame
+local nativePingRelayPollReady = false
 local PING_STATE_FEATURE = "ping_state"
+-- A relayed ping carries another player's encoded sync payload, which goes to
+-- the DLL's decoder; the native envelope around it carries it twice plus a
+-- few fields. Oversized ones are dropped before anything decodes them.
+local PING_RELAY_PAYLOAD_MAX_BYTES = 256
+local PING_RELAY_ENVELOPE_MAX_BYTES = 2048
 
 local HandleProtocolFeatureData
 local RefreshSettingsStatusText
@@ -211,7 +217,8 @@ local function DecodeNativePingRelayEnvelope(payload)
         return payload
     end
 
-    if type(payload) ~= "string" or payload == "" then
+    if type(payload) ~= "string" or payload == ""
+        or string.len(payload) > PING_RELAY_ENVELOPE_MAX_BYTES then
         return nil
     end
 
@@ -255,9 +262,10 @@ local function ConsumeNativePingRelaySnapshot()
 end
 
 local function EnsureNativePingRelayPollFrame()
-    if nativePingRelayPollFrame then
+    if nativePingRelayPollReady then
         return
     end
+    nativePingRelayPollReady = true
 
     -- A DLL that pushes DC_NATIVE_DATA signals each relayed ping, so the poll
     -- below is then only a safety net (DCAddonProtocol:GetNativePollInterval).
@@ -265,14 +273,25 @@ local function EnsureNativePingRelayPollFrame()
     local pushProtocol = protocol and type(protocol.OnNativeData) == "function"
         and type(protocol.GetNativePollInterval) == "function" and protocol or nil
 
+    if pushProtocol then
+        pushProtocol:OnNativeData("PING", ConsumeNativePingRelaySnapshot)
+
+        -- That once-a-second safety net rides DCAddonProtocol's own tick.
+        if type(pushProtocol.RegisterNativeSafetyPoll) == "function"
+            and pushProtocol:RegisterNativeSafetyPoll(ConsumeNativePingRelaySnapshot) then
+            return
+        end
+    end
+
+    local interval = NATIVE_PING_RELAY_POLL_INTERVAL
+    if pushProtocol then
+        interval = pushProtocol:GetNativePollInterval(interval)
+    end
+
     nativePingRelayPollFrame = CreateFrame("Frame")
     nativePingRelayPollFrame.elapsed = 0
     nativePingRelayPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        local interval = NATIVE_PING_RELAY_POLL_INTERVAL
-        if pushProtocol then
-            interval = pushProtocol:GetNativePollInterval(interval)
-        end
         if self.elapsed < interval then
             return
         end
@@ -280,10 +299,6 @@ local function EnsureNativePingRelayPollFrame()
         self.elapsed = 0
         ConsumeNativePingRelaySnapshot()
     end)
-
-    if pushProtocol then
-        pushProtocol:OnNativeData("PING", ConsumeNativePingRelaySnapshot)
-    end
 end
 
 local RAID_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
@@ -3899,6 +3914,12 @@ local function DecodeRelayEnvelopePayload(payload)
     local encoded = payload.payload or payload.syncPayload
     if type(encoded) ~= "string" or encoded == "" then
         return payload
+    end
+
+    -- The relayed bytes are another player's, handed to the DLL's decoder; a
+    -- real sync payload is a few dozen bytes. Anything larger drops the ping.
+    if string.len(encoded) > PING_RELAY_PAYLOAD_MAX_BYTES then
+        return nil
     end
 
     local decodeProtocolFn = ResolvePingFn("DecodePingSyncProtocolPayload", "C_Ping_DecodeProtocolPayload")

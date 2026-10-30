@@ -108,6 +108,7 @@ local function NormalizeInfo(data)
         maxLines = math.max(0, math.min(MAX_LINES, tonumber(data.maxLines) or MAX_LINES)),
         rerollCount = tonumber(data.rerollCount) or 0,
         costIncrease = tonumber(data.costIncrease) or 0,
+        maxRerolls = tonumber(data.maxRerolls) or 0,
         allowAdd = data.allowAdd == true,
         allowRerollAll = data.allowRerollAll == true,
         money = tonumber(data.money) or 0,
@@ -249,6 +250,37 @@ local function CanAfford(info, price)
     return price ~= nil and info.currency.balance >= price.amount and PlayerMoney(info) >= price.money;
 end
 
+-- The rerolls this item has left, or nil when the realm sets no limit. Each rerolled line uses
+-- one; adding a line uses none.
+local function RerollsLeft(info)
+    if info.maxRerolls <= 0 then
+        return nil;
+    end
+    return math.max(0, info.maxRerolls - info.rerollCount);
+end
+
+local function RerollsNeeded(info, action)
+    if action == "reroll" then
+        return 1;
+    elseif action == "rerollAll" then
+        return FilledLines(info);
+    end
+    return 0;
+end
+
+-- Why the item's reroll limit rules out `action` (the text its price is replaced with), or nil.
+local function LimitText(info, action)
+    local left = RerollsLeft(info);
+    local needed = RerollsNeeded(info, action);
+    if not left or needed == 0 or left >= needed then
+        return nil;
+    end
+    if left == 0 then
+        return "No rerolls left";
+    end
+    return string.format("Needs %d rerolls", needed);
+end
+
 -- Why nothing can be bought right now, or nil. The second value is true for the standing
 -- reasons (no protocol, switched off, combat), which outrank a result message: they are what
 -- the greyed-out buttons are telling the player.
@@ -281,14 +313,25 @@ local function ConfirmText(action, index, item, info)
     local cost = FormatPrice(info, PriceFor(info, action));
     if action == "add" then
         return string.format("Add a random enchant to %s?\n\nCost: %s", ItemLabel(item), cost);
-    elseif action == "rerollAll" then
-        return string.format("Reroll every enchant line of %s?\n\nAll %d lines are replaced.\n\nCost: %s",
-            ItemLabel(item), FilledLines(info), cost);
     end
 
-    local text = info.lines[index].text;
-    return string.format("Reroll line %d of %s?\n\n|cff20ff20%s|r\nis replaced by a new random enchant.\n\nCost: %s",
-        index, ItemLabel(item), text ~= "" and text or "This enchant", cost);
+    local text;
+    if action == "rerollAll" then
+        text = string.format("Reroll every enchant line of %s?\n\nAll %d lines are replaced.\n\nCost: %s",
+            ItemLabel(item), FilledLines(info), cost);
+    else
+        local line = info.lines[index].text;
+        text = string.format("Reroll line %d of %s?\n\n|cff20ff20%s|r\n"
+            .. "is replaced by a new random enchant.\n\nCost: %s",
+            index, ItemLabel(item), line ~= "" and line or "This enchant", cost);
+    end
+
+    local left = RerollsLeft(info);
+    if left then
+        text = text .. string.format("\nRerolls left afterwards: %d of %d",
+            left - RerollsNeeded(info, action), info.maxRerolls);
+    end
+    return text;
 end
 
 local function HideTooltip()
@@ -564,19 +607,46 @@ local function HideLines(frame)
     frame.hint:SetText("");
 end
 
-local function SetButtonState(button, costText, info, price, blocked)
+-- `limitText` (from LimitText) replaces the price when the item's reroll limit rules the action out.
+local function SetButtonState(button, costText, info, price, blocked, limitText)
     local affordable = CanAfford(info, price);
-    costText:SetText(FormatPrice(info, price));
-    if price and not affordable then
-        costText:SetTextColor(1.0, 0.25, 0.25);
+    if limitText then
+        costText:SetText(limitText);
+        costText:SetTextColor(0.6, 0.6, 0.6);
     else
-        costText:SetTextColor(1.0, 1.0, 1.0);
+        costText:SetText(FormatPrice(info, price));
+        if price and not affordable then
+            costText:SetTextColor(1.0, 0.25, 0.25);
+        else
+            costText:SetTextColor(1.0, 1.0, 1.0);
+        end
     end
 
-    if blocked or not affordable then
+    if blocked or limitText or not affordable then
         button:Disable();
     else
         button:Enable();
+    end
+end
+
+-- One line under Reroll All (a second line would run into the button): how many rerolls the item
+-- has left, or that each one costs more.
+local function SetHint(hint, info)
+    local left = RerollsLeft(info);
+    hint:SetTextColor(0.5, 0.5, 0.5);
+    if left == 0 then
+        hint:SetText(string.format("All %d rerolls of this item are used.", info.maxRerolls));
+        hint:SetTextColor(1.0, 0.35, 0.35);
+    elseif left then
+        hint:SetText(string.format("%d of %d rerolls left%s", left, info.maxRerolls,
+            info.costIncrease > 0 and " - each one costs more." or "."));
+    elseif info.costIncrease > 0 and info.rerollCount > 0 then
+        hint:SetText(string.format("Rerolled %d time%s - each one costs more.",
+            info.rerollCount, info.rerollCount == 1 and "" or "s"));
+    elseif info.costIncrease > 0 then
+        hint:SetText("Each reroll of this item costs more.");
+    else
+        hint:SetText("");
     end
 end
 
@@ -619,7 +689,8 @@ function Panel:RenderLines(info)
                 row.button:SetText(action == "add" and "Add" or "Reroll");
                 row.button:Show();
                 row.cost:Show();
-                SetButtonState(row.button, row.cost, info, PriceFor(info, action), blocked);
+                SetButtonState(row.button, row.cost, info, PriceFor(info, action), blocked,
+                    LimitText(info, action));
             else
                 row.button:Hide();
                 row.cost:Hide();
@@ -631,20 +702,14 @@ function Panel:RenderLines(info)
     if info.allowRerollAll and allPrice and FilledLines(info) >= 2 then
         frame.rerollAll:Show();
         frame.rerollAllCost:Show();
-        SetButtonState(frame.rerollAll, frame.rerollAllCost, info, allPrice, blocked);
+        SetButtonState(frame.rerollAll, frame.rerollAllCost, info, allPrice, blocked,
+            LimitText(info, "rerollAll"));
     else
         frame.rerollAll:Hide();
         frame.rerollAllCost:Hide();
     end
 
-    if info.costIncrease > 0 and info.rerollCount > 0 then
-        frame.hint:SetText(string.format("Rerolled %d time%s. Every reroll makes the next one on this item dearer.",
-            info.rerollCount, info.rerollCount == 1 and "" or "s"));
-    elseif info.costIncrease > 0 then
-        frame.hint:SetText("Every reroll makes the next one on this item dearer.");
-    else
-        frame.hint:SetText("");
-    end
+    SetHint(frame.hint, info);
 
     return blocked, standing;
 end
@@ -762,6 +827,19 @@ function Panel:ShowActionTooltip(owner, action, index)
     if price and not CanAfford(info, price) then
         GameTooltip:AddLine("You cannot afford this.", 1.0, 0.25, 0.25);
     end
+
+    local left = RerollsLeft(info);
+    local needed = RerollsNeeded(info, action);
+    if left and needed > 0 then
+        if left >= needed then
+            GameTooltip:AddLine(string.format("Uses %d of the %d rerolls this item has left.", needed, left),
+                0.8, 0.8, 0.8, true);
+        else
+            GameTooltip:AddLine(string.format("Needs %d rerolls; this item has %d left.", needed, left),
+                1.0, 0.25, 0.25, true);
+        end
+    end
+
     GameTooltip:AddLine("Shift-click to skip the confirmation.", 0.5, 0.5, 0.5);
     GameTooltip:Show();
 end
@@ -773,7 +851,8 @@ end
 function Panel:OnActionClicked(action, index)
     local info = self.info;
     local item, bag, slot = GetSelection();
-    if not action or not info or not item or not PriceFor(info, action) or BlockedReason(info) then
+    if not action or not info or not item or not PriceFor(info, action) or BlockedReason(info)
+            or LimitText(info, action) then
         return;
     end
 

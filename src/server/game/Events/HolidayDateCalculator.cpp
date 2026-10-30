@@ -17,6 +17,7 @@
 
 #include "HolidayDateCalculator.h"
 #include "SharedDefines.h"
+#include "Timer.h"
 #include <cmath>
 
 // Constants for astronomical calculations
@@ -583,8 +584,8 @@ uint32_t HolidayDateCalculator::PackDate(std::tm const& date)
     // bits 0-5: minute
     int const year = date.tm_year + 1900;
     // Client uses 5-bit year offset from 2000, so years before 2000 clamp to 0.
-    // If client is patched to support earlier years, update this logic.
-    uint32_t const yearOffset = (year < 2000) ? 0 : static_cast<uint32_t>(year - 2000);
+    // DarkChaos: modulo 31 past 2030 (Acore::Time::PackTimeYear)
+    uint32_t const yearOffset = Acore::Time::PackTimeYear(year - 2000);
     uint32_t const month = static_cast<uint32_t>(date.tm_mon);         // Already 0-indexed
     uint32_t const day = static_cast<uint32_t>(date.tm_mday - 1);      // Convert to 0-indexed
     uint32_t const weekday = static_cast<uint32_t>(date.tm_wday);      // 0=Sunday, 6=Saturday
@@ -595,7 +596,7 @@ uint32_t HolidayDateCalculator::PackDate(std::tm const& date)
 std::tm HolidayDateCalculator::UnpackDate(uint32_t packed)
 {
     std::tm result = {};
-    result.tm_year = static_cast<int>(((packed >> 24) & 0x1F) + 2000 - 1900);
+    result.tm_year = Acore::Time::UnpackTimeYear(packed >> 24) + 100; // DarkChaos: era-relative past 2030
     result.tm_mon = static_cast<int>((packed >> 20) & 0xF);
     result.tm_mday = static_cast<int>(((packed >> 14) & 0x3F) + 1);
     result.tm_wday = static_cast<int>((packed >> 11) & 0x7);
@@ -656,7 +657,7 @@ time_t HolidayDateCalculator::FindStartTimeForStage(uint32_t const* packedDates,
         uint32_t date = packedDates[i];
 
         std::tm timeInfo = {};
-        timeInfo.tm_year = static_cast<int>(((date >> 24) & 0x1F)) + 100;
+        timeInfo.tm_year = Acore::Time::UnpackTimeYear(date >> 24) + 100; // DarkChaos: era-relative past 2030
         timeInfo.tm_mon = static_cast<int>((date >> 20) & 0xF);
         timeInfo.tm_mday = static_cast<int>(((date >> 14) & 0x3F)) + 1;
         timeInfo.tm_hour = static_cast<int>((date >> 6) & 0x1F);
@@ -679,7 +680,7 @@ time_t HolidayDateCalculator::FindLoopingStartTime(uint32_t packedAnchor, time_t
         return 0;
 
     std::tm timeInfo = {};
-    timeInfo.tm_year = static_cast<int>((packedAnchor >> 24) & 0x1F) + 100; // years since 1900 (2000-2031)
+    timeInfo.tm_year = Acore::Time::UnpackTimeYear(packedAnchor >> 24) + 100; // DarkChaos: era-relative past 2030
     timeInfo.tm_mon  = static_cast<int>((packedAnchor >> 20) & 0xF);
     timeInfo.tm_mday = static_cast<int>((packedAnchor >> 14) & 0x3F) + 1;
     timeInfo.tm_hour = static_cast<int>((packedAnchor >> 6) & 0x1F);
