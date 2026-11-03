@@ -112,6 +112,8 @@ local LFG_ICON_BY_MAP = {
     [249] = "onyxiaencounter",  [533] = "naxxramas",        [603] = "ulduarraid",
     [615] = "chamberofaspects", [616] = "malygos",          [624] = "vaultofarchavon",
     [631] = "icecrowncitadel",  [649] = "argentraid",       [724] = "chamberofaspects",
+    -- Cataclysm raids
+    [669] = "blackwingdescentraid",
 }
 
 -- Derive a best-effort icon key from a display name for instances not in the

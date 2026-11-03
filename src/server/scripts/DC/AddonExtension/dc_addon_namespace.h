@@ -1502,6 +1502,22 @@ namespace DCAddon
     void LogS2CMessage(Player* player, std::string const& module, uint8 opcode,
         size_t dataSize, bool updateStats, std::string const& payloadPreview,
         uint32 processingTimeMs);
+
+    // Records an error sent to a player in dc_addon_protocol_errors. Both Send functions call this before they
+    // choose a transport, so a native client's errors are recorded too.
+    void LogServerError(Player* player, std::string const& module, uint8 opcode, bool json,
+        std::string const& message);
+
+    // The client treats these two values as errors for every module, whatever the module calls them.
+    inline bool IsErrorOpcode(std::string const& module, uint8 opcode)
+    {
+        if (opcode == Opcode::Core::SMSG_ERROR || opcode == Opcode::Core::SMSG_PERMISSION_DENIED)
+            return true;
+
+        return (module == Module::COLLECTION && opcode == Opcode::Collection::SMSG_ERROR)
+            || (module == Module::GROUP_FINDER && opcode == Opcode::GroupFinder::SMSG_ERROR);
+    }
+
     enum class ProtocolLogDirection : uint8
     {
         ClientToServer = 0,
@@ -2617,6 +2633,13 @@ namespace DCAddon
             // a registry miss) and a JSON encode before SendRaw dropped it.
             if (IsBotRecipient(player))
                 return;
+
+            if (IsErrorOpcode(_module, _opcode))
+            {
+                char const* key = _json.HasKey("error") ? "error" : "message";
+                LogServerError(player, _module, _opcode, true,
+                    _json.HasKey(key) ? _json[key].AsString() : EncodeJson());
+            }
 
             // Generic native bridge: route over the dedicated native opcode when
             // this module has a negotiated native capability. Body carries the

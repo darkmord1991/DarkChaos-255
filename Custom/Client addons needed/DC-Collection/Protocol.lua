@@ -2694,6 +2694,11 @@ function DC:InitializeProtocol()
         end
     end
 
+    -- DCAddon::SendError sends plain code and message fields, which a JSON handler never sees.
+    DCAddonProtocol:RegisterHandler(self.MODULE_ID, self.Opcodes.SMSG_ERROR, function(code, message)
+        DC.OnProtocolMessage({ op = self.Opcodes.SMSG_ERROR, data = { code = tonumber(code) or 0, error = message } })
+    end)
+
     -- Diagnostics: also register the request opcodes used by Wardrobe (Outfits/Community).
     -- If these are ever received client-side, it typically means the server did NOT handle the message
     -- and the whisper got echoed back to the player as a normal addon whisper.

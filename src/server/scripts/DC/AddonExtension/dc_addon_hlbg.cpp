@@ -907,14 +907,19 @@ namespace HLBG
             snapshot.state);
     }
 
-    static void SendRateLimitedError(Player* player)
+    // The client reads an error as code then text, so a message holding only the text prints blank.
+    static void SendHlbgError(Player* player, std::string const& error)
     {
         if (!player)
             return;
 
-        DCAddon::SendError(player, Module::HINTERLAND,
-            "HLBG request rate-limited", DCAddon::ErrorCode::UNKNOWN,
+        DCAddon::SendError(player, Module::HINTERLAND, error, DCAddon::ErrorCode::UNKNOWN,
             Opcode::Core::SMSG_ERROR);
+    }
+
+    static void SendRateLimitedError(Player* player)
+    {
+        SendHlbgError(player, "HLBG request rate-limited");
     }
 
     void SendTimerSync(Player* player, uint32 elapsedMs, uint32 maxMs)
@@ -1583,9 +1588,7 @@ namespace HLBG
 
         AuditAddonUiTransport(player);
 
-        Message response(Module::HINTERLAND, SMSG_ERROR);
-        response.Add(std::string("Objectives not implemented for HLBG"));
-        response.Send(player);
+        SendHlbgError(player, "Objectives not implemented for HLBG");
     }
 
     static void HandleSpectate(Player* player, ParsedMessage const& msg)
@@ -1728,9 +1731,7 @@ namespace HLBG
         if (!GetCachedSeasonalLeaderboardResponse(leaderboardType, season,
             limit, response, error))
         {
-            Message packet(Module::HINTERLAND, SMSG_ERROR);
-            packet.Add(error);
-            packet.Send(player);
+            SendHlbgError(player, error);
             return;
         }
 
@@ -1785,9 +1786,7 @@ namespace HLBG
 
         if (!QueryPlayerSeasonalStats(player, season, statsJson, error))
         {
-            Message packet(Module::HINTERLAND, SMSG_ERROR);
-            packet.Add(error);
-            packet.Send(player);
+            SendHlbgError(player, error);
             return;
         }
 
@@ -1823,9 +1822,7 @@ namespace HLBG
 
         if (!GetCachedAllTimeStatsResponse(player, statsJson, error))
         {
-            Message errPacket(Module::HINTERLAND, SMSG_ERROR);
-            errPacket.Add(error);
-            errPacket.Send(player);
+            SendHlbgError(player, error);
             return;
         }
 

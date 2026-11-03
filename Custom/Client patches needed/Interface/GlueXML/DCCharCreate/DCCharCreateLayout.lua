@@ -7,7 +7,8 @@ occupy the right. Same constraint here, same answer.
 
     Stage 1  CHOOSE     race grid (left, per faction), class row, gender,
                         stock race/class info panels (right)          [Next ->]
-    Stage 2  CUSTOMIZE  categorised customization panel (right),
+    Stage 2  CUSTOMIZE  categorised customization panel (right), with race, randomize and
+                        gender above it,
                         name entry (bottom centre)            [<- Back] [Create]
 
 Nothing is reimplemented. The stock race/class buttons keep their own icons, enable/disable and
@@ -36,6 +37,10 @@ local RACE_BUTTON_SIZE = 68
 local RACE_GRID_MAX_WIDTH = 380
 local RACE_BUTTON_MIN = 50
 local RACE_BUTTON_MAX = 68
+
+-- Stage 2's gender icons share the Race/Randomize row, whose height is capped by the gap under the
+-- WoW logo (see where the customization panel is anchored).
+local GENDER_ICON_SIZE = 26
 
 -- CharacterCreateIconButtonTemplate is 38x38 and carries child regions with HARDCODED sizes,
 -- anchored CENTER. Only the NormalTexture stretches with the button - the rest keep their original
@@ -228,7 +233,7 @@ end
 --- nothing here has to track which race is selected. The texture is drawn LARGER than the button
 --- because the outline sits at 76% of the art's extent (the rest is glow): 1/0.76 = 1.32, so the
 --- outline lands just outside the icon edge. Change one and the other must follow.
-local function ApplySelectionRing(button)
+local function ApplySelectionRing(button, iconSize)
 	if not (button.GetCheckedTexture and DCCharCreateAtlas) then
 		return
 	end
@@ -236,7 +241,7 @@ local function ApplySelectionRing(button)
 	if not (checked and ApplyAtlas(checked, "charactercreate-border-select")) then
 		return
 	end
-	local size = RACE_BUTTON_SIZE * 1.32
+	local size = (iconSize or RACE_BUTTON_SIZE) * 1.32
 	checked:ClearAllPoints()
 	checked:SetPoint("CENTER", button, "CENTER", 0, 0)
 	checked:SetWidth(size)
@@ -246,9 +251,9 @@ local function ApplySelectionRing(button)
 	end
 end
 
---- Resize an icon button's fixed-size child regions to match an enlarged button.
-local function ScaleIconChildren(buttonName)
-	local factor = RACE_BUTTON_SIZE / ICON_TEMPLATE_BASE
+--- Resize an icon button's fixed-size child regions to match a resized button.
+local function ScaleIconChildren(buttonName, iconSize)
+	local factor = (iconSize or RACE_BUTTON_SIZE) / ICON_TEMPLATE_BASE
 	for suffix, base in pairs(ICON_CHILD_BASE) do
 		local region = Frame(buttonName .. suffix)
 		if region and region.SetWidth then
@@ -605,6 +610,37 @@ function CharacterChangeFixup(...)
 	return a, b, c, d
 end
 
+-- Stock SetCharacterGender re-enumerates races and classes, which re-Shows their buttons, so stage 2
+-- has to be put back after it. Its argument is also how the customize row learns the sex:
+-- GetSelectedSex() dereferences the create component with no null check, and this file runs before
+-- that component exists. The race portraits change with the sex, so an open race flyout follows.
+local genderButtons = {}
+local selectedSex
+local refreshRaceFlyout
+
+local function RefreshGenderButtons()
+	for sex, button in pairs(genderButtons) do
+		button:SetChecked(sex == selectedSex and 1 or nil)
+	end
+end
+
+local stockGender = SetCharacterGender
+function SetCharacterGender(sex, ...)
+	local a, b, c, d
+	if stockGender then
+		a, b, c, d = stockGender(sex, ...)
+	end
+	selectedSex = sex
+	RefreshGenderButtons()
+	if refreshRaceFlyout then
+		refreshRaceFlyout()
+	end
+	if stage == STAGE_CUSTOMIZE then
+		ApplyStage()
+	end
+	return a, b, c, d
+end
+
 -- ---------------------------------------------------------------------------------- activation
 
 -- Same guard as the customization panel: without the readback natives that panel never activates,
@@ -649,8 +685,9 @@ if LayoutRaceButtons() > 0 then
 	end
 
 	-- Ascension-style in-place race switching: a compact flyout of the race icons INSIDE
-	-- customization ("should just show the races and not fully go back"). The flyout buttons
-	-- borrow the stock buttons' textures/ids and drive the stock CharacterRace_OnClick, then
+	-- customization ("should just show the races and not fully go back"), grouped by faction like
+	-- stage 1. The buttons use the stock race template, so bevel, selection ring, tooltip and
+	-- greyed-out look match the first screen, and drive the stock CharacterRace_OnClick, then
 	-- re-apply the stage so the race-name regions stock re-Shows get hidden again. Parented to
 	-- the customization panel, so everything vanishes with stage 2 for free. Paid-service flows
 	-- lock the race, so the toggle stays inert there.
@@ -662,69 +699,115 @@ if LayoutRaceButtons() > 0 then
 	flyout:SetPoint("TOPRIGHT", panel, "TOPLEFT", -8, 0)
 	flyout:Hide()
 
-	local FLYOUT_COLS, FLYOUT_CELL, FLYOUT_PAD = 2, 40, 12
+	-- The character stands just left of the flyout, so more races make it taller before wider.
+	local FLYOUT_ICON, FLYOUT_SPACING, FLYOUT_PAD = 40, 6, 12
+	local FLYOUT_HEADER, FLYOUT_FACTION_GAP = 26, 12
+	local FLYOUT_MIN_COLUMNS, FLYOUT_MAX_ROWS = 3, 4
+	local FLYOUT_STEP = FLYOUT_ICON + FLYOUT_SPACING
+
+	local FLYOUT_FACTIONS = {
+		{ name = "Alliance", text = "|cff7f9fffALLIANCE|r", atlas = "charactercreate-icon-alliance" },
+		{ name = "Horde", text = "|cffff6060HORDE|r", atlas = "charactercreate-icon-horde" },
+	}
+	for _, faction in ipairs(FLYOUT_FACTIONS) do
+		faction.crest = flyout:CreateTexture(nil, "OVERLAY")
+		faction.crest:SetWidth(FACTION_ICON_W * 0.4)
+		faction.crest:SetHeight(FACTION_ICON_H * 0.4)
+		ApplyAtlas(faction.crest, faction.atlas)
+		faction.label = flyout:CreateFontString(nil, "OVERLAY", "GlueFontHighlightSmall")
+		faction.label:SetPoint("LEFT", faction.crest, "RIGHT", 6, 0)
+		faction.label:SetText(faction.text)
+	end
+
 	local flyoutButtons = {}
-	local function RefreshFlyout()
-		local count = 0
-		for index = 1, 12 do
-			local stock = Frame("CharacterCreateRaceButton" .. index)
-			local texture = stock and _G["CharacterCreateRaceButton" .. index .. "NormalTexture"]
-			if stock and texture then
-				count = count + 1
-				local button = flyoutButtons[count]
-				if not button then
-					button = CreateFrame("CheckButton", nil, flyout)
-					button:SetWidth(34)
-					button:SetHeight(34)
-					local icon = button:CreateTexture(nil, "ARTWORK")
-					icon:SetAllPoints()
-					button.icon = icon
-					-- Gold ring around the selected race, like the stage-1 grid's selection look.
-					button:SetBackdrop({
-						edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-						edgeSize = 12,
-						insets = { left = 2, right = 2, top = 2, bottom = 2 },
-					})
-					button:SetHighlightTexture(
-						"Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Highlights", "ADD")
-					button:SetCheckedTexture(
-						"Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Highlights", "ADD")
-					button:SetScript("OnClick", function(self)
-						self:SetChecked(1)
-						local target = Frame("CharacterCreateRaceButton" .. self.stockIndex)
-						if target and target.enable then
-							-- Stock's first guard bounces unchecked buttons, so pre-check it.
-							target:SetChecked(1)
-							CharacterRace_OnClick(target, target:GetID())
-							ApplyStage()   -- stock re-Shows stage-1 regions; put stage 2 back
-						end
-						RefreshFlyout()
-					end)
-					flyoutButtons[count] = button
+	local RefreshFlyout
+
+	local function FlyoutButton(index)
+		local button = flyoutButtons[index]
+		if button then
+			return button
+		end
+		local name = "DCCharCreateRaceFlyoutButton" .. index
+		button = CreateFrame("CheckButton", name, flyout, "CharacterCreateRaceButtonTemplate")
+		button:SetWidth(FLYOUT_ICON)
+		button:SetHeight(FLYOUT_ICON)
+		ScaleIconChildren(name, FLYOUT_ICON)
+		ApplySelectionRing(button, FLYOUT_ICON)
+		-- The template's mouse scripts reset the shadow to its stock size, see the gender icons.
+		button:SetScript("OnMouseDown", nil)
+		button:SetScript("OnMouseUp", nil)
+		button:SetScript("OnClick", function()
+			local target = Frame("CharacterCreateRaceButton" .. index)
+			if target and target.enable then
+				-- Stock's first guard bounces unchecked buttons, so pre-check it.
+				target:SetChecked(1)
+				CharacterRace_OnClick(target, target:GetID())
+				ApplyStage()   -- stock re-Shows stage-1 regions; put stage 2 back
+			end
+			RefreshFlyout()
+		end)
+		flyoutButtons[index] = button
+		return button
+	end
+
+	RefreshFlyout = function()
+		local total = CharacterCreate.numRaces or 0
+		local members, largest = {}, 0
+		for _, faction in ipairs(FLYOUT_FACTIONS) do
+			members[faction.name] = {}
+		end
+		for index = 1, total do
+			local side = RaceButtonFaction(index) or ((index <= 6) and "Alliance" or "Horde")
+			table.insert(members[side], index)
+			largest = math.max(largest, #members[side])
+		end
+
+		local columns = math.max(FLYOUT_MIN_COLUMNS, math.ceil(largest / FLYOUT_MAX_ROWS))
+		local top = -FLYOUT_PAD
+		for _, faction in ipairs(FLYOUT_FACTIONS) do
+			local list = members[faction.name]
+			SetShown(faction.crest, #list > 0)
+			SetShown(faction.label, #list > 0)
+			if #list > 0 then
+				faction.crest:ClearAllPoints()
+				faction.crest:SetPoint("TOPLEFT", flyout, "TOPLEFT", FLYOUT_PAD, top)
+				top = top - FLYOUT_HEADER
+				for slot, index in ipairs(list) do
+					local stock = Frame("CharacterCreateRaceButton" .. index)
+					local art = Frame("CharacterCreateRaceButton" .. index .. "NormalTexture")
+					local button = FlyoutButton(index)
+					local name = "DCCharCreateRaceFlyoutButton" .. index
+					Frame(name .. "NormalTexture"):SetTexCoord(art:GetTexCoord())
+					Frame(name .. "PushedTexture"):SetTexCoord(art:GetTexCoord())
+					SetButtonDesaturated(button, (not stock.enable) and 1 or nil)
+					button.tooltip = stock.tooltip
+					button:SetChecked(stock:GetChecked())
+					button:ClearAllPoints()
+					button:SetPoint("TOPLEFT", flyout, "TOPLEFT",
+						FLYOUT_PAD + ((slot - 1) % columns) * FLYOUT_STEP,
+						top - math.floor((slot - 1) / columns) * FLYOUT_STEP)
+					button:Show()
 				end
-				button.stockIndex = index
-				button.icon:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Races")
-				button.icon:SetTexCoord(texture:GetTexCoord())
-				-- Alpha rather than SetDesaturated: the glue widget API is a subset.
-				button.icon:SetAlpha(stock.enable and 1 or 0.35)
-				button:SetChecked(stock:GetChecked())
-				if stock:GetChecked() then
-					button:SetBackdropBorderColor(1, 0.82, 0, 1)
-				else
-					button:SetBackdropBorderColor(0.35, 0.35, 0.35, 0.7)
-				end
-				button:ClearAllPoints()
-				button:SetPoint("TOPLEFT", flyout, "TOPLEFT",
-					FLYOUT_PAD + ((count - 1) % FLYOUT_COLS) * FLYOUT_CELL,
-					-FLYOUT_PAD - math.floor((count - 1) / FLYOUT_COLS) * FLYOUT_CELL)
-				button:Show()
+				top = top - math.ceil(#list / columns) * FLYOUT_STEP - FLYOUT_FACTION_GAP
 			end
 		end
-		for i = count + 1, #flyoutButtons do
-			flyoutButtons[i]:Hide()
+		for index, button in pairs(flyoutButtons) do
+			if index > total then
+				button:Hide()
+			end
 		end
-		flyout:SetWidth(FLYOUT_PAD * 2 + FLYOUT_COLS * FLYOUT_CELL - 6)
-		flyout:SetHeight(FLYOUT_PAD * 2 + math.ceil(count / FLYOUT_COLS) * FLYOUT_CELL - 6)
+
+		flyout:SetWidth(FLYOUT_PAD * 2 + columns * FLYOUT_STEP - FLYOUT_SPACING)
+		-- top now sits below the last grid's spacing and the gap that would precede another faction
+		flyout:SetHeight(-top - FLYOUT_SPACING - FLYOUT_FACTION_GAP + FLYOUT_PAD)
+	end
+
+	-- The panel hiding hides this too, so showing it again after a trip back to stage 1 refreshes.
+	flyout:SetScript("OnShow", RefreshFlyout)
+	refreshRaceFlyout = function()
+		if flyout:IsShown() then
+			RefreshFlyout()
+		end
 	end
 
 	local changeRace = CreateFrame("Button", "DCCharCreateChangeRace", panel, "GlueButtonSmallTemplate")
@@ -739,7 +822,6 @@ if LayoutRaceButtons() > 0 then
 		if flyout:IsShown() then
 			flyout:Hide()
 		else
-			RefreshFlyout()
 			flyout:Show()
 		end
 	end)
@@ -761,6 +843,45 @@ if LayoutRaceButtons() > 0 then
 		randomize:SetHeight(26)
 		randomize:SetPoint("LEFT", changeRace, "RIGHT", 6, 0)
 	end
+
+	-- Gender without leaving customization, at the far end of the same row: the stock template and
+	-- the stock SetCharacterGender, like the stage-1 buttons. The template's mouse scripts set the
+	-- shadow to stock sizes, which would leave a 58px shadow around these icons after one click.
+	local nextGender
+	for _, info in ipairs({
+		{ name = "DCCharCreateGenderFemale", sex = SEX_FEMALE, label = FEMALE, left = 0.5, right = 1 },
+		{ name = "DCCharCreateGenderMale", sex = SEX_MALE, label = MALE, left = 0, right = 0.5 },
+	}) do
+		local button = CreateFrame("CheckButton", info.name, panel, "CharacterCreateGenderButtonTemplate")
+		button:SetWidth(GENDER_ICON_SIZE)
+		button:SetHeight(GENDER_ICON_SIZE)
+		ScaleIconChildren(info.name, GENDER_ICON_SIZE)
+		ApplySelectionRing(button, GENDER_ICON_SIZE)
+		Frame(info.name .. "NormalTexture"):SetTexCoord(info.left, info.right, 0, 1)
+		Frame(info.name .. "PushedTexture"):SetTexCoord(info.left, info.right, 0, 1)
+		button:SetScript("OnMouseDown", nil)
+		button:SetScript("OnMouseUp", nil)
+		if nextGender then
+			button:SetPoint("RIGHT", nextGender, "LEFT", -6, 0)
+		else
+			button:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", 0, 6)
+		end
+		button:SetScript("OnClick", function()
+			PlaySound("gsCharacterCreationClass")
+			if selectedSex == info.sex then
+				RefreshGenderButtons()      -- undo the CheckButton's own toggle
+			else
+				SetCharacterGender(info.sex)
+			end
+		end)
+		button:SetScript("OnEnter", function(self)
+			GlueTooltip_SetOwner(self, CharacterCreateTooltip, -3, -5)
+			GlueTooltip_SetText(info.label, CharacterCreateTooltip)
+		end)
+		genderButtons[info.sex] = button
+		nextGender = button
+	end
+	RefreshGenderButtons()
 
 	ApplyStage()
 end

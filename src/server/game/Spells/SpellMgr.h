@@ -522,11 +522,11 @@ enum ICCBuff
     // races 22-27 are all playable here, and a racemask that omits them silently denies those
     // characters the ICC raid buff. Keep in step with the DC race enum in SharedDefines.h.
     // Horde:    Orc | Undead | Tauren | Troll | Goblin | Blood Elf
-    //           | Pandaren H | Vulpera | Zandalari
-    ICC_RACEMASK_HORDE    = 29361074,
+    //           | Pandaren H | Vulpera | Zandalari | Drakkari | Mag'har
+    ICC_RACEMASK_HORDE    = 1237320626,
     // Alliance: Human | Dwarf | Night Elf | Gnome | Draenei | Worgen
-    //           | Pandaren A | Kul Tiran | Dark Iron
-    ICC_RACEMASK_ALLIANCE = 102763597
+    //           | Pandaren A | Kul Tiran | Dark Iron | Void Elf | Lightforged
+    ICC_RACEMASK_ALLIANCE = 908069965
 };
 
 struct SpellArea

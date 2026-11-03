@@ -32,7 +32,7 @@ local DAILY_ACTIVE_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "dailyactivequesticon"
 local OBJECTIVE_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3"
 local TELEPORT_ICON_TEXTURE = "Interface\\Icons\\Spell_Arcane_Blink"
 local FLIGHTMASTER_ICON_TEXTURE = "Interface\\TaxiFrame\\UI-Taxi-Icon-Green"
-local GLOW_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping"
+local GLOW_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping-Center"
 
 local state = {
     overlay = nil,

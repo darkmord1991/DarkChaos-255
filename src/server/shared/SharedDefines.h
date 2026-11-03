@@ -94,10 +94,17 @@ enum Races
     RACE_ZANDALARI_TROLL    = 25, // TITLE Zandalari Troll
     RACE_KUL_TIRAN          = 26, // TITLE Kul Tiran
     // DC: Tier-1 reskins share a stock race's MODEL and differ only in textures, so
-    // ChrRaces.ClientFileString points at the parent (dwarf) and CharSections carries the
-    // new appearance. Nothing here is required to CREATE one -- the core has no MAX_RACES
+    // ChrRaces.ClientPrefix stays the parent's (helms) and CharSections carries the new
+    // appearance. Nothing here is required to CREATE one -- the core has no MAX_RACES
     // and reads races from ChrRaces at runtime; the entry exists for typed use by racials.
     RACE_DARK_IRON_DWARF    = 27, // TITLE Dark Iron Dwarf
+    // DC: 29-31 wear retail skins on a stock model, 28 has its own Ascension donor model.
+    // Race ids stop at 31 while the race mask is 32 bit.
+    // (Custom/Custom feature SQLs/worlddb/Races28to31/00_RACIALS.md)
+    RACE_DRAKKARI_TROLL     = 28, // TITLE Drakkari Troll
+    RACE_VOID_ELF           = 29, // TITLE Void Elf
+    RACE_LIGHTFORGED_DRAENEI = 30, // TITLE Lightforged Draenei
+    RACE_MAGHAR_ORC         = 31, // TITLE Mag'har Orc
     //RACE_NAGA           = 13,
     //RACE_BROKEN         = 14,
     //RACE_SKELETON       = 15,

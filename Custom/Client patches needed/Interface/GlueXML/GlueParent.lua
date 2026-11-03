@@ -70,6 +70,12 @@ GlueAmbienceTracks["ZANDALARITROLL"] = "GlueScreenOrcTroll";
 GlueAmbienceTracks["ZANDALARI"] = "GlueScreenOrcTroll";
 GlueAmbienceTracks["DARKIRONDWARF"] = "GlueScreenDwarfGnome";
 GlueAmbienceTracks["KULTIRAN"] = "GlueScreenHuman";
+GlueAmbienceTracks["VOIDELF"] = "GlueScreenBloodElf";
+GlueAmbienceTracks["LIGHTFORGEDDRAENEI"] = "GlueScreenDraenei";
+GlueAmbienceTracks["MAGHARORC"] = "GlueScreenOrcTroll";
+GlueAmbienceTracks["DRAKKARITROLL"] = "GlueScreenOrcTroll";
+-- Drakkari's scene is UI_Troll, a mapped name like ZANDALARI above.
+GlueAmbienceTracks["TROLL"] = "GlueScreenOrcTroll";
 
 -- Custom races with no UI_<Race>.m2 glue scene of their own borrow a thematically close
 -- stock one. Keyed by the UPPERCASE ChrRaces ClientFileString.
@@ -85,6 +91,9 @@ DC_GLUE_SCENE_SUBSTITUTE = {
 	["ZANDALARITROLL"] = "Zandalari",
 	-- Dark Iron has its own scene since 2026-09-26: retail UI_DarkIronDwarf, downported to
 	-- v264 and packed into patch-5, so it no longer borrows the Dwarf one.
+	-- Retail has no scene for Mag'har or Drakkari. UI_Troll is retail's, downported like the others.
+	["MAGHARORC"] = "Orc",
+	["DRAKKARITROLL"] = "Troll",
 };
 
 -- RaceLights[] duplicates the 3.2.2 color values in the models. Henceforth, the models no longer contain directional lights
@@ -134,6 +143,22 @@ RaceLights = {
     DARKIRONDWARF = {
         {1,     0,  -0.00000,       -0.00000,       -1.00000,   1.0,    0.30000,    0.30000,    0.30000,    0.0,    0.00000,    0.00000,    0.00000},
         {1,     0,  -0.88314,       0.42916,        -0.18945,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.44706,    0.67451,    0.760785},
+    },
+    -- Void Elf, Lightforged and Troll: their parent's set, for the same reason. Retune against the backdrops.
+    VOIDELF = {
+        {1,     0,  -0.82249,       -0.54912,       -0.14822,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.581175,   0.50588,    0.42588},
+        {1,     0,  0.00000,        -0.00000,       -1.00000,   1.0,    0.60392,    0.61490,    0.70000,    1.0,    0.00000,    0.00000,    0.00000},
+        {1,     0,  0.02575,        0.86518,        -0.50081,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.59137,    0.51745,    0.63471},
+    },
+    LIGHTFORGEDDRAENEI = {
+        {1,     0,  0.61185,        0.62942,        -0.47903,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.56941,    0.52000,    0.60000},
+        {1,     0,  -0.64345,       -0.31052,       -0.69968,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.60941,    0.60392,    0.70000},
+        {1,     0,  -0.46481,       -0.14320,       0.87376,    1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.5835,     0.48941,    0.60000},
+    },
+    TROLL = {
+        {1,     0,  0.00000,        0.00000,        -1.00000,   1.0,    0.15000,    0.15000,    0.15000,    1.0,    0.00000,    0.00000,    0.00000},
+        {1,     0,  -0.74919,       0.35208,        -0.56103,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.44706,    0.54510,    0.73725},
+        {1,     0,  0.53162,        -0.84340,       0.07780,    1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.55,       0.338625,   0.148825},
     },
     PANDAREN = {
         {1,     0,  -0.48073,       0.71827,        -0.50297,   1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.65,       0.397645,   0.2727},

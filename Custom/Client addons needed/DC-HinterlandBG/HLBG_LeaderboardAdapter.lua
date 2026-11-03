@@ -193,9 +193,9 @@ function Adapter:RegisterHandlers()
         Adapter:OnAllTimeStats(data)
     end)
     
-    -- Error response (0x1F)
-    DC:RegisterHandler("HLBG", 0x1F, function(data)
-        Adapter:OnError(data)
+    -- Error response. 0x1F is taken for every module before normal dispatch, so a plain handler never runs.
+    DC:RegisterErrorHandler("HLBG", function(_, message)
+        Adapter:OnError(message)
     end)
     
     return true
@@ -285,10 +285,9 @@ function Adapter:OnAllTimeStats(data)
     end
 end
 
-function Adapter:OnError(data)
+function Adapter:OnError(message)
     if DEFAULT_CHAT_FRAME then
-        local msg = data.error or "Unknown error"
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333HLBG Error:|r " .. msg)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF3333HLBG Error:|r " .. (message or "Unknown error"))
     end
 end
 

@@ -68,6 +68,7 @@ namespace DC
         void OnBossEngaged(Creature* boss, Unit* who = nullptr);
         void OnBossHPUpdate(Creature* boss, uint8 hpPct, uint8 threshold);
         void OnBossDied(Creature* boss);
+        void OnBossDespawned(Creature* boss);
 
         // ========== Loot Lockout ==========
         bool IsLockoutEnabled() const { return _lockoutEnabled; }
@@ -91,6 +92,9 @@ namespace DC
         WorldBossInfo* GetBossInfoBySpawnId(uint32 spawnId);
         std::vector<WorldBossInfo const*> GetAllBosses() const;
         bool IsBossActive(uint32 entry) const;
+        // Set by whoever runs a boss's rotation. respawnIn is -1 when no timer applies;
+        // a boss neither active nor on a timer is off rotation.
+        void SetBossState(uint32 entry, bool active, int32 respawnIn);
 
         // ========== Timer Management ==========
         // Call from a world script update hook to tick respawn timers

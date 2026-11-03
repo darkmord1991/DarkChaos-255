@@ -26,6 +26,7 @@
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 #include <optional>
@@ -78,6 +79,14 @@ enum GiantIslesData
     RARE_DESPAWN_TIMER          = 30 * 60 * 1000,    // 30 minutes if not killed
     RARE_ALIVE_CHECK_MS         = 10 * 1000,
 };
+
+// The rotation's hold on a boss that is off today: longer than a boss ever stays
+// off, and topped up before it could run out. No real respawn delay comes near the
+// floor, which is how the hold is told apart from the timer of a boss killed today.
+constexpr uint32 ROTATION_HOLD_SEC = 7 * DAY;
+constexpr uint32 ROTATION_HOLD_FLOOR_SEC = ROTATION_HOLD_SEC / 2;
+constexpr uint32 ROTATION_CHECK_SEC = 10;
+constexpr uint32 SCHEDULE_REFRESH_SEC = 5 * MINUTE;
 
 // ============================================================================
 // ZONE ANNOUNCEMENT MESSAGES
@@ -167,78 +176,101 @@ static std::unordered_map<ObjectGuid, uint32> sSpiritLastWhisperSecByPlayer;
 // WORLD BOSS ROTATION HELPERS
 // ============================================================================
 
+// Today's bosses, refreshed by the rotation check on the world thread.
+static std::vector<uint32> sTodaysBossEntries;
+
 static Creature* FindSpawnedCreatureBySpawnId(Map* map, uint32 spawnId, uint32 entry)
 {
     if (!map)
         return nullptr;
 
+    // A dead copy can sit beside the live one for a tick while a spawn is replaced.
+    Creature* found = nullptr;
     auto bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
-    if (bounds.first != bounds.second)
-        return bounds.first->second;
+    for (auto itr = bounds.first; itr != bounds.second; ++itr)
+    {
+        found = itr->second;
+        if (found->IsAlive())
+            return found;
+    }
+
+    if (found)
+        return found;
 
     return map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(entry, spawnId));
 }
 
-static bool LoadCreatureFromSpawnId(Map* map, uint32 spawnId)
-{
-    if (!map)
-        return false;
-
-    Creature* creature = new Creature();
-    if (!creature->LoadCreatureFromDB(spawnId, map))
-    {
-        delete creature;
-        return false;
-    }
-
-    sObjectMgr->AddCreatureToGrid(spawnId, sObjectMgr->GetCreatureData(spawnId));
-    return true;
-}
-
-static bool SetWorldBossActive(uint32 bossEntry, bool active)
+// Brings one boss in line with today's schedule and tells the manager where it
+// stands. This runs on a timer, not once a day: a boss only exists while its grid
+// is loaded, and that way a restart, a grid that loads late and a new day all take
+// the same path. Bosses are dynamic spawns, so one that is down has no creature at
+// all and its respawn timer on the map is what keeps it down.
+static void ApplyRotationToBoss(uint32 bossEntry, bool scheduled)
 {
     if (!sWorldBossMgr)
-        return false;
+        return;
 
-    DarkChaos::CrossSystem::WorldBossInfo* info = sWorldBossMgr->GetBossInfo(bossEntry);
+    DarkChaos::CrossSystem::WorldBossInfo const* info = sWorldBossMgr->GetBossInfo(bossEntry);
     if (!info || info->spawnId == 0)
-        return false;
+        return;
 
-    CreatureData const* data = sObjectMgr->GetCreatureData(info->spawnId);
-    if (!data)
-        return false;
+    // No map means nobody has been on the island since the restart; timers load with it.
+    Map* map = sMapMgr->FindMap(MAP_GIANT_ISLES, 0);
+    Creature* boss = map ? FindSpawnedCreatureBySpawnId(map, info->spawnId, bossEntry) : nullptr;
 
-    Map* map = sMapMgr->FindMap(data->mapid, 0);
-    if (!map)
-        return false;
+    time_t const now = GameTime::GetGameTime().count();
+    time_t const respawnAt = map ? map->GetCreatureRespawnTime(info->spawnId) : 0;
+    uint32 timer = respawnAt > now ? static_cast<uint32>(respawnAt - now) : 0;
+    bool const held = timer > ROTATION_HOLD_FLOOR_SEC;
+    bool const wasActive = info->isActive;
+    bool alive = boss && boss->IsAlive();
 
-    Creature* creature = FindSpawnedCreatureBySpawnId(map, info->spawnId, bossEntry);
-    if (!creature)
+    if (scheduled)
     {
-        if (!LoadCreatureFromSpawnId(map, info->spawnId))
-            return false;
-        creature = FindSpawnedCreatureBySpawnId(map, info->spawnId, bossEntry);
+        // Its day has come. A boss killed today keeps its normal timer.
+        if (held && boss && !alive)
+        {
+            // The creature that replaces this one reports in on the next check.
+            boss->Respawn(true);
+            return;
+        }
+
+        if (held && !boss)
+        {
+            map->ForceCreatureRespawn(info->spawnId);
+            timer = 0;
+        }
+    }
+    else if (alive)
+    {
+        // A fight that runs into the next day is finished first.
+        if (!boss->IsInCombat())
+        {
+            sWorldBossMgr->OnBossDespawned(boss);
+            boss->DespawnOrUnsummon(0ms, Seconds(ROTATION_HOLD_SEC));
+            alive = false;
+        }
+    }
+    else if (map && !held)
+    {
+        if (boss)
+        {
+            boss->SetRespawnTime(ROTATION_HOLD_SEC);
+            boss->SaveRespawnTime();
+        }
+        else
+        {
+            time_t holdUntil = now + ROTATION_HOLD_SEC;
+            map->SaveCreatureRespawnTime(info->spawnId, holdUntil);
+        }
     }
 
-    if (!creature)
-        return false;
+    // A dynamic respawn is a new creature, so JustRespawned never fires for it.
+    if (alive && !wasActive)
+        sWorldBossMgr->OnBossSpawned(boss);
 
-    if (active)
-    {
-        creature->SetRespawnTime(0);
-        creature->SaveRespawnTime();
-
-        if (!creature->IsAlive())
-            creature->Respawn();
-    }
-    else
-    {
-        creature->SetRespawnTime(7 * DAY);
-        creature->SaveRespawnTime();
-        creature->DespawnOrUnsummon(0ms);
-    }
-
-    return true;
+    bool const up = alive || (scheduled && timer == 0);
+    sWorldBossMgr->SetBossState(bossEntry, up, scheduled && !up ? static_cast<int32>(timer) : -1);
 }
 
 static bool WorldBossScheduleTableExists()
@@ -334,7 +366,7 @@ static void SendBossStatusList(Player* player)
             return;
         }
 
-        handler.PSendSysMessage(" - |cFFFFFF00{}|r: |cFFAAAAAAUnknown|r", displayName);
+        handler.PSendSysMessage(" - |cFFFFFF00{}|r: |cFFAAAAAANot today|r", displayName);
     };
 
     // Preferred: use the WorldBossMgr zone registrations.
@@ -415,32 +447,40 @@ public:
         // Send welcome message
         ChatHandler(player->GetSession()).PSendSysMessage("{}", ZONE_ENTER_MESSAGE);
 
-        // Check which boss is active and inform player
-        uint32 activeBoss = GetActiveBossEntry();
-        std::string bossName;
-        std::string location;
+        // Tell the player which boss is up today, from the same schedule the rotation enforces
+        std::vector<uint32> todaysBosses = sTodaysBossEntries;
+        if (todaysBosses.empty())
+            todaysBosses.push_back(GetActiveBossEntry());
 
-        switch (activeBoss)
+        for (uint32 todaysBoss : todaysBosses)
         {
-            case NPC_OONDASTA:
-                bossName = "Oondasta, King of Dinosaurs";
-                location = "Slippy Quagmire";
-                break;
-            case NPC_THOK:
-                bossName = "Thok the Bloodthirsty";
-                location = "Oozing Overgrowth";
-                break;
-            case NPC_NALAK:
-                bossName = "Nalak the Storm Lord";
-                location = "Moist Ridge";
-                break;
+            std::string bossName;
+            std::string location;
+
+            switch (todaysBoss)
+            {
+                case NPC_OONDASTA:
+                    bossName = "Oondasta, King of Dinosaurs";
+                    location = "Slippy Quagmire";
+                    break;
+                case NPC_THOK:
+                    bossName = "Thok the Bloodthirsty";
+                    location = "Oozing Overgrowth";
+                    break;
+                case NPC_NALAK:
+                    bossName = "Nalak the Storm Lord";
+                    location = "Moist Ridge";
+                    break;
+                default:
+                    continue;
+            }
+
+            bool bossActive = sWorldBossMgr && sWorldBossMgr->IsBossActive(todaysBoss);
+
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cFFFF8000[Giant Isles]|r Today's world boss: |cFFFFFF00{}|r in |cFF00FF00{}|r{}",
+                bossName.c_str(), location.c_str(), bossActive ? " |cFF00FF00(Active)|r" : "");
         }
-
-        bool bossActive = sWorldBossMgr && sWorldBossMgr->IsBossActive(activeBoss);
-
-        ChatHandler(player->GetSession()).PSendSysMessage(
-            "|cFFFF8000[Giant Isles]|r Today's world boss: |cFFFFFF00{}|r in |cFF00FF00{}|r{}",
-            bossName.c_str(), location.c_str(), bossActive ? " |cFF00FF00(Active)|r" : "");
 
         SendBossStatusList(player);
     }
@@ -473,8 +513,6 @@ public:
         _nextRareCheckTime = Milliseconds(0);
         _currentRareGUID = ObjectGuid::Empty;
         _rareIsAlive = false;
-        _lastRotationDay = 255;
-        _lastRotationKey = 0;
         _lastRotationCheckSec = 0;
         _lastScheduleFetchSec = 0;
         _cachedScheduleDay = 255;
@@ -484,9 +522,6 @@ public:
     {
         LOG_INFO("scripts.dc", "Giant Isles zone manager loaded.");
         LOG_INFO("scripts.dc", "Today's active boss: Entry {}", GetActiveBossEntry());
-
-        // Apply daily boss rotation immediately on startup when map is available.
-        ApplyBossRotation(true);
 
         // Initialize first rare spawn timer (spawn first rare after 5-15 minutes)
         _nextRareSpawnTime = GameTime::GetGameTimeMS() + Milliseconds(urand(5 * 60 * 1000, 15 * 60 * 1000));
@@ -510,7 +545,7 @@ public:
         }
 
         // Check and apply daily boss rotation.
-        ApplyBossRotation(false);
+        ApplyBossRotation();
     }
 
 private:
@@ -518,68 +553,37 @@ private:
     Milliseconds _nextRareCheckTime;
     ObjectGuid _currentRareGUID;
     bool _rareIsAlive;
-    uint8 _lastRotationDay;
-    uint32 _lastRotationKey;
     time_t _lastRotationCheckSec;
     time_t _lastScheduleFetchSec;
     uint8 _cachedScheduleDay;
-    std::vector<uint32> _cachedScheduledEntries;
 
-    void ApplyBossRotation(bool force)
+    void ApplyBossRotation()
     {
         time_t nowSec = GameTime::GetGameTime().count();
 
-        if (!force)
-        {
-            // Throttle rotation checks to avoid excessive DB queries.
-            if (_lastRotationCheckSec != 0 && (nowSec - _lastRotationCheckSec) < 10)
-                return;
-            _lastRotationCheckSec = nowSec;
-        }
+        if (_lastRotationCheckSec != 0 && (nowSec - _lastRotationCheckSec) < ROTATION_CHECK_SEC)
+            return;
 
+        _lastRotationCheckSec = nowSec;
+
+        // Throttled apart from the check to avoid excessive DB queries.
         uint8 day = GetCurrentDayOfWeek();
-        std::vector<uint32> scheduledEntries;
-
-        bool needRefresh = force || day != _cachedScheduleDay;
-        if (!needRefresh && _lastScheduleFetchSec != 0 && (nowSec - _lastScheduleFetchSec) >= 300)
-            needRefresh = true;
-
-        if (needRefresh)
+        if (day != _cachedScheduleDay || (nowSec - _lastScheduleFetchSec) >= SCHEDULE_REFRESH_SEC)
         {
-            _cachedScheduledEntries = GetScheduledBossEntriesForDay(day);
+            sTodaysBossEntries = GetScheduledBossEntriesForDay(day);
+            if (sTodaysBossEntries.empty())
+                sTodaysBossEntries.push_back(GetActiveBossEntry());
+
             _cachedScheduleDay = day;
             _lastScheduleFetchSec = nowSec;
         }
 
-        scheduledEntries = _cachedScheduledEntries;
-
-        if (scheduledEntries.empty())
-            scheduledEntries.push_back(GetActiveBossEntry());
-
-        uint32 rotationKey = 17;
-        for (uint32 entry : scheduledEntries)
-            rotationKey = rotationKey * 131 + entry;
-
-        if (!force && day == _lastRotationDay && rotationKey == _lastRotationKey)
-            return;
-
-        _lastRotationDay = day;
-        _lastRotationKey = rotationKey;
-
-        auto isScheduled = [&](uint32 entry)
-        {
-            for (uint32 e : scheduledEntries)
-            {
-                if (e == entry)
-                    return true;
-            }
-            return false;
-        };
-
         // Enable scheduled bosses, disable the others.
-        SetWorldBossActive(NPC_OONDASTA, isScheduled(NPC_OONDASTA));
-        SetWorldBossActive(NPC_THOK, isScheduled(NPC_THOK));
-        SetWorldBossActive(NPC_NALAK, isScheduled(NPC_NALAK));
+        for (uint32 bossEntry : { uint32(NPC_OONDASTA), uint32(NPC_THOK), uint32(NPC_NALAK) })
+        {
+            auto const found = std::find(sTodaysBossEntries.begin(), sTodaysBossEntries.end(), bossEntry);
+            ApplyRotationToBoss(bossEntry, found != sTodaysBossEntries.end());
+        }
     }
 
     void TrySpawnRandomRare()

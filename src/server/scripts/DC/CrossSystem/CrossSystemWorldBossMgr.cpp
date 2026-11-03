@@ -106,6 +106,16 @@ namespace DC
         return it != _bossesByEntry.end() && it->second.isActive;
     }
 
+    void WorldBossMgr::SetBossState(uint32 entry, bool active, int32 respawnIn)
+    {
+        WorldBossInfo* info = GetBossInfo(entry);
+        if (!info)
+            return;
+
+        info->isActive = active;
+        info->respawnCountdown = respawnIn;
+    }
+
     void WorldBossMgr::OnBossSpawned(Creature* boss)
     {
         if (!boss)
@@ -246,6 +256,12 @@ namespace DC
         BroadcastBossUpdate(boss, "death", false, spawnIn);
     }
 
+    void WorldBossMgr::OnBossDespawned(Creature* boss)
+    {
+        if (boss)
+            BroadcastBossUpdate(boss, "despawn", false);
+    }
+
     void WorldBossMgr::Update(uint32 diffMs)
     {
         int32 diffSec = static_cast<int32>(diffMs / 1000);
@@ -374,10 +390,8 @@ namespace DC
             }
             else
             {
-                // If not active and no timer, it's ready to spawn (or just unknown).
-                // Usually this means it's available.
-                b.Set("status", DCAddon::JsonValue("active"));
-                b.Set("active", DCAddon::JsonValue(true)); // Force active flag if it's "ready"
+                // Neither up nor on a timer: its rotation has it off today.
+                b.Set("status", DCAddon::JsonValue("inactive"));
             }
 
             // Zone name from DBC

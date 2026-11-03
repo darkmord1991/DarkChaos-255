@@ -31,6 +31,7 @@
 void AddSC_ac_guard_npc();                    // AC/ac_guard_npc.cpp
 void AddSC_dc_worgoblin();                    // Races/dc_worgoblin.cpp
 void AddSC_dc_dark_iron();                    // Races/dc_dark_iron.cpp
+void AddSC_dc_races_28_31();                  // Races/dc_races_28_31.cpp
 void AddSC_dc_hunter_pet_abilities();         // Pets/dc_hunter_pet_abilities.cpp
 void AddSC_dc_login_announce();               // Progression/FirstStart/dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009();             // AC/ac_quest_npc_800009.cpp
@@ -334,6 +335,7 @@ void AddDCScripts()
     LogSection("DC Core Services");
     DC_LOAD(AddSC_dc_worgoblin);
     DC_LOAD(AddSC_dc_dark_iron);
+    DC_LOAD(AddSC_dc_races_28_31);
     DC_LOAD(AddSC_dc_hunter_pet_abilities);
     DC_LOAD(AddSC_dc_login_announce);
     DC_LOAD(AddSC_dc_teleporter);

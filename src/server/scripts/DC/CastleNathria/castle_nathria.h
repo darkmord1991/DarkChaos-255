@@ -139,10 +139,14 @@ enum CNGameobjects
     GO_DOOR_SHRIEKWING_RIGHT2       = 352900,
     GO_DOOR_SLUDGEFIST_LEFT         = 348932,
     GO_DOOR_SLUDGEFIST_RIGHT        = 348933,
+    GO_DOOR_WEST_HALL               = 358331,
     // Altimor
     GO_DOOR_ALTIMOR_EXIT_LEFT       = 353145,
     GO_DOOR_ALTIMOR_EXIT_RIGHT      = 353144,
     GO_DOOR_ALTIMOR_TUNNEL          = 352930,
+    GO_KENNEL_BARGAST               = 353138,
+    GO_KENNEL_MARGORE               = 353140,
+    GO_KENNEL_HECUTIS               = 353142,
     // Hungering Destroyer
     GO_DOOR_HUNGERING_LEFT          = 352031,
     GO_DOOR_HUNGERING_RIGHT         = 352035,
@@ -152,6 +156,10 @@ enum CNGameobjects
     // Council of Blood, top doors
     GO_DOOR_COUNCIL_OF_BLOOD_LEFT   = 349865,
     GO_DOOR_COUNCIL_OF_BLOOD_RIGHT  = 352736,
+    // West wing, past the Council's top doors
+    GO_DOOR_SUN_KING_WING           = 352735,
+    GO_DOOR_SUN_KING_LANDING        = 352894,
+    GO_DOOR_MIRROR_POCKET           = 353985,
     // Sire Denathrius
     GO_DOOR_SIRE_DENATHRIUS         = 352824
 };

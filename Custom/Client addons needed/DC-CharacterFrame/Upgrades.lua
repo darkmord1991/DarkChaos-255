@@ -68,6 +68,55 @@ local function IsHeirloom(itemId)
     return iu and type(iu.IsHeirloomItemId) == "function" and iu.IsHeirloomItemId(itemId) or false
 end
 
+-- ---------------------------------------------------------------------------
+-- Item level
+-- ---------------------------------------------------------------------------
+
+local HEIRLOOM_QUALITY = 7
+local ITEM_LEVEL_LINE = string.gsub(ITEM_LEVEL or "Item Level %d", "%%d", "(%%d+)")
+local levelScanner
+
+local function ScanSlotItemLevel(slotId)
+    if not levelScanner then
+        levelScanner = CreateFrame("GameTooltip", "DCCFItemLevelScan", nil, "GameTooltipTemplate")
+    end
+    -- The client only prints the line with this CVar on, and it defaults to off.
+    local shown = GetCVar("showItemLevel")
+    if shown == "0" then
+        SetCVar("showItemLevel", "1")
+    end
+    levelScanner:SetOwner(UIParent, "ANCHOR_NONE")
+    levelScanner:SetInventoryItem("player", slotId)
+    local level
+    for i = 2, levelScanner:NumLines() do
+        local left = _G["DCCFItemLevelScanTextLeft" .. i]
+        level = tonumber(string.match(left and left:GetText() or "", ITEM_LEVEL_LINE))
+        if level then
+            break
+        end
+    end
+    levelScanner:Hide()
+    if shown == "0" then
+        SetCVar("showItemLevel", shown)
+    end
+    return level
+end
+
+-- What the item in a slot is worth, and its upgrade info. `level` is the template's. A level-scaling
+-- item's template level is a placeholder (1 on Blizzard's heirlooms, 80 on ours), which the upgrade
+-- cache starts from as well, so only the tooltip knows it: both clients print there what its stats
+-- scaled to, upgrades included.
+function DCCF:GetSlotItemLevel(slotId, link, quality, level)
+    local info = self:GetSlotUpgradeInfo(slotId)
+    if info and info.itemLevel > 0 then
+        level = info.itemLevel
+    end
+    if quality == HEIRLOOM_QUALITY or IsHeirloom(tonumber(string.match(link, "item:(%d+)"))) then
+        level = ScanSlotItemLevel(slotId) or level
+    end
+    return level, info
+end
+
 function DCCF:OpenUpgradeWindow(mode, slotId)
     local iu = IU()
     if not iu or type(iu.ToggleUpgradeFrame) ~= "function" then
@@ -108,11 +157,8 @@ function DCCF:UpdateSlotItemLevel(btn)
         fs:Hide()
         return
     end
-    local _, _, _, level = GetItemInfo(link)
-    local info = self:GetSlotUpgradeInfo(id)
-    if info and info.itemLevel > 0 then
-        level = info.itemLevel
-    end
+    local _, _, quality, template = GetItemInfo(link)
+    local level, info = self:GetSlotItemLevel(id, link, quality, template)
     if not level or level <= 0 then
         fs:Hide()
         return
@@ -212,12 +258,9 @@ local function BuildUpgradesPane(parent)
                 row.isHeirloom = false
                 return
             end
-            local itemName, _, quality, level = GetItemInfo(link)
+            local itemName, _, quality, template = GetItemInfo(link)
             local itemId = tonumber(string.match(link, "item:(%d+)"))
-            local info = DCCF:GetSlotUpgradeInfo(slotId)
-            if info and info.itemLevel > 0 then
-                level = info.itemLevel
-            end
+            local level, info = DCCF:GetSlotItemLevel(slotId, link, quality, template)
             row.isHeirloom = IsHeirloom(itemId)
             row.Icon:SetTexture(GetInventoryItemTexture("player", slotId))
             row.Icon:SetVertexColor(1, 1, 1)

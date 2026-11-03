@@ -150,6 +150,10 @@ local EYE_HEIGHT = {
 	[25] = { [0] = 2.05, [1] = 1.90 },  -- Zandalari Troll
 	[26] = { [0] = 2.05, [1] = 1.85 },  -- Kul Tiran
 	[27] = { [0] = 1.25, [1] = 1.20 },  -- Dark Iron Dwarf: dwarf model, dwarf eye height
+	[28] = { [0] = 2.00, [1] = 1.85 },  -- Drakkari Troll: troll frame, pending in-client review
+	[29] = { [0] = 1.80, [1] = 1.65 },  -- Void Elf: blood elf model
+	[30] = { [0] = 2.20, [1] = 2.00 },  -- Lightforged Draenei: draenei model
+	[31] = { [0] = 1.90, [1] = 1.75 },  -- Mag'har Orc: orc model
 }
 
 -- Per-race face-framing trims on top of the analytic camera math, from in-client review
@@ -173,6 +177,9 @@ local FACE_TUNE = {
 	[12] = { dz = 0.25 },               -- Worgen: up a bit (round 3)
 	[27] = { dz = 0.25 },               -- Dark Iron Dwarf: dwarf model; own UI_DarkIronDwarf scene since
 	                                    -- 09-26, dwarf trim kept pending in-client review
+	[28] = { dz = -0.15 },              -- Drakkari Troll: troll trim
+	[29] = { dz = -0.05 },              -- Void Elf: blood elf trim
+	[30] = { df = -1.20, dz = 0.0 },    -- Lightforged Draenei: draenei trim
 	[22] = { dz = -0.40 },              -- Pandaren: face sat above the frame on the tauren
 	[23] = { dz = -0.40 },              -- scene - character down (round 1, untrimmed guess)
 	-- Scourge: pure analytic is the keeper.

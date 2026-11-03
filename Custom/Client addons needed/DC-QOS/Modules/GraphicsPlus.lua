@@ -46,6 +46,7 @@ local PRESETS = {
             cameraDistance = 70,
             horizonScale = 4.5,
             environmentDetail = 1.2,
+            grassDistance = 100,
             doodadFade = 220,
             doodadFadeCategories = { 220, 220, 220, 750, 1250 },
             applyQualityPreset = false,
@@ -58,6 +59,7 @@ local PRESETS = {
             cameraDistance = 120,
             horizonScale = 6.0,
             environmentDetail = 1.5,
+            grassDistance = 200,
             doodadFade = 1250,
             doodadFadeCategories = { 200, 400, 700, 1000, 1250 },
             applyQualityPreset = true,
@@ -70,6 +72,7 @@ local PRESETS = {
             cameraDistance = 500,
             horizonScale = 12.0,
             environmentDetail = 6.0,
+            grassDistance = 280,
             doodadFade = 2560,
             doodadFadeCategories = { 2560, 2560, 2560, 2560, 2560 },
             applyQualityPreset = true,
@@ -96,6 +99,7 @@ local LIMIT_SLIDERS = {
     { key = "cameraDistance", label = "Camera Distance", min = 1, max = 500, step = 5, format = Whole },
     { key = "horizonScale", label = "Horizon Scale", min = 1, max = 12, step = 0.5, format = Tenths },
     { key = "environmentDetail", label = "Environment Detail", min = 0.5, max = 6, step = 0.1, format = Tenths },
+    { key = "grassDistance", label = "Grass Distance", min = 70, max = 280, step = 10, format = Whole },
 }
 
 local OPTION_BOXES = {
@@ -110,6 +114,7 @@ local OPTION_BOXES = {
 local EFFECTS_SLIDERS = {
     { control = "VideoOptionsEffectsPanelViewDistance", key = "farclip" },
     { control = "VideoOptionsEffectsPanelEnvironmentDetail", key = "environmentDetail" },
+    { control = "VideoOptionsEffectsPanelClutterRadius", key = "grassDistance" },
 }
 
 local eventFrame
@@ -145,6 +150,11 @@ local function HasNativeGraphicsApi()
         and type(SetEnvironmentDetail) == "function"
         and type(SetTextureQuality) == "function"
         and type(SetRenderFlags) == "function"
+end
+
+-- The native client only: the old one stops at the stock 140 yards, which the Effects page covers.
+local function HasGrassDistanceApi()
+    return type(SetGrassDistance) == "function"
 end
 
 -- Newer DLL builds only; checked separately so older DLLs keep the rest
@@ -209,6 +219,7 @@ local function ApplyGraphicsSettings(reason)
     CallNative(SetExtendedCameraDistance, settings.cameraDistance)
     CallNative(SetHorizonScale, settings.horizonScale)
     CallNative(SetEnvironmentDetail, settings.environmentDetail)
+    CallNative(SetGrassDistance, settings.grassDistance)
 
     if HasDoodadFadeCategoryApi() then
         local categories = GetDoodadCategoryValues(settings)
@@ -320,7 +331,7 @@ local function CreatePresetButtons(parent, y)
 end
 
 function GraphicsPlus.CreateSettings(parent)
-    local description = "Limits beyond the stock ones. Farclip and Environment Detail are the same values as View Distance and Environment Detail on the Effects page, which stop at the stock maximums."
+    local description = "Limits beyond the stock ones. Farclip, Environment Detail and Grass Distance are the same values as View Distance, Environment Detail and Ground Clutter Radius on the Effects page, which stop at the stock maximums."
     if not HasNativeGraphicsApi() then
         description = "|cffff5555This client has no Graphics+ support, so these settings do nothing.|r"
     end
@@ -337,9 +348,13 @@ function GraphicsPlus.CreateSettings(parent)
             pending[info.key] = value
             MarkChanged()
         end)
-        if column == 2 then
+        if column == 2 or index == #LIMIT_SLIDERS then
             y = y - 46
         end
+    end
+
+    if not HasGrassDistanceApi() then
+        limitSliders.grassDistance:Hide()
     end
 
     y = y + 2

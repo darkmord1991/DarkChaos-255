@@ -5,6 +5,7 @@ CHARACTER_ROTATION_CONSTANT = 0.6;
 
 MAX_CHARACTERS_DISPLAYED = 10;
 CHARACTER_SELECT_VISIBLE_BUTTONS = 8;
+CHARACTER_SELECT_BUTTON_PITCH = 57;
 MAX_CHARACTERS_PER_REALM = 25;
 
 function CharacterSelect_HasExpandedCharacterList()
@@ -87,20 +88,29 @@ function CharacterSelect_CanCreateCharacter(numChars)
 	return IsConnectedToServer() and numChars < MAX_CHARACTERS_PER_REALM;
 end
 
+-- Row 9 overlaps CharSelectCreateCharacterButton, so it is only free once that button hides at the character cap.
+function CharacterSelect_GetVisibleButtons(numChars)
+	if ( CharacterSelect_CanCreateCharacter(numChars or 0) ) then
+		return CHARACTER_SELECT_VISIBLE_BUTTONS;
+	end
+
+	return CHARACTER_SELECT_VISIBLE_BUTTONS + 1;
+end
+
 function CharacterSelect_GetDisplayCount(numChars)
 	return numChars;
 end
 
 function CharacterSelect_GetMaxScrollOffset(numChars)
 	local displayCount = CharacterSelect_GetDisplayCount(numChars or 0);
-	return max(displayCount - CHARACTER_SELECT_VISIBLE_BUTTONS, 0);
+	return max(displayCount - CharacterSelect_GetVisibleButtons(numChars), 0);
 end
 
 function CharacterSelect_GetDisplayRange(numChars)
 	local displayCount = CharacterSelect_GetDisplayCount(numChars or 0);
 	local scrollOffset = CharacterSelect.scrollOffset or 0;
 	local firstDisplayIndex = scrollOffset + 1;
-	local lastDisplayIndex = min(displayCount, scrollOffset + CHARACTER_SELECT_VISIBLE_BUTTONS);
+	local lastDisplayIndex = min(displayCount, scrollOffset + CharacterSelect_GetVisibleButtons(numChars));
 
 	if ( displayCount == 0 ) then
 		firstDisplayIndex = 0;
@@ -116,12 +126,13 @@ function CharacterSelect_EnsureVisibleIndex(index, numChars)
 	end
 
 	local maxScrollOffset = CharacterSelect_GetMaxScrollOffset(numChars);
+	local visibleButtons = CharacterSelect_GetVisibleButtons(numChars);
 	local scrollOffset = CharacterSelect.scrollOffset or 0;
 
 	if ( index <= scrollOffset ) then
 		scrollOffset = index - 1;
-	elseif ( index > scrollOffset + CHARACTER_SELECT_VISIBLE_BUTTONS ) then
-		scrollOffset = index - CHARACTER_SELECT_VISIBLE_BUTTONS;
+	elseif ( index > scrollOffset + visibleButtons ) then
+		scrollOffset = index - visibleButtons;
 	end
 
 	CharacterSelect.scrollOffset = min(max(scrollOffset, 0), maxScrollOffset);
@@ -207,6 +218,10 @@ function CharacterSelect_UpdatePaginationControls(numChars)
 		CharSelectScrollBar:Hide();
 		return;
 	end
+
+	local extraRows = CharacterSelect_GetVisibleButtons(numChars) - CHARACTER_SELECT_VISIBLE_BUTTONS;
+	CharSelectScrollBar:SetPoint("BOTTOMRIGHT", CharacterSelectCharacterFrame, "BOTTOMRIGHT", -8,
+		86 - extraRows * CHARACTER_SELECT_BUTTON_PITCH);
 
 	CharacterSelect.updatingScrollBar = true;
 	CharSelectScrollBar:SetMinMaxValues(0, maxScrollOffset);

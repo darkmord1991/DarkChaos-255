@@ -4247,8 +4247,11 @@ bool Player::HasActiveSpell(uint32 spell) const
  * @param accountId        the account id from the player
  * @param updateRealmChars when this flag is set, the amount of characters on that realm will be updated in the realmlist
  * @param deleteFinally    if this flag is set, the config option will be ignored and the character will be permanently removed from the database
+ * @param pendingTrans     if set, receives the uncommitted transaction so the caller can wait for the commit;
+ *                         left empty when nothing was deleted
  */
-void Player::DeleteFromDB(ObjectGuid::LowType lowGuid, uint32 accountId, bool updateRealmChars, bool deleteFinally)
+void Player::DeleteFromDB(ObjectGuid::LowType lowGuid, uint32 accountId, bool updateRealmChars, bool deleteFinally,
+    CharacterDatabaseTransaction* pendingTrans /*= nullptr*/)
 {
     // for not existed account avoid update realm
     if (!accountId)
@@ -4285,14 +4288,13 @@ void Player::DeleteFromDB(ObjectGuid::LowType lowGuid, uint32 accountId, bool up
     RemovePetitionsAndSigns(playerGuid, 10);
 
     CharacterDatabasePreparedStatement* stmt = nullptr;
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
 
     switch (charDelete_method)
     {
         // Completely remove from the database
         case CHAR_DELETE_REMOVE:
             {
-                CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_COD_ITEM_MAIL);
                 stmt->SetData(0, lowGuid);
                 PreparedQueryResult resultMail = CharacterDatabase.Query(stmt);
@@ -4564,8 +4566,6 @@ void Player::DeleteFromDB(ObjectGuid::LowType lowGuid, uint32 accountId, bool up
                 Corpse::DeleteFromDB(playerGuid, trans);
 
                 sScriptMgr->OnPlayerDeleteFromDB(trans, lowGuid);
-
-                CharacterDatabase.CommitTransaction(trans);
                 break;
             }
         // The character gets unlinked from the account, the name gets freed up and appears as deleted ingame
@@ -4575,13 +4575,18 @@ void Player::DeleteFromDB(ObjectGuid::LowType lowGuid, uint32 accountId, bool up
 
                 stmt->SetData(0, lowGuid);
 
-                CharacterDatabase.Execute(stmt);
+                trans->Append(stmt);
                 break;
             }
         default:
             LOG_ERROR("entities.player", "Player::DeleteFromDB: Unsupported delete method: {}.", charDelete_method);
             return;
     }
+
+    if (pendingTrans)
+        *pendingTrans = trans;
+    else
+        CharacterDatabase.CommitTransaction(trans);
 
     if (CharacterCacheEntry const* cache = sCharacterCache->GetCharacterCacheByGuid(playerGuid))
     {

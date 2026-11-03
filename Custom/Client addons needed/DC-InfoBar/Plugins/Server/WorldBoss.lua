@@ -39,7 +39,7 @@ local function GetBosses()
     return DCInfoBar.serverData.worldBosses
 end
 
--- Classify a boss record: "active", "spawning" (with a timer) or "unknown".
+-- Classify a boss record: "active", "spawning" (with a timer), "inactive" (off rotation) or "unknown".
 local function GetBossState(boss, now)
     local status = string.lower(tostring(boss.status or ""))
     local hp = tonumber(boss.hp)
@@ -47,6 +47,10 @@ local function GetBossState(boss, now)
 
     if status == "active" and not dead then
         return "active", boss.justSpawnedUntil and now < boss.justSpawnedUntil
+    end
+    -- Checked before the timer: a merged record keeps the spawnIn of an earlier day.
+    if status == "inactive" then
+        return "inactive"
     end
     if tonumber(boss.spawnIn) then
         return "spawning"
@@ -134,6 +138,8 @@ function WorldBossPlugin:OnUpdate(elapsed)
         return "", "|cff50ff7a" .. name .. ": " .. (justSpawned and "Just spawned!" or "Active!") .. hpText .. "|r"
     elseif state == "spawning" then
         return "", name .. ": " .. DCInfoBar:FormatTimeShort(boss.spawnIn)
+    elseif state == "inactive" then
+        return "", name .. ": Not today"
     end
     return "", name .. ": Unknown"
 end
@@ -176,6 +182,9 @@ function WorldBossPlugin:OnTooltip(tooltip)
             elseif state == "spawning" then
                 statusText = "Spawns in " .. DCInfoBar:FormatTimeShort(boss.spawnIn)
                 r, g, b = 1, 0.82, 0
+            elseif state == "inactive" then
+                statusText = "Not today"
+                r, g, b = 0.5, 0.5, 0.5
             else
                 statusText = "Unknown"
                 r, g, b = 0.5, 0.5, 0.5
@@ -213,6 +222,7 @@ function WorldBossPlugin:OnClick(button)
         local state, justSpawned = GetBossState(boss, now)
         local status = (state == "active" and (justSpawned and "JUST SPAWNED" or "ACTIVE"))
             or (state == "spawning" and DCInfoBar:FormatTimeShort(boss.spawnIn))
+            or (state == "inactive" and "not today")
             or "unknown"
         DCInfoBar:Print(string.format("  %s (%s): %s", tostring(boss.name), tostring(boss.zone), status))
     end

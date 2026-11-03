@@ -710,7 +710,7 @@ namespace DarkChaos
                         "ON DUPLICATE KEY UPDATE mastery_points = mastery_points + {}",
                         player_guid, item_entry, mastery_points, mastery_points);
 
-                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points",
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points",
                             player_guid, item_guid, next_level, mastery_points);
 
                     stats.upgrades_performed++;

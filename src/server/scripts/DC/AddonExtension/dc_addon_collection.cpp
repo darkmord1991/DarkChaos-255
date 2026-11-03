@@ -6402,33 +6402,50 @@ namespace DCCollection
     // teaching uses (IsSpellFitByClassAndRace) and the teaching item's faction,
     // class, race, riding-skill and level requirements, as Player::CanUseItem
     // checks them. Without them any alt rode every mount on the account.
-    static bool CanCharacterRideMount(Player* player, uint32 spellId)
+    // Returns why this character may not ride the mount, empty when it may.
+    static std::string GetMountRefusal(Player* player, uint32 spellId)
     {
         if (!player->IsSpellFitByClassAndRace(spellId))
-            return false;
+            return "Your race or class cannot use that mount";
 
         uint32 const teachingItemId = FindMountItemIdForSpell(spellId);
         ItemTemplate const* proto = teachingItemId ? sObjectMgr->GetItemTemplate(teachingItemId) : nullptr;
         if (!proto)
-            return true;
+            return {};
 
         if (proto->HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE)
-            return false;
+            return "That mount is for the Horde only";
 
         if (proto->HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE)
-            return false;
+            return "That mount is for the Alliance only";
 
-        if ((proto->AllowableClass & player->getClassMask()) == 0 || (proto->AllowableRace & player->getRaceMask()) == 0)
-            return false;
+        if ((proto->AllowableClass & player->getClassMask()) == 0)
+            return "Your class cannot use that mount";
+
+        if ((proto->AllowableRace & player->getRaceMask()) == 0)
+            return "Your race cannot use that mount";
 
         if (proto->RequiredSkill != 0)
         {
             uint32 const skillValue = player->GetSkillValue(proto->RequiredSkill);
             if (skillValue == 0 || skillValue < proto->RequiredSkillRank)
-                return false;
+            {
+                SkillLineEntry const* skill = sSkillLineStore.LookupEntry(proto->RequiredSkill);
+                bool const named = skill && skill->name[0] && *skill->name[0];
+                return Acore::StringFormat("That mount requires {} {}", named ? skill->name[0] : "skill",
+                    proto->RequiredSkillRank);
+            }
         }
 
-        return player->GetLevel() >= proto->RequiredLevel;
+        if (player->GetLevel() < proto->RequiredLevel)
+            return Acore::StringFormat("That mount requires level {}", proto->RequiredLevel);
+
+        return {};
+    }
+
+    static bool CanCharacterRideMount(Player* player, uint32 spellId)
+    {
+        return GetMountRefusal(player, spellId).empty();
     }
 
     void HandleSummonMount(Player* player, uint32 spellId, bool random)
@@ -6566,9 +6583,10 @@ namespace DCCollection
             return;
         }
 
-        if (!CanCharacterRideMount(player, spellId))
+        std::string const refusal = GetMountRefusal(player, spellId);
+        if (!refusal.empty())
         {
-            DCAddon::SendError(player, MODULE, "This character cannot use that mount",
+            DCAddon::SendError(player, MODULE, refusal,
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }

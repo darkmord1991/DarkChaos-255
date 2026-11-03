@@ -2324,7 +2324,13 @@ function DC:_DispatchNativeMessage(module, opcode, body)
             self:_InvokeHandlerSafe("native-global-error", module, opcode, h,
                 module, errCode, errMsg, opcode)
         end
-        if self:GetSetting("chatOnError") then
+        self:LogNetEvent("error", "server", module .. ": " .. tostring(errMsg or "Unknown error"), {
+            module = module,
+            opcode = opcode,
+            code = errCode,
+        })
+        -- A module with its own error handler shows the error itself.
+        if not errHandlers and self:GetSetting("chatOnError") then
             DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module
                 .. ": " .. (errMsg or "Unknown error"))
         end
@@ -3551,7 +3557,8 @@ frame:SetScript("OnEvent", function()
                         opcode = opcode,
                         code = errCode,
                     })
-                    if DC:GetSetting("chatOnError") then
+                    -- A module with its own error handler shows the error itself.
+                    if not errHandlers and DC:GetSetting("chatOnError") then
                         DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module .. ": " .. (errMsg or "Unknown error"))
                     end
                     -- Log response

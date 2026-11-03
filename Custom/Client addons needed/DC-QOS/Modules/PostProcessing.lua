@@ -34,6 +34,10 @@ local function Percent(value)
     return string.format("%d%%", value * 100 + 0.5)
 end
 
+local function WholePercent(value)
+    return string.format("%d%%", value)
+end
+
 local SMAA_SLIDER = {
     key = "dcSmaa", label = "Quality", min = 0, max = 4, step = 1, format = Level(SMAA_LEVELS),
 }
@@ -48,8 +52,23 @@ local GTAO_DETAIL_SLIDERS = {
     { key = "dcGtaoDistance", label = "Fade distance", min = 40, max = 400, step = 10, format = WholeYards },
 }
 
+local UPSCALERS = { [1] = "FSR 1", [2] = "FSR 3.1" }
+
+local UPSCALER_SLIDER = {
+    key = "dcUpscaler", label = "Upscaler", min = 1, max = 2, step = 1, format = Level(UPSCALERS),
+}
+
+local RENDER_SCALE_SLIDER = {
+    key = "dcRenderScale", label = "Render scale", min = 50, max = 100, step = 5, format = WholePercent,
+}
+
+local SHARPNESS_SLIDER = {
+    key = "dcFsrSharpness", label = "Sharpness", min = 0, max = 1, step = 0.05, format = Percent,
+}
+
 local GTAO_DEBUG_CVAR = "dcGtaoDebug"
-local CVARS = { "dcSmaa", "dcGtao", "dcGtaoRadius", "dcGtaoStrength", "dcGtaoDistance", GTAO_DEBUG_CVAR }
+local CVARS = { "dcSmaa", "dcGtao", "dcGtaoRadius", "dcGtaoStrength", "dcGtaoDistance", GTAO_DEBUG_CVAR,
+    "dcUpscaler", "dcRenderScale", "dcFsrSharpness" }
 
 local sliders = {}
 local gtaoSlider, gtaoNote, debugBox
@@ -110,6 +129,16 @@ function PostProcessing.CreateSettings(parent)
     addon:CreateVideoHeader(parent, y, "Anti-aliasing (SMAA)")
     y = y - 34
     CreateCVarSlider(parent, 1, y, SMAA_SLIDER)
+    y = y - 46
+
+    addon:CreateVideoHeader(parent, y, "Upscaling")
+    y = y - 16
+    addon:CreateVideoNote(parent, y, "Draws the world smaller and scales it up, so the frame rate rises; the interface stays sharp. FSR 3.1 builds detail up over frames and also smooths edges, so it replaces SMAA and is worth using at 100%. It needs multisampling off, and with multisampling on the world stays at full size.")
+    y = y - 58
+    CreateCVarSlider(parent, 1, y, UPSCALER_SLIDER)
+    y = y - 46
+    CreateCVarSlider(parent, 1, y, RENDER_SCALE_SLIDER)
+    CreateCVarSlider(parent, 2, y, SHARPNESS_SLIDER)
     y = y - 46
 
     addon:CreateVideoHeader(parent, y, "Ambient occlusion (GTAO)")

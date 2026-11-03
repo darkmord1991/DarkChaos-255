@@ -713,6 +713,30 @@ ABILITY_INFO_KULTIRAN1 = "- Shrug off damage with your considerable bulk.";
 ABILITY_INFO_KULTIRAN2 = "- Deliver a devastating haymaker punch.";
 ABILITY_INFO_KULTIRAN3 = "- Increased skill in all professions.";
 ABILITY_INFO_KULTIRAN4 = "- Reduced damage taken from sea creatures.";
+
+RACE_INFO_VOIDELF = "Seeking to harness the corruptive magic of the Void, these outcast elves endured an unexpected transformation. They are determined to master their newfound powers and resist the whispers eager to lure them into madness.";
+ABILITY_INFO_VOIDELF1 = "- Open a rift in the Void and step through it.";
+ABILITY_INFO_VOIDELF2 = "- Your damage and healing sometimes surge for a short time.";
+ABILITY_INFO_VOIDELF3 = "- Take less damage from Shadow and Arcane.";
+ABILITY_INFO_VOIDELF4 = "- Spell casts are not pushed back by damage.";
+
+RACE_INFO_LIGHTFORGEDDRAENEI = "Fighting a long, bitter war against the Burning Legion, these draenei soldiers were infused with the Holy Light to become living weapons. Victorious at last, these Lightforged stand ready to defend Azeroth.";
+ABILITY_INFO_LIGHTFORGEDDRAENEI1 = "- Call down a strike of Holy Light on your enemies.";
+ABILITY_INFO_LIGHTFORGEDDRAENEI2 = "- Erupt with Holy Light on death, harming enemies and healing allies.";
+ABILITY_INFO_LIGHTFORGEDDRAENEI3 = "- Summon a forge and anvil. Blacksmithing skill increased by 10.";
+ABILITY_INFO_LIGHTFORGEDDRAENEI4 = "- Take less Holy damage and gain more experience from demons.";
+
+RACE_INFO_MAGHARORC = "The orc clans of Draenor never drank the demon blood that corrupted their distant kin. Proud and defiant, they stood united as one tribe--the Mag'har. With their unrelenting courage and fierce sense of honor, the Mag'har now fight to claim a new home on Azeroth.";
+ABILITY_INFO_MAGHARORC1 = "- Call on your ancestors for a random blessing.";
+ABILITY_INFO_MAGHARORC2 = "- Mounted speed increased.";
+ABILITY_INFO_MAGHARORC3 = "- Your pet has more health.";
+ABILITY_INFO_MAGHARORC4 = "- Poison, disease and curse effects are shorter.";
+
+RACE_INFO_DRAKKARITROLL = "The ice trolls of Zul'Drak raised the greatest empire Northrend had ever known, and watched it crumble when the Scourge came for their gods. The Drakkari who survived have cast aside their fallen pride. They carry the cold of the north in their blood and bow to no frozen throne.";
+ABILITY_INFO_DRAKKARITROLL1 = "- Increase attack and casting speed for a short time.";
+ABILITY_INFO_DRAKKARITROLL2 = "- Regenerate health faster, and some of it during combat.";
+ABILITY_INFO_DRAKKARITROLL3 = "- Take less Frost damage.";
+ABILITY_INFO_DRAKKARITROLL4 = "- Shake off movement-impairing effects faster.";
 RACE_INFO_BLOODELF = "Long ago the exiled high elves founded Quel'Thalas, where they created a magical fount called the Sunwell. Though they were strengthened by its powers, they also grew increasingly dependent on them.|n|nAges later the undead Scourge destroyed the Sunwell and most of the high elf population. Now called blood elves, these scattered refugees are rebuilding Quel'Thalas as they search for a new magic source to satisfy their painful addiction.";
 RACE_INFO_BLOODELF_FEMALE = "Long ago the exiled high elves founded Quel'Thalas, where they created a magical fount called the Sunwell. Though they were strengthened by its powers, they also grew increasingly dependent on them.|n|nAges later the undead Scourge destroyed the Sunwell and most of the high elf population. Now called blood elves, these scattered refugees are rebuilding Quel'Thalas as they search for a new magic source to satisfy their painful addiction.";
 RACE_INFO_DRAENEI = "Driven from their home world of Argus, the honorable draenei fled the Burning Legion for eons before finding a remote planet to settle on. They shared this world with the shamanistic orcs and named it Draenor. In time the Legion corrupted the orcs, who waged war and nearly exterminated the peaceful draenei. A lucky few fled to Azeroth, where they now seek allies in their battle against the Burning Legion.";

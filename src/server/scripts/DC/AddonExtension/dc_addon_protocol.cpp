@@ -1510,6 +1510,9 @@ namespace DCAddon
         if (IsBotRecipient(player))
             return;
 
+        if (IsErrorOpcode(_module, _opcode))
+            LogServerError(player, _module, _opcode, false, _data.empty() ? std::string() : _data.back());
+
         if (g_ValidateOutboundJson)
             ValidateOutboundJsonFields(player, _module, _opcode, _data);
 
@@ -2219,8 +2222,9 @@ static void InsertProtocolErrorRow(ProtocolLogContext const& context,
         EscapeSQLString(moduleCode),
         opcode,
         EscapeSQLString(safeEventType),
-        EscapeSQLString(message),
-        EscapeSQLString(payloadPreview));
+        // Both columns are varchar(255), and a longer value would lose the whole row.
+        EscapeSQLString(message.substr(0, 255)),
+        EscapeSQLString(payloadPreview.substr(0, 255)));
 }
 
 static void InsertProtocolLogRow(ProtocolLogContext const& context,
@@ -2569,6 +2573,19 @@ namespace DCAddon
             SanitizeModuleCode(module),
             GetLoggedOpcode(logicalOpcode, nativeOpcode), eventType, message,
             FormatNativePayloadPreview(nativeOpcode, payloadPreview));
+    }
+
+    void LogServerError(Player* player, std::string const& module, uint8 opcode, bool json,
+        std::string const& message)
+    {
+        if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
+            return;
+
+        InsertProtocolErrorRow(BuildProtocolLogContext(player),
+            ToDirectionLabel(ProtocolLogDirection::ServerToClient),
+            json ? "DC_JSON" : "DC_PLAIN", SanitizeModuleCode(module), opcode,
+            opcode == Opcode::Core::SMSG_PERMISSION_DENIED ? "permission_denied" : "server_error",
+            message, "");
     }
 
     void AuditNativeC2SRequest(Player* player, std::string const& module,

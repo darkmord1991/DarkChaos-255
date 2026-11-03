@@ -194,6 +194,45 @@ local function GetJunkStateForItem(itemId, quality)
     return isJunk, isNeverSell
 end
 
+-- A level-scaling item's template level is a placeholder (1 on Blizzard's heirlooms, 80 on ours).
+-- The tooltip prints what its stats are worth at the owner's level, and only with this CVar on.
+local HEIRLOOM_QUALITY = 7
+local ITEM_LEVEL_LINE = string.gsub(ITEM_LEVEL or "Item Level %d", "%%d", "(%%d+)")
+local levelScanner
+
+local function ScanBagItemLevel(bag, slot)
+    if not levelScanner then
+        levelScanner = CreateFrame("GameTooltip", "DCQoSBagLevelScan", nil, "GameTooltipTemplate")
+    end
+
+    local shown = GetCVar("showItemLevel")
+
+    if shown == "0" then
+        SetCVar("showItemLevel", "1")
+    end
+
+    levelScanner:SetOwner(UIParent, "ANCHOR_NONE")
+    levelScanner:SetBagItem(bag, slot)
+    local level
+
+    for i = 2, levelScanner:NumLines() do
+        local left = _G["DCQoSBagLevelScanTextLeft" .. i]
+        level = tonumber(string.match(left and left:GetText() or "", ITEM_LEVEL_LINE))
+
+        if level then
+            break
+        end
+    end
+
+    levelScanner:Hide()
+
+    if shown == "0" then
+        SetCVar("showItemLevel", shown)
+    end
+
+    return level
+end
+
 local function GetSortRecord(bag, slot)
     local texture, count, locked, quality, readable, lootable, link =
         GetContainerItemInfo(bag, slot)
@@ -620,6 +659,9 @@ local function UpdateButtonVisuals(button, bag, slot, searchText)
     -- 4. ILvl
     if settings.showIlvl and link then
         local _, _, _, itemLevel = GetItemInfo(link)
+        if quality == HEIRLOOM_QUALITY then
+            itemLevel = ScanBagItemLevel(bag, slot) or itemLevel
+        end
         if itemLevel and itemLevel > 1 then
             visuals.ilvl:SetText(itemLevel)
             visuals.ilvl:Show()

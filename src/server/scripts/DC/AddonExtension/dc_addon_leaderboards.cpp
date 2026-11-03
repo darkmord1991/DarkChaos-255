@@ -2631,17 +2631,6 @@ namespace
         });
     }
 
-    // Error handler for future use
-    [[maybe_unused]] void HandleError(Player* player, std::string const& message)
-    {
-        if (!player)
-            return;
-
-        DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_ERROR);
-        response.Set("message", message);
-        response.Send(player);
-    }
-
     // ========================================================================
     // REGISTRATION
     // ========================================================================

@@ -259,13 +259,10 @@ function DCCF:GetAverageItemLevel()
     for _, slotId in ipairs(ILVL_SLOTS) do
         local link = GetInventoryItemLink("player", slotId)
         if link then
-            local _, _, _, level, _, _, _, _, equipLoc = GetItemInfo(link)
-            -- Upgraded items: prefer the server-side item level from DC-ItemUpgrade.
-            if self.GetSlotUpgradeInfo then
-                local info = self:GetSlotUpgradeInfo(slotId)
-                if info and info.itemLevel and info.itemLevel > 0 then
-                    level = info.itemLevel
-                end
+            local _, _, quality, level, _, _, _, _, equipLoc = GetItemInfo(link)
+            -- Upgraded and level-scaling items: not the template's.
+            if self.GetSlotItemLevel then
+                level = self:GetSlotItemLevel(slotId, link, quality, level)
             end
             if slotId == 16 then
                 mainHandLoc, mainHandLevel = equipLoc, level

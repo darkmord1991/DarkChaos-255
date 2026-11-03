@@ -526,7 +526,14 @@ function GF:CreateWorldContentEntry(parent, item, contentType, entry)
     end
 
     if contentType == "boss" then
-        local status = item.status == "active" and "|cff00ff00ACTIVE|r" or "|cffff8800Spawns in " .. (item.spawnIn or "?") .. "|r"
+        local status
+        if item.status == "active" then
+            status = "|cff00ff00ACTIVE|r"
+        elseif item.status == "inactive" then
+            status = "|cff808080Not today|r"
+        else
+            status = "|cffff8800Spawns in " .. (item.spawnIn or "?") .. "|r"
+        end
         entry.infoText:SetText((item.zoneName or item.zone or "Unknown Zone") .. " - " .. status)
     elseif contentType == "hotspot" then
         local bonus = item.bonusPercent or item.bonus or 0

@@ -859,8 +859,8 @@ function LB:RegisterHandlers()
     end)
     
     -- Error response
-    DC:RegisterHandler(self.MODULE, self.Opcode.SMSG_ERROR, function(...)
-        LB:OnError(...)
+    DC:RegisterErrorHandler(self.MODULE, function(_, message)
+        LB:OnError(message)
     end)
     
     Print("Protocol handlers registered successfully")
@@ -1279,12 +1279,8 @@ function LB:OnMyRankData(data)
     end
 end
 
-function LB:OnError(data)
-    if type(data) == "table" then
-        Print("Error: " .. (data.message or "Unknown error"))
-    else
-        Print("Protocol error")
-    end
+function LB:OnError(message)
+    Print("Error: " .. (message or "Unknown error"))
 end
 
 -- =====================================================================

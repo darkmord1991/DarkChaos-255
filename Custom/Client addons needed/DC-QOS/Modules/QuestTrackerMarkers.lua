@@ -20,7 +20,7 @@ local QUEST_DAILY_POI_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "ui-worldmap-quest
 local QUEST_TRACK_BOX_TEXTURE = QUEST_TRACKER_MAP_BUTTON_TEXTURE
 local QUEST_TRACK_CHECK_TEXTURE = QUEST_TRACKER_ARROW_TEXTURE
 local QUEST_TRACK_PULSE_TEXTURE = QUEST_TRACKER_BUTTONS_TEXTURE
-local QUEST_POI_GLOW_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping"
+local QUEST_POI_GLOW_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping-Center"
 local QUEST_POI_PULSE_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping-Expand"
 
 function Markers.GetSuperTrackedQuestId()
