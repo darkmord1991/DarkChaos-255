@@ -76,6 +76,7 @@ enum PlayerHook
     PLAYERHOOK_ON_CHAT_WITH_GROUP,
     PLAYERHOOK_ON_CHAT_WITH_GUILD,
     PLAYERHOOK_ON_CHAT_WITH_CHANNEL,
+    PLAYERHOOK_CAN_SPEAK_UNLEARNED_LANGUAGE,
     PLAYERHOOK_ON_EMOTE,
     PLAYERHOOK_ON_TEXT_EMOTE,
     PLAYERHOOK_ON_SPELL_CAST,
@@ -347,6 +348,10 @@ public:
 
     // The following methods are called when a player sends a chat message.
     virtual void OnPlayerBeforeSendChatMessage(Player* /*player*/, uint32& /*type*/, uint32& /*lang*/, std::string& /*msg*/) { }
+
+    // Called when a player sends a chat message in a language they have not learned.
+    // Return true to let them speak it, e.g. a language a script shows their client as known.
+    [[nodiscard]] virtual bool OnPlayerCanSpeakUnlearnedLanguage(Player* /*player*/, uint32 /*type*/, uint32 /*lang*/) { return false; }
 
     // Both of the below are called on emote opcodes.
     virtual void OnPlayerEmote(Player* /*player*/, uint32 /*emote*/) { }

@@ -511,6 +511,7 @@ void WorldConfig::BuildConfigCache()
     ///- Load the ItemDelete related config options
     SetConfigValue<bool>(CONFIG_ITEMDELETE_METHOD, "ItemDelete.Method", 0);
     SetConfigValue<bool>(CONFIG_ITEMDELETE_VENDOR, "ItemDelete.Vendor", 0);
+    SetConfigValue<bool>(CONFIG_ITEMDELETE_DISENCHANT, "ItemDelete.Disenchant", 0);
     SetConfigValue<uint32>(CONFIG_ITEMDELETE_QUALITY, "ItemDelete.Quality", 3);
     SetConfigValue<uint32>(CONFIG_ITEMDELETE_ITEM_LEVEL, "ItemDelete.ItemLevel", 80);
     SetConfigValue<uint32>(CONFIG_ITEMDELETE_KEEP_DAYS, "ItemDelete.KeepDays", 0);
