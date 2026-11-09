@@ -5135,6 +5135,9 @@ bool Player::LoadFromDB(ObjectGuid playerGuid, CharacterDatabaseQueryHolder cons
         LOG_WARN("entities.player.loading", "Player::LoadFromDB: Player ({}) has invalid exploredzones data ({}). Forcing partial load.", guid, fields[66].Get<std::string_view>());
     }
 
+    // AreaBits 4096 and up (NULL or shorter than the full word count: the rest are zero)
+    LoadExtendedExploredZones(fields[75].Get<std::string_view>());
+
     if (!_LoadIntoDataField(fields[69].Get<std::string>(), PLAYER__FIELD_KNOWN_TITLES, KNOWN_TITLES_SIZE * 2))
     {
         LOG_WARN("entities.player.loading", "Player::LoadFromDB: Player ({}) has invalid knowntitles mask ({}). Forcing partial load.", guid, fields[69].Get<std::string_view>());
@@ -6521,6 +6524,9 @@ void Player::_LoadQuestStatus(PreparedQueryResult result)
     // clear quest log tail
     for (uint16 i = slot; i < MAX_QUEST_LOG_SIZE; ++i)
         SetQuestSlot(i, 0);
+
+    // Slots follow load order, so a timed quest can land past what the old client shows
+    PinTimedQuestsToClientSlots();
 }
 
 void Player::_LoadQuestStatusRewarded(PreparedQueryResult result)

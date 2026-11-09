@@ -6213,20 +6213,18 @@ void Player::CheckAreaExploreAndOutdoor()
         return;
     }
 
-    uint32 offset = areaEntry->exploreFlag / 32;
+    uint32 const areaBit = areaEntry->exploreFlag;
 
-    if (offset >= PLAYER_EXPLORED_ZONES_SIZE)
+    if (areaBit >= PLAYER_EXPLORED_AREA_BITS)
     {
-        LOG_ERROR("entities.player", "Wrong area flag {} in map data for (X: {} Y: {}) point to field PLAYER_EXPLORED_ZONES_1 + {} ( {} must be < {} ).", areaEntry->flags, GetPositionX(), GetPositionY(), offset, offset, PLAYER_EXPLORED_ZONES_SIZE);
+        LOG_ERROR("entities.player", "Area {} has AreaBit {} (X: {} Y: {}), which must be < {}.",
+            areaId, areaBit, GetPositionX(), GetPositionY(), PLAYER_EXPLORED_AREA_BITS);
         return;
     }
 
-    uint32 val = (uint32)(1 << (areaEntry->exploreFlag % 32));
-    uint32 currFields = GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset);
-
-    if (!(currFields & val))
+    if (!HasExploredAreaBit(areaBit))
     {
-        SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset, (uint32)(currFields | val));
+        SetExploredAreaBit(areaBit, true);
 
         UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_EXPLORE_AREA, areaId);
 
@@ -6269,6 +6267,118 @@ void Player::CheckAreaExploreAndOutdoor()
             LOG_DEBUG("entities.player", "Player {} discovered a new area: {}", GetGUID().ToString(), areaId);
         }
     }
+}
+
+bool Player::HasExploredAreaBit(uint32 areaBit) const
+{
+    uint32 const word = areaBit / 32;
+    uint32 const mask = 1u << (areaBit % 32);
+
+    if (word < PLAYER_EXPLORED_ZONES_SIZE)
+        return (GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + word) & mask) != 0;
+
+    if (word - PLAYER_EXPLORED_ZONES_SIZE < PLAYER_EXPLORED_ZONES_EXT_SIZE)
+        return (m_exploredZonesExt[word - PLAYER_EXPLORED_ZONES_SIZE] & mask) != 0;
+
+    return false;
+}
+
+bool Player::SetExploredAreaBit(uint32 areaBit, bool explored)
+{
+    uint32 const word = areaBit / 32;
+    uint32 const mask = 1u << (areaBit % 32);
+
+    if (word < PLAYER_EXPLORED_ZONES_SIZE)
+    {
+        uint32 const current = GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + word);
+        SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + word, explored ? (current | mask) : (current & ~mask));
+        return true;
+    }
+
+    uint32 const extWord = word - PLAYER_EXPLORED_ZONES_SIZE;
+    if (extWord >= PLAYER_EXPLORED_ZONES_EXT_SIZE)
+        return false;
+
+    uint32 const updated = explored ? (m_exploredZonesExt[extWord] | mask) : (m_exploredZonesExt[extWord] & ~mask);
+    if (updated != m_exploredZonesExt[extWord])
+    {
+        m_exploredZonesExt[extWord] = updated;
+        m_exploredZonesExtDirty.set(extWord);
+    }
+
+    return true;
+}
+
+void Player::SetAllAreasExplored(bool explored)
+{
+    uint32 const value = explored ? 0xFFFFFFFF : 0;
+
+    for (uint32 i = 0; i < PLAYER_EXPLORED_ZONES_SIZE; ++i)
+        SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + i, value);
+
+    m_exploredZonesExt.fill(value);
+    m_exploredZonesExtReplace = true;
+}
+
+void Player::EnableExtendedExploredZones()
+{
+    GetSession()->SetExtendedExploredZones(true);
+    m_exploredZonesExtReplace = true;
+    SendExtendedExploredZones();
+}
+
+void Player::SendExtendedExploredZones()
+{
+    bool const replace = m_exploredZonesExtReplace;
+    std::bitset<PLAYER_EXPLORED_ZONES_EXT_SIZE> const dirty = m_exploredZonesExtDirty;
+    m_exploredZonesExtReplace = false;
+    m_exploredZonesExtDirty.reset();
+
+    if ((!replace && dirty.none()) || !GetSession()->HasExtendedExploredZones())
+        return;
+
+    // A replacement lists the nonzero words only (the client clears the rest), a change the words that changed
+    ByteBuffer words;
+    uint8 count = 0;
+
+    for (uint32 i = 0; i < PLAYER_EXPLORED_ZONES_EXT_SIZE; ++i)
+    {
+        if (replace ? m_exploredZonesExt[i] == 0 : !dirty.test(i))
+            continue;
+
+        words << uint8(i) << uint32(m_exploredZonesExt[i]);
+        ++count;
+    }
+
+    WorldPacket data(SMSG_DC_EXPLORED_ZONES, 2 + words.size());
+    data << uint8(replace ? 1 : 0);
+    data << uint8(count);
+    data.append(words);
+    SendDirectMessage(&data);
+}
+
+std::string Player::GetExtendedExploredZonesData() const
+{
+    uint32 used = PLAYER_EXPLORED_ZONES_EXT_SIZE;
+    while (used > 0 && m_exploredZonesExt[used - 1] == 0)
+        --used;
+
+    std::ostringstream ss;
+    for (uint32 i = 0; i < used; ++i)
+        ss << m_exploredZonesExt[i] << ' ';
+
+    return ss.str();
+}
+
+void Player::LoadExtendedExploredZones(std::string_view data)
+{
+    m_exploredZonesExt.fill(0);
+    m_exploredZonesExtDirty.reset();
+
+    std::vector<std::string_view> tokens = Acore::Tokenize(data, ' ', false);
+    for (uint32 i = 0; i < tokens.size() && i < PLAYER_EXPLORED_ZONES_EXT_SIZE; ++i)
+        if (Optional<uint32> value = Acore::StringTo<uint32>(tokens[i]))
+            m_exploredZonesExt[i] = *value;
 }
 
 TeamId Player::TeamIdForRace(uint8 race)
@@ -15761,6 +15871,7 @@ void Player::_SaveCharacter(bool create, CharacterDatabaseTransaction trans)
         stmt->SetData(index++, m_grantableLevels);
         stmt->SetData(index++, _innTriggerId);
         stmt->SetData(index++, m_extraBonusTalentCount);
+        stmt->SetData(index++, GetExtendedExploredZonesData());
 
         stmt->SetData(index++, IsInWorld() && !GetSession()->PlayerLogout() ? 1 : 0);
         // Index

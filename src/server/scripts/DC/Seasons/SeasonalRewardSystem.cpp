@@ -19,6 +19,7 @@
 #include "Quests/QuestDef.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "DC/CrossSystem/RewardDistributor.h"
 #include <sstream>
 #include <mutex>
@@ -98,10 +99,20 @@ namespace DarkChaos
 
         void SeasonalRewardManager::LoadPlayerStats()
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
+            hasWeeklyBossColumn_ = DC::DbSchema::CharacterColumnExists("dc_player_seasonal_stats",
+                "weekly_dungeon_bosses_killed");
+            if (!hasWeeklyBossColumn_)
+                LOG_ERROR("module.dc", ">> [SeasonalRewards] dc_player_seasonal_stats.weekly_dungeon_bosses_killed "
+                    "is missing: weekly chest slots still unlock, but the week's boss count is lost on restart. "
+                    "Apply the pending characters SQL that adds it.");
+
             std::string sql = Acore::StringFormat("SELECT player_guid, season_id, total_tokens_earned, "
                 "total_essence_earned, weekly_tokens_earned, weekly_essence_earned, quests_completed, "
                 "creatures_killed, dungeon_bosses_killed, world_bosses_killed, prestige_level, last_weekly_reset, "
-                "last_updated FROM dc_player_seasonal_stats WHERE season_id = {}", config_.activeSeason);
+                "last_updated, {} FROM dc_player_seasonal_stats WHERE season_id = {}",
+                hasWeeklyBossColumn_ ? "weekly_dungeon_bosses_killed" : "0", config_.activeSeason);  // sql-ok: compile-time column name or literal 0
 
             QueryResult result = CharacterDatabase.Query(sql.c_str());
 
@@ -129,6 +140,7 @@ namespace DarkChaos
                 stats.prestigeLevel = fields[10].Get<uint32>();
                 stats.lastWeeklyReset = fields[11].Get<uint32>();
                 stats.lastUpdated = fields[12].Get<uint32>();
+                stats.weeklyDungeonBossesKilled = fields[13].Get<uint32>();
 
                 playerStats_[stats.playerGuid] = stats;
                 count++;
@@ -219,6 +231,8 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::AwardCurrency(Player* player, uint32 itemId, uint32 amount, std::string const& source, uint32 sourceId)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!config_.enabled || !player || amount == 0)
                 return false;
 
@@ -303,6 +317,8 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::ProcessQuestReward(Player* player, Quest const* quest)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!config_.enabled || !player || !quest)
                 return false;
 
@@ -345,6 +361,8 @@ namespace DarkChaos
             if (!config_.enabled || !player || !creature)
                 return false;
 
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             uint32 creatureEntry = creature->GetEntry();
             bool isDungeonBoss = creature->IsDungeonBoss();
             bool isWorldBoss = creature->isWorldBoss();
@@ -365,28 +383,59 @@ namespace DarkChaos
                 essence = static_cast<uint32>(it->second.second * multiplier);
             }
 
-            if (tokens == 0 && essence == 0)
-                return false;
-
-            bool success = AwardBoth(player, tokens, essence,
-                isWorldBoss ? "WorldBoss" : (isDungeonBoss ? "DungeonBoss" : "Creature"),
-                creatureEntry);
-
-            if (success)
+            bool success = false;
+            if (tokens > 0 || essence > 0)
             {
-                PlayerSeasonStats* stats = GetPlayerStats(player->GetGUID().GetCounter());
-                if (stats)
+                success = AwardBoth(player, tokens, essence,
+                    isWorldBoss ? "WorldBoss" : (isDungeonBoss ? "DungeonBoss" : "Creature"),
+                    creatureEntry);
+
+                if (success)
                 {
-                    stats->creaturesKilled++;
-                    if (isDungeonBoss)
-                        stats->dungeonBossesKilled++;
-                    if (isWorldBoss)
-                        stats->worldBossesKilled++;
-                    SavePlayerStats(*stats);
+                    if (PlayerSeasonStats* stats = GetPlayerStats(player->GetGUID().GetCounter()))
+                        stats->creaturesKilled++;
                 }
             }
 
+            // Every boss counts, not only the ~30 entries that carry a seasonal
+            // reward row: the boss counters used to move only inside the reward
+            // branch, so dungeon_bosses_killed stayed near 0 server-wide and
+            // nearly every weekly chest was generated with no slot unlocked.
+            if (isDungeonBoss || isWorldBoss)
+                RecordBossKill(player, isDungeonBoss, isWorldBoss);
+            else if (success)
+            {
+                if (PlayerSeasonStats* stats = GetPlayerStats(player->GetGUID().GetCounter()))
+                    SavePlayerStats(*stats);
+            }
+
             return success;
+        }
+
+        void SeasonalRewardManager::RecordBossKill(Player* player, bool isDungeonBoss, bool isWorldBoss)
+        {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
+            // Roll the week first, so a kill early in a new week (before any
+            // reward has rolled it) counts toward the new week, not last week's
+            // chest.
+            if (IsNewWeek(player))
+                ResetWeeklyStats(player);
+
+            PlayerSeasonStats* stats = GetOrCreatePlayerStats(player);
+            if (!stats)
+                return;
+
+            if (isDungeonBoss)
+            {
+                stats->dungeonBossesKilled++;
+                stats->weeklyDungeonBossesKilled++;
+            }
+            if (isWorldBoss)
+                stats->worldBossesKilled++;
+
+            stats->lastUpdated = time(nullptr);
+            SavePlayerStats(*stats);
         }
 
         // =====================================================================
@@ -395,6 +444,8 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::CheckWeeklyCap(Player* player, uint32& tokens, uint32& essence)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return false;
 
@@ -434,6 +485,8 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::IsNewWeek(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return false;
 
@@ -447,12 +500,17 @@ namespace DarkChaos
 
         void SeasonalRewardManager::ResetWeeklyStats(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return;
 
             PlayerSeasonStats* stats = GetOrCreatePlayerStats(player);
+            if (!stats)
+                return;
 
-            // Archive previous week
+            // Archive previous week. dungeons_completed is the week's own boss
+            // count (it used to be the season total).
             std::string sql = Acore::StringFormat("INSERT INTO dc_player_weekly_cap_snapshot "
                 "(player_guid, season_id, week_timestamp, tokens_earned, essence_earned, dungeons_completed) "
                 "VALUES ({}, {}, {}, {}, {}, {}) "
@@ -461,7 +519,7 @@ namespace DarkChaos
                 "essence_earned = VALUES(essence_earned), "
                 "dungeons_completed = VALUES(dungeons_completed)",
                 stats->playerGuid, stats->seasonId, stats->lastWeeklyReset,
-                stats->weeklyTokensEarned, stats->weeklyEssenceEarned, stats->dungeonBossesKilled);
+                stats->weeklyTokensEarned, stats->weeklyEssenceEarned, stats->weeklyDungeonBossesKilled);
             CharacterDatabase.Execute(sql.c_str());
 
             // Generate weekly chest before reset
@@ -470,6 +528,7 @@ namespace DarkChaos
             // Reset weekly counters
             stats->weeklyTokensEarned = 0;
             stats->weeklyEssenceEarned = 0;
+            stats->weeklyDungeonBossesKilled = 0;
             stats->lastWeeklyReset = GetCurrentWeekTimestamp();
             stats->lastUpdated = time(nullptr);
 
@@ -484,6 +543,8 @@ namespace DarkChaos
 
         void SeasonalRewardManager::GenerateWeeklyChest(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return;
 
@@ -498,11 +559,19 @@ namespace DarkChaos
             if (bonusTokens == 0 && bonusEssence == 0)
                 return; // No activity last week
 
-            // Determine slots unlocked based on dungeon completions
+            // Slots unlock on the dungeon and raid bosses killed in that same
+            // week (1 / 4 / 10). This read the season total before, which
+            // only ever moved for the few bosses with a seasonal reward row.
             uint8 slotsUnlocked = 0;
-            if (stats->dungeonBossesKilled >= 1) slotsUnlocked = 1;
-            if (stats->dungeonBossesKilled >= 4) slotsUnlocked = 2;
-            if (stats->dungeonBossesKilled >= 10) slotsUnlocked = 3;
+            if (stats->weeklyDungeonBossesKilled >= 1) slotsUnlocked = 1;
+            if (stats->weeklyDungeonBossesKilled >= 4) slotsUnlocked = 2;
+            if (stats->weeklyDungeonBossesKilled >= 10) slotsUnlocked = 3;
+
+            // No slot, no chest. A row of zeroes used to be stored here every
+            // week for every character with any seasonal income, and the login
+            // notice then sent the player to claim it.
+            if (slotsUnlocked == 0)
+                return;
 
             WeeklyChest chest;
             chest.playerGuid = player->GetGUID().GetCounter();
@@ -527,8 +596,15 @@ namespace DarkChaos
                 chest.slot3Essence = bonusEssence - (chest.slot1Essence + chest.slot2Essence);
             }
 
-            // Save to database
-            std::string sql = Acore::StringFormat("INSERT INTO dc_player_seasonal_chests "
+            // A slot share can round down to nothing (e.g. 2 tokens split three
+            // ways); such a chest would pay nothing either.
+            if (chest.slot1Tokens + chest.slot2Tokens + chest.slot3Tokens == 0
+                && chest.slot1Essence + chest.slot2Essence + chest.slot3Essence == 0)
+                return;
+
+            // Save to database. IGNORE: (player, season, week) is unique, and a
+            // chest for that week already stored stays as it was.
+            std::string sql = Acore::StringFormat("INSERT IGNORE INTO dc_player_seasonal_chests "
                 "(player_guid, season_id, week_timestamp, slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, "
                 "slot3_tokens, slot3_essence, slots_unlocked, collected) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, 0)",
@@ -545,6 +621,8 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::CollectWeeklyChest(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return false;
 
@@ -556,13 +634,14 @@ namespace DarkChaos
             uint32 totalTokens = chest->slot1Tokens + chest->slot2Tokens + chest->slot3Tokens;
             uint32 totalEssence = chest->slot1Essence + chest->slot2Essence + chest->slot3Essence;
 
-            if (!AwardBoth(player, totalTokens, totalEssence, "WeeklyChest", 0))
+            if (!PayWeeklyChest(player, totalTokens, totalEssence, 0))
                 return false;
 
             // Mark as collected
             chest->collected = true;
-            std::string sql = Acore::StringFormat("UPDATE dc_player_seasonal_chests SET collected = 1 "
-                "WHERE player_guid = {} AND season_id = {} AND week_timestamp = {}",
+            std::string sql = Acore::StringFormat("UPDATE dc_player_seasonal_chests SET collected = 1, "
+                "collected_at = CURRENT_TIMESTAMP "
+                "WHERE player_guid = {} AND season_id = {} AND week_timestamp = {} AND collected = 0",
                 chest->playerGuid, chest->seasonId, chest->weekTimestamp);
             CharacterDatabase.Execute(sql.c_str());
 
@@ -572,8 +651,56 @@ namespace DarkChaos
             return true;
         }
 
+        bool SeasonalRewardManager::PayWeeklyChest(Player* player, uint32 tokens, uint32 essence, uint32 chestId)
+        {
+            if (!config_.enabled || !player)
+                return false;
+
+            if (tokens == 0 && essence == 0)
+                return true;
+
+            auto* distributor = DarkChaos::CrossSystem::GetRewardDistributor();
+            // DistributeItem mails what does not fit in the bags.
+            if (tokens > 0 && !distributor->DistributeItem(player, config_.tokenItemId, tokens,
+                    DarkChaos::CrossSystem::SystemId::SeasonalRewards, "WeeklyChest"))
+                return false;
+
+            if (essence > 0 && !distributor->DistributeItem(player, config_.essenceItemId, essence,
+                    DarkChaos::CrossSystem::SystemId::SeasonalRewards, "WeeklyChest"))
+            {
+                // The tokens are already out; report the shortfall rather than
+                // failing the claim and letting it pay the tokens again.
+                LOG_ERROR("module.dc", "[SeasonalRewards] Weekly chest {} for player {}: {} essence could not be "
+                    "delivered after {} tokens were", chestId, player->GetGUID().ToString(), essence, tokens);
+            }
+
+            if (config_.logTransactions)
+            {
+                RewardTransaction trans;
+                trans.playerGuid = player->GetGUID().GetCounter();
+                trans.seasonId = config_.activeSeason;
+                trans.source = "WeeklyChest";
+                trans.sourceId = chestId;
+                trans.tokensAwarded = tokens;
+                trans.essenceAwarded = essence;
+                trans.timestamp = time(nullptr);
+                LogTransaction(trans);
+            }
+
+            NotifyPlayer(player, tokens, essence, "your weekly chest");
+            return true;
+        }
+
+        void SeasonalRewardManager::ForgetWeeklyChest(uint32 playerGuid)
+        {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+            weeklyChests_.erase(playerGuid);
+        }
+
         WeeklyChest* SeasonalRewardManager::GetWeeklyChest(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return nullptr;
 
@@ -586,6 +713,7 @@ namespace DarkChaos
             std::string sql = Acore::StringFormat("SELECT week_timestamp, slot1_tokens, slot1_essence, "
                 "slot2_tokens, slot2_essence, slot3_tokens, slot3_essence, slots_unlocked, collected "
                 "FROM dc_player_seasonal_chests WHERE player_guid = {} AND season_id = {} AND collected = 0 "
+                "AND slot1_tokens + slot1_essence + slot2_tokens + slot2_essence + slot3_tokens + slot3_essence > 0 "
                 "ORDER BY week_timestamp DESC LIMIT 1",
                 playerGuid, config_.activeSeason);
 
@@ -618,12 +746,16 @@ namespace DarkChaos
 
         PlayerSeasonStats* SeasonalRewardManager::GetPlayerStats(uint32 playerGuid)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             auto it = playerStats_.find(playerGuid);
             return (it != playerStats_.end()) ? &it->second : nullptr;
         }
 
         PlayerSeasonStats* SeasonalRewardManager::GetOrCreatePlayerStats(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return nullptr;
 
@@ -650,6 +782,8 @@ namespace DarkChaos
 
         void SeasonalRewardManager::UpdatePlayerStats(Player* player, PlayerSeasonStats const& stats)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return;
 
@@ -659,6 +793,21 @@ namespace DarkChaos
 
         void SeasonalRewardManager::SavePlayerStats(PlayerSeasonStats const& stats)
         {
+            if (hasWeeklyBossColumn_)
+            {
+                CharacterDatabase.Execute("REPLACE INTO dc_player_seasonal_stats "
+                    "(player_guid, season_id, total_tokens_earned, total_essence_earned, "
+                    "weekly_tokens_earned, weekly_essence_earned, quests_completed, creatures_killed, "
+                    "dungeon_bosses_killed, world_bosses_killed, prestige_level, last_weekly_reset, last_updated, "
+                    "weekly_dungeon_bosses_killed) "
+                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+                    stats.playerGuid, stats.seasonId, stats.seasonalTokensEarned, stats.seasonalEssenceEarned,
+                    stats.weeklyTokensEarned, stats.weeklyEssenceEarned, stats.questsCompleted, stats.creaturesKilled,
+                    stats.dungeonBossesKilled, stats.worldBossesKilled, stats.prestigeLevel,
+                    stats.lastWeeklyReset, stats.lastUpdated, stats.weeklyDungeonBossesKilled);
+                return;
+            }
+
             std::string sql = Acore::StringFormat("REPLACE INTO dc_player_seasonal_stats "
                 "(player_guid, season_id, total_tokens_earned, total_essence_earned, "
                 "weekly_tokens_earned, weekly_essence_earned, quests_completed, creatures_killed, "
@@ -738,6 +887,8 @@ namespace DarkChaos
 
         void SeasonalRewardManager::ResetPlayerSeason(Player* player)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             if (!player)
                 return;
 
@@ -765,6 +916,8 @@ namespace DarkChaos
 
         void SeasonalRewardManager::SetActiveSeason(uint32 seasonId)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             config_.activeSeason = seasonId;
             playerStats_.clear();
             weeklyChests_.clear();
@@ -919,6 +1072,8 @@ namespace DarkChaos
 
         void SeasonalRewardManager::OnPlayerSeasonChange(uint32 player_guid, uint32 old_season, uint32 new_season)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             LOG_INFO("module.dc", ">> [SeasonalRewards] Player {} transitioning from season {} to {}",
                 player_guid, old_season, new_season);
 
@@ -997,6 +1152,8 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::CleanupFromSeason(uint32 season_id)
         {
+            std::lock_guard<std::recursive_mutex> guard(mutex_);
+
             LOG_INFO("module.dc", ">> [SeasonalRewards] Cleaning up season {}", season_id);
 
             // Save all player stats for this season

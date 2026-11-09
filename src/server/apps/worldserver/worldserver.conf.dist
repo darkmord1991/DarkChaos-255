@@ -673,14 +673,28 @@ ChatLog.Enable = 0
 #                     Maximum value is 4294967295 (4 GB). Leave blank for no limit.
 #        NOTE:        Does not work with dynamic filenames.
 #        Example:     536870912 (512 MB)
+#        MaxBackups:  (DarkChaos) Keep only the newest N backups made by flag 16 or by MaxFileSize,
+#                     deleting older "<file>.<YYYY-MM-DD HH-MM-SS>" files of this appender.
+#                     (read as optional4 if Type = File; MaxFileSize 0 means no size limit)
+#                     0 or blank keeps every backup. A binary older than 2026-11-08 ignores it.
+#        Example:     Server.log,w,0,20
+#
+#        DarkChaos file appenders use flag 16 so a restart moves the previous run to
+#        "Server.log.<time of the restart>" instead of erasing it. The run that crashed or froze is
+#        then still there after the next start. Flag 1 timestamps every line, flag 2 adds the level,
+#        flag 4 the logger name (dcsystem.log and Errors.log mix many loggers).
 
 Appender.Console=1,4,0,"1 9 3 6 5 8"
-Appender.Server=2,5,0,Server.log,w
-Appender.Playerbots=2,5,0,Playerbots.log,w
+Appender.Server=2,5,19,Server.log,w,0,20
+# Playerbots.log runs to tens of MB under a full bot roster, so it keeps fewer runs.
+Appender.Playerbots=2,5,17,Playerbots.log,w,0,5
+# HLBG bot monitoring - kept out of Playerbots.log, which would bury a one-line-per-minute report.
+Appender.HLBGBots=2,5,17,hlbg_bots.log,w,0,10
 # Appender.GM=2,5,15,gm_%s.log
-Appender.Errors=2,2,0,Errors.log,w
+# Every ERROR and FATAL of the run (the loggers below list it), so one small file answers "did anything fail".
+Appender.Errors=2,2,23,Errors.log,w,0,20
 # DarkChaos custom systems (DC scripts/modules)
-Appender.DC=2,5,0,dcsystem.log,w
+Appender.DC=2,5,23,dcsystem.log,w,0,20
 # DarkChaos console colors (yellow info for DC startup logs)
 Appender.DCConsole=1,4,0,"1 9 3 8 5 8"
 # Appender.DB=3,5,0
@@ -701,30 +715,42 @@ Appender.DCConsole=1,4,0,"1 9 3 8 5 8"
 #                      (Using spaces as separator).
 #
 
-Logger.root=2,Console Server
+Logger.root=2,Console Server Errors
 # Logger.metric=2,Console Server
 # Logger.commands.gm=4,Console GM
 Logger.diff=3,Console Server
 Logger.mmaps=4,Server
 Logger.scripts.hotswap=4,Console Server
-Logger.server=4,Console Server
+Logger.server=4,Console Server Errors
 Logger.sql.sql=2,Console Errors
 Logger.sql.updates=4,Console Server Errors
-Logger.sql=4,Console Server
+Logger.sql=4,Console Server Errors
 Logger.time.update=4,Console Server
-Logger.module=4,Console Server
-Logger.modules=4,Console Server
-Logger.scripts=4,Console Server
-Logger.module.dc=4,DCConsole Server DC
-Logger.modules.dc=4,DCConsole Server DC
-Logger.scripts.dc=4,DCConsole Server DC
-Logger.dc.addon=4,DCConsole Server DC
-Logger.scripts.addon=4,DCConsole Server DC
-Logger.mythic=4,DCConsole Server DC
-Logger.hlbg=4,DCConsole Server DC
-Logger.seasonal=4,DCConsole Server DC
+Logger.module=4,Console Server Errors
+Logger.modules=4,Console Server Errors
+Logger.scripts=4,Console Server Errors
+# DarkChaos. A category with no logger of its own falls back to its parent and then to Logger.root, which
+# keeps errors only: without Logger.dc the dc.crosssystem and dc.season lines (startup, weekly reset,
+# season start/end) never reach a file. Errors only gets ERROR/FATAL (its appender level is 2).
+Logger.dc=4,DCConsole Server DC Errors
+Logger.module.dc=4,DCConsole Server DC Errors
+Logger.modules.dc=4,DCConsole Server DC Errors
+Logger.scripts.dc=4,DCConsole Server DC Errors
+Logger.dc.addon=4,DCConsole Server DC Errors
+Logger.scripts.addon=4,DCConsole Server DC Errors
+Logger.mythic=4,DCConsole Server DC Errors
+Logger.hlbg=4,DCConsole Server DC Errors
+Logger.seasonal=4,DCConsole Server DC Errors
+Logger.dc.groupfinder=4,DCConsole Server DC Errors
+# DC.UpdateProfiler slow-tick lines: dcsystem.log only, they would flood the console.
+Logger.dc.perf=4,DC
 Logger.spells.scripts=2,Console Errors
 Logger.playerbots=5,Console Playerbots
+# Bot-side HLBG readout (DCHinterlandMonitor): per-team bot counts, how many
+# are moving, how far they are from their own base, resource drain, and any
+# bot the roaming watchdog reports as stuck. The core-side battleground
+# itself logs to `hlbg` above, which is a different category.
+Logger.playerbots.hlbg=4,DCConsole HLBGBots
 # Logger.achievement=4,Console Server
 # Logger.addon=4,Console Server
 # Logger.auctionHouse=4,Console Server

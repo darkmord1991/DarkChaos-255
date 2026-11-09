@@ -2919,11 +2919,18 @@ MythicPlus.Vault.Threshold2 = 4
 MythicPlus.Vault.Threshold3 = 8
 
 # Raid Vault Thresholds (raid bosses defeated for each slot)
+#   Counts unique raid bosses per week (10- and 25-player versions of a boss
+#   count once). The vault records the kills itself in dc_vault_raid_kills,
+#   which a pending characters SQL file creates; until it is applied the raid
+#   row stays at 0 and the worldserver log says so.
 MythicPlus.Vault.Raid.Threshold1 = 2
 MythicPlus.Vault.Raid.Threshold2 = 4
 MythicPlus.Vault.Raid.Threshold3 = 6
 
 # PvP Vault Thresholds (wins needed for each slot)
+#   Counts battleground, arena (rated and skirmish) and Hinterland BG wins per
+#   week. The vault records them itself in dc_vault_pvp_wins (pending characters
+#   SQL), so Battleground.StoreStatistics.Enable does NOT need to be on.
 MythicPlus.Vault.PvP.Threshold1 = 1
 MythicPlus.Vault.PvP.Threshold2 = 4
 MythicPlus.Vault.PvP.Threshold3 = 8
@@ -5351,11 +5358,15 @@ FakePlayers.GuildTags.List = ""
 #
 #    DC.UpdateProfiler.ThresholdMs
 #        Description: World-tick spike diagnostic. Emits a WARN under the
-#                     "dc.perf" logger whenever an instrumented DC
-#                     WorldScript::OnUpdate handler (CrossSystem, Hotspots,
-#                     WeeklyReset, FakePlayers) runs for at least this many
-#                     milliseconds in a single tick. Lower it to catch smaller
-#                     spikes; set 0 to disable entirely. Read once at startup.
+#                     "dc.perf" logger whenever an instrumented scope runs for
+#                     at least this many milliseconds in a single tick: the
+#                     World::Update phases, Map.Update [mapId], the DC world
+#                     scripts and the playerbots manager. When all world
+#                     scripts together take this long, one more line names the
+#                     four slowest ("World.ScriptsOnWorldUpdate by script").
+#                     Lower it to catch smaller spikes; set 0 to disable
+#                     entirely. Read once at startup. Needs Logger.dc.perf in
+#                     worldserver.conf, or the lines are dropped.
 #        Default:     25
 #
 DC.UpdateProfiler.ThresholdMs = 25

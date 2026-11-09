@@ -131,8 +131,22 @@ end
 -- FAVORITES
 -- ============================================================================
 
+-- appearanceId is the display id, the key of collections.transmog and of the
+-- server's wardrobe. Goes through the common favorite request (CMSG_SET_FAVORITE,
+-- type 6), which updates the cache at once and is confirmed on SMSG_DELTA_SYNC.
 function TransmogModule:ToggleFavorite(appearanceId)
-    DC:RequestToggleFavorite("transmog", appearanceId)
+    if type(DC.RequestToggleAppearanceFavorite) == "function" then
+        return DC:RequestToggleAppearanceFavorite(appearanceId)
+    end
+    return DC:RequestToggleFavorite("transmog", tonumber(appearanceId) or appearanceId)
+end
+
+function TransmogModule:IsFavorite(appearanceId)
+    if type(DC.IsAppearanceFavorite) == "function" then
+        return DC:IsAppearanceFavorite(appearanceId)
+    end
+    local entry = self:GetAppearance(tonumber(appearanceId) or appearanceId)
+    return type(entry) == "table" and entry.is_favorite == true
 end
 
 function TransmogModule:GetFavorites()

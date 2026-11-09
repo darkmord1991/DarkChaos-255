@@ -18,6 +18,26 @@
 
 using namespace DarkChaos::SeasonalRewards;
 
+// Seasonal credit for one creature kill: the credited player, or the members of
+// their group near the kill. Each kill reaches this once, from one of the two
+// hooks below (a player's killing blow, or one by something a player owns).
+static void CreditCreatureKill(Player* player, Creature* creature)
+{
+    if (Group* group = player->GetGroup())
+    {
+        // Award to all group members in range
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+        {
+            // 100 yard range, on the kill's map: IsInRange compares coordinates only.
+            Player* member = itr->GetSource();
+            if (member && member->IsInMap(creature) && member->IsInRange(creature, 100.0f, true))
+                sSeasonalRewards->ProcessCreatureKill(member, creature);
+        }
+    }
+    else
+        sSeasonalRewards->ProcessCreatureKill(player, creature); // Solo kill
+}
+
 // =====================================================================
 // Player Script Hooks
 // =====================================================================
@@ -41,12 +61,15 @@ public:
         {
             sSeasonalRewards->ResetWeeklyStats(player);
 
-            // Check if player has uncollected chest
+            // Check if player has an uncollected chest with something in it
+            // (empty chests are no longer stored). The claim goes through the
+            // DC-Welcome season tracker; `.season chest` only lists the chest.
             WeeklyChest* chest = sSeasonalRewards->GetWeeklyChest(player);
             if (chest && !chest->collected)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Seasonal Rewards]|r You have an uncollected weekly chest! Use |cffffcc00.season chest|r to claim it.");
+                    "|cff00ff00[Seasonal Rewards]|r You have an uncollected weekly chest! "
+                    "Type |cffffcc00/seasonal claim|r or open |cffffcc00/seasonal|r to claim it.");
             }
         }
     }
@@ -71,31 +94,46 @@ public:
         sSeasonalRewards->ProcessQuestReward(player, quest);
     }
 
-    // Process creature kills
+    // Process creature kills. Fires only when a player lands the killing blow;
+    // SeasonalRewardUnitScript takes the kills by pets, guardians and totems.
     void OnPlayerCreatureKill(Player* player, Creature* creature) override
     {
         if (!sSeasonalRewards->GetConfig().enabled || !player || !creature)
             return;
 
-        // Handle group loot distribution
-        Group* group = player->GetGroup();
-        if (group)
-        {
-            // Award to all group members in range
-            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
-            {
-                Player* member = itr->GetSource();
-                if (member && member->IsInRange(creature, 100.0f, true)) // 100 yard range
-                {
-                    sSeasonalRewards->ProcessCreatureKill(member, creature);
-                }
-            }
-        }
-        else
-        {
-            // Solo kill
-            sSeasonalRewards->ProcessCreatureKill(player, creature);
-        }
+        CreditCreatureKill(player, creature);
+    }
+};
+
+// =====================================================================
+// Unit Script: kills by something a player owns
+// =====================================================================
+
+// A boss finished by a hunter's pet, a guardian (treants, ghouls, feral spirits),
+// a totem, a charmed creature or a vehicle never reaches OnPlayerCreatureKill, so
+// it did not count for the seasonal chest. Unit::Kill passes every death through
+// here with its killer, and the owning player gets the credit.
+class SeasonalRewardUnitScript : public UnitScript
+{
+public:
+    SeasonalRewardUnitScript() : UnitScript("SeasonalRewardUnitScript", true, { UNITHOOK_ON_UNIT_DEATH }) { }
+
+    void OnUnitDeath(Unit* unit, Unit* killer) override
+    {
+        // A player's killing blow is OnPlayerCreatureKill's. Unit::Kill fires that hook
+        // for exactly these kills, so skipping them here is what keeps a kill from
+        // counting twice.
+        if (!killer || killer->IsPlayer() || !sSeasonalRewards->GetConfig().enabled)
+            return;
+
+        // killer == unit is a creature killing itself (KillSelf), no one's kill.
+        Creature* creature = unit ? unit->ToCreature() : nullptr;
+        if (!creature || killer == unit)
+            return;
+
+        // Owner or charmer, looked up on the kill's map; nullptr for an NPC's kill.
+        if (Player* owner = killer->GetCharmerOrOwnerPlayerOrPlayerItself())
+            CreditCreatureKill(owner, creature);
     }
 };
 
@@ -175,5 +213,6 @@ public:
 void AddSC_SeasonalRewardScripts()
 {
     new SeasonalRewardPlayerScript();
+    new SeasonalRewardUnitScript();
     new SeasonalRewardWorldScript();
 }

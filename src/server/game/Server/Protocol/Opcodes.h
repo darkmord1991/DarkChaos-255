@@ -1377,7 +1377,8 @@ enum Opcodes : uint16
     // Upstream cluster-mode opcode; relocated from 0x520 (taken by CMSG_TELEPORT_GRAVEYARD_REQUEST)
     TC9_SMSG_READY_FOR_REDIRECT                     = 0x543,
     SMSG_DC_QUEST_SLOTS                             = 0x544,
-    NUM_MSG_TYPES                                   = 0x545
+    SMSG_DC_EXPLORED_ZONES                          = 0x545,
+    NUM_MSG_TYPES                                   = 0x546
 };
 
 enum OpcodeMisc : uint16

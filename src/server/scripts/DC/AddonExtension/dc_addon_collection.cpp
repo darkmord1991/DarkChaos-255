@@ -1166,6 +1166,7 @@ namespace DCCollection
         }
 
         std::string BuildFullCollectionDataJson(CollectionBuckets const& loaded,
+            CollectionBuckets const& favorites,
             CollectionCounts const& counts,
             std::map<CollectionType, uint32> const& totals,
             uint32 serverHash, uint32 timestamp, uint8 mountSpeedBonus,
@@ -1197,6 +1198,22 @@ namespace DCCollection
                 std::size_t const slot = GetCollectionTypeSlot(type);
                 AppendJsonKey(json, kCollectionTypeNames[slot]);
                 AppendJsonUInt32Array(json, loaded[slot]);
+            }
+
+            // Favorite ids per type, beside the owned arrays so those keep their shape.
+            // Clients that predate favorites ignore the key. Appearances are listed
+            // too (display ids) although their owned list arrives separately.
+            json += "},\"favorites\":{";
+            firstField = true;
+            for (CollectionType type : kOwnedCollectionTypesByJsonKey)
+            {
+                if (!firstField)
+                    json.push_back(',');
+                firstField = false;
+
+                std::size_t const slot = GetCollectionTypeSlot(type);
+                AppendJsonKey(json, kCollectionTypeNames[slot]);
+                AppendJsonUInt32Array(json, favorites[slot]);
             }
 
             json += "},\"hash\":";
@@ -3923,6 +3940,80 @@ namespace DCCollection
         return buckets;
     }
 
+    // Appearance favorites live in their own table, keyed like dc_transmog_collection
+    // (account, display id), so the 1.4M-row wardrobe table needs no extra column.
+    constexpr char const* kAppearanceFavoritesTable = "dc_transmog_favorites";
+
+    // Favorited appearances (display ids) the account still owns, sorted. A favorite
+    // row can outlive its appearance (a revoke does not touch it); it is only sent
+    // while the appearance is in the wardrobe again. Empty until the SQL is applied.
+    std::vector<uint32> LoadFavoriteAppearanceIds(uint32 accountId)
+    {
+        std::vector<uint32> items;
+        if (!accountId || !CharacterTableExists(kAppearanceFavoritesTable))
+            return items;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT display_id FROM dc_transmog_favorites WHERE account_id = {}", accountId);
+        if (!result)
+            return items;
+
+        do
+        {
+            uint32 const displayId = result->Fetch()[0].Get<uint32>();
+            if (HasTransmogAppearanceUnlocked(accountId, displayId))
+                items.push_back(displayId);
+        } while (result->NextRow());
+
+        SortUniqueCollectionItems(items);
+        return items;
+    }
+
+    // Favorited entries of one type, sorted, in the ids the owned payloads use (titles
+    // resolve to their CharTitles ID, appearances are display ids).
+    std::vector<uint32> LoadFavoriteCollectionIds(uint32 accountId, CollectionType type)
+    {
+        std::vector<uint32> items;
+        if (!accountId)
+            return items;
+
+        if (type == CollectionType::TRANSMOG)
+            return LoadFavoriteAppearanceIds(accountId);
+
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return items;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT {} FROM dc_collection_items "
+            "WHERE account_id = {} AND {} AND unlocked = 1 AND is_favorite = 1",
+            itemsEntryCol, accountId, BuildItemsCollectionTypeWhereClause("collection_type", type));
+
+        AppendPlayerCollectionRows(result, type, items);
+        SortUniqueCollectionItems(items);
+        return items;
+    }
+
+    // { mounts = [...], pets = [...], heirlooms, titles, transmog }: every favorite list,
+    // for the replies that tell a client its cached collection is current. Favorites are
+    // not in the collection hash, so without this a favorite set on another machine
+    // would never reach a client whose owned ids already match.
+    DCAddon::JsonValue BuildFavoriteListsJson(uint32 accountId)
+    {
+        DCAddon::JsonValue lists;
+        lists.SetObject();
+        for (CollectionType type : kOwnedCollectionTypesByJsonKey)
+        {
+            std::vector<uint32> const ids = LoadFavoriteCollectionIds(accountId, type);
+            DCAddon::JsonValue arr;
+            arr.SetArray(ids.size());
+            for (uint32 id : ids)
+                arr.Push(DCAddon::JsonValue(id));
+            lists.Set(kCollectionTypeNames[GetCollectionTypeSlot(type)], std::move(arr));
+        }
+        return lists;
+    }
+
     // Load collection counts for all types
     std::map<CollectionType, uint32> LoadCollectionCounts(uint32 accountId)
     {
@@ -4771,6 +4862,8 @@ namespace DCCollection
             payload.Set("hash", serverHash);
             payload.Set("upToDate", true);
             payload.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
+            // The owned ids match, but favorites are outside the hash: send them.
+            payload.Set("favorites", BuildFavoriteListsJson(GetAccountId(player)));
 
             SendCollectionWave1Payload(player,
                 DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
@@ -4796,6 +4889,11 @@ namespace DCCollection
         payload.Set("serverHash", serverHash);
         payload.Set("needsSync", needsSync);
         payload.Set("totalItems", totalOwnedItems);
+
+        // A client in sync asks for no full collection, the only other carrier of
+        // favorites; a mismatched one gets them with that full collection.
+        if (!needsSync)
+            payload.Set("favorites", BuildFavoriteListsJson(accountId));
 
         // Publish per-type curated definitions syncVersions so the client can
         // skip CMSG_GET_DEFINITIONS entirely for types where its cached copy
@@ -4845,7 +4943,14 @@ namespace DCCollection
         uint32 serverHash = GenerateCollectionHashFromSortedBuckets(loaded);
         uint32 timestamp = static_cast<uint32>(std::time(nullptr));
         uint32 transmogOwnedSyncVersion = GetCollectedAppearancesSyncVersion(accountId);
-        std::string rawData = BuildFullCollectionDataJson(loaded, counts, totals,
+
+        // Favorites are not part of the hash: older clients compute the same hash
+        // locally from the owned ids, and a different value would resync them forever.
+        CollectionBuckets favorites;
+        for (CollectionType type : kOwnedCollectionTypesByJsonKey)
+            favorites[GetCollectionTypeSlot(type)] = LoadFavoriteCollectionIds(accountId, type);
+
+        std::string rawData = BuildFullCollectionDataJson(loaded, favorites, counts, totals,
             serverHash, timestamp, mountSpeedBonus, nextThreshold,
             mountsToNext, totalOwnedItems, transmogOwnedSyncVersion);
 
@@ -6291,26 +6396,148 @@ namespace DCCollection
         SendWishlistUpdatedPayload(player, true, "removed", type, entryId);
     }
 
+    namespace
+    {
+        // Confirms one favorite change. It rides on SMSG_DELTA_SYNC, which every client
+        // routes to HandleDeltaSync; clients that predate favorites only read
+        // added/removed/hash there and ignore these keys. The client keys its
+        // collections by the id it sent, so the reply echoes that id.
+        void SendFavoriteUpdatePayload(Player* player, CollectionType type,
+            uint32 entryId, bool favorite, std::string const& error = "")
+        {
+            if (!player || !player->GetSession())
+                return;
+
+            std::size_t const slot = GetCollectionTypeSlot(type);
+            if (slot >= kCollectionTypeNames.size())
+                return;
+
+            DCAddon::JsonValue state;
+            state.SetObject();
+            state.Set(std::to_string(entryId), favorite);
+
+            DCAddon::JsonValue favorites;
+            favorites.SetObject();
+            favorites.Set(kCollectionTypeNames[slot], state);
+
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("favorites", favorites);
+            if (!error.empty())
+                payload.Set("favoriteError", error);
+
+            SendCollectionJsonPayload(player,
+                DCAddon::Opcode::Collection::SMSG_DELTA_SYNC, payload);
+        }
+
+        // Appearance favorites go to dc_transmog_favorites, never to the legacy type-6
+        // rows of dc_collection_items. Ownership is the wardrobe's in-memory set, the
+        // same check every transmog apply uses, so no query waits on the 1.4M-row table.
+        void HandleSetAppearanceFavorite(Player* player, uint32 displayId, bool favorite)
+        {
+            uint32 const accountId = GetAccountId(player);
+            if (!accountId)
+                return;
+
+            if (!CharacterTableExists(kAppearanceFavoritesTable))
+            {
+                SendFavoriteUpdatePayload(player, CollectionType::TRANSMOG, displayId, false,
+                    "Appearance favorites are not available yet.");
+                return;
+            }
+
+            if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+            {
+                SendFavoriteUpdatePayload(player, CollectionType::TRANSMOG, displayId, false,
+                    "Only collected entries can be marked as favorites.");
+                return;
+            }
+
+            if (favorite)
+                CharacterDatabase.Execute(
+                    "INSERT IGNORE INTO dc_transmog_favorites (account_id, display_id) VALUES ({}, {})",
+                    accountId, displayId);
+            else
+                CharacterDatabase.Execute(
+                    "DELETE FROM dc_transmog_favorites WHERE account_id = {} AND display_id = {}",
+                    accountId, displayId);
+
+            SendFavoriteUpdatePayload(player, CollectionType::TRANSMOG, displayId, favorite);
+        }
+    }
+
     void HandleSetFavorite(Player* player, uint8 type, uint32 entryId, bool favorite)
     {
-        if (!player || !player->GetSession())
+        if (!player || !player->GetSession() || !entryId)
             return;
 
-        uint32 accountId = GetAccountId(player);
+        CollectionType const ct = static_cast<CollectionType>(type);
+        switch (ct)
+        {
+            case CollectionType::MOUNT:
+            case CollectionType::PET:
+            case CollectionType::TOY:
+            case CollectionType::HEIRLOOM:
+            case CollectionType::TITLE:
+                break;
+            case CollectionType::TRANSMOG:
+                // The client sends the appearance's display id, the key of
+                // dc_transmog_collection and of the owned-appearances payload.
+                HandleSetAppearanceFavorite(player, entryId, favorite);
+                return;
+            default:
+                return;
+        }
 
-        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
+        uint32 const accountId = GetAccountId(player);
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (!accountId || itemsEntryCol.empty())
             return;
 
-        std::string const typeFilter = BuildItemsCollectionTypeWhereClause(
-            "collection_type", static_cast<CollectionType>(type));
+        // Stored keys that stand for the requested entry. A title row can still hold a
+        // legacy bit_index (the same rule as HasCollectionItem).
+        std::string keyList = std::to_string(entryId);
+        if (ct == CollectionType::TITLE)
+        {
+            if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
+            {
+                if (titleEntry->ID != entryId)
+                    keyList += "," + std::to_string(titleEntry->ID);
 
-        CharacterDatabase.Execute(
-            "UPDATE dc_collection_items SET is_favorite = {} "
-            "WHERE account_id = {} AND {} AND {} = {}",
-            favorite ? 1 : 0, accountId, typeFilter, itemsEntryCol, entryId);
+                uint32 const legacyBitIndex = titleEntry->bit_index;
+                if (legacyBitIndex && legacyBitIndex != entryId && !sCharTitlesStore.LookupEntry(legacyBitIndex))
+                    keyList += "," + std::to_string(legacyBitIndex);
+            }
+        }
 
-        // No response needed, client handles optimistically
+        std::string const typeFilter = BuildItemsCollectionTypeWhereClause("collection_type", ct);
+        std::string const ownedSql = Acore::StringFormat(
+            "SELECT {} FROM dc_collection_items "
+            "WHERE account_id = {} AND {} AND {} IN ({}) AND unlocked = 1 LIMIT 1",
+            itemsEntryCol, accountId, typeFilter, itemsEntryCol, keyList);
+
+        // Only an owned row can carry the flag. Check first, then write and confirm, so
+        // the client's optimistic state is corrected when nothing was stored.
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(ownedSql)
+            .WithCallback([playerGuid = player->GetGUID(), accountId, ct, entryId, favorite,
+                itemsEntryCol, typeFilter](QueryResult result)
+        {
+            Player* owner = ObjectAccessor::FindPlayer(playerGuid);
+            if (!result)
+            {
+                SendFavoriteUpdatePayload(owner, ct, entryId, false,
+                    "Only collected entries can be marked as favorites.");
+                return;
+            }
+
+            uint32 const storedKey = result->Fetch()[0].Get<uint32>();
+            CharacterDatabase.Execute(
+                "UPDATE dc_collection_items SET is_favorite = {} "
+                "WHERE account_id = {} AND {} AND {} = {}",
+                favorite ? 1 : 0, accountId, typeFilter, itemsEntryCol, storedKey);
+
+            SendFavoriteUpdatePayload(owner, ct, entryId, favorite);
+        }));
     }
 
     // =======================================================================
@@ -8554,11 +8781,18 @@ namespace DCCollection
                     player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
         }
 
+        // Favorites ride on each entry. Older clients store the entry as it comes, so they
+        // read is_favorite too; "favoritesIncluded" tells newer clients the flags are
+        // authoritative (a server without favorites sends none).
+        std::vector<uint32> const favorites = LoadFavoriteCollectionIds(accountId, ct);
+
         for (uint32 id : owned)
         {
             DCAddon::JsonValue entry;
             entry.SetObject();
             entry.Set("owned", true);
+            if (std::binary_search(favorites.begin(), favorites.end(), id))
+                entry.Set("is_favorite", true);
             items.Set(std::to_string(id), entry);
         }
 
@@ -8566,6 +8800,7 @@ namespace DCCollection
         payload.SetObject();
         payload.Set("type", typeName);
         payload.Set("items", items);
+        payload.Set("favoritesIncluded", true);
         SendCollectionWave1Payload(player,
             DCAddon::Opcode::Collection::SMSG_COLLECTION,
             payload.Encode());

@@ -70,6 +70,10 @@ local Data = {
     quests = 0,
     worldBosses = 0,
     dungeonBosses = 0,
+    chests = {},             -- Unclaimed weekly chests from SMSG_REWARDS (0x11)
+    _chestsLoaded = false,
+    _chestReminderShown = false,
+    _claimingChestId = nil,
     _loaded = false,
     _showWeeklyView = true,  -- Toggle between weekly and total view
 }
@@ -267,7 +271,7 @@ function DCWelcome.Seasons:CreateProgressTracker()
     end
     
     local frame = CreateFrame("Frame", "DCWelcome_SeasonTracker", UIParent)
-    frame:SetSize(250, 115)
+    frame:SetSize(250, 140)
     frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -10, -150)
     frame:SetFrameStrata("MEDIUM")
     frame:SetMovable(true)
@@ -405,6 +409,24 @@ function DCWelcome.Seasons:CreateProgressTracker()
     statsText:SetPoint("TOP", essenceBar, "BOTTOM", 0, -5)
     statsText:SetText("Quests: 0 | Bosses: 0")
     frame.statsText = statsText
+
+    -- Weekly chest: what last week's chest holds, and the claim button.
+    local chestText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    chestText:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -110)
+    chestText:SetPoint("RIGHT", frame, "RIGHT", -84, 0)
+    chestText:SetJustifyH("LEFT")
+    chestText:SetText("Weekly chest: none")
+    frame.chestText = chestText
+
+    local claimBtn = CreateFrame("Button", "DCWelcome_SeasonChestClaimButton", frame, "UIPanelButtonTemplate")
+    claimBtn:SetSize(64, 20)
+    claimBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -16, -106)
+    claimBtn:SetText("Claim")
+    claimBtn:SetScript("OnClick", function()
+        DCWelcome.Seasons:ClaimChests()
+    end)
+    claimBtn:Disable()
+    frame.claimButton = claimBtn
     
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -466,6 +488,67 @@ function DCWelcome.Seasons:UpdateProgressTracker()
     end
     
     frame.statsText:SetText(string.format("Quests: %d | Bosses: %d", Data.quests, Data.worldBosses + Data.dungeonBosses))
+
+    DCWelcome.Seasons:UpdateChestLine()
+end
+
+-------------------------------------------------------------------------------
+-- Weekly Chest
+-------------------------------------------------------------------------------
+
+-- Sum of every unclaimed chest (normally one: last week's).
+local function GetChestTotals()
+    local tokens, essence = 0, 0
+    for _, chest in ipairs(Data.chests) do
+        tokens = tokens + (tonumber(chest.tokens) or 0)
+        essence = essence + (tonumber(chest.essence) or 0)
+    end
+    return tokens, essence
+end
+
+function DCWelcome.Seasons:GetPendingChests()
+    return Data.chests
+end
+
+function DCWelcome.Seasons:UpdateChestLine()
+    local frame = Frames.progressTracker
+    if not frame or not frame.chestText then return end
+
+    local count = #Data.chests
+    if count == 0 then
+        frame.chestText:SetText("|cff888888Weekly chest: none|r")
+        frame.claimButton:Disable()
+        return
+    end
+
+    local tokens, essence = GetChestTotals()
+    local label = count > 1 and string.format("%d weekly chests", count) or "Weekly chest"
+    frame.chestText:SetText(string.format("|cff00ff00%s:|r %d tokens, %d essence", label, tokens, essence))
+    if Data._claimingChestId then
+        frame.claimButton:Disable()
+    else
+        frame.claimButton:Enable()
+    end
+end
+
+-- Claims the first unclaimed chest; the claim result claims the next one.
+function DCWelcome.Seasons:ClaimChests()
+    if Data._claimingChestId then return end
+
+    local chest = Data.chests[1]
+    if not chest then
+        print("|cff00ff00[Seasons]|r You have no weekly chest to claim.")
+        return
+    end
+
+    if not DCWelcome.Seasons.ClaimReward then
+        print("|cffff0000[Seasons]|r Not connected to the server; try again in a moment.")
+        return
+    end
+
+    Data._claimingChestId = tonumber(chest.id)
+    DCWelcome.Seasons:UpdateChestLine()
+    DCWelcome.Seasons.ClaimReward(Data._claimingChestId)
 end
 
 function DCWelcome.Seasons:ToggleProgressTracker()
@@ -568,6 +651,62 @@ local function RegisterHandlers()
         DCWelcome.Seasons:UpdateProgressTracker()
     end)
     
+    -- SMSG_REWARDS (0x11): unclaimed weekly chests for this season
+    DC:RegisterHandler("SEAS", 0x11, function(data)
+        Data.chests = {}
+        if type(data) == "table" and type(data.rewards) == "table" then
+            for _, reward in ipairs(data.rewards) do
+                if type(reward) == "table" and tonumber(reward.id) then
+                    table.insert(Data.chests, {
+                        id = tonumber(reward.id),
+                        tokens = tonumber(reward.tokens) or 0,
+                        essence = tonumber(reward.essence) or 0,
+                        slotsUnlocked = tonumber(reward.slotsUnlocked) or 0,
+                        weekTimestamp = tonumber(reward.weekTimestamp) or 0,
+                    })
+                end
+            end
+        end
+        Data._chestsLoaded = true
+
+        if #Data.chests > 0 and not Data._chestReminderShown then
+            Data._chestReminderShown = true
+            local tokens, essence = GetChestTotals()
+            print(string.format("|cff00ff00[Seasons]|r Your weekly chest holds |cffffd700%d tokens|r and "
+                .. "|cff00ffff%d essence|r. Type |cffffcc00/seasonal claim|r to claim it.", tokens, essence))
+        end
+
+        DCWelcome.Seasons:UpdateChestLine()
+    end)
+
+    -- SMSG_REWARD_CLAIMED (0x13): result 0 = claimed (the server also says
+    -- what it paid in chat), 1 = already claimed, other = failed.
+    DC:RegisterHandler("SEAS", 0x13, function(data)
+        local result = type(data) == "table" and tonumber(data.result) or 4
+        local rewardId = type(data) == "table" and tonumber(data.rewardId) or nil
+        local wasClaiming = Data._claimingChestId
+        Data._claimingChestId = nil
+
+        if result == 0 or result == 1 then
+            for i = #Data.chests, 1, -1 do
+                if Data.chests[i].id == rewardId then
+                    table.remove(Data.chests, i)
+                end
+            end
+        else
+            print("|cffff0000[Seasons]|r The weekly chest could not be claimed. Please try again.")
+        end
+
+        DCWelcome.Seasons:UpdateChestLine()
+
+        -- Claim the next chest, if this was a claim of ours that went through.
+        if wasClaiming and (result == 0 or result == 1) and #Data.chests > 0 then
+            DCWelcome.Seasons:ClaimChests()
+        elseif DCWelcome.Seasons.RequestSeasonData then
+            DCWelcome.Seasons.RequestSeasonData()
+        end
+    end)
+
     -- SMSG_REWARD_EARNED (0x17)
     DC:RegisterHandler("SEAS", 0x17, function(data)
         local tokens, essence, source
@@ -591,6 +730,7 @@ local function RegisterHandlers()
         if DC and (not (type(DCWelcomeDB) == "table" and DCWelcomeDB.enableCommunication == false)) then
             DC:Request("SEAS", 0x01, {})
             DC:Request("SEAS", 0x03, {})
+            DC:Request("SEAS", 0x02, {})  -- unclaimed weekly chests
         end
     end
     
@@ -629,6 +769,16 @@ SlashCmdList["DCSEASONS"] = function(msg)
         Data.weeklyTokens = Data.weeklyTokens + 150
         Data.weeklyEssence = Data.weeklyEssence + 75
         DCWelcome.Seasons:UpdateProgressTracker()
+    elseif cmd == "claim" then
+        DCWelcome.Seasons:ClaimChests()
+    elseif cmd == "chest" then
+        if #Data.chests == 0 then
+            print("|cff00ff00[Seasons]|r You have no weekly chest to claim.")
+        else
+            local tokens, essence = GetChestTotals()
+            print(string.format("|cff00ff00[Seasons]|r Weekly chest: |cffffd700%d tokens|r, |cff00ffff%d essence|r. "
+                .. "Type |cffffcc00/seasonal claim|r to claim it.", tokens, essence))
+        end
     elseif cmd == "refresh" or cmd == "sync" then
         if DCWelcome.Seasons.RequestSeasonData then
             DCWelcome.Seasons.RequestSeasonData()
@@ -645,6 +795,8 @@ SlashCmdList["DCSEASONS"] = function(msg)
         print("|cff00ff00[DC-Welcome]|r Season commands:")
         print("  /seasonal show - Toggle progress tracker")
         print("  /seasonal hide - Hide progress tracker")
+        print("  /seasonal chest - Show your weekly chest")
+        print("  /seasonal claim - Claim your weekly chest")
         print("  /seasonal refresh - Request data from server")
         print("  /seasonal status - Show protocol status")
         print("  /seasonal test - Test reward popup")

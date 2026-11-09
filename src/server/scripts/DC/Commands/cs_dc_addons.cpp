@@ -195,13 +195,13 @@ public:
             uint32 t = target->GetLastDCRXPPayloadTime();
             if (key.empty())
             {
-                handler->PSendSysMessage("DCRXP dedupe: no recent payload recorded for %s", target->GetName());
+                handler->PSendSysMessage("DCRXP dedupe: no recent payload recorded for {}", target->GetName());
             }
             else
             {
                 time_t now = time(nullptr);
                 uint32 age = (now > (time_t)t) ? uint32(now - (time_t)t) : 0;
-                handler->PSendSysMessage("DCRXP dedupe for %s: key='%s' age=%u s (timestamp=%u)", target->GetName(), key.c_str(), age, t);
+                handler->PSendSysMessage("DCRXP dedupe for {}: key='{}' age={} s (timestamp={})", target->GetName(), key.c_str(), age, t);
             }
             return true;
         }
@@ -385,7 +385,7 @@ public:
                 {
                     std::string leaderStatus = group->IsLeader(player->GetGUID()) ? "|cff00ff00Yes|r" : "|cffff0000No|r";
                     handler->SendSysMessage(("Group leader: " + leaderStatus).c_str());
-                    handler->PSendSysMessage("Group size: %u players", group->GetMembersCount());
+                    handler->PSendSysMessage("Group size: {} players", group->GetMembersCount());
                 }
                 else
                     handler->SendSysMessage("You are |cffff9900not|r in a group");

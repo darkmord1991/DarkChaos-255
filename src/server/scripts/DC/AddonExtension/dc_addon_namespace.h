@@ -849,7 +849,9 @@ namespace DCAddon
             // The native client keeps quest log slots past the 25 of the player
             // update fields, which the server sends in SMSG_DC_QUEST_SLOTS. That
             // first packet is the client's answer, so a server without this leaves
-            // it at 25 (Player::EnableExtendedQuestLog).
+            // it at 25 (Player::EnableExtendedQuestLog). The same bit enables the
+            // explored-zone words past the update fields (SMSG_DC_EXPLORED_ZONES,
+            // Player::EnableExtendedExploredZones).
             constexpr uint32 EXTENDED_QUEST_LOG = 0x40000000;
 
             // Default capabilities for current server version

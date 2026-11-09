@@ -363,6 +363,19 @@ namespace DarkChaos
                         else if (!packageChanged)
                             return;  // maxed and already on this package
 
+                        // maxLevel is already capped at the last level with a stat
+                        // enchant (UI::GetHeirloomMaxLevel); this covers a missing
+                        // package row, or an item stored above the cap. Checked
+                        // before any currency is taken.
+                        uint32 const enchantId = UI::GetHeirloomEnchantId(tier, packageId, targetLevel);
+                        if (!sSpellItemEnchantmentStore.LookupEntry(enchantId))
+                        {
+                            LOG_ERROR("scripts.dc", "Heirloom step refused: no SpellItemEnchantment {} (item {}, "
+                                "tier {}, package {}, level {})", enchantId, heirloom->GetEntry(), tier, packageId,
+                                targetLevel);
+                            return;
+                        }
+
                         uint32 tokensNeeded = 0;
                         uint32 essenceNeeded = 0;
                         UI::SumHeirloomUpgradeCosts(tier, currentLevel + 1, targetLevel, tokensNeeded, essenceNeeded);
@@ -378,14 +391,6 @@ namespace DarkChaos
                             owner->DestroyItemCount(tokenId, tokensNeeded, true);
                         if (essenceNeeded > 0)
                             owner->DestroyItemCount(essenceId, essenceNeeded, true);
-
-                        // The enchant id encodes package and level:
-                        //   standard (tier 3)  900000 + package*100 + level
-                        //   frontier (tier 10) 920000 + package*100 + level
-                        uint32 const enchantBase = (tier == 10)
-                            ? UI::FRONTIER_HEIRLOOM_ENCHANT_BASE_ID
-                            : UI::HEIRLOOM_ENCHANT_BASE_ID;
-                        uint32 const enchantId = enchantBase + (packageId * 100) + targetLevel;
 
                         owner->ApplyEnchantment(heirloom, PERM_ENCHANTMENT_SLOT, false);
                         heirloom->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, owner->GetGUID());

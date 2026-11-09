@@ -223,13 +223,8 @@ public:
                 ChatHandler(chr->GetSession()).PSendSysMessage(LANG_YOURS_EXPLORE_SET_NOTHING, handler->GetNameLink());
         }
 
-        for (uint8 i = 0; i < PLAYER_EXPLORED_ZONES_SIZE; ++i)
-        {
-            if (reveal)
-                handler->GetSession()->GetPlayer()->SetFlag(PLAYER_EXPLORED_ZONES_1+i, 0xFFFFFFFF);
-            else
-                handler->GetSession()->GetPlayer()->SetFlag(PLAYER_EXPLORED_ZONES_1+i, 0);
-        }
+        // DarkChaos: every AreaBit, the words past the update fields too
+        handler->GetSession()->GetPlayer()->SetAllAreasExplored(reveal);
 
         return true;
     }

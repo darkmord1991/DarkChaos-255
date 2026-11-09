@@ -18,10 +18,10 @@ INSERT INTO `creaturedisplayinfo_dbc` (`ID`, `ModelID`, `SoundID`, `ExtendedDisp
 -- creaturemodeldata_dbc: the six allied-race display/model rows
 DELETE FROM `creaturemodeldata_dbc` WHERE `ID` IN (503902, 503903, 503904, 503905, 503906, 503907);
 INSERT INTO `creaturemodeldata_dbc` (`ID`, `Flags`, `ModelName`, `SizeClass`, `ModelScale`, `BloodID`, `FootprintTextureID`, `FootprintTextureLength`, `FootprintTextureWidth`, `FootprintParticleScale`, `FoleyMaterialID`, `FootstepShakeSize`, `DeathThudShakeSize`, `SoundID`, `CollisionWidth`, `CollisionHeight`, `MountHeight`, `GeoBoxMinX`, `GeoBoxMinY`, `GeoBoxMinZ`, `GeoBoxMaxX`, `GeoBoxMaxY`, `GeoBoxMaxZ`, `WorldEffectScale`, `AttachedEffectScale`, `MissileCollisionRadius`, `MissileCollisionPush`, `MissileCollisionRaise`) VALUES
-(503902, 2052, 'Character\\Vulpera\\Male\\VulperaMale.mdx', 1, 1, 1, 7, 8, 6, 1, 0, 0, 0, 6278, 2.03128, 1, 0, -0.801059, -0.548475, -0.009413, 0.282863, 0.500197, 1.56753, 1, 0, 1, 0, 0),
-(503903, 2052, 'Character\\Vulpera\\Female\\VulperaFemale.mdx', 1, 1, 1, 7, 8, 6, 1, 0, 0, 0, 6279, 1.27778, 1, 0, -0.801059, -0.547027, -0.007535, 0.271461, 0.494371, 1.47369, 1, 0, 1, 0, 0),
-(503904, 2052, 'Character\\ZandalariTroll\\Male\\ZandalariTrollMale.mdx', 1, 1, 1, 1, 12, 10, 1, 0, 0, 0, 6453, 2.03128, 1, 0, -0.737685, -0.808304, -0.013361, 0.607844, 0.698818, 3.02234, 1, 0, 1, 0, 0),
-(503905, 2052, 'Character\\ZandalariTroll\\Female\\ZandalariTrollFemale.mdx', 1, 1, 1, 1, 12, 10, 1, 0, 0, 0, 6448, 2.03128, 1, 0, -0.9174, -0.66125, -0.015845, 0.473954, 0.636546, 3.00727, 1, 0, 1, 0, 0),
+(503902, 2052, 'Character\\Vulpera\\Male\\VulperaMale.mdx', 1, 1, 1, 7, 8, 6, 1, 0, 0, 0, 6278, 0.5556, 1.389, 0, -0.801059, -0.548475, -0.009413, 0.282863, 0.500197, 1.56753, 1, 1, 0, 0, 0),
+(503903, 2052, 'Character\\Vulpera\\Female\\VulperaFemale.mdx', 1, 1, 1, 7, 8, 6, 1, 0, 0, 0, 6279, 0.5556, 1.389, 0, -0.801059, -0.547027, -0.007535, 0.271461, 0.494371, 1.47369, 1, 1, 0, 0, 0),
+(503904, 2052, 'Character\\ZandalariTroll\\Male\\ZandalariTrollMale.mdx', 1, 1, 1, 1, 12, 10, 1, 0, 0, 0, 6453, 0.611112, 2.03128, 0, -0.737685, -0.808304, -0.013361, 0.607844, 0.698818, 3.02234, 1, 1, 0, 0, 0),
+(503905, 2052, 'Character\\ZandalariTroll\\Female\\ZandalariTrollFemale.mdx', 1, 1, 1, 1, 12, 10, 1, 0, 0, 0, 6448, 0.611112, 2.03128, 0, -0.9174, -0.66125, -0.015845, 0.473954, 0.636546, 3.00727, 1, 1, 0, 0, 0),
 (503906, 4, 'Character\\KulTiran\\Male\\KulTiranMale.mdx', 1, 1, 1, 1, 12, 14, 1, 0, 0, 0, 6008, 0.611111, 2.03128, -0.008002, -0.714439, -0.849178, -0.006395, 0.666051, 0.899518, 2.61457, 1, 1, 0, 0, 0),
 (503907, 4, 'Character\\KulTiran\\Female\\KulTiranFemale.mdx', 1, 1, 1, 1, 12, 14, 1, 0, 0, 0, 6296, 0.611111, 2.03128, -0.008002, -0.514457, -0.624712, -0.009974, 0.362738, 0.632868, 2.45816, 1, 1, 0, 0, 0);
 

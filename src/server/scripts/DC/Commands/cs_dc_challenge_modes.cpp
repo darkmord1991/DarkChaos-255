@@ -65,13 +65,13 @@ public:
 
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_SLOW_XP_GAIN, player))
         {
-            handler->PSendSysMessage("|cff8888ff[SLOW XP]|r Active - 50%% XP rate");
+            handler->PSendSysMessage("|cff8888ff[SLOW XP]|r Active - 50% XP rate");
             hasAnyChallenges = true;
         }
 
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player))
         {
-            handler->PSendSysMessage("|cff4444ff[VERY SLOW XP]|r Active - 25%% XP rate");
+            handler->PSendSysMessage("|cff4444ff[VERY SLOW XP]|r Active - 25% XP rate");
             hasAnyChallenges = true;
         }
 

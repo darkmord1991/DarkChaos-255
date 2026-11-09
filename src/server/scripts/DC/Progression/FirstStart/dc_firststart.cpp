@@ -711,7 +711,7 @@ namespace DCFirstStart
                          amount, tokenItemId, player->GetName());
 
             ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cff00ff00[Season]:|r You received |cfffff000%u|r seasonal starter tokens!", amount);
+                "|cff00ff00[Season]:|r You received |cfffff000{}|r seasonal starter tokens!", amount);
         }
         else if (debug)
         {

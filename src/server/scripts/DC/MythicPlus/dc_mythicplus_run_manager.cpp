@@ -3974,15 +3974,17 @@ namespace DCMythicPlusBots
         if (!weekStart)
             return;
 
-        uint32 const seasonId = sMythicRuns->GetCurrentSeasonId();
+        // The claim week is matched by week_start alone (as in
+        // GreatVaultMgr::ClaimVaultItemReward), so the week before a season
+        // change still finds its runs and its claim state.
         QueryResult result = CharacterDatabase.Query(
             "SELECT DISTINCT r.character_guid FROM dc_mplus_runs r "
-            "LEFT JOIN dc_weekly_vault v ON v.character_guid = r.character_guid "
-            "AND v.season_id = r.season_id AND v.week_start = {} "
-            "WHERE r.is_bot = 1 AND r.success = 1 AND r.season_id = {} "
+            "LEFT JOIN (SELECT character_guid, MAX(reward_claimed) AS claimed FROM dc_weekly_vault "
+            "WHERE week_start = {} GROUP BY character_guid) v ON v.character_guid = r.character_guid "
+            "WHERE r.is_bot = 1 AND r.success = 1 "
             "AND r.completed_at >= FROM_UNIXTIME({}) AND r.completed_at < FROM_UNIXTIME({}) "
-            "AND (v.reward_claimed IS NULL OR v.reward_claimed = 0)",
-            weekStart, seasonId, weekStart, weekStart + DarkChaos::Seasons::SECONDS_PER_WEEK);
+            "AND (v.claimed IS NULL OR v.claimed = 0)",
+            weekStart, weekStart, weekStart + DarkChaos::Seasons::SECONDS_PER_WEEK);
 
         if (!result)
             return;

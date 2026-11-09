@@ -1283,11 +1283,14 @@ namespace HLBG
         std::string query;
         if (HasUnifiedStatTables())
         {
+            // winner_tid and team both hold a TeamId (0 Alliance, 1 Horde);
+            // winner_tid 2 is a draw or manual reset, which is neither a win
+            // nor a loss.
             query = Acore::StringFormat(
                 "SELECT "
                 "CASE WHEN COUNT(*) = 0 THEN 0 ELSE GREATEST(0, COALESCE(SUM(p.rating_change), 0) + 1200) END, "
                 "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
-                "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid IN (0, 1) AND wh.winner_tid <> p.team THEN 1 ELSE 0 END), 0), "
                 "COUNT(*), "
                 "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND((SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 2) END, "
                 "COALESCE(SUM(p.kills), 0), "
@@ -1384,11 +1387,12 @@ namespace HLBG
         std::string query;
         if (HasUnifiedStatTables())
         {
+            // TeamId convention, see QueryPlayerSeasonalStats.
             query = Acore::StringFormat(
                 "SELECT "
                 "COUNT(*), "
                 "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
-                "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid IN (0, 1) AND wh.winner_tid <> p.team THEN 1 ELSE 0 END), 0), "
                 "COALESCE(SUM(p.kills), 0), "
                 "COALESCE(SUM(p.deaths), 0), "
                 "CASE WHEN COALESCE(SUM(p.deaths), 0) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / SUM(p.deaths), 2) END, "

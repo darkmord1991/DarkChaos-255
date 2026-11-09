@@ -526,13 +526,24 @@ function GF:CreateWorldContentEntry(parent, item, contentType, entry)
     end
 
     if contentType == "boss" then
+        -- Same order as DC-InfoBar's GetBossState. A killed boss is "spawning" with
+        -- its respawn timer; "inactive" is a boss the rotation has off today.
         local status
+        local spawnIn = tonumber(item.spawnIn)
         if item.status == "active" then
             status = "|cff00ff00ACTIVE|r"
         elseif item.status == "inactive" then
             status = "|cff808080Not today|r"
+        elseif spawnIn then
+            local when
+            if DCInfoBar and type(DCInfoBar.FormatTimeShort) == "function" then
+                when = DCInfoBar:FormatTimeShort(spawnIn)
+            else
+                when = math.floor(spawnIn / 60) .. "m"
+            end
+            status = "|cffff8800Spawns in " .. tostring(when) .. "|r"
         else
-            status = "|cffff8800Spawns in " .. (item.spawnIn or "?") .. "|r"
+            status = "|cff808080Unknown|r"
         end
         entry.infoText:SetText((item.zoneName or item.zone or "Unknown Zone") .. " - " .. status)
     elseif contentType == "hotspot" then
@@ -675,6 +686,57 @@ end
 -- DCAddonProtocol Handlers
 -- =====================================================================
 
+-- Boss pushes (spawn, engage, HP, death, despawn) reach every player as WRLD
+-- updates. DC-InfoBar merges them into its boss list and keeps the respawn
+-- timers ticking, so the tab shows that list; without DC-InfoBar each push is
+-- folded into the tab's own copy of the snapshot.
+local function ApplyBossPushes(pushes)
+    if DCInfoBar and type(DCInfoBar.serverData) == "table"
+        and type(DCInfoBar.serverData.worldBosses) == "table" then
+        worldContent.bosses = DCInfoBar.serverData.worldBosses
+        return
+    end
+
+    for _, b in ipairs(pushes) do
+        if type(b) == "table" then
+            local spawnId, entry = tonumber(b.spawnId), tonumber(b.entry)
+            for _, rec in ipairs(worldContent.bosses or {}) do
+                if (spawnId and tonumber(rec.spawnId) == spawnId) or (entry and tonumber(rec.entry) == entry) then
+                    local status = b.status
+                    if not status then
+                        if b.action == "spawn" or b.action == "engage" then
+                            status = "active"
+                        elseif b.action == "death" or b.action == "despawn" then
+                            status = tonumber(b.spawnIn) and "spawning" or "inactive"
+                        end
+                    end
+                    rec.status = status or rec.status
+                    rec.spawnIn = tonumber(b.spawnIn) or rec.spawnIn
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- Redraws the boss list a moment later, once every WRLD handler (DC-InfoBar's
+-- among them, whatever the load order) has taken the push.
+local bossRedrawFrame
+local function ScheduleBossListRedraw()
+    bossRedrawFrame = bossRedrawFrame or CreateFrame("Frame")
+    bossRedrawFrame.elapsed = 0
+    bossRedrawFrame:Show()
+    bossRedrawFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + (elapsed or 0)
+        if self.elapsed >= 0.1 then
+            self:SetScript("OnUpdate", nil)
+            if GF.selectedWorldFilter == "boss" then
+                GF:RefreshWorldContentList()
+            end
+        end
+    end)
+end
+
 local function RegisterWorldHandlers()
     local DC = rawget(_G, "DCAddonProtocol")
     if not DC then
@@ -711,7 +773,19 @@ local function RegisterWorldHandlers()
 
         GF:RefreshWorldContentList()
     end)
-    
+
+    -- Boss pushes: keep the list current while the tab is open. A redraw clears
+    -- the selected entry, so only the boss list on screen is redrawn.
+    DC:RegisterHandler("WRLD", 0x11, function(data)
+        if type(data) ~= "table" or type(data.bosses) ~= "table" then
+            return
+        end
+        ApplyBossPushes(data.bosses)
+        if GF.selectedWorldFilter == "boss" and GF.WorldTabContent and GF.WorldTabContent:IsShown() then
+            ScheduleBossListRedraw()
+        end
+    end)
+
 end
 
 RegisterWorldHandlers()

@@ -487,7 +487,7 @@ public:
         LevelCapManagerImpl capMgr;
         capMgr.SetPlayerTierCap(target->GetGUID().GetCounter(), tier_id, max_level);
 
-        handler->PSendSysMessage("Set tier %u max level to %u for %s.",
+        handler->PSendSysMessage("Set tier {} max level to {} for {}.",
             tier_id, max_level, target->GetName().c_str());
 
         return true;
@@ -575,12 +575,12 @@ public:
         }
 
         handler->PSendSysMessage("|cffffd700===== Test Set Granted =====|r");
-        handler->PSendSysMessage("|cff00ff00Class:|r %s", player->GetName().c_str());
-        handler->PSendSysMessage("|cff00ff00Gear Set:|r %s", gearSet.description.c_str());
-        handler->PSendSysMessage("|cff00ff00Items Added:|r %u", items_added);
-        handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r %u", TEST_ESSENCE_AMOUNT);
-        handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r %u", TEST_TOKEN_AMOUNT);
-        handler->PSendSysMessage("|cff00ff00Emberwood Sap:|r %u", TEST_SAP_AMOUNT);
+        handler->PSendSysMessage("|cff00ff00Class:|r {}", player->GetName().c_str());
+        handler->PSendSysMessage("|cff00ff00Gear Set:|r {}", gearSet.description.c_str());
+        handler->PSendSysMessage("|cff00ff00Items Added:|r {}", items_added);
+        handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r {}", TEST_ESSENCE_AMOUNT);
+        handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r {}", TEST_TOKEN_AMOUNT);
+        handler->PSendSysMessage("|cff00ff00Emberwood Sap:|r {}", TEST_SAP_AMOUNT);
         handler->PSendSysMessage("|cff00ffffYou can now test the upgrade system!|r");
 
         return true;

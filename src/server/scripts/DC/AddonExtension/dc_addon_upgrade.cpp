@@ -639,12 +639,26 @@ namespace Upgrade
         if (!TryGetJsonUInt(msg, "toLevel", toLevel))
             toLevel = msg.GetUInt32(2);
 
-        if (tier < 1 || tier > 3 || fromLevel >= toLevel)
+        // Any tier the manager has a definition for, except the heirloom
+        // (is_artifact) tiers, which are priced from dc_heirloom_upgrade_costs
+        // on the client. This was `tier > 3`, which refused the Hyjal tiers 4
+        // and 5 although HandleDoUpgrade upgrades them.
+        DarkChaos::ItemUpgrade::UpgradeManager* tierMgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        DarkChaos::ItemUpgrade::TierDefinition const* tierDef = (tierMgr && tier >= 1 && tier <= 255)
+            ? tierMgr->GetTierDefinition(static_cast<uint8>(tier)) : nullptr;
+
+        if (!tierDef || tierDef->is_artifact || fromLevel >= toLevel)
         {
+            // Echo the request so the client can clear the pending entry it
+            // keyed on tier/fromLevel/toLevel; without them it stayed on
+            // "cost is syncing" for the rest of the session.
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_COST_INFO)
                 .SetRequestId(msg.GetRequestId())
                 .Set("success", false)
                 .Set("errorMsg", "Invalid parameters")
+                .Set("tier", tier)
+                .Set("fromLevel", fromLevel)
+                .Set("toLevel", toLevel)
                 .Send(player);
             return;
         }
@@ -1214,16 +1228,14 @@ namespace Upgrade
                return;
            }
 
-        // Resolve per-item tier and max level from the DB tier definition
+        // Resolve the per-item tier, and the max level: the tier definition's,
+        // capped at the last level whose stat enchant exists (GetHeirloomMaxLevel).
+        // The bare tier max let a Frontier heirloom (tier 10, enchants 1-5 only)
+        // be bought up to 15.
         uint8 itemTier = 0;
-        uint32 heirloomMaxLevel = HEIRLOOM_MAX_LEVEL;
         if (DarkChaos::ItemUpgrade::UpgradeManager* hMgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-        {
             itemTier = static_cast<uint8>(hMgr->GetItemTier(item->GetEntry()));
-            uint8 tMax = hMgr->GetTierMaxLevel(itemTier);
-            if (tMax > 0)
-                heirloomMaxLevel = tMax;
-        }
+        uint32 const heirloomMaxLevel = GetHeirloomMaxLevel(item->GetEntry());
 
         // Validate inputs
            if (packageId < 1 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
@@ -1244,6 +1256,21 @@ namespace Upgrade
                   .Send(player);
                return;
            }
+
+        // Refuse before any currency is taken when the enchant for this package
+        // and level is missing: applying it would strip the item's stats.
+        if (!sSpellItemEnchantmentStore.LookupEntry(GetHeirloomEnchantId(itemTier, packageId, targetLevel)))
+        {
+            LOG_ERROR("scripts.dc", "Heirloom upgrade refused: no SpellItemEnchantment {} (item {}, tier {}, "
+                "package {}, level {})", GetHeirloomEnchantId(itemTier, packageId, targetLevel), item->GetEntry(),
+                itemTier, packageId, targetLevel);
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", false)
+                .Set("errorMsg", "This upgrade level is not available")
+                .Send(player);
+            return;
+        }
 
         uint32 itemGuid = item->GetGUID().GetCounter();
 
@@ -1343,11 +1370,8 @@ namespace Upgrade
             if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
             if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
 
-            // Apply Enchantment
-            // Standard heirlooms:  900000 + (packageId * 100) + level
-            // Frontier heirlooms (tier 10): 920000 + (packageId * 100) + level
-            uint32 enchantBase = (itemTier == 10) ? FRONTIER_HEIRLOOM_ENCHANT_BASE_ID : HEIRLOOM_ENCHANT_BASE_ID;
-            uint32 enchantId = enchantBase + (packageId * 100) + targetLevel;
+            // Apply Enchantment (checked to exist before the request was queued)
+            uint32 enchantId = GetHeirloomEnchantId(itemTier, packageId, targetLevel);
 
             player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
             item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());

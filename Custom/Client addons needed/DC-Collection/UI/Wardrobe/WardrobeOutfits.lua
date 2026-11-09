@@ -1040,6 +1040,11 @@ function Wardrobe:ShowOutfitContextMenu(outfit, anchor)
                                      end
                                  end
                              end
+                             -- Mirror the save path: keep the page count right until the
+                             -- server's refreshed SMSG_SAVED_OUTFITS replaces it.
+                             if DC.db and tonumber(DC.db.outfitsTotal) and DC.db.outfitsTotal > 0 then
+                                 DC.db.outfitsTotal = DC.db.outfitsTotal - 1
+                             end
                              if Wardrobe then Wardrobe:RefreshOutfitsGrid() end
                         end
                     end,

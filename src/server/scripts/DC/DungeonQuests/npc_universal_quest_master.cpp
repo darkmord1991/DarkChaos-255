@@ -829,7 +829,7 @@ public:
         // follower's, cached separately -- drop that too or display_id edits stay invisible.
         DungeonQuestHelpers::ClearQuestMasterDisplayIdCache();
 
-        handler->PSendSysMessage("Done! Loaded %u dungeons, %u display IDs.",
+        handler->PSendSysMessage("Done! Loaded {} dungeons, {} display IDs.",
                                 UniversalQuestMasterCache::GetTotalQuestMappings(),
                                 UniversalQuestMasterCache::GetTotalDisplayMappings());
 

@@ -2086,4 +2086,5 @@ DC.PetModelPaths = DC.PetModelPaths or {
     [505192] = "petpreview\\aqirflying\\aqirflying_505192.m2",
     [505193] = "petpreview\\aqirflying\\aqirflying_505193.m2",
     [505194] = "petpreview\\aqirscarab\\aqirscarab_505194.m2",
+    [505196] = "petpreview\\8171869\\8171869_505196.m2",
 }

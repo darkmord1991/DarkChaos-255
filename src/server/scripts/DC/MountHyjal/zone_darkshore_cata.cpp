@@ -19,14 +19,24 @@
  *     GetPlayerForEscort(). This also avoids handing credit to bystanders.
  *
  * Delayed lines use TaskScheduler because AzerothCore has no TalkWithDelay().
+ *
+ * Also here: the quest controllers and vehicles ported later (197_/198_), and
+ * the Foolhardy Adventurer murloc decoy for 13560 (r49, from the BFA-HavenCore
+ * comparison of 2026-11-09).
  */
 
 #include "CreatureScript.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptMgr.h"
+#include "SpellAuraEffects.h"
+#include "SpellInfo.h"
+#include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
+#include "Vehicle.h"
 
 enum DarkshoreShared
 {
@@ -705,6 +715,231 @@ struct npc_darkshore_wisp_circling : public ScriptedAI
     void UpdateAI(uint32 /*diff*/) override { }
 };
 
+// ---------------------------------------------------------------------------
+// Foolhardy Adventurer -- quest 13560 "An Ocean Not So Deep"
+// ---------------------------------------------------------------------------
+// A rideable murloc decoy (entry 3734207, VehicleId 400). The player clicks it
+// (npc_spellclick 46598), steers it into the Greymist murlocs and presses its
+// one action-bar spell, 62684 Depth Charge Countdown Pulse: an 8 s aura whose
+// two 2 s periodic triggers are 35151 (the countdown tick) and 62689 (Murloc
+// Aggro Pulse, which pulls every murloc within 40 yd onto the decoy). When the
+// aura expires the decoy blows up with 62682.
+//
+// Built from Neltharion's npc_possessed_murloc_bomb + its aura script and
+// HavenCore's vehicle_foolhardy_adventurer, with three changes for map 750:
+//
+//  1. Credit is given per murloc HIT by the blast, not per kill. 62682 deals
+//     1540 Fire, tuned for level-12 murlocs; ours are in the 80-90 band and
+//     would survive it, so a kill-based credit would never fire. Each Greymist
+//     Tidehunter/Warrior caught in the blast credits the rider once and is
+//     then killed by the script.
+//  2. The rider is ejected BEFORE the blast. A seated rider controls the
+//     decoy, so the kills would also reach them through KillCredit1 (set in
+//     the r49 SQL) and count twice.
+//  3. The rider is held as an ObjectGuid and resolved when used -- HavenCore's
+//     lambdas captured raw Creature pointers -- and the shore teleport is a
+//     NearTeleportTo on the current map. HavenCore sent the player to map 1,
+//     which from map 750 is the wrong continent.
+// ---------------------------------------------------------------------------
+enum FoolhardyAdventurer
+{
+    QUEST_AN_OCEAN_NOT_SO_DEEP      = 13560,
+
+    SPELL_DEPTH_CHARGE_PULSE        = 35151,
+    SPELL_DEPTH_CHARGE_DETONATION   = 62682,
+
+    NPC_GREYMIST_KILL_CREDIT        = 3732852,
+    NPC_GREYMIST_TIDEHUNTER         = 3733262,
+    NPC_GREYMIST_WARRIOR            = 3733277,
+
+    SAY_FOOLHARDY_TAUNT             = 0,
+    SAY_FOOLHARDY_IMMINENT          = 1,
+
+    ACTION_FOOLHARDY_DETONATE       = 1
+};
+
+// Back on the beach, clear of the wreck (HavenCore's point; map 750 keeps the
+// Kalimdor coordinates).
+Position const FoolhardyShorePos = { 7746.35f, -405.84f, 1.5f, 6.088f };
+
+struct npc_foolhardy_adventurer : public ScriptedAI
+{
+    npc_foolhardy_adventurer(Creature* creature) : ScriptedAI(creature) { }
+
+    void Reset() override
+    {
+        me->SetReactState(REACT_PASSIVE);
+    }
+
+    // State is cleared on respawn only: Reset() can also run on evade, which
+    // may happen between the eject and the blast and must not lose the rider.
+    void JustRespawned() override
+    {
+        _scheduler.CancelAll();
+        _riderGUID.Clear();
+        _blastVictims.clear();
+        _pulses = 0;
+        _detonated = false;
+        _dismissing = false;
+    }
+
+    void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) override
+    {
+        if (!passenger || !passenger->IsPlayer())
+            return;
+
+        if (apply)
+        {
+            _riderGUID = passenger->GetGUID();
+            me->SetWalk(false);
+
+            // Only for players on the quest; anyone else, or a rider who has
+            // left, gets the decoy taken away.
+            _scheduler.Schedule(1s, [this](TaskContext context)
+            {
+                Player* rider = ObjectAccessor::GetPlayer(*me, _riderGUID);
+                if (!rider || rider->GetVehicleBase() != me
+                    || rider->GetQuestStatus(QUEST_AN_OCEAN_NOT_SO_DEEP) != QUEST_STATUS_INCOMPLETE)
+                {
+                    Dismiss();
+                    return;
+                }
+
+                context.Repeat();
+            });
+            return;
+        }
+
+        // Off the decoy, by the blast or by choice: back onto the beach.
+        passenger->m_Events.AddEventAtOffset([guid = passenger->GetGUID()]()
+        {
+            if (Player* player = ObjectAccessor::FindPlayer(guid))
+                player->NearTeleportTo(FoolhardyShorePos.GetPositionX(), FoolhardyShorePos.GetPositionY(),
+                    FoolhardyShorePos.GetPositionZ(), FoolhardyShorePos.GetOrientation());
+        }, 500ms);
+
+        if (!_detonated)
+            Dismiss();
+    }
+
+    void SpellHit(Unit* /*caster*/, SpellInfo const* spellInfo) override
+    {
+        if (spellInfo->Id != SPELL_DEPTH_CHARGE_PULSE)
+            return;
+
+        // Four ticks over the 8 s countdown.
+        ++_pulses;
+        if (_pulses == 1)
+            Talk(SAY_FOOLHARDY_TAUNT, ObjectAccessor::GetPlayer(*me, _riderGUID));
+        else if (_pulses == 3)
+            Talk(SAY_FOOLHARDY_IMMINENT, ObjectAccessor::GetPlayer(*me, _riderGUID));
+    }
+
+    void SpellHitTarget(Unit* target, SpellInfo const* spellInfo) override
+    {
+        if (spellInfo->Id != SPELL_DEPTH_CHARGE_DETONATION || !target->IsCreature())
+            return;
+
+        uint32 const entry = target->GetEntry();
+        if (entry == NPC_GREYMIST_TIDEHUNTER || entry == NPC_GREYMIST_WARRIOR)
+            _blastVictims.push_back(target->GetGUID());
+    }
+
+    void DoAction(int32 action) override
+    {
+        if (action != ACTION_FOOLHARDY_DETONATE || _detonated)
+            return;
+
+        _detonated = true;
+        _scheduler.CancelAll();
+
+        if (Vehicle* kit = me->GetVehicleKit())
+            kit->RemoveAllPassengers();
+
+        me->CastSpell(me, SPELL_DEPTH_CHARGE_DETONATION, true);
+
+        // Settle the blast once the spell has finished hitting its targets.
+        _scheduler.Schedule(100ms, [this](TaskContext /*context*/)
+        {
+            Player* rider = ObjectAccessor::GetPlayer(*me, _riderGUID);
+            bool const onQuest = rider
+                && rider->GetQuestStatus(QUEST_AN_OCEAN_NOT_SO_DEEP) == QUEST_STATUS_INCOMPLETE;
+
+            for (ObjectGuid const& guid : _blastVictims)
+            {
+                if (onQuest)
+                    rider->KilledMonsterCredit(NPC_GREYMIST_KILL_CREDIT);
+
+                if (Creature* murloc = ObjectAccessor::GetCreature(*me, guid))
+                    if (murloc->IsAlive())
+                        Unit::Kill(me, murloc);
+            }
+
+            _blastVictims.clear();
+        });
+
+        me->DespawnOrUnsummon(1500ms);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        if (Vehicle* kit = me->GetVehicleKit())
+            kit->RemoveAllPassengers();
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        _scheduler.Update(diff);
+    }
+
+private:
+    // Always eject before despawning, or the rider is left seated on an object
+    // that no longer exists. Guarded because the eject re-enters
+    // PassengerBoarded(apply = false), which calls back here.
+    void Dismiss()
+    {
+        if (_dismissing)
+            return;
+
+        _dismissing = true;
+        if (Vehicle* kit = me->GetVehicleKit())
+            kit->RemoveAllPassengers();
+
+        me->DespawnOrUnsummon(100ms);
+    }
+
+    TaskScheduler _scheduler;
+    ObjectGuid _riderGUID;
+    GuidVector _blastVictims;
+    uint8 _pulses = 0;
+    bool _detonated = false;
+    bool _dismissing = false;
+};
+
+// 62684 Depth Charge Countdown Pulse -- when the countdown runs out, tell the
+// decoy to blow. Only a natural expiry counts: a despawn or a death removes the
+// aura too, and must not set off a blast.
+class spell_darkshore_depth_charge_countdown : public AuraScript
+{
+    PrepareAuraScript(spell_darkshore_depth_charge_countdown);
+
+    void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (GetTargetApplication()->GetRemoveMode() != AURA_REMOVE_BY_EXPIRE)
+            return;
+
+        if (Creature* decoy = GetTarget()->ToCreature())
+            if (decoy->IsAIEnabled)
+                decoy->AI()->DoAction(ACTION_FOOLHARDY_DETONATE);
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_darkshore_depth_charge_countdown::HandleRemove, EFFECT_0,
+            SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
 void AddSC_dc_darkshore_cata()
 {
     new npc_hollee_escort_questgiver();
@@ -713,4 +948,6 @@ void AddSC_dc_darkshore_cata()
     RegisterCreatureAI(npc_offering_to_azshara_controller);
     RegisterCreatureAI(npc_vengeful_protector_ancient_vehicle);
     RegisterCreatureAI(npc_darkshore_wisp_circling);
+    RegisterCreatureAI(npc_foolhardy_adventurer);
+    RegisterSpellScript(spell_darkshore_depth_charge_countdown);
 }

@@ -1089,8 +1089,10 @@ namespace Matchmaking
             }
         }
 
+        // Only the decliner (and their queued party) leaves the queue; players
+        // who had not answered yet are requeued, as in stock.
         if (dissolve)
-            DissolveProposal(proposalId, true, "A player declined.");
+            DissolveProposal(proposalId, false, "A player declined.");
         else
         {
             // Send progress to everyone in the proposal, then finalize if ready.
@@ -1120,11 +1122,21 @@ namespace Matchmaking
                     break;
                 }
             }
-            RemoveEntry(guidLow);
+
+            // In a proposal the entries stay until DissolveProposal has read the
+            // party they belong to; it removes them together with that party.
+            if (!declineProposal)
+                RemoveEntry(guidLow);
         }
 
         if (declineProposal)
-            DissolveProposal(declineProposal, true, "A player left.");
+        {
+            DissolveProposal(declineProposal, false, "A player left.");
+
+            // Whatever happened to the proposal, a logged-out player holds no entry.
+            std::lock_guard<std::mutex> lock(_mutex);
+            RemoveEntry(guidLow);
+        }
     }
 
     // ========================================================================
@@ -1181,77 +1193,92 @@ namespace Matchmaking
     }
 
     // ------------------------------------------------------------------------
-    // Role assignment over a candidate set (guidLows) that keeps party members
-    // (same groupId) together: a queued party is included all-or-nothing.
-    // Returns true and fills `out` (guidLow -> assigned role) when satisfied.
+    // Role assignment over a candidate set that keeps party members (same
+    // groupId) together: a queued party is included all-or-nothing.
+    //
+    // Candidates are indexes into `queue`, not guids: a solo player may sit in
+    // several queues at once, and each entry carries its own roles, map list
+    // and wait. Matching a bucket must use the entry that put the player into
+    // that bucket, never just the player's first entry. The index is only valid
+    // for the match pass that built it (caller holds _mutex, _queue unchanged).
+    //
+    // Returns true and fills `out` (guidLow -> assigned role) and `outEntry`
+    // (guidLow -> the queue index that was matched) when satisfied. A player
+    // with two entries in one pool is placed at most once.
     //
     // Strategy: try each queued party block as a "seed" (must be fully placed)
     // plus solo fillers; then fall back to a pure-solo group. One party block per
     // formed group (multi-party combining is intentionally out of scope).
     // ------------------------------------------------------------------------
     static bool AssembleGroup(std::vector<QueueEntry> const& queue,
-        std::vector<uint32> const& candidates, RoleNeed need,
-        std::unordered_map<uint32, uint8>& out)
+        std::vector<std::size_t> const& candidates, RoleNeed need,
+        std::unordered_map<uint32, uint8>& out,
+        std::unordered_map<uint32, std::size_t>& outEntry)
     {
-        auto entryFor = [&](uint32 g) -> QueueEntry const*
-        {
-            for (QueueEntry const& e : queue)
-                if (e.guid.GetCounter() == g)
-                    return &e;
-            return nullptr;
-        };
-
         uint8 totalNeed = need.tank + need.healer + need.dps;
 
         // Split candidates into party blocks (groupId != 0) and solos.
-        std::unordered_map<uint32, std::vector<uint32>> parties;
-        std::vector<uint32> solos;
-        for (uint32 g : candidates)
+        std::unordered_map<uint32, std::vector<std::size_t>> parties;
+        std::vector<std::size_t> solos;
+        for (std::size_t idx : candidates)
         {
-            QueueEntry const* e = entryFor(g);
-            if (!e)
+            if (idx >= queue.size())
                 continue;
-            if (e->groupId != 0)
-                parties[e->groupId].push_back(g);
+            if (queue[idx].groupId != 0)
+                parties[queue[idx].groupId].push_back(idx);
             else
-                solos.push_back(g);
+                solos.push_back(idx);
         }
 
         // Place a fixed set of forced members, then fill from a solo pool, to
         // meet `need`. Scarce roles (tank/healer) are filled first per member.
-        auto tryAssign = [&](std::vector<uint32> const& forced,
-            std::vector<uint32> const& fillPool) -> bool
+        auto tryAssign = [&](std::vector<std::size_t> const& forced,
+            std::vector<std::size_t> const& fillPool) -> bool
         {
             out.clear();
+            outEntry.clear();
             RoleNeed rem = need;
-            std::set<uint32> used;
 
-            auto place = [&](uint32 g) -> bool
+            auto place = [&](std::size_t idx) -> bool
             {
-                if (used.count(g))
+                QueueEntry const& e = queue[idx];
+                uint32 g = e.guid.GetCounter();
+                if (out.count(g))
                     return false;
-                QueueEntry const* e = entryFor(g);
-                if (!e)
+                uint8 role = 0;
+                if (rem.tank > 0 && (e.roles & QROLE_TANK))
+                {
+                    role = QROLE_TANK;
+                    --rem.tank;
+                }
+                else if (rem.healer > 0 && (e.roles & QROLE_HEALER))
+                {
+                    role = QROLE_HEALER;
+                    --rem.healer;
+                }
+                else if (rem.dps > 0 && (e.roles & QROLE_DPS))
+                {
+                    role = QROLE_DPS;
+                    --rem.dps;
+                }
+                else
                     return false;
-                if (rem.tank > 0 && (e->roles & QROLE_TANK))
-                { out[g] = QROLE_TANK; --rem.tank; used.insert(g); return true; }
-                if (rem.healer > 0 && (e->roles & QROLE_HEALER))
-                { out[g] = QROLE_HEALER; --rem.healer; used.insert(g); return true; }
-                if (rem.dps > 0 && (e->roles & QROLE_DPS))
-                { out[g] = QROLE_DPS; --rem.dps; used.insert(g); return true; }
-                return false;
+
+                out[g] = role;
+                outEntry[g] = idx;
+                return true;
             };
 
             // Every forced (party) member must be placeable.
-            for (uint32 g : forced)
-                if (!place(g))
+            for (std::size_t idx : forced)
+                if (!place(idx))
                     return false;
 
-            for (uint32 g : fillPool)
+            for (std::size_t idx : fillPool)
             {
                 if (rem.tank == 0 && rem.healer == 0 && rem.dps == 0)
                     break;
-                place(g);
+                place(idx);
             }
 
             return rem.tank == 0 && rem.healer == 0 && rem.dps == 0
@@ -1259,7 +1286,7 @@ namespace Matchmaking
         };
 
         // Try the largest party first (so groups get pulled in promptly).
-        std::vector<std::pair<uint32, std::vector<uint32>>> partyList(
+        std::vector<std::pair<uint32, std::vector<std::size_t>>> partyList(
             parties.begin(), parties.end());
         std::sort(partyList.begin(), partyList.end(),
             [](auto const& a, auto const& b) { return a.second.size() > b.second.size(); });
@@ -1273,59 +1300,66 @@ namespace Matchmaking
         }
 
         // No party fit (or none queued): pure-solo group.
-        static const std::vector<uint32> kNoForced;
+        static const std::vector<std::size_t> kNoForced;
         return tryAssign(kNoForced, solos);
     }
 
     // ------------------------------------------------------------------------
     // Place as many candidates as possible into `need` WITHOUT requiring the
     // group to be completed, and report what is still missing. Same party rule
-    // as AssembleGroup: a queued party goes in whole or not at all. Used only on
-    // the bot-backfill pass, where the shortfall is filled from the bot pool.
+    // and the same queue-index candidates as AssembleGroup: a queued party goes
+    // in whole or not at all. Used only on the bot-backfill pass, where the
+    // shortfall is filled from the bot pool.
     // ------------------------------------------------------------------------
     static RoleNeed PlaceGreedily(std::vector<QueueEntry> const& queue,
-        std::vector<uint32> const& candidates, RoleNeed need,
-        std::unordered_map<uint32, uint8>& out)
+        std::vector<std::size_t> const& candidates, RoleNeed need,
+        std::unordered_map<uint32, uint8>& out,
+        std::unordered_map<uint32, std::size_t>& outEntry)
     {
         out.clear();
+        outEntry.clear();
 
-        auto entryFor = [&](uint32 g) -> QueueEntry const*
+        auto place = [&](std::size_t idx, RoleNeed& rem) -> bool
         {
-            for (QueueEntry const& e : queue)
-                if (e.guid.GetCounter() == g)
-                    return &e;
-            return nullptr;
-        };
+            QueueEntry const& e = queue[idx];
+            uint32 g = e.guid.GetCounter();
+            if (out.count(g))
+                return false;
+            uint8 role = 0;
+            if (rem.tank > 0 && (e.roles & QROLE_TANK))
+            {
+                role = QROLE_TANK;
+                --rem.tank;
+            }
+            else if (rem.healer > 0 && (e.roles & QROLE_HEALER))
+            {
+                role = QROLE_HEALER;
+                --rem.healer;
+            }
+            else if (rem.dps > 0 && (e.roles & QROLE_DPS))
+            {
+                role = QROLE_DPS;
+                --rem.dps;
+            }
+            else
+                return false;
 
-        std::set<uint32> used;
-        auto place = [&](uint32 g, RoleNeed& rem) -> bool
-        {
-            if (used.count(g))
-                return false;
-            QueueEntry const* e = entryFor(g);
-            if (!e)
-                return false;
-            if (rem.tank > 0 && (e->roles & QROLE_TANK))
-            { out[g] = QROLE_TANK; --rem.tank; used.insert(g); return true; }
-            if (rem.healer > 0 && (e->roles & QROLE_HEALER))
-            { out[g] = QROLE_HEALER; --rem.healer; used.insert(g); return true; }
-            if (rem.dps > 0 && (e->roles & QROLE_DPS))
-            { out[g] = QROLE_DPS; --rem.dps; used.insert(g); return true; }
-            return false;
+            out[g] = role;
+            outEntry[g] = idx;
+            return true;
         };
 
         // Party blocks first (all-or-nothing), then solos.
-        std::unordered_map<uint32, std::vector<uint32>> parties;
-        std::vector<uint32> solos;
-        for (uint32 g : candidates)
+        std::unordered_map<uint32, std::vector<std::size_t>> parties;
+        std::vector<std::size_t> solos;
+        for (std::size_t idx : candidates)
         {
-            QueueEntry const* e = entryFor(g);
-            if (!e)
+            if (idx >= queue.size())
                 continue;
-            if (e->groupId != 0)
-                parties[e->groupId].push_back(g);
+            if (queue[idx].groupId != 0)
+                parties[queue[idx].groupId].push_back(idx);
             else
-                solos.push_back(g);
+                solos.push_back(idx);
         }
 
         RoleNeed rem = need;
@@ -1334,10 +1368,10 @@ namespace Matchmaking
             // Trial-place the whole block; roll back if any member does not fit.
             RoleNeed trial = rem;
             auto snapshot = out;
-            auto usedSnapshot = used;
+            auto entrySnapshot = outEntry;
             bool ok = true;
-            for (uint32 g : kv.second)
-                if (!place(g, trial))
+            for (std::size_t idx : kv.second)
+                if (!place(idx, trial))
                 {
                     ok = false;
                     break;
@@ -1350,32 +1384,31 @@ namespace Matchmaking
             else
             {
                 out = snapshot;
-                used = usedSnapshot;
+                outEntry = entrySnapshot;
             }
         }
 
-        for (uint32 g : solos)
+        for (std::size_t idx : solos)
         {
             if (rem.Empty())
                 break;
-            place(g, rem);
+            place(idx, rem);
         }
 
         return rem;
     }
 
-    // Longest wait among these queued players, in seconds.
-    bool MatchmakingQueue::BackfillDelayElapsed(std::vector<uint32> const& guidLows) const
+    // True when any of these queue entries has waited past the backfill delay.
+    bool MatchmakingQueue::BackfillDelayElapsed(std::vector<std::size_t> const& entryIndexes) const
     {
         if (_botBackfillAfterSec == 0)
             return true;
 
         time_t now = GameTime::GetGameTime().count();
-        for (uint32 g : guidLows)
-            for (QueueEntry const& e : _queue)
-                if (e.guid.GetCounter() == g
-                    && now - e.joinedAt >= static_cast<time_t>(_botBackfillAfterSec))
-                    return true;
+        for (std::size_t idx : entryIndexes)
+            if (idx < _queue.size()
+                && now - _queue[idx].joinedAt >= static_cast<time_t>(_botBackfillAfterSec))
+                return true;
 
         return false;
     }
@@ -1472,8 +1505,10 @@ namespace Matchmaking
             need = { 0, 0, static_cast<uint8>(_debugMinPlayers) };
 
         // Bucket eligible dungeon entries by specific dungeon; collect "any" pool.
-        std::unordered_map<uint32, std::vector<uint32>> byDungeon;  // dungeonId -> guidLows
-        std::vector<uint32> anyPool;
+        // Pools hold _queue indexes (see AssembleGroup) so a multi-queued player
+        // is matched with the entry that belongs to the bucket.
+        std::unordered_map<uint32, std::vector<std::size_t>> byDungeon;  // dungeonId -> entries
+        std::vector<std::size_t> anyPool;
         std::set<uint8> difficulties;
 
         for (QueueEntry const& e : _queue)
@@ -1494,21 +1529,22 @@ namespace Matchmaking
             // it (plus the random queuers, who take anything). That is the
             // set-intersection rule stock LFGQueue uses, expressed as one pool
             // per possible destination.
-            for (QueueEntry const& e : _queue)
+            for (std::size_t idx = 0; idx < _queue.size(); ++idx)
             {
+                QueueEntry const& e = _queue[idx];
                 if (e.category != QUEUE_CAT_DUNGEON || e.inProposal || e.difficulty != diff)
                     continue;
                 if (e.IsRandom())
-                    anyPool.push_back(e.guid.GetCounter());
+                    anyPool.push_back(idx);
                 else
                     for (uint32 mapId : e.dungeonIds)
-                        byDungeon[mapId].push_back(e.guid.GetCounter());
+                        byDungeon[mapId].push_back(idx);
             }
 
             struct Bucket
             {
                 uint32 dungeonId;               // 0 = pick a random eligible map
-                std::vector<uint32> pool;
+                std::vector<std::size_t> pool;
             };
             std::vector<Bucket> buckets;
             for (auto const& [dungeonId, members] : byDungeon)
@@ -1527,12 +1563,12 @@ namespace Matchmaking
                 buckets.push_back(Bucket{ 0, anyPool });
 
             // Lowest level among an assignment, which gates which maps are legal.
-            auto lowestLevelOf = [&](std::unordered_map<uint32, uint8> const& assign) -> uint8
+            auto lowestLevelOf = [&](std::unordered_map<uint32, std::size_t> const& entries) -> uint8
             {
                 uint8 lowest = 255;
-                for (auto const& kv : assign)
-                    if (QueueEntry* e = FindEntry(kv.first))
-                        lowest = std::min<uint8>(lowest, e->level);
+                for (auto const& kv : entries)
+                    if (kv.second < _queue.size())
+                        lowest = std::min<uint8>(lowest, _queue[kv.second].level);
                 return lowest;
             };
 
@@ -1541,18 +1577,21 @@ namespace Matchmaking
             // of the same map are level-80 content. Returns 0 when the group can
             // enter nothing -- better to leave them queued than to teleport them
             // into content they are locked out of.
-            auto pickRandomMap = [&](std::unordered_map<uint32, uint8> const& assign) -> uint32
+            auto pickRandomMap = [&](std::unordered_map<uint32, std::size_t> const& entries) -> uint32
             {
                 auto const& anyMaps = InstanceCatalog::GetMythicDungeonMapIds();
                 std::vector<uint32> eligible;
                 for (uint32 mapId : anyMaps)
                 {
                     bool openForAll = true;
-                    for (auto const& kv : assign)
+                    for (auto const& kv : entries)
                     {
-                        // Everyone in the match must both WANT this map (their
-                        // tick list, or random) and be allowed through the door.
-                        QueueEntry const* e = FindEntry(kv.first);
+                        // Everyone in the match must both WANT this map (the
+                        // tick list of the entry that was matched, or random)
+                        // and be allowed through the door. Not the player's
+                        // first entry: that can be a raid queue, which wants no
+                        // dungeon at all and stalled the whole random bucket.
+                        QueueEntry const* e = kv.second < _queue.size() ? &_queue[kv.second] : nullptr;
                         if (!e || !e->Wants(mapId))
                         {
                             openForAll = false;
@@ -1588,18 +1627,19 @@ namespace Matchmaking
             for (Bucket const& bucket : buckets)
             {
                 std::unordered_map<uint32, uint8> assign;
-                if (!AssembleGroup(_queue, bucket.pool, need, assign))
+                std::unordered_map<uint32, std::size_t> assignEntry;
+                if (!AssembleGroup(_queue, bucket.pool, need, assign, assignEntry))
                     continue;
 
                 uint32 mapId = bucket.dungeonId != 0
                     ? bucket.dungeonId
-                    : pickRandomMap(assign);
+                    : pickRandomMap(assignEntry);
                 if (mapId == 0)
                     continue;
 
                 std::vector<uint32> picks;
                 for (auto const& [g, r] : assign) picks.push_back(g);
-                if (CreateProposal(picks, assign, QUEUE_CAT_DUNGEON, mapId, diff, 0))
+                if (CreateProposal(picks, assign, assignEntry, QUEUE_CAT_DUNGEON, mapId, diff, 0))
                     return true;
             }
 
@@ -1614,7 +1654,8 @@ namespace Matchmaking
                     continue;
 
                 std::unordered_map<uint32, uint8> assign;
-                RoleNeed shortfall = PlaceGreedily(_queue, bucket.pool, need, assign);
+                std::unordered_map<uint32, std::size_t> assignEntry;
+                RoleNeed shortfall = PlaceGreedily(_queue, bucket.pool, need, assign, assignEntry);
 
                 // At least one real player, and something actually missing
                 // (a complete group would have formed in pass 1).
@@ -1623,10 +1664,10 @@ namespace Matchmaking
                 if (shortfall.Total() > _botsMaxPerGroup)
                     continue;
 
-                uint8 lowestLevel = lowestLevelOf(assign);
+                uint8 lowestLevel = lowestLevelOf(assignEntry);
                 uint32 mapId = bucket.dungeonId != 0
                     ? bucket.dungeonId
-                    : pickRandomMap(assign);
+                    : pickRandomMap(assignEntry);
                 if (mapId == 0)
                     continue;
 
@@ -1636,7 +1677,7 @@ namespace Matchmaking
 
                 std::vector<uint32> picks;
                 for (auto const& [g, r] : assign) picks.push_back(g);
-                if (CreateProposal(picks, assign, QUEUE_CAT_DUNGEON, mapId, diff, 0, botPicks))
+                if (CreateProposal(picks, assign, assignEntry, QUEUE_CAT_DUNGEON, mapId, diff, 0, botPicks))
                     return true;
             }
         }
@@ -1649,14 +1690,15 @@ namespace Matchmaking
         std::lock_guard<std::mutex> lock(_mutex);
 
         // Raids must be specific; bucket by (dungeonId, raidSize, difficulty).
-        std::map<std::tuple<uint32, uint32, uint8>, std::vector<uint32>> buckets;
+        // Pools hold _queue indexes, as in TryFormDungeonMatch.
+        std::map<std::tuple<uint32, uint32, uint8>, std::vector<std::size_t>> buckets;
 
-        for (QueueEntry const& e : _queue)
+        for (std::size_t idx = 0; idx < _queue.size(); ++idx)
         {
+            QueueEntry const& e = _queue[idx];
             if (e.category != QUEUE_CAT_RAID || e.inProposal || e.dungeonId == 0)
                 continue;
-            buckets[std::make_tuple(e.dungeonId, e.raidSize, e.difficulty)]
-                .push_back(e.guid.GetCounter());
+            buckets[std::make_tuple(e.dungeonId, e.raidSize, e.difficulty)].push_back(idx);
         }
 
         for (auto const& [key, members] : buckets)
@@ -1667,11 +1709,12 @@ namespace Matchmaking
 
             RoleNeed need = GetRaidNeed(raidSize);
             std::unordered_map<uint32, uint8> assign;
-            if (AssembleGroup(_queue, members, need, assign))
+            std::unordered_map<uint32, std::size_t> assignEntry;
+            if (AssembleGroup(_queue, members, need, assign, assignEntry))
             {
                 std::vector<uint32> picks;
                 for (auto const& [g, r] : assign) picks.push_back(g);
-                if (CreateProposal(picks, assign, QUEUE_CAT_RAID, map, diff, raidSize))
+                if (CreateProposal(picks, assign, assignEntry, QUEUE_CAT_RAID, map, diff, raidSize))
                     return true;
                 continue;
             }
@@ -1683,17 +1726,16 @@ namespace Matchmaking
             if (!BackfillDelayElapsed(members))
                 continue;
 
-            assign.clear();
-            RoleNeed shortfall = PlaceGreedily(_queue, members, need, assign);
+            RoleNeed shortfall = PlaceGreedily(_queue, members, need, assign, assignEntry);
             if (assign.empty() || shortfall.Empty())
                 continue;
             if (shortfall.Total() > _botsMaxPerGroup)
                 continue;
 
             uint8 lowestLevel = 255;
-            for (auto const& kv : assign)
-                if (QueueEntry* e = FindEntry(kv.first))
-                    lowestLevel = std::min<uint8>(lowestLevel, e->level);
+            for (auto const& kv : assignEntry)
+                if (kv.second < _queue.size())
+                    lowestLevel = std::min<uint8>(lowestLevel, _queue[kv.second].level);
 
             auto botPicks = RecruitBotFillers(shortfall, lowestLevel, map, diff);
             if (botPicks.size() < shortfall.Total())
@@ -1701,7 +1743,7 @@ namespace Matchmaking
 
             std::vector<uint32> picks;
             for (auto const& [g, r] : assign) picks.push_back(g);
-            if (CreateProposal(picks, assign, QUEUE_CAT_RAID, map, diff, raidSize, botPicks))
+            if (CreateProposal(picks, assign, assignEntry, QUEUE_CAT_RAID, map, diff, raidSize, botPicks))
                 return true;
         }
 
@@ -1709,7 +1751,8 @@ namespace Matchmaking
     }
 
     bool MatchmakingQueue::CreateProposal(std::vector<uint32> const& picksGuidLow,
-        std::unordered_map<uint32, uint8> const& roleAssign, uint8 category,
+        std::unordered_map<uint32, uint8> const& roleAssign,
+        std::unordered_map<uint32, std::size_t> const& matchedEntry, uint8 category,
         uint32 dungeonId, uint8 difficulty, uint32 raidSize,
         std::vector<std::pair<ObjectGuid, uint8>> const& botPicks)
     {
@@ -1725,31 +1768,38 @@ namespace Matchmaking
         time_t nowSec = prop.createdAt;
         for (uint32 g : picksGuidLow)
         {
+            // The entry the matcher used for this player. Random-queue status
+            // and the wait sample come from it, not from whichever of a
+            // multi-queued player's entries happens to be first or random.
+            auto const mit = matchedEntry.find(g);
+            QueueEntry const* matched = mit != matchedEntry.end() && mit->second < _queue.size()
+                && _queue[mit->second].guid.GetCounter() == g ? &_queue[mit->second] : nullptr;
+
             // Mark ALL of this player's entries in-proposal so a multi-queued
             // player can't be pulled into a second proposal at the same time.
             ObjectGuid memberGuid;
             bool found = false;
             for (QueueEntry& e : _queue)
             {
-                if (e.guid.GetCounter() == g)
-                {
-                    e.inProposal = true;
-                    if (e.category == category && e.IsRandom())
-                        prop.randomQueue = true;
-                    if (!found)
-                    {
-                        // Feed the per-role ETA from this member's actual wait.
-                        auto rit = roleAssign.find(g);
-                        uint8 role = rit != roleAssign.end() ? rit->second : static_cast<uint8>(QROLE_DPS);
-                        if (nowSec >= e.joinedAt)
-                            RecordWait(category, role, static_cast<uint32>(nowSec - e.joinedAt));
-                    }
-                    if (!found)
-                    {
-                        memberGuid = e.guid;
-                        found = true;
-                    }
-                }
+                if (e.guid.GetCounter() != g)
+                    continue;
+
+                e.inProposal = true;
+                if (found)
+                    continue;
+
+                QueueEntry const& source = matched ? *matched : e;
+                if (source.category == category && source.IsRandom())
+                    prop.randomQueue = true;
+
+                // Feed the per-role ETA from this member's actual wait.
+                auto rit = roleAssign.find(g);
+                uint8 role = rit != roleAssign.end() ? rit->second : static_cast<uint8>(QROLE_DPS);
+                if (nowSec >= source.joinedAt)
+                    RecordWait(category, role, static_cast<uint32>(nowSec - source.joinedAt));
+
+                memberGuid = e.guid;
+                found = true;
             }
 
             if (found)
@@ -1877,16 +1927,17 @@ namespace Matchmaking
                     timedOut.push_back(pid);
         }
 
+        // Timeout: whoever has not answered counts as declining (stock).
         for (uint32 pid : timedOut)
             DissolveProposal(pid, true, "Ready check timed out.");
     }
 
-    void MatchmakingQueue::DissolveProposal(uint32 proposalId, bool requeueAccepters,
-        char const* reason)
+    void MatchmakingQueue::DissolveProposal(uint32 proposalId, bool pendingCountsAsDecline,
+        char const* reason, std::set<uint32> const& extraCulprits)
     {
         std::vector<ObjectGuid> toNotify;
-        std::set<uint32> requeue;     // accepters to keep in queue
-        std::set<uint32> remove;      // decliners/timed-out to drop
+        std::set<uint32> requeue;     // members who go back to waiting
+        std::set<uint32> remove;      // culprits and their queued party
         uint8 category = QUEUE_CAT_DUNGEON;
 
         {
@@ -1897,6 +1948,11 @@ namespace Matchmaking
 
             MatchProposal& prop = it->second;
             category = prop.category;
+
+            // Stock LFGMgr::RemoveProposal: a pending answer only counts as a
+            // decline when the ready check timed out. On a decline or a logout
+            // the players who had not clicked yet are innocent and stay queued.
+            std::set<uint32> culpritParties;
             for (ObjectGuid guid : prop.members)
             {
                 uint32 g = guid.GetCounter();
@@ -1907,20 +1963,41 @@ namespace Matchmaking
                     continue;
 
                 toNotify.push_back(guid);
-                int8 resp = prop.responses.count(g) ? prop.responses[g] : 0;
-                if (requeueAccepters && resp == 1)
-                    requeue.insert(g);
-                else
-                    remove.insert(g);
+                auto const rit = prop.responses.find(g);
+                int8 resp = rit != prop.responses.end() ? rit->second : 0;
+                bool culprit = resp == -1 || (resp == 0 && pendingCountsAsDecline)
+                    || extraCulprits.count(g) != 0;
+                if (!culprit)
+                    continue;
+
+                remove.insert(g);
+                for (QueueEntry const& e : _queue)
+                    if (e.guid.GetCounter() == g && e.groupId != 0)
+                        culpritParties.insert(e.groupId);
             }
 
-            // Re-open accepters; drop the rest from the queue.
-            for (QueueEntry& e : _queue)
-                if (requeue.count(e.guid.GetCounter()))
-                    e.inProposal = false;
+            // Stock also takes out the culprit's whole queued party, so a party
+            // never keeps queueing without one of its members (the next match
+            // would then break the party up to form the new group).
+            if (!culpritParties.empty())
+                for (QueueEntry const& e : _queue)
+                    if (e.groupId != 0 && culpritParties.count(e.groupId))
+                        remove.insert(e.guid.GetCounter());
 
             for (uint32 g : remove)
                 RemoveEntry(g);
+
+            // Everyone else is re-opened with their wait time and their other
+            // queues intact.
+            for (QueueEntry& e : _queue)
+            {
+                uint32 g = e.guid.GetCounter();
+                if (prop.responses.count(g) && !prop.IsBotMember(g))
+                {
+                    e.inProposal = false;
+                    requeue.insert(g);
+                }
+            }
 
             _proposals.erase(it);
         }
@@ -1951,6 +2028,55 @@ namespace Matchmaking
             if (it == _proposals.end())
                 return;
             prop = it->second;
+        }
+
+        // Check that the group can form BEFORE anyone loses their queue entry:
+        // failing here used to drop every accepter from the queue. A member who
+        // is gone or can no longer enter is the culprit and leaves the queue (with
+        // their queued party); one who is only on a loading screen is not at
+        // fault, so everybody else -- them included -- is requeued.
+        std::set<uint32> culprits;
+        std::string failReason;
+        for (ObjectGuid guid : prop.members)
+        {
+            Player* p = ObjectAccessor::FindConnectedPlayer(guid);
+            if (!p)
+            {
+                culprits.insert(guid.GetCounter());
+                if (failReason.empty())
+                    failReason = "A player became unavailable.";
+                continue;
+            }
+
+            if (!p->IsInWorld())
+            {
+                if (failReason.empty())
+                    failReason = p->GetName() + " was not ready to be teleported.";
+                continue;
+            }
+
+            // Stock LFG lock statuses were checked at queue time, but a member may
+            // have changed since (levelled, dropped an item, got saved elsewhere).
+            std::string lockReason = GetEntryLockReason(p, prop.dungeonId, prop.difficulty, true);
+            if (!lockReason.empty())
+            {
+                culprits.insert(guid.GetCounter());
+                if (failReason.empty())
+                    failReason = p->GetName() + " can no longer enter: " + lockReason + ".";
+            }
+        }
+
+        if (!failReason.empty())
+        {
+            DissolveProposal(proposalId, false, failReason.c_str(), culprits);
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            auto it = _proposals.find(proposalId);
+            if (it == _proposals.end())
+                return;
 
             // Remove the matched players from the queue and the proposal.
             for (ObjectGuid guid : prop.members)
@@ -1963,7 +2089,9 @@ namespace Matchmaking
 
     void MatchmakingQueue::TeleportAndForm(MatchProposal const& proposal)
     {
-        // Resolve all members; abort if anyone is gone.
+        // Resolve all members; abort if anyone is gone. FinalizeProposal runs the
+        // same presence and lock checks just before (and requeues on failure),
+        // so the two aborts below are a last-resort guard only.
         std::vector<Player*> players;
         for (ObjectGuid guid : proposal.members)
         {

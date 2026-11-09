@@ -1481,6 +1481,38 @@ function TemplateBuilders.UIPanelCloseButton(frame)
 	end)
 end
 
+-- OptionsPanelTemplates.xml: the $parent labels; an unnamed frame's $parent is empty.
+function TemplateBuilders.OptionsSliderTemplate(frame)
+	local name = frame:GetName() or ""
+	frame:SetWidth(144)
+	frame:SetHeight(17)
+	frame:SetOrientation("HORIZONTAL")
+	frame:EnableMouse(true)
+	frame:CreateFontString(name .. "Text", "ARTWORK", "GameFontHighlight"):SetPoint("BOTTOM", frame, "TOP")
+	local low = frame:CreateFontString(name .. "Low", "ARTWORK", "GameFontHighlightSmall")
+	low:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -4, 3)
+	low:SetText("Low")
+	local high = frame:CreateFontString(name .. "High", "ARTWORK", "GameFontHighlightSmall")
+	high:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 4, 3)
+	high:SetText("High")
+end
+
+-- OptionsPanelTemplates.xml: a 26 x 26 box with its $parentText to the right, in the small gold font.
+function TemplateBuilders.OptionsSmallCheckButtonTemplate(frame)
+	frame:SetWidth(26)
+	frame:SetHeight(26)
+	local text = frame:CreateFontString((frame:GetName() or "") .. "Text", "ARTWORK", "GameFontNormalSmall")
+	text:SetPoint("LEFT", frame, "RIGHT", 0, 1)
+end
+
+-- InterfaceOptionsPanels.xml: a 26 x 26 box with its $parentText to the right.
+function TemplateBuilders.InterfaceOptionsCheckButtonTemplate(frame)
+	frame:SetWidth(26)
+	frame:SetHeight(26)
+	local text = frame:CreateFontString((frame:GetName() or "") .. "Text", "ARTWORK", "GameFontHighlight")
+	text:SetPoint("LEFT", frame, "RIGHT", 0, 1)
+end
+
 -- Templates whose OnLoad builds names from self:GetName() (stock FrameXML + DC-Journal's replacements):
 -- on an unnamed frame the client runs that OnLoad and it fails; the error reaches the error handler
 -- and CreateFrame still returns the half-initialised frame.

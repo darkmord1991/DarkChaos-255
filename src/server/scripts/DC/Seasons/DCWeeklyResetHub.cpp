@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "ScriptMgr.h"
 #include "dc_update_profiler.h"
 
@@ -92,6 +93,13 @@ namespace Seasons
         // reset tick; nothing reads the result, so fire-and-forget is correct.
         CharacterDatabase.Execute("DELETE FROM dc_weekly_vault WHERE week_start < {}", purgeBefore);
         CharacterDatabase.Execute("DELETE FROM dc_vault_reward_pool WHERE week_start < {}", keepFrom);
+
+        // The raid and PvP progress rows are only read for the claim week and
+        // the current week, so they keep the reward pool's window.
+        if (DC::DbSchema::CharacterTableExists("dc_vault_raid_kills"))
+            CharacterDatabase.Execute("DELETE FROM dc_vault_raid_kills WHERE week_start < {}", keepFrom);
+        if (DC::DbSchema::CharacterTableExists("dc_vault_pvp_wins"))
+            CharacterDatabase.Execute("DELETE FROM dc_vault_pvp_wins WHERE week_start < {}", keepFrom);
 
         LOG_INFO("module.dc", "[WeeklyReset] GreatVault cleanup done (purgeBefore={}, keepFrom={})", purgeBefore, keepFrom);
     }

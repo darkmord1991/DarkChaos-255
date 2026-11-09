@@ -57,8 +57,14 @@ void Player::Update(uint32 p_time)
 
     sScriptMgr->OnPlayerBeforeUpdate(this, p_time);
 
+    if (m_clientQuestSlotFreed)
+        FillClientQuestSlots();
+
     if (m_extendedQuestDirty)
         SendExtendedQuestSlots();
+
+    if (m_exploredZonesExtReplace || m_exploredZonesExtDirty.any())
+        SendExtendedExploredZones();
 
     // undelivered mail
     if (m_nextMailDelivereTime && m_nextMailDelivereTime <= GameTime::GetGameTime().count())

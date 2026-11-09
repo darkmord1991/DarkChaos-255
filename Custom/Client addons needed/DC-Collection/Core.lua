@@ -523,11 +523,60 @@ function DC:MaybeApplyLastOutfitOnLogin(currentState)
     end
 
     if canBatch and entries and #entries > 0 then
+        -- HandleError drops the slots the server refuses from the saved outfit, else they fail at every login.
+        self._loginOutfitApplySentAt = now
         self:ApplyTransmogBatchByEquipmentSlot(entries)
     end
 
     self._loginOutfitApplied = true
     self._pendingLoginOutfitApply = nil
+end
+
+-- Refusals that will repeat on every login: the appearance is unknown, locked or does not fit the equipped item.
+local LOGIN_OUTFIT_DROP_REASONS = {
+    no_compatible_variant = true,
+    not_unlocked = true,
+    invalid_slot = true,
+}
+
+-- Called with the per-slot reasons of a refused or partial batch. Returns how many slots left the saved outfit, or
+-- nil when the reply does not belong to the login re-apply (it is answered within seconds).
+function DC:PruneLastOutfitAfterLoginApply(perSlot)
+    local sentAt = self._loginOutfitApplySentAt
+    self._loginOutfitApplySentAt = nil
+    if not sentAt or type(perSlot) ~= "table" then
+        return nil
+    end
+
+    local now = (GetTime and GetTime()) or time()
+    if now - sentAt > 15 then
+        return nil
+    end
+
+    local saved = DCCollectionCharDB and DCCollectionCharDB.lastAppliedOutfit
+    local slots = saved and saved.slots
+    if type(slots) ~= "table" then
+        return 0
+    end
+
+    local dropped = 0
+    for slotKey, reason in pairs(perSlot) do
+        if type(reason) == "table" then
+            reason = reason.reason or reason.status
+        end
+        if LOGIN_OUTFIT_DROP_REASONS[tostring(reason)] then
+            local key = tostring(slotKey)
+            local numericKey = tonumber(slotKey)
+            if slots[key] ~= nil or (numericKey and slots[numericKey] ~= nil) then
+                slots[key] = nil
+                if numericKey then
+                    slots[numericKey] = nil
+                end
+                dropped = dropped + 1
+            end
+        end
+    end
+    return dropped
 end
 
 -- ============================================================================

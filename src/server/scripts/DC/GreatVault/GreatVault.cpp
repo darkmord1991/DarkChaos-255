@@ -6,12 +6,16 @@
 #include "DC/Seasons/DCWeeklyResetHub.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "AllBattlegroundScript.h"
+#include "Battleground.h"
 #include "Chat.h"
 #include "DBCStores.h"
 #include "GameTime.h"
+#include "GlobalScript.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
+#include "Map.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -20,11 +24,14 @@
 #include "StringFormat.h"
 #include "ScriptMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "DC/CrossSystem/EventBus.h"
 #include "DC/CrossSystem/RewardDistributor.h"
 #include "DC/CrossSystem/CrossSystemCommon.h"
 #include "ObjectGuid.h"
 #include <algorithm>
+#include <mutex>
+#include <set>
 #include <unordered_set>
 
 // Universal token that players can exchange for class/spec-appropriate items
@@ -80,6 +87,53 @@ namespace
             outSlotInTrack = 0;
         }
     }
+
+    // Weekly progress tables for the raid and PvP rows. They come from
+    // data/sql/updates/pending_db_characters; until that file is applied the
+    // readers count 0 and the writers skip, with one error per table in the log.
+    constexpr char const* RAID_KILLS_TABLE = "dc_vault_raid_kills";
+    constexpr char const* PVP_WINS_TABLE = "dc_vault_pvp_wins";
+
+    bool HasVaultProgressTable(char const* table)
+    {
+        if (DC::DbSchema::CharacterTableExists(table))
+            return true;
+
+        static std::mutex s_warnedMutex;
+        static std::set<std::string> s_warned;
+        std::lock_guard<std::mutex> lock(s_warnedMutex);
+        if (s_warned.insert(table).second)
+            LOG_ERROR("mythic.vault", "GreatVault: table `{}` is missing, so this vault row stays at 0. "
+                "Apply the pending characters SQL that creates it.", table);
+
+        return false;
+    }
+}
+
+namespace DarkChaos
+{
+namespace GreatVault
+{
+    std::string RaidBossCountSql(uint32 guidLow, uint32 weekStart)
+    {
+        if (!HasVaultProgressTable(RAID_KILLS_TABLE))
+            return "0";
+
+        return Acore::StringFormat(
+            "(SELECT COUNT(*) FROM dc_vault_raid_kills WHERE character_guid = {} AND week_start = {})",
+            guidLow, weekStart);
+    }
+
+    std::string PvpWinCountSql(uint32 guidLow, uint32 weekStart)
+    {
+        if (!HasVaultProgressTable(PVP_WINS_TABLE))
+            return "0";
+
+        return Acore::StringFormat(
+            "(SELECT COALESCE(SUM(wins), 0) FROM dc_vault_pvp_wins WHERE character_guid = {} AND week_start = {})",
+            guidLow, weekStart);
+    }
+}
 }
 
 // Vault reward mode configuration
@@ -107,49 +161,28 @@ uint8 GreatVaultMgr::GetVaultThreshold(uint8 slotIndex) const
     }
 }
 
-uint32 GetRaidBossProgressForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
+// Unique raid bosses the character killed in the week. The old reader took
+// instance.completedEncounters for saves whose resettime fell inside the week,
+// but the core stores resettime 0 for every raid save
+// (InstanceSave::GetResetTimeForDB), and a stored value would be the next reset,
+// not the kill time - so the raid row never unlocked.
+static uint32 GetRaidBossProgressForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
 {
-    uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
-
-    // Use instance binds + instance.completedEncounters bitmask to approximate raid boss kills.
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT i.map, i.completedEncounters, i.resettime "
-        "FROM character_instance ci "
-        "JOIN instance i ON i.id = ci.instance "
-        "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
-        playerGuid, weekStart, weekEnd);
+    QueryResult result = CharacterDatabase.Query("SELECT " +
+        DarkChaos::GreatVault::RaidBossCountSql(playerGuid, weekStart));
 
     if (!result)
         return 0;
 
-    uint32 bossesKilled = 0;
-    do
-    {
-        // uint32 mapId = (*result)[0].Get<uint32>();
-        uint32 completedMask = (*result)[1].Get<uint32>();
-
-        // Count set bits in completedMask
-        // This is a rough approximation; ideally we'd filter by map difficulty (Raid)
-        // But for now, assume all instance saves in this period count if they are raids.
-        // (Refinement needed: check MapEntry for IsRaid())
-
-        bossesKilled += DCUtils::PopCount32(completedMask);
-
-    } while (result->NextRow());
-
-    return bossesKilled;
+    return (*result)[0].Get<uint32>();
 }
 
-uint32 GetPvpWinsForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
+// Battleground, arena and HLBG wins in the week. pvpstats_* is only filled
+// with Battleground.StoreStatistics.Enable = 1 and never holds arenas or HLBG.
+static uint32 GetPvpWinsForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
 {
-    uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
-
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT COUNT(*) FROM pvpstats_players p "
-        "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
-        "WHERE p.character_guid = {} AND p.winner = 1 "
-        "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({})",
-        playerGuid, weekStart, weekEnd);
+    QueryResult result = CharacterDatabase.Query("SELECT " +
+        DarkChaos::GreatVault::PvpWinCountSql(playerGuid, weekStart));
 
     if (!result)
         return 0;
@@ -163,17 +196,20 @@ struct WeeklyMPlusSummary
     uint8 slotKeyLevel[4] = { 0, 0, 0, 0 }; // 1..3
 };
 
-WeeklyMPlusSummary GetMPlusSummaryForWeek(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+// The week alone selects the runs. Filtering on the current season as well
+// dropped every run of the week before a season change, which is the claim
+// week right after it.
+static WeeklyMPlusSummary GetMPlusSummaryForWeek(ObjectGuid::LowType playerGuid, uint32 weekStart)
 {
     WeeklyMPlusSummary out;
     uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
 
     QueryResult result = CharacterDatabase.Query(
         "SELECT keystone_level FROM dc_mplus_runs "
-        "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+        "WHERE character_guid = {} AND success = 1 "
         "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
         "ORDER BY keystone_level DESC LIMIT 8",
-        playerGuid, seasonId, weekStart, weekEnd);
+        playerGuid, weekStart, weekEnd);
 
     if (!result)
         return out;
@@ -198,7 +234,7 @@ WeeklyMPlusSummary GetMPlusSummaryForWeek(ObjectGuid::LowType playerGuid, uint32
 bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
 {
     // Compute weekly progress for all 3 tracks
-    WeeklyMPlusSummary mplus = GetMPlusSummaryForWeek(playerGuid, seasonId, weekStart);
+    WeeklyMPlusSummary mplus = GetMPlusSummaryForWeek(playerGuid, weekStart);
     uint32 raidBosses = GetRaidBossProgressForWeek(playerGuid, weekStart);
     uint32 pvpWins = GetPvpWinsForWeek(playerGuid, weekStart);
 
@@ -335,10 +371,12 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
 
     std::unordered_set<uint32> usedItems;
 
+    // Slots already rolled for this week under any season id, so a season
+    // change mid-claim-window never rolls a slot a second time.
     std::unordered_set<uint8> existingSlots;
     if (QueryResult existing = CharacterDatabase.Query(
-        "SELECT slot_index, item_id FROM dc_vault_reward_pool WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-        playerGuid, seasonId, weekStart))
+        "SELECT slot_index, item_id FROM dc_vault_reward_pool WHERE character_guid = {} AND week_start = {}",
+        playerGuid, weekStart))
     {
         do
         {
@@ -470,14 +508,15 @@ pvp_track:
     return true;
 }
 
-std::vector<std::tuple<uint8, uint32, uint32>> GreatVaultMgr::GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart)
+std::vector<std::tuple<uint8, uint32, uint32>> GreatVaultMgr::GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 /*seasonId*/, uint32 weekStart)
 {
     std::vector<std::tuple<uint8, uint32, uint32>> rewards; // tuple<slotIndex, itemId, itemLevel>
 
+    // Keyed by week alone, like the generator (see GenerateVaultRewardPool).
     QueryResult result = CharacterDatabase.Query(
         "SELECT slot_index, item_id, item_level FROM dc_vault_reward_pool "
-        "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-        playerGuid, seasonId, weekStart);
+        "WHERE character_guid = {} AND week_start = {}",
+        playerGuid, weekStart);
 
     if (result)
     {
@@ -515,11 +554,13 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
         "INSERT IGNORE INTO dc_weekly_vault (character_guid, season_id, week_start) VALUES ({}, {}, {})",
         guidLow, seasonId, weekStart);
 
-    // Check claim state
+    // Check claim state. The week is the key: after a season change the claim
+    // week's rows carry the previous season id, and a claim recorded under
+    // either id must count.
     QueryResult claimRow = CharacterDatabase.Query(
-        "SELECT reward_claimed FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-        guidLow, seasonId, weekStart);
-    if (claimRow && (*claimRow)[0].Get<bool>())
+        "SELECT COALESCE(MAX(reward_claimed), 0) FROM dc_weekly_vault WHERE character_guid = {} AND week_start = {}",
+        guidLow, weekStart);
+    if (claimRow && (*claimRow)[0].Get<uint8>() != 0)
     {
         ChatHandler(player->GetSession()).SendSysMessage("You have already claimed your Great Vault reward.");
         return false;
@@ -532,8 +573,8 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
 
     // Verify the item is actually in the pool for this slot
     QueryResult poolCheck = CharacterDatabase.Query(
-        "SELECT item_id FROM dc_vault_reward_pool WHERE character_guid = {} AND season_id = {} AND week_start = {} AND slot_index = {}",
-        guidLow, seasonId, weekStart, slot);
+        "SELECT item_id FROM dc_vault_reward_pool WHERE character_guid = {} AND week_start = {} AND slot_index = {}",
+        guidLow, weekStart, slot);
 
     if (!poolCheck || (*poolCheck)[0].Get<uint32>() != itemId)
     {
@@ -570,16 +611,117 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
     uint64 now = static_cast<uint64>(GameTime::GetGameTime().count());
     CharacterDatabase.DirectExecute(
         "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_item_id = {}, claimed_at = NOW() "
-        "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-        slot, itemId, guidLow, seasonId, weekStart);
+        "WHERE character_guid = {} AND week_start = {}",
+        slot, itemId, guidLow, weekStart);
 
     CharacterDatabase.DirectExecute(
         "UPDATE dc_vault_reward_pool SET claimed = 1, claimed_at = {} "
-        "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND slot_index = {}",
-        now, guidLow, seasonId, weekStart, slot);
+        "WHERE character_guid = {} AND week_start = {} AND slot_index = {}",
+        now, guidLow, weekStart, slot);
 
     LOG_INFO("mythic.vault", "Player {} claimed vault reward item {} from slot {}", player->GetName(), itemId, slot);
 
     DarkChaos::CrossSystem::EventBus::instance()->PublishVaultClaim(player, seasonId, slot, itemId, 0, 0);
     return true;
+}
+
+// ============================================================================
+// Weekly raid and PvP progress writers
+// ============================================================================
+
+// Records every raid encounter credit for each character in the raid map.
+// A row is one boss (map + encounter index) per character per week; the 10-
+// and 25-player versions of a boss share an index, so a boss counts once a
+// week, as the retail vault counts it. Duplicates are dropped by the key, so
+// credit is not tied to `updated` (a raid without an instance script never
+// sets it).
+class GreatVaultRaidProgressScript : public GlobalScript
+{
+public:
+    GreatVaultRaidProgressScript() : GlobalScript("GreatVaultRaidProgressScript", {
+        GLOBALHOOK_ON_AFTER_UPDATE_ENCOUNTER_STATE
+    }) { }
+
+    void OnAfterUpdateEncounterState(Map* map, EncounterCreditType type, uint32 creditEntry,
+        Unit* /*source*/, Difficulty /*difficulty_fixed*/, DungeonEncounterList const* encounters,
+        uint32 /*dungeonCompleted*/, bool /*updated*/) override
+    {
+        if (!map || !encounters || !map->IsRaid())
+            return;
+
+        if (!sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", true))
+            return;
+
+        DungeonEncounter const* killed = nullptr;
+        for (DungeonEncounter const* encounter : *encounters)
+        {
+            if (encounter && encounter->dbcEntry
+                && encounter->creditType == type && encounter->creditEntry == creditEntry)
+            {
+                killed = encounter;
+                break;
+            }
+        }
+
+        if (!killed || !HasVaultProgressTable(RAID_KILLS_TABLE))
+            return;
+
+        uint32 const weekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
+        uint32 const encounterIndex = killed->dbcEntry->encounterIndex;
+        uint32 const difficulty = static_cast<uint32>(map->GetDifficulty());
+
+        std::string values;
+        for (auto const& ref : map->GetPlayers())
+        {
+            Player* player = ref.GetSource();
+            if (!player)
+                continue;
+
+            if (!values.empty())
+                values += ", ";
+            values += Acore::StringFormat("({}, {}, {}, {}, {})",
+                player->GetGUID().GetCounter(), weekStart, map->GetId(), encounterIndex, difficulty);
+        }
+
+        if (values.empty())
+            return;
+
+        CharacterDatabase.Execute("INSERT IGNORE INTO dc_vault_raid_kills "
+            "(character_guid, week_start, map_id, encounter_index, difficulty) VALUES " + values);
+    }
+};
+
+// Counts one win per character for every battleground, arena (rated or
+// skirmish) and HLBG match its team wins. HLBG is a Battleground subclass and
+// ends through Battleground::EndBattleground, so this one hook covers it. A
+// draw (TEAM_NEUTRAL) is nobody's win.
+class GreatVaultPvpProgressScript : public AllBattlegroundScript
+{
+public:
+    GreatVaultPvpProgressScript() : AllBattlegroundScript("GreatVaultPvpProgressScript", {
+        ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_END_REWARD
+    }) { }
+
+    void OnBattlegroundEndReward(Battleground* bg, Player* player, TeamId winnerTeamId) override
+    {
+        if (!bg || !player || winnerTeamId == TEAM_NEUTRAL || player->GetBgTeamId() != winnerTeamId)
+            return;
+
+        if (!sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", true))
+            return;
+
+        if (!HasVaultProgressTable(PVP_WINS_TABLE))
+            return;
+
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_vault_pvp_wins (character_guid, week_start, wins) VALUES ({}, {}, 1) "
+            "ON DUPLICATE KEY UPDATE wins = wins + 1",
+            player->GetGUID().GetCounter(), DarkChaos::Seasons::GetVaultWeekStartTimestamp());
+    }
+};
+
+void AddSC_great_vault_progress()
+{
+    new GreatVaultRaidProgressScript();
+    new GreatVaultPvpProgressScript();
 }

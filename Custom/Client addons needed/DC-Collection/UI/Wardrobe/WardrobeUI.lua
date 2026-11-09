@@ -524,6 +524,20 @@ function Wardrobe:ShowSlotFilterMenu(anchorButton)
         return GetInvTypeLabel(invTypes[1])
     end
 
+    -- Favorites only: an Items-grid filter, combined with the slot picked below.
+    if not self.currentTab or self.currentTab == "items" then
+        table.insert(menu, {
+            text = "Favorites only",
+            checked = self.showFavoritesOnly and true or false,
+            isNotRadio = true,
+            keepShownOnClick = true,
+            func = function()
+                self:SetShowFavoritesOnly(not self.showFavoritesOnly)
+            end,
+        })
+        table.insert(menu, { text = "Slot", isTitle = true, notCheckable = true })
+    end
+
     table.insert(menu, {
         text = "All Slots",
         notCheckable = true,

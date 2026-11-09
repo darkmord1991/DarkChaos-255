@@ -4418,9 +4418,246 @@ function DC:RequestSetTitle(entryId)
     return self:RequestUseItem("titles", numericEntryId)
 end
 
--- Set favorite status
+-- ============================================================================
+-- FAVORITES
+-- The server sends favorites with the owned collections (an is_favorite flag per
+-- SMSG_COLLECTION entry plus "favoritesIncluded", and a "favorites" id list per
+-- type in SMSG_FULL_COLLECTION) and confirms each change on SMSG_DELTA_SYNC.
+-- ============================================================================
+
+local function FavoriteFlagIsSet(value)
+    return value == true or value == 1 or value == "1" or value == "true"
+end
+
+-- Set of entry ids currently marked favorite in the local cache.
+function DC:_CaptureFavoriteSet(typeName)
+    local set = {}
+    local collection = typeName and self.collections and self.collections[typeName]
+    if type(collection) ~= "table" then
+        return set
+    end
+    for id, entry in pairs(collection) do
+        if type(entry) == "table" and FavoriteFlagIsSet(entry.is_favorite) then
+            set[tonumber(id) or id] = true
+        end
+    end
+    return set
+end
+
+-- Makes the cache match a favorite set: listed entries get is_favorite, all
+-- others lose it. Entries that are not collected are left alone.
+function DC:_ApplyFavoriteSet(typeName, set)
+    local collection = typeName and self.collections and self.collections[typeName]
+    if type(collection) ~= "table" or type(set) ~= "table" then
+        return
+    end
+    for id, entry in pairs(collection) do
+        if type(entry) == "table" then
+            local isFav = set[tonumber(id) or id] == true
+            if isFav then
+                entry.is_favorite = true
+            elseif entry.is_favorite ~= nil then
+                entry.is_favorite = nil
+            end
+        end
+    end
+end
+
+-- Builds a set from a server id list ({ 1, 2 } or { ["1"] = true }).
+function DC:_FavoriteSetFromList(list)
+    local set = {}
+    if type(list) ~= "table" then
+        return set
+    end
+    for key, value in pairs(list) do
+        if type(key) == "number" and (type(value) == "number" or type(value) == "string") then
+            set[tonumber(value) or value] = true
+        elseif FavoriteFlagIsSet(value) then
+            set[tonumber(key) or key] = true
+        end
+    end
+    return set
+end
+
+function DC:_RefreshFavoriteViews(typeName)
+    if self.MainFrame and self.MainFrame:IsShown() then
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        elseif type(self.RefreshCurrentTab) == "function" then
+            self:RefreshCurrentTab()
+        end
+    end
+    if typeName == "pets" and self.PetJournal and type(self.PetJournal.UpdatePetList) == "function" and
+       self.PetJournal.frame and self.PetJournal.frame:IsShown() then
+        self.PetJournal:UpdatePetList()
+    end
+    -- The main frame's refresh skips the Wardrobe tab, so its grid is redrawn here.
+    local wardrobe = self.Wardrobe
+    if typeName == "transmog" and wardrobe and wardrobe.frame and wardrobe.frame:IsShown() then
+        if type(wardrobe.RequestDataRefreshDebounced) == "function" then
+            wardrobe:RequestDataRefreshDebounced("favorites")
+        elseif type(wardrobe.RefreshGrid) == "function" then
+            wardrobe:RefreshGrid()
+        end
+    end
+end
+
+-- ----------------------------------------------------------------------------
+-- Appearance favorites (type 6), keyed by display id like the owned appearances.
+-- The full collection lists them under favorites.transmog, but the owned
+-- appearances come later with the collected-appearances reply, which rebuilds
+-- collections.transmog. Favorites the full collection could not place yet are
+-- kept in _pendingAppearanceFavorites until that reply, and every rebuild keeps
+-- the flags the cache had.
+-- ----------------------------------------------------------------------------
+
+function DC:_ApplyAppearanceFavoriteSet(set)
+    if type(set) ~= "table" then
+        return
+    end
+    self:_ApplyFavoriteSet("transmog", set)
+
+    local collection = self.collections and self.collections.transmog
+    local pending = nil
+    for id in pairs(set) do
+        if type(collection) ~= "table" or collection[id] == nil then
+            pending = {}
+            for pendingId in pairs(set) do
+                pending[pendingId] = true
+            end
+            break
+        end
+    end
+    self._pendingAppearanceFavorites = pending
+
+    self.cacheNeedsSave = true
+    if type(self.ScheduleCacheAutoSave) == "function" then
+        self:ScheduleCacheAutoSave()
+    end
+end
+
+-- Favorite set to put back after collections.transmog is rebuilt: the flags the
+-- cache had plus the favorites still waiting for their appearance.
+function DC:_TakeAppearanceFavoriteSet()
+    local set = self:_CaptureFavoriteSet("transmog")
+    local pending = self._pendingAppearanceFavorites
+    if type(pending) == "table" then
+        for id in pairs(pending) do
+            set[id] = true
+        end
+    end
+    self._pendingAppearanceFavorites = nil
+    return set
+end
+
+-- Favorite lists sent with a reply that says the cached collection is current
+-- (handshake ACK without needsSync, or the upToDate full-collection ACK):
+-- { mounts = { 1, 2 }, pets = {}, heirlooms = {}, titles = {}, transmog = {} }.
+-- Favorites are not part of the collection hash, so this is how a favorite set
+-- on another machine reaches a client whose owned ids already match. A type
+-- the server leaves out keeps its cached flags.
+function DC:_ApplyServerFavoriteLists(lists)
+    if type(lists) ~= "table" then
+        return
+    end
+    for typeName, list in pairs(lists) do
+        if type(list) == "table" then
+            local set = self:_FavoriteSetFromList(list)
+            if typeName == "transmog" then
+                self:_ApplyAppearanceFavoriteSet(set)
+            else
+                local collType = (type(self.NormalizeCollectionType) == "function" and
+                    self:NormalizeCollectionType(typeName)) or typeName
+                self:_ApplyFavoriteSet(collType, set)
+            end
+            self:_RefreshFavoriteViews(typeName)
+        end
+    end
+    self.cacheNeedsSave = true
+    if type(self.ScheduleCacheAutoSave) == "function" then
+        self:ScheduleCacheAutoSave()
+    end
+end
+
+-- A favorite change also updates the waiting set, so the rebuild cannot undo it.
+function DC:_NotePendingAppearanceFavorite(entryId, favorite)
+    local pending = self._pendingAppearanceFavorites
+    local id = tonumber(entryId) or entryId
+    if type(pending) == "table" and id ~= nil then
+        pending[id] = favorite and true or nil
+    end
+end
+
+function DC:IsAppearanceFavorite(displayId)
+    local id = tonumber(displayId)
+    local collection = self.collections and self.collections.transmog
+    if not id or type(collection) ~= "table" then
+        return false
+    end
+    local entry = collection[id]
+    return type(entry) == "table" and FavoriteFlagIsSet(entry.is_favorite) or false
+end
+
+-- Sorted display ids of the favorite appearances.
+function DC:GetFavoriteAppearanceIds()
+    local ids = {}
+    for id in pairs(self:_CaptureFavoriteSet("transmog")) do
+        if type(id) == "number" then
+            ids[#ids + 1] = id
+        end
+    end
+    table.sort(ids)
+    return ids
+end
+
+function DC:RequestToggleAppearanceFavorite(displayId)
+    local id = tonumber(displayId)
+    if not id or id <= 0 then
+        return false
+    end
+    return self:RequestSetFavorite("transmog", id, not self:IsAppearanceFavorite(id))
+end
+
+-- Server confirmation: { favorites = { mounts = { ["123"] = true } }, favoriteError = "..." }
+function DC:HandleFavoriteUpdates(favorites, errorText)
+    if type(favorites) ~= "table" then
+        return
+    end
+    for rawType, states in pairs(favorites) do
+        local typeName = (type(self.NormalizeCollectionType) == "function" and
+            self:NormalizeCollectionType(rawType)) or rawType
+        if type(states) == "table" then
+            for id, value in pairs(states) do
+                self:CacheUpdateItem(typeName, tonumber(id) or id,
+                    { is_favorite = FavoriteFlagIsSet(value) })
+                if typeName == "transmog" then
+                    self:_NotePendingAppearanceFavorite(id, FavoriteFlagIsSet(value))
+                end
+            end
+        end
+        self:_RefreshFavoriteViews(typeName)
+    end
+    if type(errorText) == "string" and errorText ~= "" and type(self.Print) == "function" then
+        self:Print(errorText)
+    end
+end
+
+-- Set favorite status. The cache is updated at once; the server's reply on
+-- SMSG_DELTA_SYNC confirms it or puts it back.
 function DC:RequestSetFavorite(collectionType, entryId, favorite)
     local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
+    favorite = favorite and true or false
+
+    local typeName = (type(self.NormalizeCollectionType) == "function" and
+        self:NormalizeCollectionType(collectionType)) or nil
+    if typeName and type(self.CacheUpdateItem) == "function" then
+        self:CacheUpdateItem(typeName, entryId, { is_favorite = favorite })
+        if typeName == "transmog" then
+            self:_NotePendingAppearanceFavorite(entryId, favorite)
+        end
+        self:_RefreshFavoriteViews(typeName)
+    end
+
     return self:SendMessage(self.Opcodes.CMSG_SET_FAVORITE, {
         type = typeId or 0,
         entryId = entryId,
@@ -5187,6 +5424,11 @@ function DC:HandleHandshakeAck(data)
         self._collectionLastReceivedAt.mounts = receivedAt
         self._collectionLastReceivedAt.pets = receivedAt
         self._collectionLastReceivedAt.heirlooms = receivedAt
+
+        -- No full collection follows, so the favorites come with this ACK.
+        if data.favorites then
+            self:_ApplyServerFavoriteLists(data.favorites)
+        end
     end
 
     -- Request the rest of the initial data (definitions, currencies, shop, etc.)
@@ -5297,6 +5539,9 @@ function DC:HandleFullCollection(data)
         if data.hash then
             self.collectionHash = data.hash
         end
+        if data.favorites then
+            self:_ApplyServerFavoriteLists(data.favorites)
+        end
         if self.callbacks.onCollectionReceived then
             self.callbacks.onCollectionReceived(data)
         end
@@ -5305,14 +5550,25 @@ function DC:HandleFullCollection(data)
 
     if data.collections then
         self._collectionLastReceivedAt = self._collectionLastReceivedAt or {}
+        -- Favorites come as a separate id list per type. Without one (an older
+        -- server) keep the cached flags, which SetCollection would drop.
+        local serverFavorites = type(data.favorites) == "table" and data.favorites or nil
         for typeName, items in pairs(data.collections) do
+            local collType = (type(self.NormalizeCollectionType) == "function" and
+                self:NormalizeCollectionType(typeName)) or typeName
+
+            local favoriteSet
+            if serverFavorites then
+                favoriteSet = self:_FavoriteSetFromList(serverFavorites[typeName])
+            else
+                favoriteSet = self:_CaptureFavoriteSet(collType)
+            end
+
             local typeId = self:GetTypeIdFromName(typeName)
             if typeId then
                 self:SetCollection(typeId, items)
+                self:_ApplyFavoriteSet(collType, favoriteSet)
             end
-
-            local collType = (type(self.NormalizeCollectionType) == "function" and
-                self:NormalizeCollectionType(typeName)) or typeName
             if collType then
                 self._collectionLastReceivedAt[collType] = receivedAt
                 if collType == "titles" then
@@ -5324,6 +5580,15 @@ function DC:HandleFullCollection(data)
                     end
                 end
             end
+        end
+
+        -- Appearances are not in "collections" (transmogDeferred), so their
+        -- favorites are applied on their own. A server without appearance
+        -- favorites sends no transmog list, and the cached flags stay.
+        if serverFavorites and serverFavorites.transmog ~= nil and
+           data.collections.transmog == nil then
+            self:_ApplyAppearanceFavoriteSet(
+                self:_FavoriteSetFromList(serverFavorites.transmog))
         end
 
         if type(data.collections.transmog) == "table" and
@@ -5427,6 +5692,11 @@ function DC:HandleDeltaSync(data)
     if data.hash then
         self.collectionHash = data.hash
         self._pendingCollectionHash = nil
+    end
+
+    -- Favorite confirmations (reply to CMSG_SET_FAVORITE).
+    if data.favorites then
+        self:HandleFavoriteUpdates(data.favorites, data.favoriteError)
     end
 
     if self.callbacks.onDeltaSync then
@@ -6459,7 +6729,13 @@ function DC:HandleError(data)
     self:Debug(string.format("Error received: code=%d, msg=%s", errorCode, errorMsg))
 
     local hasPerSlot = (type(data) == "table" and type(data.perSlot) == "table")
-    if hasPerSlot then
+    local droppedFromLoginOutfit = hasPerSlot and type(self.PruneLastOutfitAfterLoginApply) == "function" and
+        self:PruneLastOutfitAfterLoginApply(data.perSlot)
+    if droppedFromLoginOutfit and droppedFromLoginOutfit > 0 then
+        -- The automatic re-apply at login, not something the player asked for: say once what changed.
+        self:Print(string.format("Last outfit re-applied; %d slot(s) could not be applied and were removed from it.",
+            droppedFromLoginOutfit))
+    elseif hasPerSlot then
         -- Keep normal chat clean; detailed per-slot reasons go to dcdebug.
         self:Print("|cffff0000Error:|r " .. errorMsg .. " |cff888888(details in dcdebug)|r")
     else
@@ -6887,6 +7163,7 @@ function DC:HandleCollectedAppearances(data)
         self.collections = self.collections or {}
         self.collections.transmog = self.collections.transmog or {}
         self.collectedAppearances = self.collectedAppearances or {}
+        self:_ApplyFavoriteSet("transmog", self:_TakeAppearanceFavoriteSet())
 
         if self._pendingCollectionHash then
             self.collectionHash = self._pendingCollectionHash
@@ -6909,12 +7186,16 @@ function DC:HandleCollectedAppearances(data)
     local authoritative, count, mode = BuildCollectedAppearancesCollection(self,
         appearances, items)
 
+    -- The rebuilt entries carry no favorite flags; this payload never has them.
+    local favoriteSet = self:_TakeAppearanceFavoriteSet()
+
     if type(self.SetCollection) == "function" then
         self:SetCollection("transmog", authoritative)
     else
         self.collections = self.collections or {}
         self.collections.transmog = authoritative
     end
+    self:_ApplyFavoriteSet("transmog", favoriteSet)
 
     if type(self._SyncCollectedAppearancesFromCollection) == "function" then
         self:_SyncCollectedAppearancesFromCollection(authoritative)
@@ -7472,7 +7753,26 @@ function DC:HandleCollection(data)
             items = mapped
         end
     end
-    
+
+    -- Favorites: a server that sends them marks the payload "favoritesIncluded",
+    -- and then its per-entry flags are the truth. Otherwise keep what the cache
+    -- had, because storing the payload replaces each entry.
+    local favoriteSet
+    if data.favoritesIncluded == true or data.favoritesIncluded == 1 then
+        favoriteSet = {}
+        if type(items) == "table" then
+            for itemId, itemData in pairs(items) do
+                if type(itemData) == "table" and
+                   (itemData.is_favorite == true or itemData.is_favorite == 1 or
+                    itemData.fav == true or itemData.fav == 1) then
+                    favoriteSet[tonumber(itemId) or itemId] = true
+                end
+            end
+        end
+    else
+        favoriteSet = self:_CaptureFavoriteSet(collType)
+    end
+
     if collType == "titles" and type(self.SetCollection) == "function" then
         -- Title collection is authoritative from server. Replace stale local keys,
         -- but preserve per-item local metadata (favorite/active flags) when possible.
@@ -7506,6 +7806,12 @@ function DC:HandleCollection(data)
         self:SetCollection(collType, authoritative)
     else
         self:CacheMergeCollection(collType, items)
+    end
+
+    self:_ApplyFavoriteSet(collType, favoriteSet)
+    if collType == "transmog" and (data.favoritesIncluded == true or data.favoritesIncluded == 1) then
+        -- Every owned appearance came with its flag, so nothing is waiting any more.
+        self._pendingAppearanceFavorites = nil
     end
 
     if collType == "transmog" and type(self._SyncCollectedAppearancesFromCollection) == "function" then

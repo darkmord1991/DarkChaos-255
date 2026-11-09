@@ -30,9 +30,10 @@ if not CreateTexturePool then
 		return pool
 	end
 
-	function CreateTexturePool(parent, layer, subLayer, resetter)
+	-- Same argument order as DC-Journal's and DC-QOS's CreateTexturePool, whichever of the three is global first.
+	function CreateTexturePool(parent, layer, subLayer, textureTemplate, resetter)
 		return CreateSimplePool(function()
-			return parent:CreateTexture(nil, layer, nil, subLayer)
+			return parent:CreateTexture(nil, layer, textureTemplate, subLayer)
 		end, resetter)
 	end
 end
@@ -86,7 +87,7 @@ local TexPoolResetter = function(pool, tex)
 	tex:Hide()
 	tex:ClearAllPoints()
 end
-local GlowTexPool = CreateTexturePool(GlowParent, "ARTWORK", nil, TexPoolResetter)
+local GlowTexPool = CreateTexturePool(GlowParent, "ARTWORK", nil, nil, TexPoolResetter)
 lib.GlowTexPool = GlowTexPool
 
 local FramePoolResetter = function(framePool, frame)

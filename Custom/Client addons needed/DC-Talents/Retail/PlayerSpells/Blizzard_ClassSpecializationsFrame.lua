@@ -337,14 +337,16 @@ function ClassSpecContentFrameMixin:Setup(index, sex, frameWidth, numSpecs)
 
 	self.name = name;
 
-	local atlasName = SPEC_TEXTURE_FORMAT:format(SPEC_FORMAT_STRINGS[specID]);
-	if C_Texture.GetAtlasInfo(atlasName) then
+	-- DC: a talent group with no main tree reports the class-wide DC spec id, which has no thumbnail.
+	local specKey = SPEC_FORMAT_STRINGS[specID];
+	local atlasName = specKey and SPEC_TEXTURE_FORMAT:format(specKey);
+	if atlasName and C_Texture.GetAtlasInfo(atlasName) then
 		self.SpecImage:SetAtlas(atlasName);
 		self.ActivatedSpecImage:SetAtlas(atlasName);
 		self.HoverSpecImage:SetAtlas(atlasName);
 	end
 	self.SpecName:SetText(name);
-	if primaryStat and primaryStat ~= 0 then
+	if primaryStat and SPEC_STAT_STRINGS[primaryStat] then
 		self.Description:SetText(description.."|n"..SPEC_FRAME_PRIMARY_STAT:format(SPEC_STAT_STRINGS[primaryStat]));
 	end
 	local role = GetSpecializationRoleEnum(index, false, false);

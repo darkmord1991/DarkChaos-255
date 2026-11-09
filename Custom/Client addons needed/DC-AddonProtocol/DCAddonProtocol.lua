@@ -4173,7 +4173,8 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         return
     end
 
-    local arg1, arg2, arg3, arg4 = ...
+    local arg1, arg2, arg3, arg4, arg5 = ...
+    local argCount = select("#", ...)
     local parserMode = "unknown"
     local serverHandshakeMetadata = nil
 
@@ -4197,8 +4198,12 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         version = arg1 or "1.0.0"
         local hasArg2CompatibleFlag, parsedArg2Compatible = ParseBooleanLike(arg2)
         local hasArg3CompatibleFlag, parsedArg3Compatible = ParseBooleanLike(arg3)
-        if arg4 ~= nil and hasArg3CompatibleFlag then
-            -- Server ACK currently arrives as: version, serverCaps, compatible, negotiatedCaps
+        -- The servercaps shape carries a number in arg4. The 4-field pipe-new shape
+        -- has its metadata JSON there instead, and a negotiated value of 0 or 1 in
+        -- arg3 would otherwise read as a compatible flag.
+        if arg4 ~= nil and hasArg3CompatibleFlag and tonumber(arg4) ~= nil then
+            -- Server ACK currently arrives as:
+            -- version, serverCaps, compatible, negotiatedCaps, metadata
             parserMode = "pipe-new-servercaps"
             compatible = parsedArg3Compatible
             negotiatedCaps = tonumber(arg4) or 0
@@ -4218,7 +4223,23 @@ DC:RegisterHandler("CORE", 0x10, function(...)
             negotiatedCaps = 0
             features = arg2
         end
-        serverHandshakeMetadata = ParseServerHandshakeMetadataPayload(arg4)
+
+        -- The metadata JSON is the field after negotiatedCaps: arg5 in the
+        -- servercaps shape (dc_addon_protocol.cpp SendHandshakeAck writes
+        -- "major.minor.patch|serverCaps" as one value), arg4 in the others.
+        -- The splitter cuts on every '|', so rejoin whatever follows it.
+        local metadataPayload = arg4
+        if parserMode == "pipe-new-servercaps" then
+            metadataPayload = nil
+            if argCount >= 5 then
+                local rest = {}
+                for i = 5, argCount do
+                    rest[#rest + 1] = tostring((select(i, ...)))
+                end
+                metadataPayload = table.concat(rest, "|")
+            end
+        end
+        serverHandshakeMetadata = ParseServerHandshakeMetadataPayload(metadataPayload)
     end
 
     DC._serverVersion = tostring(version)
@@ -4232,6 +4253,7 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         rawArg2 = DescribeHandshakeArg(arg2),
         rawArg3 = DescribeHandshakeArg(arg3),
         rawArg4 = DescribeHandshakeArg(arg4),
+        rawArg5 = DescribeHandshakeArg(arg5),
         compatible = compatible and true or false,
         negotiatedCaps = tonumber(negotiatedCaps) or 0,
         serverHandshakeMetadata = serverHandshakeMetadata,
@@ -4239,7 +4261,7 @@ DC:RegisterHandler("CORE", 0x10, function(...)
     }
 
     DC:LogNetEvent("info", "handshake", string.format(
-        "ack mode=%s server=%s compatible=%s negotiated=0x%X client=0x%X raw2=%s raw3=%s raw4=%s",
+        "ack mode=%s server=%s compatible=%s negotiated=0x%X client=0x%X raw2=%s raw3=%s raw4=%s meta=%s",
         tostring(parserMode),
         tostring(version),
         tostring(compatible),
@@ -4247,7 +4269,8 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         tonumber(DC:GetClientCapabilities()) or 0,
         tostring(DC._lastHandshakeAck.rawArg2),
         tostring(DC._lastHandshakeAck.rawArg3),
-        tostring(DC._lastHandshakeAck.rawArg4)))
+        tostring(DC._lastHandshakeAck.rawArg4),
+        serverHandshakeMetadata and "yes" or "no"))
     
     if compatible then
         DC:_OnHandshakeSuccess()

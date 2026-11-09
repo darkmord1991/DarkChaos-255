@@ -18,6 +18,7 @@
 #include "WorldScript.h"
 #include "ScriptMgr.h"
 #include "ScriptMgrMacros.h"
+#include "dc_update_profiler.h"
 
 void ScriptMgr::OnOpenStateChange(bool open)
 {
@@ -56,7 +57,10 @@ void ScriptMgr::OnShutdownCancel()
 
 void ScriptMgr::OnWorldUpdate(uint32 diff)
 {
-    CALL_ENABLED_HOOKS(WorldScript, WORLDHOOK_ON_UPDATE, script->OnUpdate(diff));
+    // DarkChaos: a slow tick names its slowest world scripts (dc.perf), even if none is over the threshold alone.
+    DarkChaos::UpdateBreakdown breakdown("World.ScriptsOnWorldUpdate by script");
+    for (WorldScript* script : ScriptRegistry<WorldScript>::EnabledHooks[WORLDHOOK_ON_UPDATE])
+        breakdown.Time(script->GetName(), [script, diff]() { script->OnUpdate(diff); });
 }
 
 void ScriptMgr::OnStartup()

@@ -14,6 +14,9 @@
 #include "World.h"
 #include "WorldConfig.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
+
+#include <algorithm>
 
 namespace DC
 {
@@ -28,6 +31,33 @@ namespace DC
                 zoneName = area->area_name[0];
         }
         return zoneName;
+    }
+
+    // A boss's status as the WRLD snapshot reports it (BuildBossInfoJson).
+    enum class BossStatus : uint8
+    {
+        Inactive, // off rotation today
+        Spawning, // down, on a respawn timer
+        Active,
+    };
+
+    static BossStatus GetBossStatus(WorldBossInfo const& info)
+    {
+        if (info.isActive)
+            return BossStatus::Active;
+        if (info.respawnCountdown > 0)
+            return BossStatus::Spawning;
+        return BossStatus::Inactive;
+    }
+
+    static char const* GetBossStatusName(BossStatus status)
+    {
+        switch (status)
+        {
+            case BossStatus::Active:   return "active";
+            case BossStatus::Spawning: return "spawning";
+            default:                   return "inactive";
+        }
     }
 
     WorldBossMgr* WorldBossMgr::Instance()
@@ -106,14 +136,46 @@ namespace DC
         return it != _bossesByEntry.end() && it->second.isActive;
     }
 
-    void WorldBossMgr::SetBossState(uint32 entry, bool active, int32 respawnIn)
+    void WorldBossMgr::SetBossState(uint32 entry, bool active, int32 respawnIn, Creature* liveBoss)
     {
         WorldBossInfo* info = GetBossInfo(entry);
         if (!info)
             return;
 
+        BossStatus const before = GetBossStatus(*info);
+
+        // Back, and the creature is there: the spawn hook sets the state and sends the push.
+        // A dynamic respawn is a new creature that never runs JustRespawned, so for a
+        // rotation boss this is where its return is seen.
+        if (active && liveBoss && before != BossStatus::Active)
+        {
+            OnBossSpawned(liveBoss);
+            return;
+        }
+
         info->isActive = active;
         info->respawnCountdown = respawnIn;
+        info->currentGuid = liveBoss ? liveBoss->GetGUID() : ObjectGuid::Empty;
+
+        BossStatus const after = GetBossStatus(*info);
+        if (after == before)
+            return;
+
+        // No creature to report: a respawn the map has not run yet, or a grid nobody has
+        // loaded, already counts as back. The push is the snapshot's record for the boss.
+        DCAddon::JsonValue b;
+        b.SetObject();
+        BuildBossInfoJson(b, *info);
+        if (after == BossStatus::Active)
+        {
+            b.Set("action", DCAddon::JsonValue("spawn"));
+            // Clients keep the 0 % of the death push until a push says otherwise.
+            b.Set("hpPct", DCAddon::JsonValue(100));
+        }
+        else
+            b.Set("action", DCAddon::JsonValue(after == BossStatus::Spawning ? "timer" : "despawn"));
+
+        QueueBossUpdate(std::move(b));
     }
 
     void WorldBossMgr::OnBossSpawned(Creature* boss)
@@ -174,26 +236,13 @@ namespace DC
         if (!boss)
             return;
 
-        // Build update with threshold info
-        DCAddon::JsonValue bossesArr;
-        bossesArr.SetArray();
+        // Build update with threshold info (a few per fight; the boss bar shows the HP everywhere)
         DCAddon::JsonValue b;
         b.SetObject();
         BuildBossJson(b, boss, "hp_update", true, -1);
         b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(hpPct)));
         b.Set("threshold", DCAddon::JsonValue(static_cast<int32>(threshold)));
-        bossesArr.Push(b);
-
-        DCAddon::JsonMessage msg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
-        msg.Set("bosses", bossesArr);
-
-        if (Map* map = boss->GetMap())
-        {
-            map->DoForAllPlayers([&](Player* player) {
-                if (player && player->IsInWorld() && player->GetSession())
-                    msg.Send(player);
-            });
-        }
+        QueueBossUpdate(std::move(b));
     }
 
     void WorldBossMgr::OnBossDied(Creature* boss)
@@ -258,46 +307,86 @@ namespace DC
 
     void WorldBossMgr::OnBossDespawned(Creature* boss)
     {
-        if (boss)
-            BroadcastBossUpdate(boss, "despawn", false);
+        if (!boss)
+            return;
+
+        // Off rotation from now on, so the rotation's SetBossState does not push it a second time.
+        if (WorldBossInfo* info = GetBossInfo(boss->GetEntry()))
+        {
+            info->isActive = false;
+            info->respawnCountdown = -1;
+            info->currentGuid.Clear();
+        }
+
+        BroadcastBossUpdate(boss, "despawn", false);
     }
 
     void WorldBossMgr::Update(uint32 diffMs)
     {
-        int32 diffSec = static_cast<int32>(diffMs / 1000);
+        // Pushes queued by the map threads go out here, on the world thread.
+        SendQueuedBossUpdates();
+
+        // diffMs / 1000 alone was 0 on every normal tick, so the countdown never moved.
+        _countdownCarryMs += diffMs;
+        int32 const diffSec = static_cast<int32>(_countdownCarryMs / 1000);
         if (diffSec <= 0)
             return;
+        _countdownCarryMs %= 1000;
 
         for (auto& pair : _bossesByEntry)
         {
             WorldBossInfo& info = pair.second;
-            if (!info.isActive && info.respawnCountdown > 0)
-            {
-                info.respawnCountdown -= diffSec;
-                if (info.respawnCountdown < 0)
-                    info.respawnCountdown = 0;
-            }
+            // Stops at 1, not 0: 0 reads as "inactive" (GetBossStatus), and only the
+            // rotation, which sees the real creature, may change a boss's status.
+            // Otherwise a respawn a few seconds late would flip it to "Not today" and
+            // SetBossState would push a stray timer when the rotation corrects it.
+            if (!info.isActive && info.respawnCountdown > 1)
+                info.respawnCountdown = std::max<int32>(1, info.respawnCountdown - diffSec);
         }
     }
 
     void WorldBossMgr::BroadcastBossUpdate(Creature* boss, std::string_view action, bool active, int32 spawnIn)
     {
-        DCAddon::JsonValue bossesArr;
-        bossesArr.SetArray();
+        // Built now, while the creature is valid on its own map thread; sent by Update().
         DCAddon::JsonValue b;
         b.SetObject();
         BuildBossJson(b, boss, action, active, spawnIn);
-        bossesArr.Push(b);
+        QueueBossUpdate(std::move(b));
+    }
+
+    void WorldBossMgr::QueueBossUpdate(DCAddon::JsonValue&& boss)
+    {
+        std::lock_guard<std::mutex> guard(_queuedUpdatesLock);
+        _queuedUpdates.push_back(std::move(boss));
+    }
+
+    void WorldBossMgr::SendQueuedBossUpdates()
+    {
+        std::vector<DCAddon::JsonValue> pending;
+        {
+            std::lock_guard<std::mutex> guard(_queuedUpdatesLock);
+            if (_queuedUpdates.empty())
+                return;
+            pending.swap(_queuedUpdates);
+        }
+
+        // One message, records in push order: clients merge them one after the other.
+        DCAddon::JsonValue bossesArr;
+        bossesArr.SetArray();
+        for (DCAddon::JsonValue& b : pending)
+            bossesArr.Push(std::move(b));
 
         DCAddon::JsonMessage msg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
         msg.Set("bosses", bossesArr);
 
-        if (Map* map = boss->GetMap())
+        // Everyone, not only the boss's map: the boss bar, the Group Finder world tab and the
+        // map pins show every world boss wherever the player is, and they read the WRLD
+        // snapshot only at login. A player in a loading screen gets it too (as hotspot pushes
+        // do), or a far teleport at the wrong moment would miss it. Send() skips bots.
+        for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
         {
-            map->DoForAllPlayers([&](Player* player) {
-                if (player && player->IsInWorld() && player->GetSession())
-                    msg.Send(player);
-            });
+            if (Player* player = sessionPair.second ? sessionPair.second->GetPlayer() : nullptr)
+                msg.Send(player);
         }
     }
 
@@ -339,6 +428,38 @@ namespace DC
         }
     }
 
+    void WorldBossMgr::BuildBossInfoJson(DCAddon::JsonValue& b, WorldBossInfo const& info) const
+    {
+        b.Set("entry", DCAddon::JsonValue(static_cast<int32>(info.creatureEntry)));
+        b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(info.spawnId)));
+        b.Set("name", DCAddon::JsonValue(info.displayName));
+        // Use zoneId as mapId for client WRLD compatibility
+        b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(info.zoneId)));
+        b.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(info.zoneId)));
+        b.Set("active", DCAddon::JsonValue(info.isActive));
+
+        // Normalized coordinates for map pin placement
+        // We need to look up the creature definition to get X/Y if the boss isn't spawned
+        if (CreatureData const* data = sObjectMgr->GetCreatureData(info.spawnId))
+        {
+            float nx = 0.0f, ny = 0.0f;
+            if (DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(info.zoneId, data->posX, data->posY, nx, ny))
+            {
+                b.Set("nx", DCAddon::JsonValue(nx));
+                b.Set("ny", DCAddon::JsonValue(ny));
+            }
+        }
+
+        // Neither up nor on a timer: its rotation has it off today ("inactive").
+        BossStatus const status = GetBossStatus(info);
+        if (status == BossStatus::Spawning)
+            b.Set("spawnIn", DCAddon::JsonValue(info.respawnCountdown));
+        b.Set("status", DCAddon::JsonValue(GetBossStatusName(status)));
+
+        // Zone name from DBC
+        b.Set("zone", DCAddon::JsonValue(GetZoneNameFromDBC(info.zoneId)));
+    }
+
     DCAddon::JsonValue WorldBossMgr::BuildBossesContentArray() const
     {
         DCAddon::JsonValue arr;
@@ -346,58 +467,10 @@ namespace DC
 
         for (auto const& pair : _bossesByEntry)
         {
-            WorldBossInfo const& info = pair.second;
-
             DCAddon::JsonValue b;
             b.SetObject();
-            b.Set("entry", DCAddon::JsonValue(static_cast<int32>(info.creatureEntry)));
-            b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(info.spawnId)));
-            b.Set("name", DCAddon::JsonValue(info.displayName));
-            b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(info.zoneId))); // Use zoneId as mapId for client WRLD compatibility
-            b.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(info.zoneId)));
-            b.Set("active", DCAddon::JsonValue(info.isActive));
-
-            // Normalized coordinates for map pin placement
-            // We need to look up the creature definition to get X/Y if the boss isn't spawned
-            float posX = 0.0f, posY = 0.0f;
-            bool havePos = false;
-
-            if (CreatureData const* data = sObjectMgr->GetCreatureData(info.spawnId))
-            {
-                posX = data->posX;
-                posY = data->posY;
-                havePos = true;
-            }
-
-            if (havePos)
-            {
-                float nx = 0.0f, ny = 0.0f;
-                if (DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(info.zoneId, posX, posY, nx, ny))
-                {
-                    b.Set("nx", DCAddon::JsonValue(nx));
-                    b.Set("ny", DCAddon::JsonValue(ny));
-                }
-            }
-
-            if (!info.isActive && info.respawnCountdown > 0)
-            {
-                b.Set("spawnIn", DCAddon::JsonValue(info.respawnCountdown));
-                b.Set("status", DCAddon::JsonValue("spawning"));
-            }
-            else if (info.isActive)
-            {
-                b.Set("status", DCAddon::JsonValue("active"));
-            }
-            else
-            {
-                // Neither up nor on a timer: its rotation has it off today.
-                b.Set("status", DCAddon::JsonValue("inactive"));
-            }
-
-            // Zone name from DBC
-            b.Set("zone", DCAddon::JsonValue(GetZoneNameFromDBC(info.zoneId)));
-
-            arr.Push(b);
+            BuildBossInfoJson(b, pair.second);
+            arr.Push(std::move(b));
         }
 
         return arr;

@@ -716,6 +716,24 @@ local function StampBossSpawn(rec, spawnIn)
     end
 end
 
+-- Status implied by a push's action, for payloads that carry no status of their
+-- own. The server's status always wins: its death push says "spawning" with the
+-- respawn timer, and taking "death" to mean "inactive" made a killed boss read
+-- "Not today" for its whole respawn window. "inactive" is the server's word for
+-- a boss its rotation has off today.
+local function ActionBossStatus(b)
+    if b.action == "engage" or b.action == "spawn" then
+        return "active"
+    end
+    if b.action == "death" or b.action == "remove" or b.action == "despawn" then
+        if tonumber(b.spawnIn or b.timeLeft) then
+            return "spawning"
+        end
+        return "inactive"
+    end
+    return nil
+end
+
 function DCInfoBar:EnsureDefaultWorldBosses()
     local bosses = self.serverData.worldBosses
 
@@ -863,13 +881,16 @@ function DCInfoBar:HandleWorldContent(data)
             if b.status or b.state then
                 record.status = b.status or b.state
             elseif b.active ~= nil then
-                record.status = b.active and "active" or "inactive"
-            elseif b.action == "engage" then
-                record.status = "active"
-            elseif b.action == "death" or b.action == "despawn" then
-                record.status = "inactive"
+                -- A boss that is down but on a timer is spawning, not off today.
+                if b.active then
+                    record.status = "active"
+                elseif tonumber(b.spawnIn or b.timeLeft) then
+                    record.status = "spawning"
+                else
+                    record.status = "inactive"
+                end
             else
-                record.status = "spawning"
+                record.status = ActionBossStatus(b) or "spawning"
             end
 
             if b.action == "spawn" then
@@ -933,13 +954,13 @@ function DCInfoBar:HandleWorldUpdate(data)
                 hp = b.hpPct or b.hp,
             }
 
-            if b.action == "engage" then
-                up.status = "active"
-            elseif b.action == "spawn" then
+            if b.action == "spawn" then
                 up.status = "active"
                 up.justSpawnedUntil = now + 60
-            elseif b.action == "death" or b.action == "remove" or b.action == "despawn" then
-                up.status = "inactive"
+            elseif not up.status then
+                -- Only when the push has no status: the death push carries
+                -- "spawning" plus spawnIn, and that has to reach the record.
+                up.status = ActionBossStatus(b)
             end
 
             local _, ex = FindBoss(bosses, spawnId, entry, b.guid, b.name)
@@ -950,7 +971,7 @@ function DCInfoBar:HandleWorldUpdate(data)
             for k, v in pairs(up) do
                 ex[k] = v
             end
-            if up.status == "inactive" then
+            if up.status and up.status ~= "active" then
                 ex.justSpawnedUntil = nil
             end
             StampBossSpawn(ex, b.spawnIn or b.timeLeft)

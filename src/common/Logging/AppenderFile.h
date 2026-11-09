@@ -34,6 +34,7 @@ public:
 
 private:
     void CloseFile();
+    void PruneBackups(std::string const& fullName) const;
     void _write(LogMessage const* message) override;
     FILE* logfile;
     std::string _fileName;
@@ -41,6 +42,7 @@ private:
     bool _dynamicName;
     bool _backup;
     uint64 _maxFileSize;
+    uint32 _maxBackups;
     std::atomic<uint64> _fileSize;
 };
 

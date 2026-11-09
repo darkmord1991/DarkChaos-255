@@ -71,7 +71,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
                      "resettalents_time, trans_x, trans_y, trans_z, trans_o, transguid, extra_flags, stable_slots, at_login, zone, online, death_expire_time, taxi_path, instance_mode_mask, "
                      "arenaPoints, totalHonorPoints, todayHonorPoints, yesterdayHonorPoints, totalKills, todayKills, yesterdayKills, chosenTitle, knownCurrencies, watchedFaction, drunk, "
                      "health, power1, power2, power3, power4, power5, power6, power7, instance_id, talentGroupsCount, activeTalentGroup, exploredZones, equipmentCache, ammoId, "
-                     "knownTitles, actionBars, grantableLevels, innTriggerId, extraBonusTalentCount, UNIX_TIMESTAMP(creation_date) FROM characters WHERE guid = ?", CONNECTION_ASYNC);
+                     "knownTitles, actionBars, grantableLevels, innTriggerId, extraBonusTalentCount, UNIX_TIMESTAMP(creation_date), exploredZonesExt FROM characters WHERE guid = ?", CONNECTION_ASYNC);
 
     PrepareStatement(CHAR_SEL_CHARACTER_AURAS, "SELECT casterGuid, itemGuid, spell, effectMask, recalculateMask, stackCount, amount0, amount1, amount2, "
                      "base_amount0, base_amount1, base_amount2, maxDuration, remainTime, remainCharges FROM character_aura WHERE guid = ?", CONNECTION_ASYNC);
@@ -350,7 +350,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
                      "logout_time=?,is_logout_resting=?,resettalents_cost=?,resettalents_time=?,extra_flags=?,stable_slots=?,at_login=?,zone=?,death_expire_time=?,taxi_path=?,"
                      "arenaPoints=?,totalHonorPoints=?,todayHonorPoints=?,yesterdayHonorPoints=?,totalKills=?,todayKills=?,yesterdayKills=?,chosenTitle=?,knownCurrencies=?,"
                      "watchedFaction=?,drunk=?,health=?,power1=?,power2=?,power3=?,power4=?,power5=?,power6=?,power7=?,latency=?,talentGroupsCount=?,activeTalentGroup=?,exploredZones=?,"
-                     "equipmentCache=?,ammoId=?,knownTitles=?,actionBars=?,grantableLevels=?,innTriggerId=?,extraBonusTalentCount=?,online=? WHERE guid=?", CONNECTION_ASYNC);
+                     "equipmentCache=?,ammoId=?,knownTitles=?,actionBars=?,grantableLevels=?,innTriggerId=?,extraBonusTalentCount=?,exploredZonesExt=?,online=? WHERE guid=?", CONNECTION_ASYNC);
 
     PrepareStatement(CHAR_UPD_ADD_AT_LOGIN_FLAG, "UPDATE characters SET at_login = at_login | ? WHERE guid = ?", CONNECTION_ASYNC);
     PrepareStatement(CHAR_UPD_REM_AT_LOGIN_FLAG, "UPDATE characters set at_login = at_login & ~ ? WHERE guid = ?", CONNECTION_ASYNC);
@@ -750,6 +750,20 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_INS_HLBG_MATCH_PARTICIPANT,
         "INSERT INTO dc_hlbg_match_participants (match_id, guid, player_name, account_id, account_name, team, season_id, kills, deaths, healing_done, damage_done, resources_captured, rating_change) "
         "VALUES ((SELECT MAX(id) FROM dc_hlbg_winner_history), ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 0)",
+        CONNECTION_ASYNC);
+
+    // DarkChaos Phased Duels: one duelist's result of one duel, added onto the
+    // stored totals (wins, losses, draws and damage are increments, not totals).
+    PrepareStatement(CHAR_INS_DC_DUEL_STATISTICS_RESULT,
+        "INSERT INTO dc_duel_statistics (player_guid, wins, losses, draws, total_damage_dealt, total_damage_taken, "
+        "longest_duel_seconds, shortest_win_seconds, last_duel_time, last_opponent_guid) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON DUPLICATE KEY UPDATE wins = wins + VALUES(wins), losses = losses + VALUES(losses), "
+        "draws = draws + VALUES(draws), total_damage_dealt = total_damage_dealt + VALUES(total_damage_dealt), "
+        "total_damage_taken = total_damage_taken + VALUES(total_damage_taken), "
+        "longest_duel_seconds = GREATEST(longest_duel_seconds, VALUES(longest_duel_seconds)), "
+        "shortest_win_seconds = LEAST(shortest_win_seconds, VALUES(shortest_win_seconds)), "
+        "last_duel_time = VALUES(last_duel_time), last_opponent_guid = VALUES(last_opponent_guid)",
         CONNECTION_ASYNC);
 
     // HLBG Player Stats

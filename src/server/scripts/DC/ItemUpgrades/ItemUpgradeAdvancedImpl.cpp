@@ -704,10 +704,10 @@ public:
         if (!*args)
         {
             handler->PSendSysMessage("|cffffd700===== Respec Information =====|r");
-            handler->PSendSysMessage("|cff00ff00Respecs Today:|r %u / %u",
+            handler->PSendSysMessage("|cff00ff00Respecs Today:|r {} / {}",
                 count_today, respecMgr.GetConfig().daily_respec_limit);
-            handler->PSendSysMessage("|cff00ff00Cooldown:|r %u seconds", cooldown);
-            handler->PSendSysMessage("|cff00ff00Refund Rate:|r %u%%", respecMgr.GetConfig().refund_percent);
+            handler->PSendSysMessage("|cff00ff00Cooldown:|r {} seconds", cooldown);
+            handler->PSendSysMessage("|cff00ff00Refund Rate:|r {}%", respecMgr.GetConfig().refund_percent);
             handler->PSendSysMessage("");
             handler->PSendSysMessage("Usage: .upgradeadv respec <all|item_guid>");
             return true;
@@ -725,7 +725,7 @@ public:
             if (respecMgr.RespecAll(player->GetGUID().GetCounter()))
             {
                 handler->PSendSysMessage("|cff00ff00Successfully reset all upgrades!|r");
-                handler->PSendSysMessage("Currencies have been refunded at %u%% rate.",
+                handler->PSendSysMessage("Currencies have been refunded at {}% rate.",
                     respecMgr.GetConfig().refund_percent);
             }
             else
@@ -759,12 +759,12 @@ public:
         auto player_achievements = achMgr.GetPlayerAchievements(player->GetGUID().GetCounter());
 
         handler->PSendSysMessage("|cffffd700===== Your Upgrade Achievements =====|r");
-        handler->PSendSysMessage("Earned: %u achievements", static_cast<uint32>(player_achievements.size()));
+        handler->PSendSysMessage("Earned: {} achievements", static_cast<uint32>(player_achievements.size()));
         handler->PSendSysMessage("");
 
         for (auto const& ach : player_achievements)
         {
-            handler->PSendSysMessage("|cff00ff00%s|r - %s (Reward: %u prestige, %u tokens)",
+            handler->PSendSysMessage("|cff00ff00{}|r - {} (Reward: {} prestige, {} tokens)",
                 ach.name.c_str(), ach.description.c_str(),
                 ach.reward_prestige_points, ach.reward_tokens);
         }
@@ -779,7 +779,7 @@ public:
                 continue;
 
             uint32 progress = achMgr.GetAchievementProgress(player->GetGUID().GetCounter(), ach.achievement_id);
-            handler->PSendSysMessage("|cffaaaaaa%s|r - %u / %u",
+            handler->PSendSysMessage("|cffaaaaaa{}|r - {} / {}",
                 ach.name.c_str(), progress, ach.unlock_requirement);
         }
 
@@ -803,15 +803,15 @@ public:
         GuildUpgradeStats stats = guildMgr.GetGuildStats(guild->GetId());
 
         handler->PSendSysMessage("|cffffd700===== Guild Upgrade Statistics =====|r");
-        handler->PSendSysMessage("|cff00ff00Guild:|r %s", guild->GetName().c_str());
-        handler->PSendSysMessage("|cff00ff00Total Members:|r %u", stats.total_members);
-        handler->PSendSysMessage("|cff00ff00Members with Upgrades:|r %u", stats.members_with_upgrades);
-        handler->PSendSysMessage("|cff00ff00Total Guild Upgrades:|r %u", stats.total_guild_upgrades);
-        handler->PSendSysMessage("|cff00ff00Total Items Upgraded:|r %u", stats.total_items_upgraded);
-        handler->PSendSysMessage("|cff00ff00Average iLvL Gain:|r %.1f", stats.average_ilvl_increase);
-        handler->PSendSysMessage("|cff00ff00Total Essence Invested:|r %u", stats.total_essence_invested);
-        handler->PSendSysMessage("|cff00ff00Total Tokens Invested:|r %u", stats.total_tokens_invested);
-        handler->PSendSysMessage("|cff00ff00Guild Tier:|r %u", guildMgr.GetGuildTier(guild->GetId()));
+        handler->PSendSysMessage("|cff00ff00Guild:|r {}", guild->GetName().c_str());
+        handler->PSendSysMessage("|cff00ff00Total Members:|r {}", stats.total_members);
+        handler->PSendSysMessage("|cff00ff00Members with Upgrades:|r {}", stats.members_with_upgrades);
+        handler->PSendSysMessage("|cff00ff00Total Guild Upgrades:|r {}", stats.total_guild_upgrades);
+        handler->PSendSysMessage("|cff00ff00Total Items Upgraded:|r {}", stats.total_items_upgraded);
+        handler->PSendSysMessage("|cff00ff00Average iLvL Gain:|r {:.1f}", stats.average_ilvl_increase);
+        handler->PSendSysMessage("|cff00ff00Total Essence Invested:|r {}", stats.total_essence_invested);
+        handler->PSendSysMessage("|cff00ff00Total Tokens Invested:|r {}", stats.total_tokens_invested);
+        handler->PSendSysMessage("|cff00ff00Guild Tier:|r {}", guildMgr.GetGuildTier(guild->GetId()));
 
         return true;
     }

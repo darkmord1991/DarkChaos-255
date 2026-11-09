@@ -783,9 +783,16 @@ function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, target
 
 		-- 3) Not cached yet: request the authoritative total and report pending.
 		--    SMSG_COST_INFO will cache the exact value and refresh the UI.
-		if DC.RequestCostInfo then
+		--    A range the server refused, or left unanswered past the retry
+		--    (DC.IsCostRequestFailed), is priced from the client table below
+		--    instead of staying pending; the server still checks the real
+		--    cost when the upgrade is sent.
+		local isFailed = DC.IsCostRequestFailed
+		if DC.RequestCostInfo and not (isFailed and isFailed(tier, currentLevel, targetLevel)) then
 			DC.RequestCostInfo(tier, currentLevel, targetLevel);
-			return nil, nil, true;
+			if not (isFailed and isFailed(tier, currentLevel, targetLevel)) then
+				return nil, nil, true;
+			end
 		end
 	end
 

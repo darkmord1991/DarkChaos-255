@@ -1033,8 +1033,14 @@ namespace DCAddon
             s_SessionCapabilityRegistry[key] = std::move(state);
         }
 
+        // Only the native client advertises EXTENDED_QUEST_LOG, and every build of it drops a message it does not know,
+        // so the same bit also carries the explored-zone words past the update fields (no new capability bit: bit 31,
+        // the last free one, would turn negative in the Lua handshake's bit.bor)
         if (clientCaps & ProtocolVersion::Capability::EXTENDED_QUEST_LOG)
+        {
             player->EnableExtendedQuestLog();
+            player->EnableExtendedExploredZones();
+        }
     }
 
     bool TryGetLiveSessionCapabilityState(uint32 accountId,

@@ -1251,6 +1251,9 @@ public:                                                 // opcodes handlers
     // The client negotiated the quest log slots past the update fields (DC capability EXTENDED_QUEST_LOG)
     [[nodiscard]] bool HasExtendedQuestLog() const { return _extendedQuestLog; }
     void SetExtendedQuestLog(bool extended) { _extendedQuestLog = extended; }
+    // The client takes the explored-zone words past the update fields (SMSG_DC_EXPLORED_ZONES)
+    [[nodiscard]] bool HasExtendedExploredZones() const { return _extendedExploredZones; }
+    void SetExtendedExploredZones(bool extended) { _extendedExploredZones = extended; }
 
     [[nodiscard]] bool IsHeadless() const { return _headless; }
 
@@ -1332,6 +1335,7 @@ private:
     Seconds _previousPlayTime;                          // play time from previous session less than 5 hours ago
     time_t _logoutTime;
     bool _extendedQuestLog = false;
+    bool _extendedExploredZones = false;
     bool m_inQueue;                                     // session wait in auth.queue
     bool m_playerLoading;                               // code processed in LoginPlayer
     bool m_playerLogout;                                // code processed in LogoutPlayer

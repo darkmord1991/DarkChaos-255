@@ -29,6 +29,7 @@
 #include "DC/CrossSystem/PhaseLayers.h"
 #include "ObjectGuid.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
@@ -85,8 +86,8 @@ namespace DCPhasedDuels
         uint32 wins = 0;
         uint32 losses = 0;
         uint32 draws = 0;
-        uint32 totalDamageDealt = 0;
-        uint32 totalDamageTaken = 0;
+        uint64 totalDamageDealt = 0;
+        uint64 totalDamageTaken = 0;
         uint32 longestDuelSeconds = 0;
         uint32 shortestWinSeconds = UINT32_MAX;
         uint64 lastDuelTime = 0;
@@ -407,79 +408,134 @@ namespace DCPhasedDuels
         StopSpectatorsForMatch(duel->matchId, "The duel ended unexpectedly.");
     }
 
+    // Adds damage one duelist did to the other onto both tracked copies of the duel (each duelist
+    // is a key of sActiveDuels). Caller holds sDuelMutex.
+    void AddDuelDamageLocked(ObjectGuid const& attackerGuid, ObjectGuid const& victimGuid, uint32 damage)
+    {
+        for (ObjectGuid const& key : { attackerGuid, victimGuid })
+        {
+            auto const it = sActiveDuels.find(key);
+            if (it == sActiveDuels.end())
+                continue;
+
+            ActiveDuel& duel = it->second;
+            uint32* dealt = nullptr;
+            if (duel.player1 == attackerGuid && duel.player2 == victimGuid)
+                dealt = &duel.player1DamageDealt;
+            else if (duel.player2 == attackerGuid && duel.player1 == victimGuid)
+                dealt = &duel.player2DamageDealt;
+
+            if (!dealt)
+                continue;
+
+            // Saturate rather than wrap on very long duels at high levels
+            *dealt = damage > UINT32_MAX - *dealt ? UINT32_MAX : *dealt + damage;
+        }
+    }
+
+    // One duelist's share of a finished duel. Wins, losses, draws and damage are added onto the
+    // stored totals.
+    struct DuelResult
+    {
+        uint32 wins = 0;
+        uint32 losses = 0;
+        uint32 draws = 0;
+        uint64 damageDealt = 0;
+        uint64 damageTaken = 0;
+        uint32 winSeconds = UINT32_MAX;  // the duel's length if it was a win; UINT32_MAX keeps the record
+    };
+
+    // Caller holds sDuelMutex.
+    void ApplyDuelResultLocked(DuelStats& stats, DuelResult const& result, uint32 durationSeconds,
+        uint64 now, ObjectGuid const& opponent)
+    {
+        stats.wins += result.wins;
+        stats.losses += result.losses;
+        stats.draws += result.draws;
+        stats.totalDamageDealt += result.damageDealt;
+        stats.totalDamageTaken += result.damageTaken;
+        stats.longestDuelSeconds = std::max(stats.longestDuelSeconds, durationSeconds);
+        stats.shortestWinSeconds = std::min(stats.shortestWinSeconds, result.winSeconds);
+        stats.lastDuelTime = now;
+        stats.lastOpponent = opponent;
+    }
+
+    void AppendDuelResult(CharacterDatabaseTransaction& trans, ObjectGuid const& player,
+        ObjectGuid const& opponent, DuelResult const& result, uint32 durationSeconds, uint64 now)
+    {
+        CharacterDatabasePreparedStatement* stmt =
+            CharacterDatabase.GetPreparedStatement(CHAR_INS_DC_DUEL_STATISTICS_RESULT);
+        stmt->SetData(0, player.GetCounter());
+        stmt->SetData(1, result.wins);
+        stmt->SetData(2, result.losses);
+        stmt->SetData(3, result.draws);
+        stmt->SetData(4, result.damageDealt);
+        stmt->SetData(5, result.damageTaken);
+        stmt->SetData(6, durationSeconds);
+        stmt->SetData(7, result.winSeconds);
+        stmt->SetData(8, now);
+        stmt->SetData(9, opponent.GetCounter());
+        trans->Append(stmt);
+    }
+
     void RecordDuelEnd(Player* winner, Player* loser, DuelCompleteType type, ActiveDuel const& duel)
     {
         if (!winner || !loser)
             return;
 
         uint64 now = GameTime::GetGameTime().count();
-        uint32 durationSeconds = static_cast<uint32>(now - duel.startTime);
+        uint32 durationSeconds = now > duel.startTime ? static_cast<uint32>(now - duel.startTime) : 0;
 
         StopSpectatorsForMatch(duel.matchId, "The duel has ended.");
 
         if (sConfig.trackStatistics)
         {
-            std::lock_guard<std::mutex> lock(sDuelMutex);
-            DuelStats& winnerStats = sPlayerDuelStats[winner->GetGUID()];
-            DuelStats& loserStats = sPlayerDuelStats[loser->GetGUID()];
+            ObjectGuid const winnerGuid = winner->GetGUID();
+            ObjectGuid const loserGuid = loser->GetGUID();
+            bool const winnerIsPlayer1 = duel.player1 == winnerGuid;
+            uint64 const winnerDealt = winnerIsPlayer1 ? duel.player1DamageDealt : duel.player2DamageDealt;
+            uint64 const loserDealt = winnerIsPlayer1 ? duel.player2DamageDealt : duel.player1DamageDealt;
 
-            if (type == DUEL_WON)
+            DuelResult winnerResult;
+            winnerResult.damageDealt = winnerDealt;
+            winnerResult.damageTaken = loserDealt;
+
+            DuelResult loserResult;
+            loserResult.damageDealt = loserDealt;
+            loserResult.damageTaken = winnerDealt;
+
+            // DUEL_INTERRUPTED means a duelist died to something other than the opponent (a fall,
+            // the environment, a third party). The client is told nobody won, so both get a draw.
+            if (type == DUEL_INTERRUPTED)
             {
-                winnerStats.wins++;
-                loserStats.losses++;
-
-                if (durationSeconds < winnerStats.shortestWinSeconds)
-                    winnerStats.shortestWinSeconds = durationSeconds;
-            }
-            else if (type == DUEL_INTERRUPTED || type == DUEL_FLED)
-            {
-                winnerStats.wins++;
-                loserStats.losses++;
-            }
-
-            if (durationSeconds > winnerStats.longestDuelSeconds)
-                winnerStats.longestDuelSeconds = durationSeconds;
-            if (durationSeconds > loserStats.longestDuelSeconds)
-                loserStats.longestDuelSeconds = durationSeconds;
-
-            winnerStats.lastDuelTime = now;
-            winnerStats.lastOpponent = loser->GetGUID();
-            loserStats.lastDuelTime = now;
-            loserStats.lastOpponent = winner->GetGUID();
-
-            if (duel.player1 == winner->GetGUID())
-            {
-                winnerStats.totalDamageDealt += duel.player1DamageDealt;
-                loserStats.totalDamageTaken += duel.player1DamageDealt;
+                winnerResult.draws = 1;
+                loserResult.draws = 1;
             }
             else
             {
-                winnerStats.totalDamageDealt += duel.player2DamageDealt;
-                loserStats.totalDamageTaken += duel.player2DamageDealt;
+                winnerResult.wins = 1;
+                loserResult.losses = 1;
+                // A win by fleeing is not a fight, so only a real win sets the fastest-win record
+                if (type == DUEL_WON)
+                    winnerResult.winSeconds = durationSeconds;
             }
 
-            CharacterDatabase.Execute(
-                "INSERT INTO dc_duel_statistics (player_guid, wins, losses, draws, total_damage_dealt, "
-                "total_damage_taken, longest_duel_seconds, shortest_win_seconds, last_duel_time, last_opponent_guid) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}) "
-                "ON DUPLICATE KEY UPDATE wins = {}, losses = {}, draws = {}, "
-                "total_damage_dealt = {}, total_damage_taken = {}, "
-                "longest_duel_seconds = GREATEST(longest_duel_seconds, {}), "
-                "shortest_win_seconds = LEAST(shortest_win_seconds, {}), "
-                "last_duel_time = {}, last_opponent_guid = {}",
-                winner->GetGUID().GetCounter(),
-                winnerStats.wins, winnerStats.losses, winnerStats.draws,
-                winnerStats.totalDamageDealt, winnerStats.totalDamageTaken,
-                winnerStats.longestDuelSeconds, winnerStats.shortestWinSeconds,
-                now, loser->GetGUID().GetCounter(),
-                winnerStats.wins, winnerStats.losses, winnerStats.draws,
-                winnerStats.totalDamageDealt, winnerStats.totalDamageTaken,
-                durationSeconds, durationSeconds, now,
-                loser->GetGUID().GetCounter());
+            {
+                std::lock_guard<std::mutex> lock(sDuelMutex);
+                ApplyDuelResultLocked(sPlayerDuelStats[winnerGuid], winnerResult, durationSeconds, now, loserGuid);
+                ApplyDuelResultLocked(sPlayerDuelStats[loserGuid], loserResult, durationSeconds, now, winnerGuid);
+            }
+
+            // Both rows in one transaction, as increments: the loser's row is written too, and a
+            // cache that missed the login load or was erased at logout cannot overwrite the totals.
+            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+            AppendDuelResult(trans, winnerGuid, loserGuid, winnerResult, durationSeconds, now);
+            AppendDuelResult(trans, loserGuid, winnerGuid, loserResult, durationSeconds, now);
+            CharacterDatabase.CommitTransaction(trans);
         }
 
-        LOG_DEBUG("scripts.dc", "PhasedDuels: Ended duel between {} and {} (winner: {}, duration: {}s)",
-            winner->GetName(), loser->GetName(), winner->GetName(), durationSeconds);
+        LOG_DEBUG("scripts.dc", "PhasedDuels: Ended duel between {} and {} (winner: {}, type: {}, duration: {}s)",
+            winner->GetName(), loser->GetName(), winner->GetName(), uint32(type), durationSeconds);
     }
 
     std::string EscapeJson(std::string const& value)
@@ -972,8 +1028,8 @@ public:
                 stats.wins = fields[0].Get<uint32>();
                 stats.losses = fields[1].Get<uint32>();
                 stats.draws = fields[2].Get<uint32>();
-                stats.totalDamageDealt = fields[3].Get<uint32>();
-                stats.totalDamageTaken = fields[4].Get<uint32>();
+                stats.totalDamageDealt = fields[3].Get<uint64>();
+                stats.totalDamageTaken = fields[4].Get<uint64>();
                 stats.longestDuelSeconds = fields[5].Get<uint32>();
                 stats.shortestWinSeconds = fields[6].Get<uint32>();
                 stats.lastDuelTime = fields[7].Get<uint64>();
@@ -1097,6 +1153,41 @@ public:
 };
 
 // ============================================================
+// Unit Script - Damage between the two duelists
+// ============================================================
+class DCPhasedDuelsUnitScript : public UnitScript
+{
+public:
+    DCPhasedDuelsUnitScript() : UnitScript("DCPhasedDuelsUnitScript", true, { UNITHOOK_ON_DAMAGE }) { }
+
+    // Runs for every damage event in the world, so everything that is not one duelist hurting
+    // the other is filtered out on the duel state before the mutex is taken.
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (!damage || !attacker || !victim || attacker == victim || !sConfig.trackStatistics)
+            return;
+
+        Player* victimPlayer = victim->ToPlayer();
+        if (!victimPlayer || !victimPlayer->duel || victimPlayer->duel->State != DUEL_STATE_IN_PROGRESS)
+            return;
+
+        // The opponent's pets and guardians count as the opponent
+        Player* attackerPlayer = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
+        if (!attackerPlayer || victimPlayer->duel->Opponent != attackerPlayer)
+            return;
+
+        // The core caps a duel's last hit at the victim's health minus one
+        uint32 const health = victimPlayer->GetHealth();
+        uint32 const dealt = std::min(damage, health > 0 ? health - 1 : 0u);
+        if (!dealt)
+            return;
+
+        std::lock_guard<std::mutex> lock(sDuelMutex);
+        AddDuelDamageLocked(attackerPlayer->GetGUID(), victimPlayer->GetGUID(), dealt);
+    }
+};
+
+// ============================================================
 // Command Script - Duel Statistics
 // ============================================================
 class DCPhasedDuelsCommandScript : public CommandScript
@@ -1144,7 +1235,7 @@ public:
 
         handler->SendSysMessage("|cff00ff00========== DUEL STATISTICS ==========|r");
         handler->PSendSysMessage("|cffffd700Player:|r {}", player->GetName());
-        handler->PSendSysMessage("|cffffd700Record:|r {} W / {} L / {} D ({:.1f}%% Win Rate)",
+        handler->PSendSysMessage("|cffffd700Record:|r {} W / {} L / {} D ({:.1f}% Win Rate)",
             stats.wins, stats.losses, stats.draws, winRate);
         handler->PSendSysMessage("|cffffd700Total Damage Dealt:|r {}", stats.totalDamageDealt);
         handler->PSendSysMessage("|cffffd700Total Damage Taken:|r {}", stats.totalDamageTaken);
@@ -1246,6 +1337,7 @@ void AddSC_dc_phased_duels()
 {
     sConfig.Load();
     new DCPhasedDuelsPlayerScript();
+    new DCPhasedDuelsUnitScript();
     new DCPhasedDuelsCommandScript();
     new DCPhasedDuelsWorldScript();
 

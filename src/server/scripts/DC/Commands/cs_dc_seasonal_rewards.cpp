@@ -239,7 +239,8 @@ public:
             handler->PSendSysMessage("Slot 3: {} tokens, {} essence",
                 chest->slot3Tokens, chest->slot3Essence);
 
-        handler->SendSysMessage("Type |cffffcc00.season chest collect|r to claim your rewards!");
+        // The claim goes through the DC-Welcome addon (SEAS 0x02/0x04); there is no chat command for it
+        handler->SendSysMessage("Type |cffffcc00/seasonal claim|r to claim your rewards!");
 
         return true;
     }

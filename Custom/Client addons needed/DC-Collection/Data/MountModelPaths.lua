@@ -1697,4 +1697,5 @@ DC.MountModelPaths = DC.MountModelPaths or {
     [505189] = "mountpreview\\loalabyrinthgolemmount\\loalabyrinthgolemmount_505189.m2",
     [505190] = "mountpreview\\aqirflyingmount\\aqirflyingmount_505190.m2",
     [505191] = "mountpreview\\murlocmount\\murlocmount_505191.m2",
+    [505195] = "mountpreview\\8197345\\8197345_505195.m2",
 }

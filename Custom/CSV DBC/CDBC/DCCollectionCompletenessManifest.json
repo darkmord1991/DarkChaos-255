@@ -5,8 +5,8 @@
       "collectionType": 1,
       "serverType": "mount",
       "serverSource": "table+index",
-      "definitionCount": 1954,
-      "expectedCount": 1954,
+      "definitionCount": 1955,
+      "expectedCount": 1955,
       "indexAvailable": true,
       "authoritative": true,
       "requestSkip": true,
@@ -17,8 +17,8 @@
       "collectionType": 2,
       "serverType": "pet",
       "serverSource": "table",
-      "definitionCount": 2064,
-      "expectedCount": 2064,
+      "definitionCount": 2065,
+      "expectedCount": 2065,
       "indexAvailable": true,
       "authoritative": true,
       "requestSkip": true,
@@ -83,7 +83,7 @@
   },
   "dataRevisions": {
     "collectionCategories": 1684590543,
-    "collectionSources": 302606372,
+    "collectionSources": 856971968,
     "collectionShop": 2009008687,
     "collectionSets": 786799120
   }

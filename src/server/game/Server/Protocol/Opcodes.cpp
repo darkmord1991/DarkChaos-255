@@ -1480,6 +1480,7 @@ void OpcodeTable::Initialize()
     /*0x542*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_NATIVE_MESSAGE,                                  STATUS_NEVER);
     /*0x543*/ DEFINE_SERVER_OPCODE_HANDLER(TC9_SMSG_READY_FOR_REDIRECT,                             STATUS_NEVER);
     /*0x544*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_QUEST_SLOTS,                                     STATUS_NEVER);
+    /*0x545*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_EXPLORED_ZONES,                                  STATUS_NEVER);
 
 #undef DEFINE_HANDLER
 #undef DEFINE_SERVER_OPCODE_HANDLER

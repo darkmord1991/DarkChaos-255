@@ -578,6 +578,9 @@ enum CharacterDatabaseStatements : uint32
     CHAR_INS_HLBG_WINNER_HISTORY,
     CHAR_INS_HLBG_MATCH_PARTICIPANT,
 
+    // DarkChaos Phased Duels
+    CHAR_INS_DC_DUEL_STATISTICS_RESULT,
+
     // Mythic+ system
     CHAR_SEL_MPLUS_KEYSTONE,
     CHAR_DEL_MPLUS_KEYSTONE,

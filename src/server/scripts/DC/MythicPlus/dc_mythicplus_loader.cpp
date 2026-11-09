@@ -11,6 +11,7 @@ void AddSC_mythic_plus_heroic_loot();
 void AddSC_dungeon_portal_selector();
 void AddSC_go_mythic_plus_font_of_power();
 void AddSC_npc_great_vault();
+void AddSC_great_vault_progress();
 void AddSC_npc_mythic_token_vendor();
 void AddSC_npc_keystone_vendor();
 void AddSC_item_mythic_keystone();
@@ -22,6 +23,7 @@ void AddMythicPlusScripts()
     AddSC_dungeon_portal_selector();
     AddSC_go_mythic_plus_font_of_power();
     AddSC_npc_great_vault();
+    AddSC_great_vault_progress();
     AddSC_npc_mythic_token_vendor();
     AddSC_npc_keystone_vendor();
     AddSC_item_mythic_keystone();

@@ -337,8 +337,11 @@ namespace Matchmaking
         bool TryFormRaidMatch();
         // Returns false when no proposal was formed (the picks are then left
         // untouched in the queue) -- the match loop relies on that to terminate.
+        // `matchedEntry` maps each pick to the _queue index the matcher used
+        // for them (a solo player can hold several entries).
         bool CreateProposal(std::vector<uint32> const& picksGuidLow,
                             std::unordered_map<uint32, uint8> const& roleAssign,
+                            std::unordered_map<uint32, std::size_t> const& matchedEntry,
                             uint8 category, uint32 dungeonId, uint8 difficulty,
                             uint32 raidSize,
                             std::vector<std::pair<ObjectGuid, uint8>> const& botPicks = {});
@@ -351,15 +354,22 @@ namespace Matchmaking
         std::vector<std::pair<ObjectGuid, uint8>> RecruitBotFillers(
             RoleNeed const& need, uint8 minLevel, uint32 dungeonId, uint8 difficulty);
 
-        // True when the longest-waiting player in `guidLows` has waited past the
-        // backfill delay. (caller holds _mutex)
-        bool BackfillDelayElapsed(std::vector<uint32> const& guidLows) const;
+        // True when the longest-waiting of these _queue entries has waited past
+        // the backfill delay. (caller holds _mutex)
+        bool BackfillDelayElapsed(std::vector<std::size_t> const& entryIndexes) const;
 
         // Proposal lifecycle
         void CheckProposalTimeouts();
         void FinalizeProposal(uint32 proposalId);
-        void DissolveProposal(uint32 proposalId, bool requeueAccepters,
-                              char const* reason);
+        // Stock LFGMgr::RemoveProposal rules: whoever declined (and, when
+        // `pendingCountsAsDecline` is set -- the timeout -- whoever had not
+        // answered) leaves the queue together with their queued party; every
+        // other member goes back to waiting with their wait time intact.
+        // `extraCulprits` names members to treat as decliners regardless of
+        // their answer (used when the final accept cannot form the group).
+        void DissolveProposal(uint32 proposalId, bool pendingCountsAsDecline,
+                              char const* reason,
+                              std::set<uint32> const& extraCulprits = {});
         void TeleportAndForm(MatchProposal const& proposal);
 
         // Helpers

@@ -16,6 +16,7 @@
 #include "SeasonalSystem.h"
 #include <string>
 #include <map>
+#include <mutex>
 #include <vector>
 
 class Creature;
@@ -69,6 +70,7 @@ namespace DarkChaos
             uint32 questsCompleted = 0;
             uint32 creaturesKilled = 0;
             uint32 dungeonBossesKilled = 0;
+            uint32 weeklyDungeonBossesKilled = 0;           // Resets with the week; unlocks weekly chest slots
             uint32 worldBossesKilled = 0;
             uint32 prestigeLevel = 0;
             time_t lastWeeklyReset = 0;
@@ -156,9 +158,25 @@ namespace DarkChaos
             void ResetWeeklyStats(Player* player);
 
             // Weekly Chest System
+            //
+            // The claim path is the addon one: DC-Welcome sends SEAS
+            // CMSG_GET_REWARDS / CMSG_CLAIM_REWARD (dc_addon_seasons.cpp), and
+            // the claim pays through PayWeeklyChest. CollectWeeklyChest pays
+            // the same way for a chat command.
             void GenerateWeeklyChest(Player* player);
             bool CollectWeeklyChest(Player* player);
             WeeklyChest* GetWeeklyChest(Player* player);
+
+            // Hands out a chest's contents. Unlike AwardBoth it is not held to
+            // the weekly cap and does not count as this week's earnings: the
+            // chest is a share of last week's capped earnings, so capping it
+            // again could pay nothing, and counting it would feed 10% of it
+            // into next week's chest.
+            bool PayWeeklyChest(Player* player, uint32 tokens, uint32 essence, uint32 chestId);
+
+            // Drops the cached chest after a claim marked it collected in the
+            // DB, so the login notice does not offer it again.
+            void ForgetWeeklyChest(uint32 playerGuid);
 
             // Player Stats
             PlayerSeasonStats* GetPlayerStats(uint32 playerGuid);
@@ -192,10 +210,23 @@ namespace DarkChaos
             void UpdateWeeklyEarnings(Player* player, uint32 tokens, uint32 essence);
             void NotifyPlayer(Player* player, uint32 tokens, uint32 essence, std::string const& source);
 
+            // Counts a dungeon or world boss kill, rewarded or not.
+            void RecordBossKill(Player* player, bool isDungeonBoss, bool isWorldBoss);
+
             // Data storage
             SeasonalConfig config_;
             std::map<uint32, PlayerSeasonStats> playerStats_;
             std::map<uint32, WeeklyChest> weeklyChests_;
+
+            // Kill and quest hooks run on map threads, so the per-player maps
+            // above are guarded. Recursive: AwardCurrency -> CheckWeeklyCap ->
+            // ResetWeeklyStats -> GenerateWeeklyChest re-enter the manager.
+            std::recursive_mutex mutex_;
+
+            // dc_player_seasonal_stats.weekly_dungeon_bosses_killed comes from a
+            // pending characters SQL file. Without it the weekly boss count
+            // still works but is not saved, so a restart resets it.
+            bool hasWeeklyBossColumn_ = false;
 
             // Cache for reward definitions
             std::map<uint32, std::pair<uint32, uint32>> questRewards_;      // questId -> (tokens, essence)

@@ -24,7 +24,16 @@ DC.useDCProtocolJSON = true;
 -- Protocol debug/verbose flag
 DC.verboseProtocol = false;
 DC.liveCostCache = DC.liveCostCache or {};
+-- Cost queries in flight, keyed like liveCostCache, valued by send time.
 DC.pendingCostRequests = DC.pendingCostRequests or {};
+-- Ranges the server refused to price, or never answered. The window prices
+-- those from the client cost table instead of waiting on them for ever.
+DC.failedCostRequests = DC.failedCostRequests or {};
+DC.costRequestAttempts = DC.costRequestAttempts or {};
+-- An unanswered cost query is sent again after COST_REQUEST_TIMEOUT seconds and
+-- given up on after COST_REQUEST_MAX_ATTEMPTS sends.
+DC.COST_REQUEST_TIMEOUT = 5;
+DC.COST_REQUEST_MAX_ATTEMPTS = 2;
 DC.TIER_RUNTIME_OVERRIDES = DC.TIER_RUNTIME_OVERRIDES or {};
 
 local function DispatchBrowserHandler(handlerName, ...)
@@ -1514,7 +1523,9 @@ function DC.RegisterDCProtocolHandlers()
 
 			local nextTier = resultTier or tier or (DC.currentItem and DC.currentItem.tier) or 0
 			local nextMaxUpgrade = resultMaxUpgrade or maxUpgrade or (DC.currentItem and DC.currentItem.maxUpgrade) or 0
-			if DC.RequestCostInfo and nextTier > 0 and nextTier ~= 3 and newLevel < nextMaxUpgrade then
+			local nextIsHeirloom = DC.HEIRLOOM_TIERS and DC.HEIRLOOM_TIERS[nextTier]
+			if DC.RequestCostInfo and nextTier > 0 and nextTier ~= 3 and not nextIsHeirloom
+					and newLevel < nextMaxUpgrade then
 				DC.RequestCostInfo(nextTier, newLevel, newLevel + 1)
 			end
 
@@ -1749,9 +1760,20 @@ function DC.RegisterDCProtocolHandlers()
 		local key = DC.BuildCostCacheKey and DC.BuildCostCacheKey(tier, fromLevel, toLevel);
 		if key then
 			DC.pendingCostRequests[key] = nil;
+			DC.costRequestAttempts[key] = nil;
 		end
 
 		if data.success == false or tier <= 0 or toLevel <= fromLevel then
+			-- A refusal ends the wait: without this the range stayed pending and
+			-- the window said "Upgrade cost is syncing" for the whole session.
+			-- Servers before the fix send the refusal without tier/fromLevel/
+			-- toLevel, so then every outstanding query counts as refused.
+			if data.success == false and DC.MarkCostRequestsFailed then
+				DC.MarkCostRequestsFailed(key);
+			end
+			if DC.RefreshUpgradeUIIfShown then
+				DC.RefreshUpgradeUIIfShown();
+			end
 			return;
 		end
 
@@ -2124,6 +2146,96 @@ function DC.GetCachedCostInfo(tier, fromLevel, toLevel)
 	return DC.liveCostCache[key];
 end
 
+function DC.RefreshUpgradeUIIfShown()
+	if DC.currentItem and DarkChaos_ItemUpgrade_UpdateUI
+			and DarkChaos_ItemUpgradeFrame and DarkChaos_ItemUpgradeFrame:IsShown() then
+		DarkChaos_ItemUpgrade_UpdateUI();
+	end
+end
+
+-- True when the server refused to price this range, or never answered it.
+function DC.IsCostRequestFailed(tier, fromLevel, toLevel)
+	local key = DC.BuildCostCacheKey(tier, fromLevel, toLevel);
+	return key ~= nil and DC.failedCostRequests ~= nil and DC.failedCostRequests[key] == true;
+end
+
+-- Marks one range as refused, or every outstanding one when key is nil.
+function DC.MarkCostRequestsFailed(key)
+	DC.failedCostRequests = DC.failedCostRequests or {};
+	DC.pendingCostRequests = DC.pendingCostRequests or {};
+	DC.costRequestAttempts = DC.costRequestAttempts or {};
+	if key then
+		DC.failedCostRequests[key] = true;
+		DC.pendingCostRequests[key] = nil;
+		DC.costRequestAttempts[key] = nil;
+		return;
+	end
+	for pendingKey in pairs(DC.pendingCostRequests) do
+		DC.failedCostRequests[pendingKey] = true;
+		DC.costRequestAttempts[pendingKey] = nil;
+	end
+	DC.pendingCostRequests = {};
+end
+
+-- Settles a query that has waited past COST_REQUEST_TIMEOUT: clears it so the
+-- next redraw sends it again, or, after COST_REQUEST_MAX_ATTEMPTS sends, marks
+-- it failed. Returns true when the key was still pending and is settled now.
+local function ExpireCostRequest(key, now)
+	local sentAt = DC.pendingCostRequests[key];
+	if not sentAt then
+		return false;
+	end
+	if type(sentAt) == "number" and (now - sentAt) < (DC.COST_REQUEST_TIMEOUT or 5) then
+		return false;
+	end
+
+	DC.pendingCostRequests[key] = nil;
+	if (DC.costRequestAttempts[key] or 0) >= (DC.COST_REQUEST_MAX_ATTEMPTS or 2) then
+		DC.costRequestAttempts[key] = nil;
+		DC.failedCostRequests[key] = true;
+	end
+	return true;
+end
+
+-- Wakes the window when a query times out, so it does not sit on "..." until
+-- the player happens to cause a redraw.
+local costWatchdog = nil;
+local function StartCostRequestWatchdog()
+	if not CreateFrame then
+		return;
+	end
+	if not costWatchdog then
+		costWatchdog = CreateFrame("Frame");
+		costWatchdog.elapsed = 0;
+		costWatchdog:SetScript("OnUpdate", function(self, elapsed)
+			self.elapsed = self.elapsed + (elapsed or 0);
+			if self.elapsed < 1 then
+				return;
+			end
+			self.elapsed = 0;
+
+			local now = GetTime and GetTime() or 0;
+			local settled = false;
+			local remaining = false;
+			for key in pairs(DC.pendingCostRequests) do
+				if ExpireCostRequest(key, now) then
+					settled = true;
+				else
+					remaining = true;
+				end
+			end
+			if settled then
+				DC.RefreshUpgradeUIIfShown();
+			end
+			if not remaining and not next(DC.pendingCostRequests) then
+				self:Hide();
+			end
+		end);
+	end
+	costWatchdog.elapsed = 0;
+	costWatchdog:Show();
+end
+
 -- Protocol-aware request functions with fallback chain
 function DC.RequestItemInfo(bag, slot, itemLink)
 	-- Try DC Protocol first
@@ -2156,11 +2268,23 @@ function DC.RequestCostInfo(tier, fromLevel, toLevel)
 
 	DC.liveCostCache = DC.liveCostCache or {};
 	DC.pendingCostRequests = DC.pendingCostRequests or {};
-	if DC.liveCostCache[key] or DC.pendingCostRequests[key] then
+	DC.failedCostRequests = DC.failedCostRequests or {};
+	DC.costRequestAttempts = DC.costRequestAttempts or {};
+	if DC.liveCostCache[key] or DC.failedCostRequests[key] then
 		return false;
 	end
 
-	DC.pendingCostRequests[key] = true;
+	local now = GetTime and GetTime() or 0;
+	if DC.pendingCostRequests[key] and not ExpireCostRequest(key, now) then
+		return false;
+	end
+	if DC.failedCostRequests[key] then
+		return false;
+	end
+
+	DC.pendingCostRequests[key] = now;
+	DC.costRequestAttempts[key] = (DC.costRequestAttempts[key] or 0) + 1;
+	StartCostRequestWatchdog();
 	DCProtocol:Request("UPG", 0x04, {
 		tier = tonumber(tier) or 0,
 		fromLevel = tonumber(fromLevel) or 0,

@@ -135,8 +135,9 @@ namespace DCDuelAddon
             uint32 wins = fields[0].Get<uint32>();
             uint32 losses = fields[1].Get<uint32>();
             uint32 draws = fields[2].Get<uint32>();
-            uint32 totalDamageDealt = fields[3].Get<uint32>();
-            uint32 totalDamageTaken = fields[4].Get<uint32>();
+            // BIGINT columns; sent as a JSON number, exact up to 2^53
+            double totalDamageDealt = static_cast<double>(fields[3].Get<uint64>());
+            double totalDamageTaken = static_cast<double>(fields[4].Get<uint64>());
             uint32 longestDuel = fields[5].Get<uint32>();
             uint32 fastestWin = fields[6].Get<uint32>();
             uint64 lastDuelTime = fields[7].Get<uint64>();
@@ -208,10 +209,10 @@ namespace DCDuelAddon
         ObjectGuid playerGuid = player->GetGUID();
         std::string const pageSql =
             "SELECT c.name, c.class, d.wins, d.losses, d.draws, d.total_damage_dealt, "
-            "(SELECT COUNT(*) FROM dc_duel_statistics WHERE wins > 0 OR losses > 0) AS total_count "
+            "(SELECT COUNT(*) FROM dc_duel_statistics WHERE wins > 0 OR losses > 0 OR draws > 0) AS total_count "
             "FROM dc_duel_statistics d "
             "INNER JOIN characters c ON c.guid = d.player_guid "
-            "WHERE d.wins > 0 OR d.losses > 0 "
+            "WHERE d.wins > 0 OR d.losses > 0 OR d.draws > 0 "
             "ORDER BY " + orderBy +
             " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
@@ -241,7 +242,7 @@ namespace DCDuelAddon
                 uint32 wins = fields[2].Get<uint32>();
                 uint32 losses = fields[3].Get<uint32>();
                 uint32 draws = fields[4].Get<uint32>();
-                uint32 damageDealt = fields[5].Get<uint32>();
+                unsigned long long damageDealt = fields[5].Get<uint64>();
                 totalCount = fields[6].Get<uint32>();
 
                 uint32 total = wins + losses + draws;
@@ -271,7 +272,7 @@ namespace DCDuelAddon
                 char entryBuf[512];
                 std::snprintf(entryBuf, sizeof(entryBuf),
                     "{\"rank\":%u,\"name\":\"%s\",\"class\":\"%s\",\"wins\":%u,\"losses\":%u,"
-                    "\"draws\":%u,\"winRate\":%.1f,\"total\":%u,\"damage\":%u}",
+                    "\"draws\":%u,\"winRate\":%.1f,\"total\":%u,\"damage\":%llu}",
                     rank++, name.c_str(), className.c_str(), wins, losses, draws, winRate, total, damageDealt);
                 entriesJson += entryBuf;
 

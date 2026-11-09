@@ -1027,12 +1027,7 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
 
         // start with every map explored
         if (sWorld->getBoolConfig(CONFIG_START_ALL_EXPLORED))
-        {
-            for (uint8 i = 0; i < PLAYER_EXPLORED_ZONES_SIZE; i++)
-            {
-                pCurrChar->SetFlag(PLAYER_EXPLORED_ZONES_1 + i, 0xFFFFFFFF);
-            }
-        }
+            pCurrChar->SetAllAreasExplored(true);
 
         // Reputations if "StartAllReputation" is enabled, -- TODO: Fix this in a better way
         if (sWorld->getBoolConfig(CONFIG_START_ALL_REP))

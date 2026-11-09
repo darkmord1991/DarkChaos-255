@@ -1675,16 +1675,11 @@ public:
             return false;
         }
 
-        int32 offset = area->exploreFlag / 32;
-        if (offset >= PLAYER_EXPLORED_ZONES_SIZE)
+        if (!playerTarget->SetExploredAreaBit(area->exploreFlag, true))
         {
             handler->SendErrorMessage(LANG_BAD_VALUE);
             return false;
         }
-
-        uint32 val = uint32((1 << (area->exploreFlag % 32)));
-        uint32 currFields = playerTarget->GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset);
-        playerTarget->SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset, uint32((currFields | val)));
 
         handler->SendSysMessage(LANG_EXPLORE_AREA);
         return true;
@@ -1706,16 +1701,12 @@ public:
             return false;
         }
 
-        int32 offset = area->exploreFlag / 32;
-        if (offset >= PLAYER_EXPLORED_ZONES_SIZE)
+        // DarkChaos: clears the bit (it used to toggle it, so hiding a hidden area revealed it)
+        if (!playerTarget->SetExploredAreaBit(area->exploreFlag, false))
         {
             handler->SendErrorMessage(LANG_BAD_VALUE);
             return false;
         }
-
-        uint32 val = uint32((1 << (area->exploreFlag % 32)));
-        uint32 currFields = playerTarget->GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset);
-        playerTarget->SetUInt32Value(PLAYER_EXPLORED_ZONES_1 + offset, uint32((currFields ^ val)));
 
         handler->SendSysMessage(LANG_UNEXPLORE_AREA);
         return true;

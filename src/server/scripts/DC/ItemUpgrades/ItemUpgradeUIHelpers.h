@@ -14,6 +14,7 @@
 #define DARKCHAOS_ITEMUPGRADE_UI_HELPERS_H
 
 #include "Common.h"
+#include "DBCStores.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <sstream>
 #include <iomanip>
@@ -408,16 +409,55 @@ namespace DarkChaos
                 }
             }
 
-            // Returns the max upgrade level for a heirloom item from its tier definition.
-            // Falls back to HEIRLOOM_MAX_LEVEL when the tier is unknown.
+            // The stat enchant a heirloom carries at a package and level:
+            //   standard (tier 3)  900000 + package*100 + level
+            //   frontier (tier 10) 920000 + package*100 + level
+            inline uint32 GetHeirloomEnchantId(uint32 tier, uint32 packageId, uint32 level)
+            {
+                uint32 const base = (tier == 10) ? FRONTIER_HEIRLOOM_ENCHANT_BASE_ID : HEIRLOOM_ENCHANT_BASE_ID;
+                return base + packageId * 100 + level;
+            }
+
+            // Highest level L (up to upTo) such that every level 1..L has a stat
+            // enchant in SpellItemEnchantment.dbc for at least one package of
+            // this tier's range. 0 when the range is absent altogether.
+            inline uint32 GetHeirloomEnchantLevelCap(uint32 tier, uint32 upTo)
+            {
+                uint32 cap = 0;
+                for (uint32 level = 1; level <= upTo && level < 100; ++level)
+                {
+                    bool found = false;
+                    for (uint32 pkg = 1; pkg <= HEIRLOOM_MAX_PACKAGE_ID && !found; ++pkg)
+                        found = sSpellItemEnchantmentStore.LookupEntry(GetHeirloomEnchantId(tier, pkg, level)) != nullptr;
+
+                    if (!found)
+                        break;
+
+                    cap = level;
+                }
+                return cap;
+            }
+
+            // Returns the max upgrade level for a heirloom item: its tier
+            // definition's max_upgrade_level (HEIRLOOM_MAX_LEVEL when the tier is
+            // unknown), capped at the last level whose stat enchant exists. The
+            // Frontier range (920xxx) only has levels 1-5 while tier 10 says 15,
+            // and an upgrade past 5 took the currency and applied an enchant id
+            // the server does not have, which strips the item's package stats.
             inline uint32 GetHeirloomMaxLevel(uint32 itemEntry)
             {
                 UpgradeManager* mgr = GetUpgradeManager();
                 if (!mgr)
                     return HEIRLOOM_MAX_LEVEL;
                 uint8 tier = static_cast<uint8>(mgr->GetItemTier(itemEntry));
-                uint8 maxLevel = mgr->GetTierMaxLevel(tier);
-                return maxLevel > 0 ? maxLevel : HEIRLOOM_MAX_LEVEL;
+                uint8 tierMax = mgr->GetTierMaxLevel(tier);
+                uint32 maxLevel = tierMax > 0 ? tierMax : HEIRLOOM_MAX_LEVEL;
+
+                uint32 const enchantCap = GetHeirloomEnchantLevelCap(tier, maxLevel);
+                if (enchantCap > 0 && enchantCap < maxLevel)
+                    maxLevel = enchantCap;
+
+                return maxLevel;
             }
 
         } // namespace UI

@@ -98,7 +98,7 @@ public:
 
     bool OnGossipHello(Player* player, GameObject* go) override
     {
-        LOG_INFO("go_ancient_stone", "OnGossipHello by {}.", player->GetName());
+        LOG_DEBUG("scripts.dc.giantisles", "OnGossipHello by {}.", player->GetName());
 
         // Allow GMs to bypass group requirements for testing
         Group* group = player->GetGroup();
@@ -134,11 +134,12 @@ public:
     {
         ClearGossipMenuFor(player);
 
-        LOG_INFO("go_ancient_stone", "OnGossipSelect called by {} (sender={}, action={})", player->GetName(), sender, action);
+        LOG_DEBUG("scripts.dc.giantisles", "OnGossipSelect called by {} (sender={}, action={})",
+            player->GetName(), sender, action);
 
         if (action == GOSSIP_ACTION_INFO_DEF + 1)
         {
-            LOG_INFO("go_ancient_stone", "OnGossipSelect by {}, attempting spawn.", player->GetName());
+            LOG_DEBUG("scripts.dc.giantisles", "OnGossipSelect by {}, attempting spawn.", player->GetName());
 
             player->CastSpell(player, SPELL_THROW_VISUAL, true);
 
@@ -150,7 +151,8 @@ public:
             if (!tpl)
             {
                 player->SendSystemMessage("Failed to summon Ancient Terror (missing creature_template entry). See server logs.");
-                LOG_ERROR("go_ancient_stone", "Missing CreatureTemplate for entry {} (player={}, goEntry={}, map={}).",
+                LOG_ERROR("scripts.dc.giantisles",
+                    "Missing CreatureTemplate for entry {} (player={}, goEntry={}, map={}).",
                     NPC_GIANT_WATER_MONSTER, player->GetName(), go->GetEntry(), go->GetMapId());
                 return true;
             }
@@ -159,7 +161,8 @@ public:
             if (!chosenModel || chosenModel->CreatureDisplayID == 0)
             {
                 player->SendSystemMessage("Failed to summon Ancient Terror (no model configured). Check creature_template_model for entry 400350.");
-                LOG_ERROR("go_ancient_stone", "CreatureTemplate {} has no valid model (Models.size={} chosenModel={} displayId={}). Player={}.",
+                LOG_ERROR("scripts.dc.giantisles",
+                    "CreatureTemplate {} has no valid model (Models.size={} chosenModel={} displayId={}). Player={}.",
                     NPC_GIANT_WATER_MONSTER,
                     tpl->Models.size(),
                     (chosenModel ? "yes" : "no"),
@@ -187,7 +190,8 @@ public:
             else
             {
                 player->SendSystemMessage("Failed to summon Ancient Terror.");
-                LOG_ERROR("go_ancient_stone", "SummonCreature returned null (entry={}, map={}, goEntry={}, player={}, pos=({}, {}, {})).",
+                LOG_ERROR("scripts.dc.giantisles",
+                    "SummonCreature returned null (entry={}, map={}, goEntry={}, player={}, pos=({}, {}, {})).",
                     NPC_GIANT_WATER_MONSTER, go->GetMapId(), go->GetEntry(), player->GetName(),
                     start.GetPositionX(), start.GetPositionY(), start.GetPositionZ());
             }
@@ -196,7 +200,7 @@ public:
         {
             // Pre-format message to avoid fmt::format template deduction issues in macro
             std::string warnMsg = fmt::format("go_ancient_stone: Unexpected gossip action {} (sender {}) from {}.", action, sender, player->GetName());
-            LOG_WARN("go_ancient_stone", "{}", warnMsg);
+            LOG_WARN("scripts.dc.giantisles", "{}", warnMsg);
         }
 
         return true;

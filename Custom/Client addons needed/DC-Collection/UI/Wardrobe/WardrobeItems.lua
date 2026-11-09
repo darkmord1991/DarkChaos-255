@@ -154,6 +154,11 @@ function Wardrobe:ShowSetsContent()
         if self.frame.previewModeFrame then
              self.frame.previewModeFrame:Show()
         end
+
+        -- The Sets grid reuses the item buttons; their favorite stars are not its.
+        for _, btn in ipairs(self.frame.gridButtons or {}) do
+            if btn.favoriteMark then btn.favoriteMark:Hide() end
+        end
     end
     if DC and DC.RequestItemSets then
         DC:RequestItemSets()
@@ -450,13 +455,16 @@ function Wardrobe:RefreshGrid()
 
                 if selfBtn.itemData.collected then
                     tip:AddLine("Appearance collected", 0.1, 1, 0.1)
+                    if Wardrobe:IsFavoriteAppearance(selfBtn.itemData) then
+                        tip:AddLine((DC.L and DC.L.ACTION_FAVORITE) or "Favorite", 1, 0.82, 0)
+                    end
                 else
                     if Wardrobe:IsWishlistedTransmog(selfBtn.itemData.itemId) then
                         tip:AddLine("Wishlisted", 1, 0.82, 0)
                     end
                 end
                 tip:AddLine("Left-click to preview", 0.7, 0.7, 0.7)
-                tip:AddLine("Right-click to apply or add to wishlist", 0.7, 0.7, 0.7)
+                tip:AddLine("Right-click to stage, favorite or wishlist", 0.7, 0.7, 0.7)
                 tip:AddLine("Shift-click to toggle wishlist", 0.7, 0.7, 0.7)
             end)
         end)
@@ -523,7 +531,18 @@ function Wardrobe:RefreshGrid()
     local subtypeActive = (subtypeLookup ~= nil)
     local nativeHonorsSubtype = (not subtypeActive) or self:HasNativeSubtypeFilter()
 
-    if type(DC.HasNativeTransmogCatalog) == "function" and
+    if self.showFavoritesOnly then
+        -- Favorites only: a short list built from the favorite display ids, so the
+        -- paged catalog query is not needed and the Hide Slot cell does not apply.
+        list = self:BuildFavoriteAppearanceList()
+        self.appearanceList = list
+        totalShown = #list
+        local favoritePages = math.max(1, math.ceil(totalShown / self.ITEMS_PER_PAGE))
+        if self.currentPage > favoritePages then
+            self.currentPage = favoritePages
+        end
+        startIdx = (self.currentPage - 1) * self.ITEMS_PER_PAGE + 1
+    elseif type(DC.HasNativeTransmogCatalog) == "function" and
        DC:HasNativeTransmogCatalog() and
        type(QueryDCCollectionTransmog) == "function" and
        nativeHonorsExpansion and nativeHonorsSubtype then
@@ -596,7 +615,12 @@ function Wardrobe:RefreshGrid()
     local total = self.totalCount or 0
 
     if self.frame.collectedFrame then
-        self.frame.collectedFrame.text:SetText(string.format("Collected %d / %d", collected, total))
+        if self.showFavoritesOnly then
+            self.frame.collectedFrame.text:SetText(string.format("%s: %d",
+                (DC.L and DC.L.FILTER_FAVORITES) or "Favorites", total))
+        else
+            self.frame.collectedFrame.text:SetText(string.format("Collected %d / %d", collected, total))
+        end
         local pct = total > 0 and (collected / total) or 0
         self.frame.collectedFrame.bar:SetValue(pct)
     end
@@ -674,6 +698,8 @@ function Wardrobe:RefreshGrid()
                 end
             end
 
+            self:_UpdateFavoriteMark(btn, item)
+
             -- 3D preview mode: render the appearance on a live model in the cell.
             if Wardrobe.gridPreviewMode and item.itemId and not item.isHideOption then
                 self:_EnsureGridPreviewModel(btn)
@@ -700,6 +726,7 @@ function Wardrobe:RefreshGrid()
             btn.itemData = nil
             if btn.previewModel then btn.previewModel:Hide() end
             if btn.previewSelect then btn.previewSelect:Hide() end
+            if btn.favoriteMark then btn.favoriteMark:Hide() end
         end
     end
 
@@ -1315,6 +1342,180 @@ function Wardrobe:BuildAppearanceList()
 end
 
 -- ============================================================================
+-- FAVORITES
+-- Appearance favorites are keyed by display id (DC:IsAppearanceFavorite in
+-- Protocol.lua) and round-trip through the common favorite request.
+-- ============================================================================
+
+function Wardrobe:IsFavoriteAppearance(item)
+    if type(item) ~= "table" or item.isHideOption then
+        return false
+    end
+    local displayId = tonumber(item.displayId)
+    if not displayId or displayId <= 0 or type(DC.IsAppearanceFavorite) ~= "function" then
+        return false
+    end
+    return DC:IsAppearanceFavorite(displayId) and true or false
+end
+
+function Wardrobe:ToggleAppearanceFavorite(item)
+    local displayId = type(item) == "table" and not item.isHideOption and tonumber(item.displayId)
+    if not displayId or displayId <= 0 then
+        return
+    end
+    if DC.TransmogModule and type(DC.TransmogModule.ToggleFavorite) == "function" then
+        DC.TransmogModule:ToggleFavorite(displayId)
+    elseif type(DC.RequestToggleAppearanceFavorite) == "function" then
+        DC:RequestToggleAppearanceFavorite(displayId)
+    end
+end
+
+function Wardrobe:SetShowFavoritesOnly(enabled)
+    self.showFavoritesOnly = enabled and true or false
+    self.currentPage = 1
+    self:RefreshGrid()
+end
+
+-- A star in the tile's corner. It is a frame so it stays above the 3D cell model.
+function Wardrobe:_UpdateFavoriteMark(btn, item)
+    if not self:IsFavoriteAppearance(item) then
+        if btn.favoriteMark then
+            btn.favoriteMark:Hide()
+        end
+        return
+    end
+
+    local mark = btn.favoriteMark
+    if not mark then
+        mark = CreateFrame("Frame", nil, btn)
+        mark:SetSize(14, 14)
+        mark:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -1, -1)
+        mark:EnableMouse(false)
+        mark.icon = mark:CreateTexture(nil, "OVERLAY")
+        mark.icon:SetAllPoints()
+        mark.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
+        btn.favoriteMark = mark
+    end
+    mark:SetFrameLevel((tonumber(btn:GetFrameLevel()) or 0) + 4)
+    mark:Show()
+end
+
+-- The grid's filters (slot, quality, armor/weapon type, expansion, search) for
+-- one favorite, as BuildAppearanceList applies them.
+function Wardrobe:_FavoriteEntryPassesFilters(entry, search, searchNum, subtypeClass, subtypeLookup)
+    local invType = tonumber(entry.inventoryType) or 0
+    if self.selectedSlotFilter and type(self.selectedSlotFilter.invTypes) == "table" then
+        if invType == 0 or not self.selectedSlotFilter.invTypes[invType] then
+            return false
+        end
+    end
+
+    local quality = tonumber(self.selectedQualityFilter)
+    if quality and quality >= 0 and (tonumber(entry.quality or entry.rarity) or 0) ~= quality then
+        return false
+    end
+
+    if subtypeLookup then
+        local sub = tonumber(entry.subclass)
+        if not sub or not subtypeLookup[sub] then
+            return false
+        end
+        local cls = tonumber(entry.class)
+        if (tonumber(subtypeClass) or -1) >= 0 and cls and cls ~= subtypeClass then
+            return false
+        end
+    end
+
+    if not self:_ItemPassesExpansionFilter(entry.itemId) then
+        return false
+    end
+
+    if search then
+        if string.find(string.lower(entry.name or ""), search, 1, true) then
+            return true
+        end
+        if searchNum then
+            local needle = tostring(searchNum)
+            if entry.itemId and tostring(entry.itemId):find(needle, 1, true) then
+                return true
+            end
+            if entry.displayId and tostring(entry.displayId):find(needle, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    return true
+end
+
+-- The favorite appearances that pass the grid's filters. Favorites are few, so
+-- with the native catalog each is looked up by display id instead of paging the
+-- whole catalog; without it the full list is filtered.
+function Wardrobe:BuildFavoriteAppearanceList()
+    local results = {}
+    local ids = (type(DC.GetFavoriteAppearanceIds) == "function") and DC:GetFavoriteAppearanceIds() or {}
+
+    if #ids > 0 then
+        local nativeLookup = type(DC.HasNativeTransmogCatalog) == "function" and
+            DC:HasNativeTransmogCatalog() and
+            type(GetDCCollectionTransmogByDisplayId) == "function"
+
+        if nativeLookup then
+            local search = self.searchText
+            if search and search ~= "" then
+                search = string.lower(search)
+            else
+                search = nil
+            end
+            local searchNum = search and tonumber(search) or nil
+            local subtypeClass, _, subtypeLookup = self:GetSubtypeFilterArgs()
+
+            for _, displayId in ipairs(ids) do
+                local ok, row = pcall(GetDCCollectionTransmogByDisplayId, displayId)
+                if ok and type(row) == "table" then
+                    row.collected = true
+                    if self:_FavoriteEntryPassesFilters(row, search, searchNum, subtypeClass, subtypeLookup) then
+                        results[#results + 1] = row
+                    end
+                end
+            end
+        else
+            local favoriteSet = {}
+            for _, id in ipairs(ids) do
+                favoriteSet[id] = true
+            end
+            for _, entry in ipairs(self:BuildAppearanceList() or {}) do
+                local displayId = tonumber(entry.displayId)
+                if displayId and favoriteSet[displayId] then
+                    results[#results + 1] = entry
+                end
+            end
+        end
+    end
+
+    local sortMode = self.sortMode or "default"
+    table.sort(results, function(a, b)
+        if sortMode == "itemId" then
+            local ai, bi = tonumber(a.itemId) or 0, tonumber(b.itemId) or 0
+            if ai ~= bi then return ai < bi end
+        elseif sortMode == "quality" then
+            local aq = tonumber(a.quality or a.rarity) or 0
+            local bq = tonumber(b.quality or b.rarity) or 0
+            if aq ~= bq then return aq > bq end
+        end
+        local an, bn = a.name or "", b.name or ""
+        if an ~= bn then return an < bn end
+        return (tonumber(a.displayId) or 0) < (tonumber(b.displayId) or 0)
+    end)
+
+    -- Every favorite is a collected appearance.
+    self.totalCount = #results
+    self.collectedCount = #results
+    return results
+end
+
+-- ============================================================================
 -- PREVIEW & APPLY
 -- ============================================================================
 
@@ -1400,6 +1601,21 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
             end,
         },
     }
+
+    -- Favorite / Unfavorite: only a collected appearance can be one (the server
+    -- checks the wardrobe too), and the hide-slot cell is not an appearance.
+    local favoriteId = (not appearance.isHideOption) and tonumber(appearance.displayId)
+    if appearance.collected and favoriteId and favoriteId > 0 then
+        local isFavorite = Wardrobe:IsFavoriteAppearance(appearance)
+        table.insert(menu, {
+            text = isFavorite and ((DC.L and DC.L.ACTION_UNFAVORITE) or "Unfavorite")
+                or ((DC.L and DC.L.ACTION_FAVORITE) or "Favorite"),
+            notCheckable = true,
+            func = function()
+                Wardrobe:ToggleAppearanceFavorite(appearance)
+            end,
+        })
+    end
 
     -- Link Item
     table.insert(menu, {

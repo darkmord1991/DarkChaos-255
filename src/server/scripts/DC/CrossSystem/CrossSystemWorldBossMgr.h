@@ -10,6 +10,11 @@
  *   void JustRespawned() override { ScriptedAI::JustRespawned(); sWorldBossMgr->OnBossSpawned(me); }
  *   void JustEngagedWith(Unit*) { sWorldBossMgr->OnBossEngaged(me); }
  *   void JustDied(Unit*) { sWorldBossMgr->OnBossDied(me); }
+ *
+ * Every boss push goes to all players in the world, not only to the boss's map:
+ * the InfoBar boss bar, the Group Finder world tab and the map pins show the
+ * bosses wherever the player is. The hooks run on the map thread, so a push is
+ * built there and queued, and Update() sends the queue from the world thread.
  * ============================================================================
  */
 
@@ -23,6 +28,7 @@
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "CrossSystemMapCoords.h"
 
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -93,11 +99,15 @@ namespace DC
         std::vector<WorldBossInfo const*> GetAllBosses() const;
         bool IsBossActive(uint32 entry) const;
         // Set by whoever runs a boss's rotation. respawnIn is -1 when no timer applies;
-        // a boss neither active nor on a timer is off rotation.
-        void SetBossState(uint32 entry, bool active, int32 respawnIn);
+        // a boss neither active nor on a timer is off rotation. liveBoss is the boss's
+        // live creature, or nullptr while it has none (a respawn the map has not run yet,
+        // or a grid nobody has loaded). When the status (active / spawning / inactive)
+        // changes, the change is pushed to every client.
+        void SetBossState(uint32 entry, bool active, int32 respawnIn, Creature* liveBoss = nullptr);
 
         // ========== Timer Management ==========
-        // Call from a world script update hook to tick respawn timers
+        // Call from a world script update hook (world thread): ticks respawn timers and
+        // sends the boss pushes queued since the last call.
         void Update(uint32 diffMs);
 
         // ========== Addon Protocol ==========
@@ -110,6 +120,12 @@ namespace DC
         void BroadcastBossUpdate(Creature* boss, std::string_view action, bool active, int32 spawnIn = -1);
         void BuildBossJson(DCAddon::JsonValue& b, Creature* boss, std::string_view action,
                            bool active, int32 spawnIn) const;
+        // The snapshot's record for one boss, built from its registration and state (no creature needed).
+        void BuildBossInfoJson(DCAddon::JsonValue& b, WorldBossInfo const& info) const;
+
+        // Boss pushes: queued from any thread, sent to every player by Update() on the world thread.
+        void QueueBossUpdate(DCAddon::JsonValue&& boss);
+        void SendQueuedBossUpdates();
 
         // Lockout helpers
         static std::string GetLockSource(uint32 entry);   // player-setting source key, per boss entry
@@ -121,6 +137,14 @@ namespace DC
 
         std::unordered_map<uint32, WorldBossInfo> _bossesByEntry;
         std::unordered_map<uint32, uint32> _spawnIdToEntry; // spawnId -> entry mapping
+
+        // Boss records waiting for the world thread (see QueueBossUpdate), in push order.
+        std::mutex _queuedUpdatesLock;
+        std::vector<DCAddon::JsonValue> _queuedUpdates;
+
+        // Milliseconds not yet taken off the respawn countdowns: a world tick is far
+        // shorter than a second, so Update() counts whole seconds out of this.
+        uint32 _countdownCarryMs = 0;
 
         // Config-driven behaviour (see LoadConfig)
         bool   _lockoutEnabled     = true;         // per-character per-boss loot lockout

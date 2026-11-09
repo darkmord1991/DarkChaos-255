@@ -1981,6 +1981,55 @@ void Player::SendExtendedQuestSlots()
     SendDirectMessage(&data);
 }
 
+void Player::FillClientQuestSlots()
+{
+    m_clientQuestSlotFreed = false;
+
+    if (GetSession()->HasExtendedQuestLog())
+        return;
+
+    // Timed quests first: the client shows a timer only for a quest in its slots
+    for (bool const timed : { true, false })
+    {
+        for (uint16 hidden = CLIENT_QUEST_LOG_SIZE; hidden < MAX_QUEST_LOG_SIZE; ++hidden)
+        {
+            uint32 const questId = GetQuestSlotQuestId(hidden);
+            if (!questId || m_timedquests.contains(questId) != timed)
+                continue;
+
+            // Below CLIENT_QUEST_LOG_SIZE for this session, else none is left
+            uint16 const freeSlot = FindFreeQuestSlot();
+            if (freeSlot >= CLIENT_QUEST_LOG_SIZE)
+                return;
+
+            SwapQuestSlot(freeSlot, hidden);
+        }
+    }
+}
+
+void Player::PinTimedQuestsToClientSlots()
+{
+    auto const isTimed = [this](uint16 slot) { return m_timedquests.contains(GetQuestSlotQuestId(slot)); };
+    uint16 visible = CLIENT_QUEST_LOG_SIZE;
+
+    for (uint16 hidden = CLIENT_QUEST_LOG_SIZE; hidden < MAX_QUEST_LOG_SIZE; ++hidden)
+    {
+        if (!isTimed(hidden))
+            continue;
+
+        // The next client slot down that holds no timed quest
+        do
+        {
+            if (!visible)
+                return;
+
+            --visible;
+        } while (isTimed(visible));
+
+        SwapQuestSlot(visible, hidden);
+    }
+}
+
 void Player::AreaExploredOrEventHappens(uint32 questId)
 {
     if (questId)

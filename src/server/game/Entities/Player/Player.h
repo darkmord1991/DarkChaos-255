@@ -41,8 +41,11 @@
 #include "TradeData.h"
 #include "Unit.h"
 #include "WorldSession.h"
+#include <array>
+#include <bitset>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct CreatureTemplate;
@@ -71,6 +74,11 @@ typedef void(*bgZoneRef)(Battleground*, WorldPackets::WorldState::InitWorldState
 #define PLAYER_MAX_SKILLS           127
 #define PLAYER_MAX_DAILY_QUESTS     25
 #define PLAYER_EXPLORED_ZONES_SIZE  128
+// DarkChaos: explored-zone words past the update fields. Those 128 words hold AreaBits 0-4095 and cannot grow while
+// the old client shares the server (its update parser refuses a longer mask), so the Player keeps 128 more words,
+// AreaBits 4096-8191: saved in characters.exploredZonesExt and sent to the native client in SMSG_DC_EXPLORED_ZONES.
+#define PLAYER_EXPLORED_ZONES_EXT_SIZE 128
+#define PLAYER_EXPLORED_AREA_BITS ((PLAYER_EXPLORED_ZONES_SIZE + PLAYER_EXPLORED_ZONES_EXT_SIZE) * 32)
 
 // corpse reclaim times
 #define DEATH_EXPIRE_STEP (5*MINUTE)
@@ -1566,6 +1574,8 @@ public:
         if (slot < CLIENT_QUEST_LOG_SIZE)
         {
             SetUInt32Value(PLAYER_QUEST_LOG_1_1 + slot * MAX_QUEST_OFFSET + offset, value);
+            if (offset == QUEST_ID_OFFSET && !value)
+                m_clientQuestSlotFreed = true;
             return;
         }
 
@@ -1614,6 +1624,24 @@ public:
     // the empty ones too, and from then on every change
     void EnableExtendedQuestLog();
     void SendExtendedQuestSlots();
+
+    // Explored-zone bits by AreaTable AreaBit, below PLAYER_EXPLORED_AREA_BITS: the update fields for 0-4095, which
+    // every client reads, m_exploredZonesExt above. SetExploredAreaBit returns false for a bit out of range.
+    [[nodiscard]] bool HasExploredAreaBit(uint32 areaBit) const;
+    bool SetExploredAreaBit(uint32 areaBit, bool explored);
+    void SetAllAreasExplored(bool explored);
+    // The client takes the words past the update fields (it negotiated EXTENDED_QUEST_LOG, which only the native client
+    // advertises): it gets them all at each handshake, then each one that changes
+    void EnableExtendedExploredZones();
+    void SendExtendedExploredZones();
+    // characters.exploredZonesExt: the words up to the last nonzero one, space separated; missing words are zero
+    [[nodiscard]] std::string GetExtendedExploredZonesData() const;
+    void LoadExtendedExploredZones(std::string_view data);
+    // A client without the extended log (the old one, or a new one before its handshake) shows slots 0-24 only. Quests
+    // past them, taken on a client that had it, move into the slots it frees, timed ones first
+    void FillClientQuestSlots();
+    // At load: a timed quest past slot 24 trades places with an untimed one below, so every client can show its timer
+    void PinTimedQuestsToClientSlots();
     uint16 GetReqKillOrCastCurrentCount(uint32 quest_id, int32 entry);
     void AreaExploredOrEventHappens(uint32 questId);
     void GroupEventHappens(uint32 questId, WorldObject const* pEventObject);
@@ -2958,6 +2986,13 @@ protected:
     // The quest log slots past the update fields, word for word as those hold them, and which of them changed
     uint32 m_extendedQuestFields[(MAX_QUEST_LOG_SIZE - CLIENT_QUEST_LOG_SIZE) * MAX_QUEST_OFFSET] = { };
     uint64 m_extendedQuestDirty = 0;
+    // Explored-zone words past the update fields (AreaBits 4096-8191), which of them changed since the last send, and
+    // whether the next send replaces the client's copy whole
+    std::array<uint32, PLAYER_EXPLORED_ZONES_EXT_SIZE> m_exploredZonesExt = { };
+    std::bitset<PLAYER_EXPLORED_ZONES_EXT_SIZE> m_exploredZonesExtDirty;
+    bool m_exploredZonesExtReplace = false;
+    // A slot below CLIENT_QUEST_LOG_SIZE was emptied: Player::Update refills it (FillClientQuestSlots)
+    bool m_clientQuestSlotFreed = false;
 
     RewardedQuestSet m_RewardedQuests;
     QuestStatusSaveMap m_RewardedQuestsSave;

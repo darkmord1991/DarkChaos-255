@@ -165,12 +165,22 @@ static RareSpawnLocation GetRandomSpawnLocation()
 // HELPER FUNCTIONS
 // ============================================================================
 
-// Track last known zone per player so we only announce on zone entry,
-// not on every area update inside the same zone.
-static std::unordered_map<ObjectGuid, uint32> sGiantIslesLastZoneByPlayer;
+// Per-player state lives on the player (CustomData), not in a global map. The zone
+// hook runs inside Player::Update on the map-worker threads, and a shared
+// unordered_map written from several workers at once corrupts its bucket chain
+// (the FreezeDetector hangs). A player is only ever updated by one thread at a time,
+// and the state goes away with the Player object at logout.
+struct GiantIslesPlayerState : public DataMap::Base
+{
+    // Set on entry so the welcome is sent once per visit, not on every
+    // UpdateZone call (teleport acks and resurrection repeat the same zone).
+    bool inZone = false;
 
-// Track last whisper time for the Spirit NPC to avoid repeated whisper spam.
-static std::unordered_map<ObjectGuid, uint32> sSpiritLastWhisperSecByPlayer;
+    // Last whisper time from the Spirit NPC, to avoid repeated whisper spam.
+    uint32 lastSpiritWhisperSec = 0;
+};
+
+static constexpr char const* GIANT_ISLES_PLAYER_STATE_KEY = "dc_giant_isles_player_state";
 
 // ============================================================================
 // WORLD BOSS ROTATION HELPERS
@@ -222,7 +232,6 @@ static void ApplyRotationToBoss(uint32 bossEntry, bool scheduled)
     time_t const respawnAt = map ? map->GetCreatureRespawnTime(info->spawnId) : 0;
     uint32 timer = respawnAt > now ? static_cast<uint32>(respawnAt - now) : 0;
     bool const held = timer > ROTATION_HOLD_FLOOR_SEC;
-    bool const wasActive = info->isActive;
     bool alive = boss && boss->IsAlive();
 
     if (scheduled)
@@ -265,12 +274,13 @@ static void ApplyRotationToBoss(uint32 bossEntry, bool scheduled)
         }
     }
 
-    // A dynamic respawn is a new creature, so JustRespawned never fires for it.
-    if (alive && !wasActive)
-        sWorldBossMgr->OnBossSpawned(boss);
-
+    // A respawn the map has not run yet (it runs every 5 s, and waits for the grid to load)
+    // counts as up. A dynamic respawn is a new creature that never runs JustRespawned, so
+    // the manager announces the boss's return here: when the reported status turns active,
+    // whether or not the creature exists yet, and never a second time when it shows up.
     bool const up = alive || (scheduled && timer == 0);
-    sWorldBossMgr->SetBossState(bossEntry, up, scheduled && !up ? static_cast<int32>(timer) : -1);
+    sWorldBossMgr->SetBossState(bossEntry, up, scheduled && !up ? static_cast<int32>(timer) : -1,
+        alive ? boss : nullptr);
 }
 
 static bool WorldBossScheduleTableExists()
@@ -424,25 +434,31 @@ uint32 GetActiveBossEntry()
 class zone_giant_isles : public PlayerScript
 {
 public:
-    zone_giant_isles() : PlayerScript("zone_giant_isles", { PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_UPDATE_ZONE }) { }
+    zone_giant_isles() : PlayerScript("zone_giant_isles", { PLAYERHOOK_ON_UPDATE_ZONE }) { }
 
     void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
     {
         if (!player)
             return;
 
-        ObjectGuid playerGuid = player->GetGUID();
-        uint32& lastZone = sGiantIslesLastZoneByPlayer[playerGuid];
-        uint32 previousZone = lastZone;
-        lastZone = newZone;
+        // Runs on the map workers for every player: only touch state owned by this player.
+        GiantIslesPlayerState* state = player->CustomData.Get<GiantIslesPlayerState>(GIANT_ISLES_PLAYER_STATE_KEY);
+        if (newZone != ZONE_GIANT_ISLES)
+        {
+            // Left the zone (or never entered it): the next entry is announced again.
+            if (state)
+                state->inZone = false;
+            return;
+        }
+
+        if (!state)
+            state = player->CustomData.GetDefault<GiantIslesPlayerState>(GIANT_ISLES_PLAYER_STATE_KEY);
 
         // Only respond when transitioning into the zone.
-        if (previousZone == newZone)
+        if (state->inZone)
             return;
 
-        // Only respond when entering Giant Isles
-        if (newZone != ZONE_GIANT_ISLES)
-            return;
+        state->inZone = true;
 
         // Send welcome message
         ChatHandler(player->GetSession()).PSendSysMessage("{}", ZONE_ENTER_MESSAGE);
@@ -483,16 +499,6 @@ public:
         }
 
         SendBossStatusList(player);
-    }
-
-    void OnPlayerLogout(Player* player) override
-    {
-        if (!player)
-            return;
-
-        ObjectGuid guid = player->GetGUID();
-        sGiantIslesLastZoneByPlayer.erase(guid);
-        sSpiritLastWhisperSecByPlayer.erase(guid);
     }
 };
 
@@ -687,7 +693,9 @@ public:
                     return;
 
                 uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
-                uint32& lastSec = sSpiritLastWhisperSecByPlayer[player->GetGUID()];
+                // Per-player state: this AI runs on the map worker that also owns the player.
+                uint32& lastSec = player->CustomData.GetDefault<GiantIslesPlayerState>(
+                    GIANT_ISLES_PLAYER_STATE_KEY)->lastSpiritWhisperSec;
 
                 // 60s cooldown per player to avoid spam.
                 if (lastSec != 0 && (nowSec - lastSec) < 60)

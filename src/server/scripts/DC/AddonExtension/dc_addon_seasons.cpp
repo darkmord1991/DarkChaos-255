@@ -245,9 +245,10 @@ namespace Seasons
         msg.Send(player);
     }
 
-    // Send reward claim result
+    // Send reward claim result. tokens/essence (what a weekly chest paid) were
+    // added later; older clients ignore them.
     void SendRewardClaimed(Player* player, uint32 rewardId, RewardClaimResult result,
-                           uint32 itemId, uint32 itemCount)
+                           uint32 itemId, uint32 itemCount, uint32 tokens = 0, uint32 essence = 0)
     {
         JsonValue msg;
         msg.SetObject();
@@ -255,6 +256,8 @@ namespace Seasons
         msg.Set("result", JsonValue(static_cast<uint32>(result)));
         msg.Set("itemId", JsonValue(itemId));
         msg.Set("itemCount", JsonValue(itemCount));
+        msg.Set("tokens", JsonValue(tokens));
+        msg.Set("essence", JsonValue(essence));
         SendSeasonalJson(player, SMSG_REWARD_CLAIMED, msg);
     }
 
@@ -423,6 +426,7 @@ namespace Seasons
             "SELECT id, week_timestamp, slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, "
             "slot3_tokens, slot3_essence, slots_unlocked "
             "FROM dc_player_seasonal_chests WHERE player_guid = {} AND season_id = {} AND collected = 0 "
+            "AND slot1_tokens + slot1_essence + slot2_tokens + slot2_essence + slot3_tokens + slot3_essence > 0 "
             "ORDER BY week_timestamp DESC",
             playerGuid.GetCounter(), seasonId))
             .WithCallback([playerGuid, seasonId](QueryResult result)
@@ -539,11 +543,14 @@ namespace Seasons
             uint32 totalTokens = fields[0].Get<uint32>() + fields[2].Get<uint32>() + fields[4].Get<uint32>();
             uint32 totalEssence = fields[1].Get<uint32>() + fields[3].Get<uint32>() + fields[5].Get<uint32>();
 
+            // PayWeeklyChest, not AwardBoth: the chest is not held to this
+            // week's cap (which could zero it and leave it unclaimable all week)
+            // and does not count as this week's earnings.
             bool awarded = false;
             if (sSeasonalRewards)
-                awarded = sSeasonalRewards->AwardBoth(player, totalTokens, totalEssence, "WeeklyChest", rewardId);
+                awarded = sSeasonalRewards->PayWeeklyChest(player, totalTokens, totalEssence, rewardId);
 
-            if (!awarded && (totalTokens > 0 || totalEssence > 0))
+            if (!awarded)
             {
                 releaseClaim();
                 SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
@@ -554,7 +561,11 @@ namespace Seasons
                 "UPDATE dc_player_seasonal_chests SET collected = 1, collected_at = CURRENT_TIMESTAMP WHERE id = {} AND collected = 0",
                 rewardId);
 
-            SendRewardClaimed(player, rewardId, CLAIM_SUCCESS, 0, 0);
+            // The manager caches the chest it generated for the login notice.
+            if (sSeasonalRewards)
+                sSeasonalRewards->ForgetWeeklyChest(playerGuid.GetCounter());
+
+            SendRewardClaimed(player, rewardId, CLAIM_SUCCESS, 0, 0, totalTokens, totalEssence);
 
             DarkChaos::CrossSystem::EventBus::instance()->PublishFeatureUsed(player,
                 DarkChaos::CrossSystem::FeatureKind::SeasonChest);

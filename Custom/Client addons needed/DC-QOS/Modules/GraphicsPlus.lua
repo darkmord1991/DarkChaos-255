@@ -236,7 +236,8 @@ local function ApplyGraphicsSettings(reason)
         -- every login and zone change, overwriting the player's own value. With full-resolution textures
         -- (baseMip 0, texLodBias -0.5) and this client's HD art, 256 MB fills during normal play and
         -- lazily loaded textures stop resolving -- minimap tiles went black in the Hinterland BG. The
-        -- native also clamps the size to 512, so it could never go higher here.
+        -- native clamped the size to 512 (3072 since 2026-11-09), so it could never go higher here.
+        -- The budget only binds on D3D9; the Vulkan device keeps none.
         CallNative(SetTextureQuality, 0, -0.5, 8)
         EnsureTextureCacheFloor()
     end

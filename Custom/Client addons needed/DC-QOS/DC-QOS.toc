@@ -211,6 +211,7 @@ Modules\QuestRecurringLookup.lua
 Modules\MapZoneLabels.lua
 Modules\ZoneLabels.lua
 Modules\WorldMapDropdowns.lua
+Modules\WorldMapZoom.lua
 Modules\QuestMapData.lua
 Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua

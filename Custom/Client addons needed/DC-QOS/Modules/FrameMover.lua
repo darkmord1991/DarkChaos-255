@@ -1032,8 +1032,8 @@ function FrameMover.OnEnable()
     end)
     
     -- Register slash commands
+    -- Only /dcmove: /dcm belongs to DC-MythicPlus, and a command two addons register runs either one at random.
     SLASH_DCMOVE1 = "/dcmove"
-    SLASH_DCMOVE2 = "/dcm"
     SlashCmdList["DCMOVE"] = function(msg)
         msg = msg and strlower(strtrim(msg)) or ""
         

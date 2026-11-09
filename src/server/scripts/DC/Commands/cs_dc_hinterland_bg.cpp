@@ -436,7 +436,7 @@ public:
             bg->AdminSetResources(tid, amount);
             if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
             {
-                LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) set battleground instance {} {} resources from {} -> {}",
+                LOG_INFO("hlbg.admin", "[ADMIN] {} (GUID:{}) set battleground instance {} {} resources from {} -> {}",
                     admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID(), teamStr, prev, amount);
             }
 
@@ -461,7 +461,7 @@ public:
         {
             bg->AdminResetMatch();
             if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-                LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced HLBG battleground reset for instance {}", admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID());
+                LOG_INFO("hlbg.admin", "[ADMIN] {} (GUID:{}) forced HLBG battleground reset for instance {}", admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID());
             handler->PSendSysMessage("HLBG battleground instance {} reset and players relocated.", bg->GetInstanceID());
             return true;
         }
@@ -501,7 +501,7 @@ public:
         bg->AdminFinishMatch(winnerTeamId);
         if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
         {
-            LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) finished HLBG battleground instance {} with winner {}",
+            LOG_INFO("hlbg.admin", "[ADMIN] {} (GUID:{}) finished HLBG battleground instance {} with winner {}",
                 admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID(), args);
         }
 

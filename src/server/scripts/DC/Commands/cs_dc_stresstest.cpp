@@ -3838,12 +3838,13 @@ namespace DCPerfTest
             if (rank > 1)
                 entriesJson += ",";
 
+            // fmt, not printf: {} placeholders, and the JSON's own braces doubled.
             Field* fields = result->Fetch();
             entriesJson += Acore::StringFormat(
-                "{\"rank\":%u,\"guid\":%u,\"name\":\"%s\",\"score\":%u,\"extra\":%u}",
+                "{{\"rank\":{},\"guid\":{},\"name\":\"{}\",\"score\":{},\"extra\":{}}}",
                 rank,
                 fields[0].Get<uint32>(),
-                fields[1].Get<std::string>().c_str(),
+                fields[1].Get<std::string>(),
                 fields[2].Get<uint32>(),
                 fields[3].Get<uint32>());
             ++rank;
@@ -3851,8 +3852,8 @@ namespace DCPerfTest
         entriesJson += "]";
 
         return Acore::StringFormat(
-            "{\"leaderboardType\":1,\"season\":1,\"entries\":%s}",
-            entriesJson.c_str());
+            "{{\"leaderboardType\":1,\"season\":1,\"entries\":{}}}",
+            entriesJson);
     }
 
     std::string GetCachedHLBGSeasonalPayloadForStress(
@@ -3884,7 +3885,7 @@ namespace DCPerfTest
             result = CharacterDatabase.Query(
                 "SELECT COUNT(*), "
                 "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
-                "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid IN (0, 1) AND wh.winner_tid <> p.team THEN 1 ELSE 0 END), 0), "
                 "COALESCE(SUM(p.kills), 0), "
                 "COALESCE(SUM(p.deaths), 0), "
                 "CASE WHEN COALESCE(SUM(p.deaths), 0) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / SUM(p.deaths), 2) END, "
@@ -3924,9 +3925,12 @@ namespace DCPerfTest
             return "{\"totalMatches\":0,\"lifetimeWins\":0,\"lifetimeLosses\":0,\"lifetimeKills\":0,\"lifetimeDeaths\":0,\"kdRatio\":0,\"avgKills\":0,\"avgDamage\":0}";
         }
 
+        // fmt, not printf: {} placeholders, and the JSON's own braces doubled.
         Field* fields = result->Fetch();
         return Acore::StringFormat(
-            "{\"totalMatches\":%u,\"lifetimeWins\":%u,\"lifetimeLosses\":%u,\"lifetimeKills\":%u,\"lifetimeDeaths\":%u,\"kdRatio\":%.2f,\"avgKills\":%.2f,\"avgDamage\":%.0f}",
+            "{{\"totalMatches\":{},\"lifetimeWins\":{},\"lifetimeLosses\":{},"
+            "\"lifetimeKills\":{},\"lifetimeDeaths\":{},"
+            "\"kdRatio\":{:.2f},\"avgKills\":{:.2f},\"avgDamage\":{:.0f}}}",
             fields[0].Get<uint32>(),
             fields[1].Get<uint32>(),
             fields[2].Get<uint32>(),
