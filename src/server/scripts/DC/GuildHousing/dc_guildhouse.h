@@ -140,7 +140,8 @@ public:
     static void ListButlerContent(uint32 guildId, std::vector<ButlerContentItem>& out);
     // Remove a butler spawn the player's guild owns: despawn the live object,
     // delete its row, and refund a configured share of the paid cost.
-    static bool RemoveButlerContent(Player* player, uint32 rowId, uint32* outRefundCopper = nullptr);
+    static bool RemoveButlerContent(Player* player, uint32 rowId, uint32* outRefundCopper = nullptr,
+        bool* outRefundedToBank = nullptr);
 
     static bool RemoveGuildHouse(Guild* guild);
 

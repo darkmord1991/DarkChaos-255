@@ -117,10 +117,25 @@ static ChatSubCommandMap COMMAND_MAP;
 
             if (cmd->_invoker && (cmd->_permission.RequiredLevel != secLevel))
             {
-                LOG_WARN("sql.sql", "Table `command` has permission {} for '{}' which does not match the core ({}). Overriding.",
-                    secLevel, name, cmd->_permission.RequiredLevel);
+                // DarkChaos: a row may raise a command registered with a SEC_* level, never lower it.
+                // Several scripts can share one command root, so a row written for one script's
+                // player hub (`dc` = 0) once made another script's GM handler player-usable.
+                // RBAC-registered core commands (>= RBAC_PERM_COMMAND_RBAC) keep the old behaviour:
+                // their row is the only SEC level they have.
+                if (cmd->_permission.RequiredLevel < rbac::RBAC_PERM_COMMAND_RBAC
+                    && secLevel < cmd->_permission.RequiredLevel)
+                {
+                    LOG_ERROR("sql.sql", "Table `command` has permission {} for '{}', lower than the core ({}). "
+                        "Ignored: rows may not lower a command's security.",
+                        secLevel, name, cmd->_permission.RequiredLevel);
+                }
+                else
+                {
+                    LOG_WARN("sql.sql", "Table `command` has permission {} for '{}' which does not match "
+                        "the core ({}). Overriding.", secLevel, name, cmd->_permission.RequiredLevel);
 
-                cmd->_permission.RequiredLevel = secLevel;
+                    cmd->_permission.RequiredLevel = secLevel;
+                }
             }
 
             if (std::holds_alternative<std::string>(cmd->_help))

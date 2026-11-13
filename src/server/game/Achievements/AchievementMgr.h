@@ -376,6 +376,14 @@ public:
         uint8 _previous;
     };
 
+    /**
+     * DarkChaos: true while a ReplayScope is active, i.e. inside the account-wide sync.
+     * OnPlayerAchievementComplete fires for replayed completions too; a hook that pays a
+     * reward (currency, items) must return here, or every alt is paid for achievements
+     * another character of the account earned.
+     */
+    [[nodiscard]] bool IsReplaying() const { return _replayFlags != REPLAY_NONE; }
+
 private:
     enum ProgressType { PROGRESS_SET, PROGRESS_ACCUMULATE, PROGRESS_HIGHEST, PROGRESS_RESET };
     void SendAchievementEarned(AchievementEntry const* achievement) const;

@@ -21,5 +21,10 @@ namespace Seasons
 
     // Resets ItemUpgrades weekly-earned counters.
     void ResetItemUpgradeWeeklyEarned();
+
+    // Deletes one batch of dc_token_transaction_log rows older than
+    // DarkChaos.Seasonal.TokenLogRetentionWeeks (default 4, 0 = keep all). Called every
+    // 10 minutes by the weekly reset world script, so a backlog drains over several passes.
+    void PruneTokenTransactionLog();
 }
 }

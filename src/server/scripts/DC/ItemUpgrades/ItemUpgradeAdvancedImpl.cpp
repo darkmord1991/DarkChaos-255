@@ -19,10 +19,13 @@
 #include "Guild.h"
 #include "ItemUpgradeAdvanced.h"
 #include "ItemUpgradeManager.h"
+#include "Item.h"
+#include "ObjectAccessor.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include <sstream>
 #include <iomanip>
 #include <cstdlib>
+#include <vector>
 
 namespace DarkChaos { namespace ItemUpgrade {
 
@@ -39,6 +42,15 @@ private:
 
 public:
     RespecManagerImpl() = default;
+
+    // `player_guid` in the upgrade table is the last upgrader, not the current owner: an
+    // upgraded item that was sold, traded or mailed keeps the seller's row. Only an item the
+    // player holds right now and is not offering in a trade window may be refunded and reset.
+    static bool IsHeldForRespec(Player* player, uint32 item_guid)
+    {
+        Item* item = player ? player->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(item_guid)) : nullptr;
+        return item && !item->IsInTrade();
+    }
 
     bool CanRespec(uint32 player_guid) override
     {
@@ -58,6 +70,9 @@ public:
 
     bool RespecItem(uint32 player_guid, uint32 item_guid) override
     {
+        if (!IsHeldForRespec(ObjectAccessor::FindPlayerByLowGUID(player_guid), item_guid))
+            return false;
+
         // Get current upgrade level
         QueryResult result = CharacterDatabase.Query(
             "SELECT upgrade_level, essence_invested, tokens_invested, season, tier_id "
@@ -75,6 +90,18 @@ public:
         uint8 tier_id = fields[4].Get<uint8>();
         if (season == 0)
             season = GetCurrentSeasonId();
+
+        // Reset first and synchronously: the cache is dropped below, and the next read (another
+        // respec, or an upgrade sent in the same burst) must not see the old level from the DB.
+        CharacterDatabase.DirectExecute(
+            "UPDATE {} "
+            "SET upgrade_level = 0, stat_multiplier = 1.0, "
+            "essence_invested = 0, tokens_invested = 0 "
+            "WHERE player_guid = {} AND item_guid = {}",
+            ITEM_UPGRADES_TABLE, player_guid, item_guid);
+
+        if (UpgradeManager* mgr = GetUpgradeManager())
+            mgr->InvalidateItemCaches(item_guid);
 
         // Calculate refund
         if (config.refund_on_respec)
@@ -103,14 +130,6 @@ public:
             }
         }
 
-        // Reset item
-        CharacterDatabase.Execute(
-            "UPDATE {} "
-            "SET upgrade_level = 0, stat_multiplier = 1.0, "
-            "essence_invested = 0, tokens_invested = 0 "
-            "WHERE player_guid = {} AND item_guid = {}",
-            ITEM_UPGRADES_TABLE, player_guid, item_guid);
-
         // Record respec
         CharacterDatabase.Execute(
             "INSERT INTO dc_respec_history "
@@ -119,9 +138,6 @@ public:
             player_guid, item_guid, current_level,
             (essence_invested * config.refund_percent) / 100,
             (tokens_invested * config.refund_percent) / 100);
-
-        if (UpgradeManager* mgr = GetUpgradeManager())
-            mgr->InvalidateItemCaches(item_guid);
 
         return true;
     }
@@ -140,21 +156,58 @@ public:
         if (!result)
             return false;
 
-        uint32 total_essence = 0;
-        uint32 total_tokens = 0;
+        Player* player = ObjectAccessor::FindPlayerByLowGUID(player_guid);
+        if (!player)
+            return false;
 
+        struct RespecRow
+        {
+            uint32 itemGuid;
+            uint32 essence;
+            uint32 tokens;
+        };
+
+        std::vector<RespecRow> rows;
         do
         {
             Field* fields = result->Fetch();
-            uint32 item_guid = fields[0].Get<uint32>();
-            total_essence += fields[1].Get<uint32>();
-            total_tokens += fields[2].Get<uint32>();
-
-            RespecItem(player_guid, item_guid);
+            uint32 const item_guid = fields[0].Get<uint32>();
+            if (IsHeldForRespec(player, item_guid))
+                rows.push_back({ item_guid, fields[1].Get<uint32>(), fields[2].Get<uint32>() });
         } while (result->NextRow());
 
-        // Record full respec
-        CharacterDatabase.Execute(
+        if (rows.empty())
+            return false;
+
+        // The configured cost: the confirmation prompt always showed it, but it was never taken.
+        // Charged before the refunds, both currencies or neither, and handed back below if no
+        // item ends up reset.
+        if (!ChargeRespecCost(player, player_guid))
+            return false;
+
+        uint32 total_essence = 0;
+        uint32 total_tokens = 0;
+        uint32 respecced = 0;
+
+        for (RespecRow const& row : rows)
+        {
+            if (!RespecItem(player_guid, row.itemGuid))
+                continue;
+
+            total_essence += row.essence;
+            total_tokens += row.tokens;
+            ++respecced;
+        }
+
+        if (!respecced)
+        {
+            RefundRespecCost(player_guid);
+            return false;
+        }
+
+        // Record full respec. Synchronous: CanRespec reads this log for the cooldown and the
+        // daily limit, so a second command right behind this one must already see the row.
+        CharacterDatabase.DirectExecute(
             "INSERT INTO dc_respec_log "
             "(player_guid, respec_type, total_essence_refunded, total_tokens_refunded, timestamp) "
             "VALUES ({}, 'FULL', {}, {}, UNIX_TIMESTAMP())",
@@ -163,6 +216,48 @@ public:
             (total_tokens * config.refund_percent) / 100);
 
         return true;
+    }
+
+    bool ChargeRespecCost(Player* player, uint32 player_guid)
+    {
+        uint32 const costTokens = config.respec_cost_tokens;
+        uint32 const costEssence = config.respec_cost_essence;
+        if (!costTokens && !costEssence)
+            return true;
+
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+            return false;
+
+        if (GetSpendableItemCount(player, GetCurrencyItemId(CURRENCY_UPGRADE_TOKEN)) < costTokens
+            || GetSpendableItemCount(player, GetCurrencyItemId(CURRENCY_ARTIFACT_ESSENCE)) < costEssence)
+            return false;
+
+        uint32 const season = GetCurrentSeasonId();
+        if (costTokens && !mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, costTokens, season))
+            return false;
+
+        if (costEssence && !mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, costEssence, season))
+        {
+            if (costTokens)
+                mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, costTokens, season);
+            return false;
+        }
+
+        return true;
+    }
+
+    void RefundRespecCost(uint32 player_guid)
+    {
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+            return;
+
+        uint32 const season = GetCurrentSeasonId();
+        if (config.respec_cost_tokens)
+            mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, config.respec_cost_tokens, season);
+        if (config.respec_cost_essence)
+            mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, config.respec_cost_essence, season);
     }
 
     uint32 GetRespecCooldown(uint32 player_guid) override

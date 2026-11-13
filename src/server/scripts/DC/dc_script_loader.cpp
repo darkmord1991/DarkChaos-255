@@ -98,9 +98,16 @@ void AddSC_dc_molten_front();                 // MountHyjal/zone_molten_front.cp
 void AddSC_dc_felwood_cata();                 // MountHyjal/zone_felwood_cata.cpp
 void AddSC_dc_darkshore_cata();               // MountHyjal/zone_darkshore_cata.cpp
 void AddSC_dc_azshara_cata();                 // MountHyjal/zone_azshara_cata.cpp
+void AddSC_dc_ashenvale_cata();               // MountHyjal/zone_ashenvale_cata.cpp
 
 // --- Plaguelands downport (map 751) ---
 void AddSC_dc_western_plaguelands();          // Plaguelands/zone_western_plaguelands_dc.cpp
+void AddSC_dc_silverpine_high_command();      // Plaguelands/Silverpine/silverpine_dc_high_command.cpp
+void AddSC_dc_silverpine_fenris_isle();       // Plaguelands/Silverpine/silverpine_dc_fenris_isle.cpp
+void AddSC_dc_silverpine_sepulcher();         // Plaguelands/Silverpine/silverpine_dc_sepulcher.cpp
+void AddSC_dc_silverpine_ruins();             // Plaguelands/Silverpine/silverpine_dc_ruins.cpp
+void AddSC_dc_silverpine_battlefront();       // Plaguelands/Silverpine/silverpine_dc_battlefront.cpp
+void AddSC_dc_silverpine_cities_in_dust();    // Plaguelands/Silverpine/silverpine_dc_cities_in_dust.cpp
 
 // --- Worldforged pickups (maps 750 / 751, ported from Ascension CoA) ---
 void AddSC_dc_worldforged_pickups();          // Worldforged/dc_worldforged_pickups.cpp
@@ -403,9 +410,16 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_felwood_cata);
     DC_LOAD(AddSC_dc_darkshore_cata);
     DC_LOAD(AddSC_dc_azshara_cata);
+    DC_LOAD(AddSC_dc_ashenvale_cata);
 
     LogSection("Plaguelands Downport (map 751)");
     DC_LOAD(AddSC_dc_western_plaguelands);
+    DC_LOAD(AddSC_dc_silverpine_high_command);
+    DC_LOAD(AddSC_dc_silverpine_fenris_isle);
+    DC_LOAD(AddSC_dc_silverpine_sepulcher);
+    DC_LOAD(AddSC_dc_silverpine_ruins);
+    DC_LOAD(AddSC_dc_silverpine_battlefront);
+    DC_LOAD(AddSC_dc_silverpine_cities_in_dust);
 
     LogSection("Worldforged Pickups (maps 750 / 751)");
     DC_LOAD(AddSC_dc_worldforged_pickups);

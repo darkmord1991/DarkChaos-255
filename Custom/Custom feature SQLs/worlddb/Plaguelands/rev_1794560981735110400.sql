@@ -1,0 +1,11 @@
+-- DarkChaos: map 750 (Hyjal, levels 81-130) gets a fifth of the XP per level, like map 751 (owner's decision
+-- 2026-11-13).
+-- At 81-129 a level took 1.72M-4.12M XP (143M for the band) against about 44k-68k per quest at Rate.XP.Quest 2:
+-- 39 quests per level at 81 rising to 61 at 129, about 2,500 quests to cross a map with roughly 720 completable
+-- ones. A fifth leaves 8 quests per level at 81 and 12 at 129 (about 510 in all), and the curve now runs on
+-- without a jump into 751's 130-159 (834,160 at 130).
+-- The values come from the level, as the stock curve does (1,670,800 + 50,000 per level above 80, divided by 5),
+-- so running this again changes nothing. Levels 80 and below and 160 and up keep the full curve.
+-- Apply together with the characters file of the same date (pending_db_characters/rev_1794560981895350900.sql),
+-- which divides the stored XP of characters at 81-129 by 5 so nobody jumps several levels on the next kill.
+UPDATE `player_xp_for_level` SET `Experience` = 334160 + (`Level` - 80) * 10000 WHERE `Level` BETWEEN 81 AND 129;

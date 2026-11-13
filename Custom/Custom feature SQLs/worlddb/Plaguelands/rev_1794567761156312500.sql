@@ -1,0 +1,555 @@
+-- DarkChaos: map 751 Alliance route, phase 3: 12 more solo quests for levels 135-141 (Ambermill and Stormpike)
+--
+-- Owner's decision of 2026-11-13: with phases 1 and 2 a player reaches about 138.5 at the end of the Stormpike
+-- camp; these close most of the remaining gap to 141. Every target is a mob already spawned on 751, every quest is a
+-- plain kill or collect quest a playerbot can finish, and they hang off the existing givers and chains:
+--   751072 Provisions for Ambermill [Ranger Dale, MinLevel 133, XP difficulty 5]: 8x Chunk of Boar Meat (769)
+--   751073 Crocolisks of the Southern Shore [Ranger Dale, MinLevel 135, XP difficulty 5]: 10x Marsh Crocolisk
+--     (4145896)
+--   751074 Creepers of the Crater [Magus Ashcombe, MinLevel 135, XP difficulty 5]: 12x Forest Creeper (4102350)
+--   751075 The Mudsnout Gnolls [Marshal Redpath, MinLevel 136, XP difficulty 6]: 8x Mudsnout Gnoll (4102372); 4x
+--     Mudsnout Shaman (4102373)
+--   751076 The Eastern Strand [Lt. Farren Orinelle, MinLevel 136, XP difficulty 6, after 751060]: 8x Daggerspine
+--     Shorestalker (4102368); 5x Daggerspine Screamer (4102370)
+--   751077 Torn Fin Coastrunners [Lt. Farren Orinelle, MinLevel 136, XP difficulty 5, after 751061]: 10x Torn Fin
+--     Coastrunner (4102375)
+--   751078 Enforcers of the Crushridge [Marshal Redpath, MinLevel 138, XP difficulty 6, after 751065]: 8x
+--     Crushridge Enforcer (4102256); 4x Crushridge Mage (4102255)
+--   751079 Vicious Black Bears [Commander Stonebrow, MinLevel 136, XP difficulty 5]: 5x Vicious Black Bear (4149249)
+--   751080 Stalker Blood [Marshal Redpath, MinLevel 136, XP difficulty 5, after 200564]: 8x Mountain Lion Blood
+--     (3496)
+--   751081 Infested Bears [Commander Stonebrow, MinLevel 136, XP difficulty 5]: 8x Infested Bear (4147204)
+--   751082 Ogres of Crushridge Hold [Marshal Redpath, MinLevel 138, XP difficulty 5, after 200500]: 12x Crushridge
+--     Ogre (4102252)
+--   751083 Gray Bears in the Hills [Commander Stonebrow, MinLevel 136, XP difficulty 5, after 751032]: 10x Elder
+--     Gray Bear (4102356)
+-- MinLevel is the zone band low - 2 (Silverpine 133, Hillsbrad 136), raised to 135 / 138 where the targets stand 5
+-- levels above that band, so no target is more than 4 levels over the band. Gold by the 11-10 formula; gear
+-- rewards from the map-751 drop ladder at the band (Hillsbrad 138), slots not yet given by the route.
+-- Objective markers are small octagons over target groups on open ground, at least 150 yd from any Horde guard and
+-- 80 yd from other Horde NPCs; from every point of each, a target stands within 100 yd and 5 yd of height (terrain
+-- heightmap check), as a playerbot needs. Item objectives: 769 drops from Darktusk Boars at 66% (normal loot) and
+-- 3496 from Foothill Stalkers at 100% (QuestRequired), both already in the loot tables - no loot changes.
+-- Respawn: the target groups below go from 300 s to 120 s (revert: back to 300 on the listed guids):
+--   Darktusk Boar 4146575 x23, Marsh Crocolisk 4145896 x22, Forest Creeper 4102350 x109, Mudsnout Gnoll 4102372
+--     x12, Mudsnout Shaman 4102373 x8, Torn Fin Coastrunner 4102375 x33, Crushridge Enforcer 4102256 x13, Crushridge
+--     Mage 4102255 x8, Vicious Black Bear 4149249 x12, Infested Bear 4147204 x35, Crushridge Ogre 4102252 x46, Elder
+--     Gray Bear 4102356 x42
+--   The Daggerspine shorestalkers and screamers of 751076 are already set to 120 s by the phase-2 Hillsbrad file.
+-- IDS: quests 751072-751083 (verified free; the phase-2 files use 751037-751071).
+-- DEPENDS ON: phase 1 (givers 830316, 830317, 830321, 830322, 830323) and the phase-2 Hillsbrad file
+--   rev_1794566930778776100 (751076 and 751077 follow its 751060 and 751061; 751078 follows 751065); the drop ladder
+--   rev_1794428606734586200 for the gear rewards.
+-- REVERT: quests 751072-751083 with their addon/texts/starters/enders/POIs, plus the respawn change above.
+-- Re-runnable: quest_template is REPLACEd, every INSERT is preceded by a DELETE of exactly its keys, and every
+-- UPDATE is guarded by the value it replaces. Apply to acore_world, then restart the worldserver.
+
+-- 1. quests 751072-751083 (REPLACE: template rows are never deleted)
+REPLACE INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `Flags`, `RewardChoiceItemID1`, `RewardChoiceItemID2`, `RewardChoiceItemID3`, `RewardChoiceItemID4`, `RewardChoiceItemID5`, `RewardChoiceItemID6`, `RewardChoiceItemQuantity1`, `RewardChoiceItemQuantity2`, `RewardChoiceItemQuantity3`, `RewardChoiceItemQuantity4`, `RewardChoiceItemQuantity5`, `RewardChoiceItemQuantity6`, `POIContinent`, `POIx`, `POIy`, `RewardFactionID1`, `RewardFactionValue1`, `AllowableRaces`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGo2`, `RequiredNpcOrGo3`, `RequiredNpcOrGo4`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGoCount2`, `RequiredNpcOrGoCount3`, `RequiredNpcOrGoCount4`, `RequiredItemId1`, `RequiredItemId2`, `RequiredItemId3`, `RequiredItemId4`, `RequiredItemId5`, `RequiredItemId6`, `RequiredItemCount1`, `RequiredItemCount2`, `RequiredItemCount3`, `RequiredItemCount4`, `RequiredItemCount5`, `RequiredItemCount6`, `ObjectiveText1`, `ObjectiveText2`, `ObjectiveText3`, `ObjectiveText4`, `VerifiedBuild`) VALUES
+(751072, 2, -1, 133, 4935, 0, 0, 5, 123300, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, 180.5, 1288.2, 72, 5, 910163021, 'Provisions for Ambermill', 'Ranger Dale wants 8 Chunks of Boar Meat from the Darktusk Boars south of Ambermill and at Olsen''s Farthing.', 'Ambermill has mages, wards and more courage than sense, $N. What it does not have is food. The wagons from the Legion camp come twice a week when the roads are clear, and the roads are never clear.$B$BThe darktusk boars in the fields are fat and mean. Bring me eight good chunks of boar meat, and the mages will eat something other than conjured bread tonight.', '', 'Return to Ranger Corwin Dale in Ambermill, Silverpine Forest.', 0, 0, 0, 0, 0, 0, 0, 0, 769, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751073, 2, -1, 135, 4935, 0, 0, 5, 123300, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, -523.2, 1536.8, 72, 5, 910163021, 'Crocolisks of the Southern Shore', 'Slay 10 Marsh Crocolisks on the shore around the 7th Legion Base Camp.', 'A runner came up from the Legion camp this morning, white as a sheet. The marsh crocolisks on the southern shore have grown bold - they drag crates off the beach, and last week they took a sentry''s leg.$B$BThe camp is spread too thin to hunt them. Fly back to the beach and kill ten of the brutes, $N, then come and tell me the shore is safe.', '', 'Return to Ranger Corwin Dale in Ambermill, Silverpine Forest.', 4145896, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751074, 2, -1, 135, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, 342.2, 54, 1090, 5, 910163021, 'Creepers of the Crater', 'Destroy 12 Forest Creepers in the hills around the Dalaran Crater.', 'The magic that tore Dalaran from the ground soaked into the hills around the crater, and the forest creepers there have drunk it in. They spread further every season, and now their vines choke our wards along the lake shore.$B$BCut them back, $N. Twelve of the creepers around the crater should buy the wards a year.', '', 'Return to Magus Lyria Ashcombe in Ambermill, Silverpine Forest.', 4102350, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751075, 2, -1, 136, 4936, 0, 0, 6, 158625, 8, 421261, 421269, 421277, 421285, 0, 0, 1, 1, 1, 1, 0, 0, 751, -933.2, -964.8, 730, 5, 910163021, 'The Mudsnout Gnolls', 'Slay 8 Mudsnout Gnolls and 4 Mudsnout Shamans at Nethander Stead, south of Tarren Mill.', 'The Mudsnout gnolls have dug in at Nethander Stead, south of Tarren Mill. The Forsaken leave them be - the gnolls raid our side of the valley, not theirs.$B$BI want them gone, $N. Eight of their warriors and four of the shamans who whip them into a frenzy. Keep clear of the mill itself on the way.', '', 'Return to Marshal Redpath at the Stormpike Encampment in Hillsbrad Foothills.', 4102372, 4102373, 0, 0, 8, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751076, 2, -1, 136, 4936, 0, 0, 6, 158625, 8, 421259, 421267, 421275, 421283, 0, 0, 1, 1, 1, 1, 0, 0, 751, -1336.5, -992.4, 730, 5, 910163021, 'The Eastern Strand', 'Slay 8 Daggerspine Shorestalkers and 5 Daggerspine Screamers on the Eastern Strand.', 'The scholars in Stormwind looked at your scales and asked for more than scales: they want the Daggerspine driven off the Eastern Strand before the naga build something permanent there.$B$BMy transfer depends on it, $N. Eight shorestalkers and five screamers - the ones holding the far end of the strand.', '', 'Return to Lieutenant Farren Orinelle at the Stormpike Encampment in Hillsbrad Foothills.', 4102368, 4102370, 0, 0, 8, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751077, 2, -1, 136, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, -1136.3, 70.4, 730, 5, 910163021, 'Torn Fin Coastrunners', 'Slay 10 Torn Fin Coastrunners on the northern Western Strand.', 'Redpath counted the eyes, and now he has a new number in his head: the coastrunners. They are the Torn Fin scouts on the north end of the Western Strand, and every raid on our boats starts with them.$B$BTen of them, $N, and the Torn Fin go blind. Stay away from the mine above the beach - it is a Forsaken camp.', '', 'Return to Lieutenant Farren Orinelle at the Stormpike Encampment in Hillsbrad Foothills.', 4102375, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751078, 2, -1, 138, 4936, 0, 0, 6, 158625, 8, 421301, 421309, 421317, 421325, 0, 0, 1, 1, 1, 1, 0, 0, 751, 528.8, -286.2, 730, 5, 910163021, 'Enforcers of the Crushridge', 'Slay 8 Crushridge Enforcers and 4 Crushridge Mages in the Ruins of Alterac.', 'With their brutes beaten, the Crushridge have fallen back on their enforcers - the biggest of them - and the ogre mages who keep the rest in line. They hold the Ruins of Alterac now.$B$BBreak them, $N. Eight enforcers and four mages, and the Crushridge will be a rabble again.', '', 'Return to Marshal Redpath at the Stormpike Encampment in Hillsbrad Foothills.', 4102256, 4102255, 0, 0, 8, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751079, 2, -1, 136, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, -1006.6, -1234.4, 730, 5, 910163021, 'Vicious Black Bears', 'Slay 5 Vicious Black Bears in the woods south-west of Tarren Mill.', 'Our scouts who watch Tarren Mill sleep in the woods south-west of it, and the black bears there have learned that scouts are slow in the morning. We have lost two.$B$BHunt five of the vicious black bears, $N. They do not den together, so you will have to search the woods for them.', '', 'Return to Commander Brannoc Stonebrow at the Stormpike Encampment in Hillsbrad Foothills.', 4149249, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751080, 2, -1, 136, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, -366, -412.6, 730, 5, 910163021, 'Stalker Blood', 'Collect 8 Mountain Lion Blood from the Foothill Stalkers of Darrow Hill.', 'The stalkers are fewer since you hunted them, but our surgeon has a use for what is left of them. Their blood thickens a salve that stops bleeding faster than anything she has.$B$BBring me eight vials of stalker blood, $N. The cats still prowl the hills around Darrow Hill.', '', 'Return to Marshal Redpath at the Stormpike Encampment in Hillsbrad Foothills.', 0, 0, 0, 0, 0, 0, 0, 0, 3496, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751081, 2, -1, 136, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, -886.5, 183.5, 730, 5, 910163021, 'Infested Bears', 'Put down 8 Infested Bears in the hills above Azurelode Mine.', 'Whatever the Forsaken brew at the Sludge Fields, it has got into the bears. The ones in the hills above Azurelode Mine are crawling with it, and they come down to the lake to drink where our patrols fill their skins.$B$BPut eight of them down, $N, and keep clear of the Forsaken at the mine itself.', '', 'Return to Commander Brannoc Stonebrow at the Stormpike Encampment in Hillsbrad Foothills.', 4147204, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751082, 2, -1, 138, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, 615, -595.8, 730, 5, 910163021, 'Ogres of Crushridge Hold', 'Slay 12 Crushridge Ogres around Crushridge Hold and the Ruins of Alterac.', 'The knucklebones you brought me were a start. Now I want the Crushridge to feel it where it counts - in their numbers.$B$BTwelve of their ogres, $N, around the hold and the ruins. The fewer there are, the less they think about coming down this hill.', '', 'Return to Marshal Redpath at the Stormpike Encampment in Hillsbrad Foothills.', 4102252, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0),
+(751083, 2, -1, 136, 4936, 0, 0, 5, 126900, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 751, -19.3, -133.2, 730, 5, 910163021, 'Gray Bears in the Hills', 'Slay 10 Elder Gray Bears in the hills of Hillsbrad Foothills.', 'The cook is happy, the lads are fed, and the elder gray bears are angrier than ever. They have started coming for the camp''s supply lines all over the hills.$B$BThin them out, $N. Ten of the big ones.', '', 'Return to Commander Brannoc Stonebrow at the Stormpike Encampment in Hillsbrad Foothills.', 4102356, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', 0);
+
+-- chains, breadcrumbs and daily flags
+DELETE FROM `quest_template_addon` WHERE `ID` BETWEEN 751072 AND 751083;
+INSERT INTO `quest_template_addon` (`ID`, `PrevQuestID`, `BreadcrumbForQuestId`, `SpecialFlags`) VALUES
+(751072, 0, 0, 0),
+(751073, 0, 0, 0),
+(751074, 0, 0, 0),
+(751075, 0, 0, 0),
+(751076, 751060, 0, 0),
+(751077, 751061, 0, 0),
+(751078, 751065, 0, 0),
+(751079, 0, 0, 0),
+(751080, 200564, 0, 0),
+(751081, 0, 0, 0),
+(751082, 200500, 0, 0),
+(751083, 751032, 0, 0);
+
+-- texts
+DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 751072 AND 751083;
+INSERT INTO `quest_offer_reward` (`ID`, `Emote1`, `RewardText`, `VerifiedBuild`) VALUES
+(751072, 1, 'Real meat! The magus will say she prefers conjured bread. She will be lying.', 0),
+(751073, 1, 'Ten crocolisks. The runners will thank you - with both legs.', 0),
+(751074, 1, 'The wards are breathing again. The Kirin Tor thank you - and so do I.', 0),
+(751075, 1, 'The Stead is quiet. Good work - take a belt from our stores.', 0),
+(751076, 1, 'The strand is ours again? Then Stormwind has its answer. Here, with my thanks - and my transfer papers, very nearly.', 0),
+(751077, 1, 'Ten coastrunners. Redpath will have to find something else to count.', 0),
+(751078, 1, 'The Crushridge are leaderless and arguing. Exactly how I like them. Take this helm.', 0),
+(751079, 1, 'Five bears. The scouts can sleep again - lightly.', 0),
+(751080, 1, 'The surgeon will be pleased. I will try not to ask what goes in the rest of that salve.', 0),
+(751081, 1, 'Eight fewer of those poor beasts. The patrols will drink cleaner water.', 0),
+(751082, 1, 'Twelve. The Crushridge will be counting heads tonight, and not liking the answer.', 0),
+(751083, 1, 'The supply line is safe again. And the cook thanks you for the extra tongues, I am sure.', 0);
+DELETE FROM `quest_request_items` WHERE `ID` BETWEEN 751072 AND 751083;
+INSERT INTO `quest_request_items` (`ID`, `EmoteOnComplete`, `EmoteOnIncomplete`, `CompletionText`, `VerifiedBuild`) VALUES
+(751072, 6, 6, 'Any luck with the boars?', 0),
+(751073, 6, 6, 'Are the crocolisks still on the shore?', 0),
+(751074, 6, 6, 'Are the creepers cut back?', 0),
+(751075, 6, 6, 'Are the gnolls still at the Stead?', 0),
+(751076, 6, 6, 'Are the naga still on the strand?', 0),
+(751077, 6, 6, 'Did you find the coastrunners?', 0),
+(751078, 6, 6, 'The enforcers still hold the ruins.', 0),
+(751079, 6, 6, 'Are the bears dealt with?', 0),
+(751080, 6, 6, 'Did you get the blood?', 0),
+(751081, 6, 6, 'Are the infested bears dealt with?', 0),
+(751082, 6, 6, 'You have more ogres to cut down, $N.', 0),
+(751083, 6, 6, 'Are the bears still on the slopes?', 0);
+
+-- givers and enders
+DELETE FROM `creature_queststarter` WHERE `quest` BETWEEN 751072 AND 751083;
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(830317, 751072),
+(830317, 751073),
+(830316, 751074),
+(830323, 751075),
+(830322, 751076),
+(830322, 751077),
+(830323, 751078),
+(830321, 751079),
+(830323, 751080),
+(830321, 751081),
+(830323, 751082),
+(830321, 751083);
+DELETE FROM `creature_questender` WHERE `quest` BETWEEN 751072 AND 751083;
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(830317, 751072),
+(830317, 751073),
+(830316, 751074),
+(830323, 751075),
+(830322, 751076),
+(830322, 751077),
+(830323, 751078),
+(830321, 751079),
+(830323, 751080),
+(830321, 751081),
+(830323, 751082),
+(830321, 751083);
+
+-- quest map markers: small octagons over the target groups that stand on open ground (none over a mine or
+-- cave, so bots use the spawn points there), and the turn-in point
+DELETE FROM `quest_poi` WHERE `QuestID` BETWEEN 751072 AND 751083;
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`) VALUES
+(751072, 0, 4, 751, 1270, 0, 0, 1, 0),
+(751072, 1, 4, 751, 1270, 0, 0, 1, 0),
+(751072, 2, 4, 751, 1270, 0, 0, 1, 0),
+(751072, 3, 4, 751, 1270, 0, 0, 1, 0),
+(751072, 4, -1, 751, 1270, 0, 0, 1, 0),
+(751073, 0, 0, 751, 1270, 0, 0, 1, 0),
+(751073, 1, -1, 751, 1270, 0, 0, 1, 0),
+(751074, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751074, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751074, 2, -1, 751, 1270, 0, 0, 1, 0),
+(751075, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751075, 1, 1, 751, 1271, 0, 0, 1, 0),
+(751075, 2, -1, 751, 1271, 0, 0, 1, 0),
+(751076, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751076, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751076, 2, 1, 751, 1271, 0, 0, 1, 0),
+(751076, 3, 1, 751, 1271, 0, 0, 1, 0),
+(751076, 4, -1, 751, 1271, 0, 0, 1, 0),
+(751077, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751077, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751077, 2, 0, 751, 1271, 0, 0, 1, 0),
+(751077, 3, -1, 751, 1271, 0, 0, 1, 0),
+(751078, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751078, 1, 1, 751, 1271, 0, 0, 1, 0),
+(751078, 2, -1, 751, 1271, 0, 0, 1, 0),
+(751079, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751079, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751079, 2, 0, 751, 1271, 0, 0, 1, 0),
+(751079, 3, 0, 751, 1271, 0, 0, 1, 0),
+(751079, 4, 0, 751, 1271, 0, 0, 1, 0),
+(751079, 5, 0, 751, 1271, 0, 0, 1, 0),
+(751079, 6, -1, 751, 1271, 0, 0, 1, 0),
+(751080, 0, 4, 751, 1271, 0, 0, 1, 0),
+(751080, 1, 4, 751, 1271, 0, 0, 1, 0),
+(751080, 2, -1, 751, 1271, 0, 0, 1, 0),
+(751081, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751081, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751081, 2, -1, 751, 1271, 0, 0, 1, 0),
+(751082, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751082, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751082, 2, 0, 751, 1271, 0, 0, 1, 0),
+(751082, 3, 0, 751, 1271, 0, 0, 1, 0),
+(751082, 4, -1, 751, 1271, 0, 0, 1, 0),
+(751083, 0, 0, 751, 1271, 0, 0, 1, 0),
+(751083, 1, 0, 751, 1271, 0, 0, 1, 0),
+(751083, 2, 0, 751, 1271, 0, 0, 1, 0),
+(751083, 3, 0, 751, 1271, 0, 0, 1, 0),
+(751083, 4, -1, 751, 1271, 0, 0, 1, 0);
+DELETE FROM `quest_poi_points` WHERE `QuestID` BETWEEN 751072 AND 751083;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`) VALUES
+(751072, 0, 0, 86, 721, 0),
+(751072, 0, 1, 68, 763, 0),
+(751072, 0, 2, 26, 781, 0),
+(751072, 0, 3, -17, 763, 0),
+(751072, 0, 4, -34, 721, 0),
+(751072, 0, 5, -17, 679, 0),
+(751072, 0, 6, 26, 661, 0),
+(751072, 0, 7, 68, 679, 0),
+(751072, 1, 0, 215, 1479, 0),
+(751072, 1, 1, 202, 1509, 0),
+(751072, 1, 2, 173, 1521, 0),
+(751072, 1, 3, 143, 1509, 0),
+(751072, 1, 4, 131, 1479, 0),
+(751072, 1, 5, 143, 1450, 0),
+(751072, 1, 6, 173, 1438, 0),
+(751072, 1, 7, 202, 1450, 0),
+(751072, 2, 0, 338, 1451, 0),
+(751072, 2, 1, 324, 1484, 0),
+(751072, 2, 2, 291, 1498, 0),
+(751072, 2, 3, 257, 1484, 0),
+(751072, 2, 4, 243, 1451, 0),
+(751072, 2, 5, 257, 1417, 0),
+(751072, 2, 6, 291, 1403, 0),
+(751072, 2, 7, 324, 1417, 0),
+(751072, 3, 0, 265, 1502, 0),
+(751072, 3, 1, 255, 1525, 0),
+(751072, 3, 2, 233, 1534, 0),
+(751072, 3, 3, 210, 1525, 0),
+(751072, 3, 4, 201, 1502, 0),
+(751072, 3, 5, 210, 1479, 0),
+(751072, 3, 6, 233, 1470, 0),
+(751072, 3, 7, 255, 1479, 0),
+(751072, 4, 0, -88, 726, 0),
+(751073, 0, 0, -463, 1537, 0),
+(751073, 0, 1, -481, 1579, 0),
+(751073, 0, 2, -523, 1597, 0),
+(751073, 0, 3, -566, 1579, 0),
+(751073, 0, 4, -583, 1537, 0),
+(751073, 0, 5, -566, 1494, 0),
+(751073, 0, 6, -523, 1477, 0),
+(751073, 0, 7, -481, 1494, 0),
+(751073, 1, 0, -88, 726, 0),
+(751074, 0, 0, 564, 124, 0),
+(751074, 0, 1, 543, 173, 0),
+(751074, 0, 2, 494, 194, 0),
+(751074, 0, 3, 444, 173, 0),
+(751074, 0, 4, 424, 124, 0),
+(751074, 0, 5, 444, 74, 0),
+(751074, 0, 6, 494, 54, 0),
+(751074, 0, 7, 543, 74, 0),
+(751074, 1, 0, 261, -16, 0),
+(751074, 1, 1, 240, 34, 0),
+(751074, 1, 2, 191, 54, 0),
+(751074, 1, 3, 141, 34, 0),
+(751074, 1, 4, 121, -16, 0),
+(751074, 1, 5, 141, -65, 0),
+(751074, 1, 6, 191, -86, 0),
+(751074, 1, 7, 240, -65, 0),
+(751074, 2, 0, -100, 732, 0),
+(751075, 0, 0, -863, -965, 0),
+(751075, 0, 1, -884, -915, 0),
+(751075, 0, 2, -933, -895, 0),
+(751075, 0, 3, -983, -915, 0),
+(751075, 0, 4, -1003, -965, 0),
+(751075, 0, 5, -983, -1014, 0),
+(751075, 0, 6, -933, -1035, 0),
+(751075, 0, 7, -884, -1014, 0),
+(751075, 1, 0, -839, -989, 0),
+(751075, 1, 1, -860, -939, 0),
+(751075, 1, 2, -909, -919, 0),
+(751075, 1, 3, -959, -939, 0),
+(751075, 1, 4, -979, -989, 0),
+(751075, 1, 5, -959, -1038, 0),
+(751075, 1, 6, -909, -1059, 0),
+(751075, 1, 7, -860, -1038, 0),
+(751075, 2, 0, 8, -345, 0),
+(751076, 0, 0, -1404, -1069, 0),
+(751076, 0, 1, -1414, -1044, 0),
+(751076, 0, 2, -1440, -1034, 0),
+(751076, 0, 3, -1465, -1044, 0),
+(751076, 0, 4, -1475, -1069, 0),
+(751076, 0, 5, -1465, -1095, 0),
+(751076, 0, 6, -1440, -1105, 0),
+(751076, 0, 7, -1414, -1095, 0),
+(751076, 1, 0, -1210, -915, 0),
+(751076, 1, 1, -1217, -899, 0),
+(751076, 1, 2, -1233, -892, 0),
+(751076, 1, 3, -1250, -899, 0),
+(751076, 1, 4, -1257, -915, 0),
+(751076, 1, 5, -1250, -932, 0),
+(751076, 1, 6, -1233, -939, 0),
+(751076, 1, 7, -1217, -932, 0),
+(751076, 2, 0, -1211, -969, 0),
+(751076, 2, 1, -1221, -946, 0),
+(751076, 2, 2, -1243, -936, 0),
+(751076, 2, 3, -1266, -946, 0),
+(751076, 2, 4, -1276, -969, 0),
+(751076, 2, 5, -1266, -992, 0),
+(751076, 2, 6, -1243, -1001, 0),
+(751076, 2, 7, -1221, -992, 0),
+(751076, 3, 0, -1293, -1054, 0),
+(751076, 3, 1, -1299, -1039, 0),
+(751076, 3, 2, -1315, -1032, 0),
+(751076, 3, 3, -1331, -1039, 0),
+(751076, 3, 4, -1337, -1054, 0),
+(751076, 3, 5, -1331, -1070, 0),
+(751076, 3, 6, -1315, -1077, 0),
+(751076, 3, 7, -1299, -1070, 0),
+(751076, 4, 0, -2, -334, 0),
+(751077, 0, 0, -1105, 51, 0),
+(751077, 0, 1, -1122, 93, 0),
+(751077, 0, 2, -1165, 111, 0),
+(751077, 0, 3, -1207, 93, 0),
+(751077, 0, 4, -1225, 51, 0),
+(751077, 0, 5, -1207, 9, 0),
+(751077, 0, 6, -1165, -9, 0),
+(751077, 0, 7, -1122, 9, 0),
+(751077, 1, 0, -1063, -22, 0),
+(751077, 1, 1, -1074, 4, 0),
+(751077, 1, 2, -1100, 15, 0),
+(751077, 1, 3, -1126, 4, 0),
+(751077, 1, 4, -1137, -22, 0),
+(751077, 1, 5, -1126, -48, 0),
+(751077, 1, 6, -1100, -59, 0),
+(751077, 1, 7, -1074, -48, 0),
+(751077, 2, 0, -1112, 182, 0),
+(751077, 2, 1, -1121, 205, 0),
+(751077, 2, 2, -1144, 215, 0),
+(751077, 2, 3, -1167, 205, 0),
+(751077, 2, 4, -1177, 182, 0),
+(751077, 2, 5, -1167, 159, 0),
+(751077, 2, 6, -1144, 150, 0),
+(751077, 2, 7, -1121, 159, 0),
+(751077, 3, 0, -2, -334, 0),
+(751078, 0, 0, 599, -286, 0),
+(751078, 0, 1, 578, -237, 0),
+(751078, 0, 2, 529, -216, 0),
+(751078, 0, 3, 479, -237, 0),
+(751078, 0, 4, 459, -286, 0),
+(751078, 0, 5, 479, -336, 0),
+(751078, 0, 6, 529, -356, 0),
+(751078, 0, 7, 578, -336, 0),
+(751078, 1, 0, 689, -335, 0),
+(751078, 1, 1, 669, -288, 0),
+(751078, 1, 2, 622, -268, 0),
+(751078, 1, 3, 575, -288, 0),
+(751078, 1, 4, 555, -335, 0),
+(751078, 1, 5, 575, -382, 0),
+(751078, 1, 6, 622, -401, 0),
+(751078, 1, 7, 669, -382, 0),
+(751078, 2, 0, 8, -345, 0),
+(751079, 0, 0, -859, -1305, 0),
+(751079, 0, 1, -871, -1277, 0),
+(751079, 0, 2, -899, -1265, 0),
+(751079, 0, 3, -927, -1277, 0),
+(751079, 0, 4, -939, -1305, 0),
+(751079, 0, 5, -927, -1333, 0),
+(751079, 0, 6, -899, -1345, 0),
+(751079, 0, 7, -871, -1333, 0),
+(751079, 1, 0, -702, -1491, 0),
+(751079, 1, 1, -714, -1463, 0),
+(751079, 1, 2, -742, -1451, 0),
+(751079, 1, 3, -771, -1463, 0),
+(751079, 1, 4, -782, -1491, 0),
+(751079, 1, 5, -771, -1519, 0),
+(751079, 1, 6, -742, -1531, 0),
+(751079, 1, 7, -714, -1519, 0),
+(751079, 2, 0, -865, -1445, 0),
+(751079, 2, 1, -877, -1417, 0),
+(751079, 2, 2, -905, -1405, 0),
+(751079, 2, 3, -933, -1417, 0),
+(751079, 2, 4, -945, -1445, 0),
+(751079, 2, 5, -933, -1473, 0),
+(751079, 2, 6, -905, -1485, 0),
+(751079, 2, 7, -877, -1473, 0),
+(751079, 3, 0, -1197, -1096, 0),
+(751079, 3, 1, -1209, -1068, 0),
+(751079, 3, 2, -1237, -1056, 0),
+(751079, 3, 3, -1265, -1068, 0),
+(751079, 3, 4, -1277, -1096, 0),
+(751079, 3, 5, -1265, -1125, 0),
+(751079, 3, 6, -1237, -1136, 0),
+(751079, 3, 7, -1209, -1125, 0),
+(751079, 4, 0, -1070, -1093, 0),
+(751079, 4, 1, -1082, -1065, 0),
+(751079, 4, 2, -1110, -1053, 0),
+(751079, 4, 3, -1139, -1065, 0),
+(751079, 4, 4, -1150, -1093, 0),
+(751079, 4, 5, -1139, -1121, 0),
+(751079, 4, 6, -1110, -1133, 0),
+(751079, 4, 7, -1082, -1121, 0),
+(751079, 5, 0, -1106, -976, 0),
+(751079, 5, 1, -1118, -948, 0),
+(751079, 5, 2, -1146, -936, 0),
+(751079, 5, 3, -1174, -948, 0),
+(751079, 5, 4, -1186, -976, 0),
+(751079, 5, 5, -1174, -1005, 0),
+(751079, 5, 6, -1146, -1016, 0),
+(751079, 5, 7, -1118, -1005, 0),
+(751079, 6, 0, -12, -322, 0),
+(751080, 0, 0, -350, -333, 0),
+(751080, 0, 1, -367, -293, 0),
+(751080, 0, 2, -407, -276, 0),
+(751080, 0, 3, -448, -293, 0),
+(751080, 0, 4, -464, -333, 0),
+(751080, 0, 5, -448, -373, 0),
+(751080, 0, 6, -407, -390, 0),
+(751080, 0, 7, -367, -373, 0),
+(751080, 1, 0, -255, -492, 0),
+(751080, 1, 1, -275, -443, 0),
+(751080, 1, 2, -325, -422, 0),
+(751080, 1, 3, -374, -443, 0),
+(751080, 1, 4, -395, -492, 0),
+(751080, 1, 5, -374, -542, 0),
+(751080, 1, 6, -325, -562, 0),
+(751080, 1, 7, -275, -542, 0),
+(751080, 2, 0, 8, -345, 0),
+(751081, 0, 0, -706, 286, 0),
+(751081, 0, 1, -718, 314, 0),
+(751081, 0, 2, -746, 326, 0),
+(751081, 0, 3, -774, 314, 0),
+(751081, 0, 4, -786, 286, 0),
+(751081, 0, 5, -774, 258, 0),
+(751081, 0, 6, -746, 246, 0),
+(751081, 0, 7, -718, 258, 0),
+(751081, 1, 0, -987, 81, 0),
+(751081, 1, 1, -999, 109, 0),
+(751081, 1, 2, -1027, 121, 0),
+(751081, 1, 3, -1055, 109, 0),
+(751081, 1, 4, -1067, 81, 0),
+(751081, 1, 5, -1055, 53, 0),
+(751081, 1, 6, -1027, 41, 0),
+(751081, 1, 7, -999, 53, 0),
+(751081, 2, 0, -12, -322, 0),
+(751082, 0, 0, 832, -658, 0),
+(751082, 0, 1, 811, -609, 0),
+(751082, 0, 2, 762, -588, 0),
+(751082, 0, 3, 712, -609, 0),
+(751082, 0, 4, 692, -658, 0),
+(751082, 0, 5, 712, -708, 0),
+(751082, 0, 6, 762, -728, 0),
+(751082, 0, 7, 811, -708, 0),
+(751082, 1, 0, 568, -697, 0),
+(751082, 1, 1, 548, -648, 0),
+(751082, 1, 2, 498, -627, 0),
+(751082, 1, 3, 449, -648, 0),
+(751082, 1, 4, 428, -697, 0),
+(751082, 1, 5, 449, -747, 0),
+(751082, 1, 6, 498, -767, 0),
+(751082, 1, 7, 548, -747, 0),
+(751082, 2, 0, 423, -540, 0),
+(751082, 2, 1, 403, -491, 0),
+(751082, 2, 2, 353, -470, 0),
+(751082, 2, 3, 304, -491, 0),
+(751082, 2, 4, 283, -540, 0),
+(751082, 2, 5, 304, -590, 0),
+(751082, 2, 6, 353, -610, 0),
+(751082, 2, 7, 403, -590, 0),
+(751082, 3, 0, 917, -487, 0),
+(751082, 3, 1, 896, -438, 0),
+(751082, 3, 2, 847, -417, 0),
+(751082, 3, 3, 797, -438, 0),
+(751082, 3, 4, 777, -487, 0),
+(751082, 3, 5, 797, -537, 0),
+(751082, 3, 6, 847, -557, 0),
+(751082, 3, 7, 896, -537, 0),
+(751082, 4, 0, 8, -345, 0),
+(751083, 0, 0, -829, -82, 0),
+(751083, 0, 1, -841, -53, 0),
+(751083, 0, 2, -869, -42, 0),
+(751083, 0, 3, -897, -53, 0),
+(751083, 0, 4, -909, -82, 0),
+(751083, 0, 5, -897, -110, 0),
+(751083, 0, 6, -869, -122, 0),
+(751083, 0, 7, -841, -110, 0),
+(751083, 1, 0, 120, 39, 0),
+(751083, 1, 1, 108, 67, 0),
+(751083, 1, 2, 80, 79, 0),
+(751083, 1, 3, 51, 67, 0),
+(751083, 1, 4, 40, 39, 0),
+(751083, 1, 5, 51, 11, 0),
+(751083, 1, 6, 79, -1, 0),
+(751083, 1, 7, 108, 11, 0),
+(751083, 2, 0, 937, -764, 0),
+(751083, 2, 1, 925, -736, 0),
+(751083, 2, 2, 897, -724, 0),
+(751083, 2, 3, 869, -736, 0),
+(751083, 2, 4, 857, -764, 0),
+(751083, 2, 5, 869, -792, 0),
+(751083, 2, 6, 897, -804, 0),
+(751083, 2, 7, 925, -792, 0),
+(751083, 3, 0, -145, 274, 0),
+(751083, 3, 1, -157, 302, 0),
+(751083, 3, 2, -185, 314, 0),
+(751083, 3, 3, -213, 302, 0),
+(751083, 3, 4, -225, 274, 0),
+(751083, 3, 5, -213, 245, 0),
+(751083, 3, 6, -185, 234, 0),
+(751083, 3, 7, -157, 245, 0),
+(751083, 4, 0, -12, -322, 0);
+
+-- 2. respawn 300 -> 120 seconds for the target groups
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4146575 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16714782, 16714783, 16714784,
+    16714785, 16714823, 16714824, 16714825, 16714826, 16714827, 16714850, 16714863, 16714864, 16714866, 16714869,
+    16714896, 16714899, 16714901, 16714902, 16714906, 16714918, 16714927, 16714933, 16714935);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4145896 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16714566, 16714567, 16714571,
+    16714573, 16714575, 16714576, 16714577, 16714583, 16714584, 16714606, 16714607, 16714608, 16714609, 16714610,
+    16714611, 16714612, 16714613, 16714614, 16714619, 16714620, 16714622, 16714623);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102350 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716431, 16716432, 16716433,
+    16716434, 16716436, 16716437, 16716438, 16716595, 16716601, 16716602, 16716604, 16716607, 16716609, 16716612,
+    16716616, 16716619, 16716620, 16716736, 16716809, 16716815, 16716870, 16716871, 16716872, 16716877, 16716939,
+    16716942, 16716986, 16716990, 16716992, 16716994, 16717000, 16717001, 16717002, 16717004, 16717072, 16717078,
+    16717079, 16717080, 16717085, 16717184, 16717255, 16717270, 16717485, 16717578, 16717581, 16717835, 16717838,
+    16717841, 16717846, 16717939, 16718078, 16718079, 16718080, 16718084, 16718087, 16718089, 16718090, 16718091,
+    16718093, 16718094, 16718095, 16718096, 16718101, 16718104, 16718105, 16718106, 16718107, 16718113, 16718197,
+    16718199, 16718202, 16718233, 16718234, 16718235, 16718239, 16718240, 16718271, 16718290, 16718293, 16718294,
+    16718296, 16718297, 16718324, 16718358, 16718373, 16718374, 16718415, 16718419, 16718433, 16718438, 16718439,
+    16718488, 16718493, 16718494, 16718495, 16718498, 16718499, 16718500, 16718501, 16718502, 16718504, 16718505,
+    16718506, 16718508, 16718509, 16718513, 16718527, 16718528, 16718539);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102372 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716242, 16716243, 16716244,
+    16716246, 16716248, 16716260, 16716266, 16716281, 16716283, 16716284, 16716285, 16716287);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102373 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716229, 16716241, 16716259,
+    16716261, 16716264, 16716265, 16716282, 16716288);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102375 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716856, 16716862, 16716945,
+    16716949, 16716950, 16716952, 16716953, 16716954, 16716955, 16716956, 16716957, 16716959, 16716960, 16716961,
+    16716963, 16716964, 16716965, 16716966, 16716967, 16717102, 16717104, 16717105, 16717108, 16717109, 16717385,
+    16717387, 16717678, 16717679, 16717680, 16717682, 16717684, 16717686, 16718007);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102256 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16718205, 16718209, 16718210,
+    16718259, 16718262, 16718264, 16718269, 16718316, 16718317, 16718319, 16718321, 16718338, 16718363);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102255 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16718218, 16718253, 16718257,
+    16718318, 16718320, 16718364, 16718367, 16718427);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4149249 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716033, 16716039, 16716040,
+    16716050, 16716118, 16716148, 16716182, 16716183, 16716195, 16716221, 16716225, 16716353);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4147204 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716968, 16716977, 16717113,
+    16717124, 16717135, 16717145, 16717154, 16717173, 16717390, 16717407, 16717419, 16717428, 16717438, 16717453,
+    16717690, 16717715, 16717727, 16717746, 16717755, 16717771, 16717785, 16717943, 16717954, 16717964, 16717974,
+    16717985, 16717995, 16718023, 16718032, 16718045, 16718116, 16718125, 16718136, 16718147, 16718157);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102252 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16717256, 16717279, 16717280,
+    16717557, 16717558, 16717559, 16717561, 16717562, 16717565, 16717566, 16717567, 16717569, 16717571, 16717573,
+    16717574, 16717576, 16717585, 16717587, 16717824, 16717827, 16717828, 16717829, 16717830, 16717833, 16717847,
+    16717849, 16717850, 16717852, 16717855, 16717856, 16718225, 16718226, 16718227, 16718228, 16718244, 16718245,
+    16718246, 16718247, 16718252, 16718327, 16718328, 16718329, 16718368, 16718377, 16718432, 16718440);
+UPDATE `creature` SET `spawntimesecs` = 120
+WHERE `id` = 4102356 AND `map` = 751 AND `spawntimesecs` = 300 AND `guid` IN (16716936, 16716940, 16716941,
+    16716988, 16716991, 16716993, 16716995, 16716997, 16717003, 16717007, 16717163, 16717370, 16717834, 16717848,
+    16718055, 16718072, 16718082, 16718088, 16718092, 16718097, 16718099, 16718100, 16718103, 16718110, 16718111,
+    16718196, 16718198, 16718232, 16718241, 16718272, 16718282, 16718285, 16718291, 16718340, 16718360, 16718371,
+    16718416, 16718436, 16718437, 16718503, 16718529, 16718530);
+
+-- Verification, to run after applying (expected values in the labels):
+--   SELECT 'quests (want 12)' AS `check`, COUNT(*) AS `n` FROM `quest_template` WHERE `ID` BETWEEN 751072 AND 751083
+--   UNION ALL SELECT 'givers (want 12)', COUNT(*) FROM `creature_queststarter` WHERE `quest` BETWEEN 751072 AND 751083
+--   UNION ALL SELECT 'enders (want 12)', COUNT(*) FROM `creature_questender` WHERE `quest` BETWEEN 751072 AND 751083;

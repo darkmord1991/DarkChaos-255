@@ -49,6 +49,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptMgr.h"
 #include "sfk_cata.h"
+#include "DC/dc_portal_trigger_ghosts.h"
 
 namespace ShadowfangKeepCata
 {
@@ -85,9 +86,32 @@ struct npc_sfk_cata_portal_triggerAI : public ScriptedAI
 {
     explicit npc_sfk_cata_portal_triggerAI(Creature* creature) : ScriptedAI(creature) { }
 
-    // Scenery: never engage, never chase, never tick.
+    // Scenery: never engage, never chase.
     void AttackStart(Unit*) override { }
-    void UpdateAI(uint32) override { }
+
+    // The entrance also polls its doorway for ghosts, which MoveInLineOfSight never sees:
+    // see dc_portal_trigger_ghosts.h. Without it a player who released after a wipe could
+    // not get back in to the corpse.
+    void Reset() override
+    {
+        scheduler.CancelAll();
+
+        if (me->GetEntry() != NPC_SFK_CATA_PORTAL_IN)
+            return;
+
+        scheduler.Schedule(DCPortalTriggerGhosts::POLL_INTERVAL, [this](TaskContext context)
+        {
+            for (Player* ghost : DCPortalTriggerGhosts::FindGhostsBoundFor(me, PORTAL_RADIUS_IN, MapShadowfangKeepCata))
+                ghost->TeleportTo(MapShadowfangKeepCata, SFK_INSIDE_X, SFK_INSIDE_Y, SFK_INSIDE_Z, SFK_INSIDE_O);
+
+            context.Repeat();
+        });
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
 
     void MoveInLineOfSight(Unit* who) override
     {
@@ -104,13 +128,11 @@ struct npc_sfk_cata_portal_triggerAI : public ScriptedAI
         // A player mid-teleport is briefly still in range; without this they are grabbed
         // again before the first teleport resolves and the destination never settles.
         //
-        // NO IsAlive() check. It used to be here and it stranded ghosts in BOTH
-        // directions: a player who releases after a wipe inside cannot walk out, and --
-        // worse, because the graveyard is outside -- cannot walk back IN to reach their
-        // corpse either. Since the areatriggers do not fire on this fork's custom maps
-        // (see the header), these two NPCs are the only door the instance has, so
-        // refusing a corpse run here means the run is over. A dead player teleports
-        // fine; this is how every stock instance portal behaves.
+        // No IsAlive() check, but that alone never let a ghost through: this hook is not
+        // called for units that are not alive at all (CreatureUnitRelocationWorker in
+        // GridNotifiers.cpp returns first), so corpse runs come through Reset()'s poll.
+        // Since the areatriggers do not fire on this fork's custom maps (see the header),
+        // these NPCs are the only door the instance has.
         if (player->IsBeingTeleported())
             return;
 

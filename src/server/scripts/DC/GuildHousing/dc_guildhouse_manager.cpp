@@ -8,6 +8,8 @@
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "GameObject.h"
 #include "GameTime.h"
+#include "Guild.h"
+#include "GuildMgr.h"
 #include "InstanceSaveMgr.h"
 #include "Log.h"
 #include "Map.h"
@@ -510,7 +512,7 @@ void GuildHouseManager::ListButlerContent(uint32 guildId,
 }
 
 bool GuildHouseManager::RemoveButlerContent(Player* player, uint32 rowId,
-    uint32* outRefundCopper)
+    uint32* outRefundCopper, bool* outRefundedToBank)
 {
     if (!player)
         return false;
@@ -520,7 +522,7 @@ bool GuildHouseManager::RemoveButlerContent(Player* player, uint32 rowId,
         return false;
 
     QueryResult result = CharacterDatabase.Query(
-        "SELECT `spawn_type`, `paid_copper` FROM `dc_guild_house_instance_spawns` "
+        "SELECT `spawn_type`, `paid_copper`, `placed_by` FROM `dc_guild_house_instance_spawns` "
         "WHERE `id` = {} AND `guild_id` = {} AND `source` = 'BUTLER'", rowId, guildId);
     if (!result)
         return false;
@@ -528,6 +530,7 @@ bool GuildHouseManager::RemoveButlerContent(Player* player, uint32 rowId,
     Field* fields = result->Fetch();
     bool const isGameObject = fields[0].Get<std::string>() == "GAMEOBJECT";
     uint32 const paidCopper = fields[1].Get<uint32>();
+    uint64 const placedBy = fields[2].Get<uint64>();
 
     // Despawn the live object if it is in the player's current instance.
     auto it = s_butlerLive.find(rowId);
@@ -549,7 +552,9 @@ bool GuildHouseManager::RemoveButlerContent(Player* player, uint32 rowId,
         s_butlerLive.erase(it);
     }
 
-    CharacterDatabase.Execute(
+    // Synchronous on purpose: the row is read synchronously above, so a queued DELETE would let
+    // a second removal of the same row (two gossip clicks) read it again and refund twice.
+    CharacterDatabase.DirectExecute(
         "DELETE FROM `dc_guild_house_instance_spawns` WHERE `id` = {}", rowId);
 
     uint32 refundPercent =
@@ -557,9 +562,23 @@ bool GuildHouseManager::RemoveButlerContent(Player* player, uint32 rowId,
     if (refundPercent > 100)
         refundPercent = 100;
 
-    uint32 const refund = paidCopper * refundPercent / 100;
+    uint32 const refund = static_cast<uint32>(uint64(paidCopper) * refundPercent / 100);
+    // The refund goes back to whoever paid: the remover when it is them, otherwise the guild
+    // bank (as decorations do), so an officer cannot cash out another member's purchase.
     if (refund)
-        player->ModifyMoney(static_cast<int32>(refund));
+    {
+        if (placedBy == player->GetGUID().GetCounter())
+            player->ModifyMoney(static_cast<int32>(refund));
+        else if (Guild* guild = sGuildMgr->GetGuildById(guildId))
+        {
+            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+            // A deposit never fails; the result is [[nodiscard]].
+            bool const deposited = guild->ModifyBankMoney(trans, refund, true);
+            CharacterDatabase.CommitTransaction(trans);
+            if (outRefundedToBank)
+                *outRefundedToBank = deposited;
+        }
+    }
 
     if (outRefundCopper)
         *outRefundCopper = refund;

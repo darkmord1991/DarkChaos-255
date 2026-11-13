@@ -46,6 +46,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptMgr.h"
 #include "stratholme_dc.h"
+#include "DC/dc_portal_trigger_ghosts.h"
 
 namespace StratholmeDC
 {
@@ -124,9 +125,32 @@ struct npc_stratholme_dc_portal_triggerAI : public ScriptedAI
     explicit npc_stratholme_dc_portal_triggerAI(Creature* creature)
         : ScriptedAI(creature), _dest(FindPortal(creature->GetEntry())) { }
 
-    // Scenery: never engage, never chase, never tick.
+    // Scenery: never engage, never chase.
     void AttackStart(Unit*) override { }
-    void UpdateAI(uint32) override { }
+
+    // The three entrances (the triggers standing on map 751) also poll their doorway for
+    // ghosts, which MoveInLineOfSight never sees: see dc_portal_trigger_ghosts.h. Without
+    // it a player who released after a wipe could not get back in to the corpse.
+    void Reset() override
+    {
+        scheduler.CancelAll();
+
+        if (!_dest || me->GetMap()->Instanceable())
+            return;
+
+        scheduler.Schedule(DCPortalTriggerGhosts::POLL_INTERVAL, [this](TaskContext context)
+        {
+            for (Player* ghost : DCPortalTriggerGhosts::FindGhostsBoundFor(me, _dest->radius, _dest->map))
+                ghost->TeleportTo(_dest->map, _dest->x, _dest->y, _dest->z, _dest->o);
+
+            context.Repeat();
+        });
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
 
     void MoveInLineOfSight(Unit* who) override
     {
@@ -149,7 +173,8 @@ struct npc_stratholme_dc_portal_triggerAI : public ScriptedAI
 
         // A player mid-teleport is briefly still in range; without this they are grabbed
         // again before the first teleport resolves and the destination never settles.
-        if (player->IsBeingTeleported() || !player->IsAlive())
+        // Only the living reach this hook at all; ghosts come through Reset()'s poll.
+        if (player->IsBeingTeleported())
             return;
 
         // NO level check here on purpose, in either direction. Player::TeleportTo already

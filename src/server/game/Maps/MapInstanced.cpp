@@ -53,10 +53,10 @@ void MapInstanced::Update(const uint32 t, const uint32 s_diff, bool /*thread*/)
     {
         if (i->second->CanUnload(t))
         {
-            if (!DestroyInstance(i))                             // iterator incremented
-            {
-                //m_unloadTimer
-            }
+            // DarkChaos: not destroyed here, this runs on a map worker (see _pendingDestroys).
+            // The instance is not updated this tick, as before.
+            _pendingDestroys.push_back(i->first);
+            ++i;
         }
         else
         {
@@ -287,6 +287,26 @@ bool MapInstanced::DestroyInstance(InstancedMaps::iterator& itr)
     m_InstancedMaps.erase(itr++);
 
     return true;
+}
+
+void MapInstanced::DestroyPendingInstances()
+{
+    // Taken out first: a battleground's RemoveAllPlayers() teleports players and runs their
+    // teleport hooks, so nothing called from here may see the list half processed
+    std::vector<uint32> pending;
+    pending.swap(_pendingDestroys);
+
+    for (uint32 instanceId : pending)
+    {
+        // Looked up again: the id was only recorded, the instance may be gone by now
+        InstancedMaps::iterator itr = m_InstancedMaps.find(instanceId);
+        if (itr == m_InstancedMaps.end())
+            continue;
+
+        // Still has players after RemoveAllPlayers() (a battleground teleporting them out): kept,
+        // and its timer, already run out, queues it again on a later Update(), as before
+        DestroyInstance(itr);
+    }
 }
 
 Map::EnterState MapInstanced::CannotEnter(Player* /*player*/, bool /*loginCheck*/)

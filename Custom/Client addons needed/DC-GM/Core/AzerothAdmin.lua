@@ -713,7 +713,9 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
   -- Logout can still produce chat output while AceDB state is already being
   -- torn down. In that case bypass AzerothAdmin parsing and forward the text.
   if not (charDb and style) then
-    text = MangLinkifier_Decompose(text)
+    if id == 1 then
+      text = MangLinkifier_ProcessServerLine(text)
+    end
     originalAddMessage(frame, text, r, g, b, id)
     return
   end
@@ -1267,18 +1269,16 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       if output == false then
         -- don't output anything
       elseif output == true then
-        text = MangLinkifier_Decompose(text)
+        text = MangLinkifier_ProcessServerLine(text)
         self.hooks[frame].AddMessage(frame, text, r, g, b, id)
       end
     else
-      text = MangLinkifier_Decompose(text)
+      text = MangLinkifier_ProcessServerLine(text)
       self.hooks[frame].AddMessage(frame, text, r, g, b, id)
     end
   else
-    -- message is not from server
-    --Linkifier should be used on non server messages as well to catch links such as items in chat
-    text = MangLinkifier_Decompose(text)
-    -- Returns the message to the client, or else the chat frame never shows it
+    -- Not from the server: shown as is. Player chat used to be linkified too, which turned plain
+    -- text such as "GUID: 4567" into GM action links ([Delete], [Spawn]) on another player's line.
     self.hooks[frame].AddMessage(frame, text, r, g, b, id)
   end
 end

@@ -32,6 +32,16 @@ class npc_keystone_vendor : public CreatureScript
 public:
     npc_keystone_vendor() : CreatureScript("npc_keystone_vendor") { }
 
+    // Any keystone level, in bags or bank.
+    static bool HasAnyKeystone(Player* player)
+    {
+        for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
+            if (player->HasItemCount(GetItemIdFromKeystoneLevel(level), 1, true))
+                return true;
+
+        return false;
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         if (!player || !creature)
@@ -49,19 +59,8 @@ public:
             return true;
         }
 
-        // Check if player already has a keystone in inventory
-        bool hasKeystone = false;
-        for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
-        {
-            uint32 itemId = GetItemIdFromKeystoneLevel(level);
-            if (player->HasItemCount(itemId, 1, false))
-            {
-                hasKeystone = true;
-                break;
-            }
-        }
-
-        if (hasKeystone)
+        // Check if player already has a keystone (bags or bank)
+        if (HasAnyKeystone(player))
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                 "|cffffff00You already have a keystone in your inventory.|r",
@@ -172,6 +171,16 @@ public:
                         static_cast<uint32>(storedLevel));
                     LOG_WARN("mythic.keystone", "Player {} (non-GM) attempted to get M+{} keystone but is entitled to M+{}",
                              player->GetName(), keystoneLevel, storedLevel);
+                    CloseGossipMenuFor(player);
+                    return true;
+                }
+
+                // Re-checked here, not only when the menu opens: the select packet can arrive
+                // after the key was moved to the bank, and a second key per visit was a dupe.
+                if (HasAnyKeystone(player))
+                {
+                    ChatHandler(player->GetSession()).SendSysMessage(
+                        "|cffffff00You already have a keystone.|r");
                     CloseGossipMenuFor(player);
                     return true;
                 }

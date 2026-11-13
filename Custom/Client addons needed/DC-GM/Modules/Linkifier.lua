@@ -156,136 +156,155 @@ function MangLinkifier_Link(orgtxt, id, type)
   return link
 end
 
+-------------------------------------------------------------------------------------------------------------
+-- Link actions (DarkChaos security rework, 2026-11-10)
+--
+-- A click used to send ".<command> <link data>" for ANY link with a matching type prefix, wherever the
+-- link came from. Every chat line a GM sends that starts with "." runs with GM rights, so another player
+-- could post a disguised link (it renders like an item) and make the GM run commands of their choosing.
+-- Now:
+--   * only links this client built or saw in a SYSTEM (server) line act; links in player chat do not,
+--   * the argument must match the shape the command expects (numbers, coordinates, a tele name),
+--   * anything that changes the world or a character asks for confirmation and shows the exact command.
+-------------------------------------------------------------------------------------------------------------
+
+-- link type -> command prefix, argument shape, confirm before sending
+local LINK_ACTIONS = {
+  targidadd          = { ".gobject add ",              "id",   true  },
+  targidlist         = { ".list object ",              "id",   false },
+  targguidgo         = { ".go gameobject ",            "id",   false },
+  targguidmove       = { ".gobject move ",             "id",   true  },
+  targguidturn       = { ".gobject turn ",             "id",   true  },
+  targguiddel        = { ".gobject delete ",           "id",   true  },
+  targxyz            = { ".go ",                       "xyz",  false },
+  npcguidgo          = { ".go creature ",              "id",   false },
+  npcguidmove        = { ".go creature ",              "id",   false },
+  npcentryadd        = { ".npc add ",                  "id",   true  },
+  npcentrylist       = { ".list creature ",            "id",   false },
+  npcentryreload     = { ".reload creature_template ", "id",   true  },
+  npcdisplay         = { ".modify morph ",             "id",   true  },
+  npcdisplay2        = { ".modify morph ",             "id",   true  },
+  addgoguidgo        = { ".go gameobject ",            "id",   false },
+  addgoguidmove      = { ".gobject move ",             "id",   true  },
+  addgoguidturn      = { ".gobject turn ",             "id",   true  },
+  addgoguiddel       = { ".gobject delete ",           "id",   true  },
+  addgoid            = { ".gobject add ",              "id",   true  },
+  addgoxyz           = { ".go ",                       "xyz",  false },
+  gpsxyz             = { ".go  ",                      "xyz",  false },
+  lookupquestadd     = { ".quest add ",                "id",   true  },
+  lookupquestrem     = { ".quest remove ",             "id",   true  },
+  lookupitemadd      = { ".additem ",                  "id",   true  },
+  lookupitemlist     = { ".list item ",                "id",   false },
+  lookupgoadd        = { ".gobject add ",              "id",   true  },
+  lookupgolist       = { ".list object ",              "id",   false },
+  lookupcreatureadd  = { ".npc add ",                  "id",   true  },
+  lookupcreaturelist = { ".list creature ",            "id",   false },
+  lookupspelllearn   = { ".learn ",                    "id",   true  },
+  lookupspellunlearn = { ".unlearn ",                  "id",   true  },
+  lookupteledelete   = { ".tele del ",                 "name", true  },
+  -- Standard link types the server prints in .list / .lookup output: clicking teleports the GM.
+  -- gameobject_entry / creature_entry no longer spawn on click: use the [Spawn] link next to them.
+  gameobject         = { ".go gameobject ",            "id",   false },
+  creature           = { ".go creature ",              "id",   false },
+  tele               = { ".tele ",                     "name", false },
+}
+
+-- Links seen in server output or built by MangLinkifier_Link, keyed by "type:data".
+local knownLinks = {}
+local knownLinkCount = 0
+local KNOWN_LINK_LIMIT = 4000
+
+local function RememberLinksIn(text)
+  if type(text) ~= "string" then
+    return
+  end
+  for data in string.gmatch(text, "|H([^|]+)|h") do
+    local linkType = string.match(data, "^([^:]+)")
+    if linkType and LINK_ACTIONS[linkType] and not knownLinks[data] then
+      if knownLinkCount >= KNOWN_LINK_LIMIT then
+        -- Old links go dead rather than the table growing for the whole session.
+        knownLinks = {}
+        knownLinkCount = 0
+      end
+      knownLinks[data] = true
+      knownLinkCount = knownLinkCount + 1
+    end
+  end
+end
+
+-- Linkify a SYSTEM (server) line and remember the links in it. Player chat is not linkified.
+function MangLinkifier_ProcessServerLine(text)
+  text = MangLinkifier_Decompose(text)
+  RememberLinksIn(text)
+  return text
+end
+
+local function BuildArgument(kind, data)
+  if kind == "id" then
+    -- Item and quest links carry "id:extra:...": the command takes the leading number only.
+    return string.match(data, "^(%d+)")
+  elseif kind == "xyz" then
+    if string.match(data, "^[%d%.%- ]+$") then
+      return data
+    end
+  elseif kind == "name" then
+    -- One word: a tele name, never extra arguments such as ".tele name <player> <location>".
+    if string.match(data, "^[%w_%-%.']+$") then
+      return data
+    end
+  end
+  return nil
+end
+
+StaticPopupDialogs["DCGM_CONFIRM_LINK_COMMAND"] = {
+  text = "Run this GM command?\n\n%s",
+  button1 = YES,
+  button2 = NO,
+  OnAccept = function(self, data)
+    if type(data) == "string" then
+      SendChatMessage(data, "SAY")
+    end
+  end,
+  timeout = 0,
+  whileDead = 1,
+  hideOnEscape = 1,
+}
+
+local function Notify(message)
+  if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[DC-GM]|r " .. message)
+  end
+end
+
 -- chatFrame must be forwarded: stock channel links (right-click "[Guild]" ->
 -- Move to New Window) use it as the frame to remove the channel from.
 function MangLinkifier_SetItemRef(link, text, button, chatFrame)
-  ----------====~~Target Command Functions ~~====----------
-  if ( strsub(link, 1, 9) == "targidadd" ) then
-    SendChatMessage(".gobject add "..strsub(link, 11), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 10) == "targidlist" ) then
-    SendChatMessage(".list object "..strsub(link, 12), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 10) == "targguidgo" ) then
-    SendChatMessage(".go gameobject "..strsub(link, 12), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 12) == "targguidmove" ) then
-    SendChatMessage(".gobject move "..strsub(link, 14), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 12) == "targguidturn" ) then
-    SendChatMessage(".gobject turn "..strsub(link, 14), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 11) == "targguiddel" ) then
-    SendChatMessage(".gobject delete "..strsub(link, 13), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 7) == "targxyz" ) then
-    SendChatMessage(".go "..strsub(link, 9), say, nil, nil)
-    return;
-  ----------====~~ NPC Info Command Functions ~~====----------
-  elseif ( strsub(link, 1, 9) == "npcguidgo" ) then
-    SendChatMessage(".go creature "..strsub(link, 11), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 11) == "npcguidmove" ) then
-    SendChatMessage(".go creature "..strsub(link, 13), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 11) == "npcentryadd" ) then
-    SendChatMessage(".npc add "..strsub(link, 13), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 12) == "npcentrylist" ) then
-    SendChatMessage(".list creature "..strsub(link, 14), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 14) == "npcentryreload" ) then
-    SendChatMessage(".reload creature_template "..strsub(link, 16), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 10) == "npcdisplay" ) then
-    SendChatMessage(".modify morph "..strsub(link, 12), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 11) == "npcdisplay2" ) then
-    SendChatMessage(".modify morph "..strsub(link, 13), say, nil, nil)
-    return;
-  ----------====~~ ADD GO Command Functions ~~====----------
-  elseif ( strsub(link, 1, 11) == "addgoguidgo" ) then
-    SendChatMessage(".go gameobject "..strsub(link, 13), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 13) == "addgoguidmove" ) then
-    SendChatMessage(".gobject move "..strsub(link, 15), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 13) == "addgoguidturn" ) then
-    SendChatMessage(".gobject turn "..strsub(link, 15), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 12) == "addgoguiddel" ) then
-    SendChatMessage(".gobject delete "..strsub(link, 14), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 7) == "addgoid" ) then
-    SendChatMessage(".gobject add "..strsub(link, 9), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 8) == "addgoxyz" ) then
-    SendChatMessage(".go "..strsub(link, 10), say, nil, nil)
-    return;
-  ----------====~~ GPS Command Functions ~~====----------
-  elseif ( strsub(link, 1, 6) == "gpsxyz" ) then
-    SendChatMessage(".go  "..strsub(link, 8), say, nil, nil)
-    return;
-  ----------====~~ Support for Clickable Links Made by Mangos and Added Options ~~====----------
-  -- NOTE: plain "quest:" links are standard Blizzard hyperlinks (quest:<id>:<level>)
-  -- posted by players, bots and by the server's own lookup output. They must fall through
-  -- to the default handler so the quest tooltip opens; sending ".quest add <id>:<level>"
-  -- made the server reject the argument. GM add/remove is the separate [Add]/[Remove] link.
-  elseif ( strsub(link, 1, 14) == "lookupquestadd" ) then
-    SendChatMessage(".quest add "..strsub(link, 16), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 14) == "lookupquestrem" ) then
-    SendChatMessage(".quest remove "..strsub(link, 16), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 13) == "lookupitemadd" ) then -- Updated new string parse, may need to be used in other functions FIX: #6
-    local str = link
-    local _, _, parsedId = str:find("lookupitemadd:(%d+)")
-    --SendChatMessage("DEBUG: ".. parsedId, say, nil, nil) -- DEBUG output
-    SendChatMessage(".additem ".. parsedId, say, nil, nil)  --TODO: Need to add in amount parameter to string when [ADD] is clicked, defaults to 1 item count.
-    return;
-  elseif ( strsub(link, 1, 14) == "lookupitemlist" ) then -- Updated new string parse, may need to be used in other functions FIX #6
-    local str = link
-    local _, _, parsedId = str:find("lookupitemlist:(%d+)")
-    SendChatMessage(".list item ".. parsedId, say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 16) == "gameobject_entry" ) then
-    SendChatMessage(".gobject add "..strsub(link, 18), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 11) == "lookupgoadd" ) then
-    SendChatMessage(".gobject add "..strsub(link, 13), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 12) == "lookupgolist" ) then
-    SendChatMessage(".list object "..strsub(link, 14), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 14) == "creature_entry" ) then
-    SendChatMessage(".npc add "..strsub(link, 16), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 17) == "lookupcreatureadd" ) then
-    SendChatMessage(".npc add "..strsub(link, 19), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 18) == "lookupcreaturelist" ) then
-    SendChatMessage(".list creature "..strsub(link, 20), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 10) == "gameobject" ) then
-    SendChatMessage(".go gameobject "..strsub(link, 12), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 8) == "creature" ) then
-    SendChatMessage(".go creature "..strsub(link, 10), say, nil, nil)
-    return;
-  -- NOTE: plain "spell:" links are standard Blizzard hyperlinks too; falling through shows
-  -- the spell tooltip. Learning is the separate [Learn] link.
-  elseif ( strsub(link, 1, 16) == "lookupspelllearn" ) then
-    SendChatMessage(".learn "..strsub(link, 18), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 18) == "lookupspellunlearn" ) then
-    SendChatMessage(".unlearn "..strsub(link, 20), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 4) == "tele" ) then
-    SendChatMessage(".tele "..strsub(link, 6), say, nil, nil)
-    return;
-  elseif ( strsub(link, 1, 16) == "lookupteledelete" ) then
-    SendChatMessage(".tele del "..strsub(link, 18), say, nil, nil)
-    return;
+  local linkType, data = string.match(link or "", "^([^:]+):?(.*)$")
+  local action = linkType and LINK_ACTIONS[linkType]
+  if not action then
+    return MangLinkifier_SetItemRef_Original(link, text, button, chatFrame)
   end
-  return MangLinkifier_SetItemRef_Original(link, text, button, chatFrame);
+
+  if not knownLinks[link] then
+    -- Posted by a player (any link type can be typed into chat), or older than the link memory.
+    Notify("Ignored a " .. linkType .. " link that did not come from server output.")
+    return
+  end
+
+  local argument = BuildArgument(action[2], data or "")
+  if not argument then
+    Notify("Ignored a " .. linkType .. " link with an unexpected argument.")
+    return
+  end
+
+  local command = action[1] .. argument
+  if not action[3] then
+    SendChatMessage(command, "SAY")
+    return
+  end
+
+  local dialog = StaticPopup_Show("DCGM_CONFIRM_LINK_COMMAND", (string.gsub(command, "|", "||")), nil, command)
+  if dialog then
+    dialog.data = command
+  end
 end

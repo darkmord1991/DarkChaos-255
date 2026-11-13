@@ -1,0 +1,16 @@
+-- DarkChaos: make the Cata Azshara land mines on map 750 work (2026-11-13)
+--
+-- GO 3795360 'Land Mine' (Cata 195360; 175 spawns in area 4930 'Azshara (80-90)') is an environmental trap whose
+-- spell 66789 'Detonation' exists only in Cata. Every trigger logged "CastSpell: unknown spell 66789" (397 times in
+-- the 11-13 run) and did nothing.
+-- In Cata the mine summoned a bunny that cast 69725 'Land Mine Knockback': a 220/150 knockback plus about 300-400
+-- fire damage. 69725 is not in 3.3.5. The 3.3.5 equivalent is the Wintergrasp mine (GO 191502): 54355 'Detonation'
+-- deals 525-675 fire, and spell_gen_mine_sweeper adds the 54402 knockback (the same 220/150 throw) and dismounts.
+-- Our mine already has the Wintergrasp mine's faction (14).
+-- Side effect: 54402 stacks the Wintergrasp "Mine Sweeper" aura, so that achievement (10 explosions in a row without
+-- landing) can now also be earned here.
+--
+-- Data1 (trap level) 20 -> 0. An ownerless trap at level 0 uses the target's level. At 20 the spell would hit a
+-- level-85 player 1% of the time (65 levels apart), and the knockback only fires on a hit.
+-- The Data3 guard makes a re-run a no-op. Apply to acore_world, then restart the worldserver.
+UPDATE `gameobject_template` SET `Data1` = 0, `Data3` = 54355 WHERE `entry` = 3795360 AND `Data3` = 66789;

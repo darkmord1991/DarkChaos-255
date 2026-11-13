@@ -3,11 +3,13 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  *
  * .rep command - free self-service repair of all equipped and bagged gear,
- * removal of resurrection sickness, and reset of all spell cooldowns.
+ * removal of resurrection sickness, and a reset of short spell cooldowns
+ * (players: under 10 minutes, open world only; GMs: everything).
  */
 
 #include "Chat.h"
 #include "CommandScript.h"
+#include "Map.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
@@ -55,10 +57,27 @@ public:
         // Remove the spirit-healer death penalty if the player has it.
         player->RemoveAurasDueToSpell(SPELL_RESURRECTION_SICKNESS);
 
-        // Reset all spell cooldowns.
-        player->RemoveAllSpellCooldown();
+        // Cooldowns: staff get a full reset. Players get the stock arena rule (only spells under
+        // 10 minutes, so no profession/item/long cooldowns) and nothing inside battlegrounds,
+        // arenas, dungeons or raids, where it would be a reset between pulls or rounds.
+        if (handler->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
+        {
+            player->RemoveAllSpellCooldown();
+            handler->SendSysMessage("|cff00ff00Gear repaired, resurrection sickness removed, and cooldowns reset.|r");
+            return true;
+        }
 
-        handler->SendSysMessage("|cff00ff00Gear repaired, resurrection sickness removed, and cooldowns reset.|r");
+        Map* map = player->GetMap();
+        if (player->InBattleground() || (map && map->IsDungeon()))
+        {
+            handler->SendSysMessage("|cff00ff00Gear repaired and resurrection sickness removed.|r "
+                "Cooldowns are not reset inside instances, battlegrounds or arenas.");
+            return true;
+        }
+
+        player->RemoveArenaSpellCooldowns(true);
+        handler->SendSysMessage("|cff00ff00Gear repaired, resurrection sickness removed, "
+            "and cooldowns under 10 minutes reset.|r");
 
         return true;
     }

@@ -7,6 +7,7 @@
 #include "ScriptMgr.h"
 #include "dc_update_profiler.h"
 
+#include <algorithm>
 #include <ctime>
 
 namespace
@@ -18,6 +19,14 @@ namespace
     constexpr uint8 DEFAULT_WEEKLY_RESET_HOUR = 15; // 15:00
 
     constexpr char const* WEEKLY_STATE_KEY = "dc_global";
+
+    // dc_token_transaction_log pruning: one bounded DELETE per pass, so a large backlog
+    // (425k rows on 2026-11-09, mostly bots) drains over several passes instead of one
+    // long statement on the character DB worker.
+    constexpr uint32 TOKEN_LOG_PRUNE_INTERVAL_MS = 10u * 60u * 1000u;
+    constexpr uint32 TOKEN_LOG_PRUNE_BATCH = 20000u;
+    constexpr uint32 DEFAULT_TOKEN_LOG_RETENTION_WEEKS = 4u;
+    constexpr uint32 MAX_TOKEN_LOG_RETENTION_WEEKS = 520u; // keeps weeks * SECONDS_PER_WEEK inside uint32
 
     uint32 GetCurrentWeekStart()
     {
@@ -122,6 +131,34 @@ namespace Seasons
         // clearing belongs here.
     }
 
+    void PruneTokenTransactionLog()
+    {
+        // The table gains a row for every token award and nothing ever deleted one.
+        // Its only reader is the weekly token cap (SeedWeeklyEarnedAsync in
+        // ItemUpgrades/ItemUpgradeTokenHooks.cpp), which sums the CURRENT week, so
+        // anything older than the retention window is dead weight. The cutoff is a
+        // week boundary, and at least one full week before the current one is kept.
+        // 0 keeps every row.
+        uint32 const retentionWeeks = std::min(
+            sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenLogRetentionWeeks", DEFAULT_TOKEN_LOG_RETENTION_WEEKS),
+            MAX_TOKEN_LOG_RETENTION_WEEKS);
+        if (retentionWeeks == 0)
+            return;
+
+        if (!DC::DbSchema::CharacterTableExists("dc_token_transaction_log"))
+            return;
+
+        uint32 const currentWeekStart = GetCurrentWeekStart();
+        uint32 const span = retentionWeeks * SECONDS_PER_WEEK;
+        if (currentWeekStart <= span)
+            return;
+
+        // FROM_UNIXTIME, as the cap's own seeding query compares created_at the same way.
+        CharacterDatabase.Execute(
+            "DELETE FROM dc_token_transaction_log WHERE created_at < FROM_UNIXTIME({}) LIMIT {}",
+            currentWeekStart - span, TOKEN_LOG_PRUNE_BATCH);
+    }
+
     void RunWeeklyResetIfNeeded()
     {
         uint32 currentWeekStart = GetCurrentWeekStart();
@@ -184,10 +221,18 @@ namespace
 
             _timer = 0;
             DarkChaos::Seasons::RunWeeklyResetIfNeeded();
+
+            _pruneTimer += 60000;
+            if (_pruneTimer < TOKEN_LOG_PRUNE_INTERVAL_MS)
+                return;
+
+            _pruneTimer = 0;
+            DarkChaos::Seasons::PruneTokenTransactionLog();
         }
 
     private:
         uint32 _timer = 0;
+        uint32 _pruneTimer = 0;
     };
 }
 

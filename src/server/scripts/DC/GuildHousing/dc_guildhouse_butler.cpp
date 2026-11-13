@@ -501,9 +501,10 @@ public:
         if (sender == SENDER_BUTLER_REMOVE)
         {
             uint32 refund = 0;
-            if (GuildHouseManager::RemoveButlerContent(player, action, &refund))
+            bool refundedToBank = false;
+            if (GuildHouseManager::RemoveButlerContent(player, action, &refund, &refundedToBank))
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "Spawn removed. Refunded {} copper.", refund);
+                    "Spawn removed. Refunded {} copper{}.", refund, refundedToBank ? " to the guild bank" : "");
             else
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "Could not remove that spawn.");
@@ -921,12 +922,27 @@ public:
             ori = player->GetOrientation();
         }
 
+        // Charge before placing, and record only what was charged: ModifyMoney clamps at 0
+        // instead of failing, and removing the spawn refunds a share of `paid_copper`.
+        uint32 const charge = chargePlayer ? spawnCost : 0;
+        if (charge && !player->HasEnoughMoney(static_cast<int32>(charge)))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("You do not have enough money for that.");
+            CloseGossipMenuFor(player);
+            return;
+        }
+
+        if (charge)
+            player->ModifyMoney(-static_cast<int32>(charge));
+
         // Record per-guild ownership and dynamically summon the NPC into the
         // guild's instance (non-persistent; recreated on each instance load by
         // GuildHouseManager::LoadGuildContentIntoInstance).
         if (!GuildHouseManager::PlaceGuildContent(player->GetMap(), guild->GetId(), false, entry,
-                posX, posY, posZ, ori, 1.0f, spawnCost, player->GetGUID().GetCounter()))
+                posX, posY, posZ, ori, 1.0f, charge, player->GetGUID().GetCounter()))
         {
+            if (charge)
+                player->ModifyMoney(static_cast<int32>(charge));
             ChatHandler(player->GetSession()).PSendSysMessage("Failed to spawn the creature.");
             return;
         }
@@ -955,8 +971,6 @@ public:
             }
         }
 
-        if (chargePlayer && spawnCost)
-            player->ModifyMoney(-static_cast<int64>(spawnCost));
         CloseGossipMenuFor(player);
     }
 
@@ -1056,11 +1070,26 @@ public:
         if (objectInfo->displayId && !sGameObjectDisplayInfoStore.LookupEntry(objectInfo->displayId))
             return;
 
+        // Charge before placing, and record only what was charged: ModifyMoney clamps at 0
+        // instead of failing, and removing the spawn refunds a share of `paid_copper`.
+        uint32 const charge = chargePlayer ? spawnCost : 0;
+        if (charge && !player->HasEnoughMoney(static_cast<int32>(charge)))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("You do not have enough money for that.");
+            CloseGossipMenuFor(player);
+            return;
+        }
+
+        if (charge)
+            player->ModifyMoney(-static_cast<int32>(charge));
+
         // Record per-guild ownership and dynamically summon the object into the
         // guild's instance (non-persistent; recreated on each instance load).
         if (!GuildHouseManager::PlaceGuildContent(player->GetMap(), guild->GetId(), true, entry,
-                posX, posY, posZ, ori, 1.0f, spawnCost, player->GetGUID().GetCounter()))
+                posX, posY, posZ, ori, 1.0f, charge, player->GetGUID().GetCounter()))
         {
+            if (charge)
+                player->ModifyMoney(static_cast<int32>(charge));
             ChatHandler(player->GetSession()).PSendSysMessage("Failed to spawn the object.");
             return;
         }
@@ -1089,8 +1118,6 @@ public:
             }
         }
 
-        if (chargePlayer && spawnCost)
-            player->ModifyMoney(-static_cast<int64>(spawnCost));
         CloseGossipMenuFor(player);
     }
 

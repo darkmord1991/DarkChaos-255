@@ -3980,7 +3980,7 @@ namespace DCCollection
         if (type == CollectionType::TRANSMOG)
             return LoadFavoriteAppearanceIds(accountId);
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return items;
 
@@ -6490,7 +6490,7 @@ namespace DCCollection
         }
 
         uint32 const accountId = GetAccountId(player);
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (!accountId || itemsEntryCol.empty())
             return;
 
@@ -8655,74 +8655,83 @@ namespace DCCollection
         }));
     }
 
-    // Send ItemSet definitions from ItemSet.dbc
+    // ItemSet definitions from ItemSet.dbc. The DBC never changes at runtime, so the payload is
+    // built once instead of walking the whole store and re-encoding it on every request.
+    std::string const& GetItemSetDefinitionsPayload()
+    {
+        static std::string const payload = []()
+        {
+            DCAddon::JsonValue defs;
+            defs.SetObject();
+
+            for (uint32 entryId = 0; entryId < sItemSetStore.GetNumRows(); ++entryId)
+            {
+                ItemSetEntry const* setEntry = sItemSetStore.LookupEntry(entryId);
+                if (!setEntry)
+                    continue;
+
+                // Get set name
+                std::string name;
+                if (setEntry->name[0])
+                    name = setEntry->name[0];
+
+                if (name.empty())
+                    continue;
+
+                // Build items array
+                DCAddon::JsonValue itemsArr;
+                itemsArr.SetArray();
+                uint32 itemCount = 0;
+
+                for (uint32 i = 0; i < MAX_ITEM_SET_ITEMS; ++i)
+                {
+                    uint32 itemId = setEntry->itemId[i];
+                    if (itemId)
+                    {
+                        itemsArr.Push(DCAddon::JsonValue(itemId));
+                        ++itemCount;
+                    }
+                }
+
+                if (itemCount == 0)
+                    continue;
+
+                // Get first item for icon
+                uint32 firstItemId = setEntry->itemId[0];
+                std::string icon;
+                if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(firstItemId))
+                {
+                    if (proto->DisplayInfoID)
+                    {
+                        // We don't have easy icon access, client will use GetItemInfo
+                    }
+                }
+
+                DCAddon::JsonValue setDef;
+                setDef.SetObject();
+                setDef.Set("name", DCAddon::JsonValue(name));
+                setDef.Set("items", itemsArr);
+                if (setEntry->required_skill_id)
+                    setDef.Set("requiredSkill", DCAddon::JsonValue(setEntry->required_skill_id));
+                if (setEntry->required_skill_value)
+                    setDef.Set("requiredSkillValue", DCAddon::JsonValue(setEntry->required_skill_value));
+
+                defs.Set(std::to_string(entryId), setDef);
+            }
+
+            // Same bytes msg.Set("type"/"definitions"/"syncVersion") produced (std::map key order).
+            return "{\"definitions\":" + defs.Encode() + ",\"syncVersion\":1,\"type\":\"itemSets\"}";
+        }();
+        return payload;
+    }
+
     void SendItemSetDefinitions(Player* player)
     {
         if (!player || !player->GetSession())
             return;
 
-        DCAddon::JsonValue defs;
-        defs.SetObject();
-
-        for (uint32 entryId = 0; entryId < sItemSetStore.GetNumRows(); ++entryId)
-        {
-            ItemSetEntry const* setEntry = sItemSetStore.LookupEntry(entryId);
-            if (!setEntry)
-                continue;
-
-            // Get set name
-            std::string name;
-            if (setEntry->name[0])
-                name = setEntry->name[0];
-
-            if (name.empty())
-                continue;
-
-            // Build items array
-            DCAddon::JsonValue itemsArr;
-            itemsArr.SetArray();
-            uint32 itemCount = 0;
-
-            for (uint32 i = 0; i < MAX_ITEM_SET_ITEMS; ++i)
-            {
-                uint32 itemId = setEntry->itemId[i];
-                if (itemId)
-                {
-                    itemsArr.Push(DCAddon::JsonValue(itemId));
-                    ++itemCount;
-                }
-            }
-
-            if (itemCount == 0)
-                continue;
-
-            // Get first item for icon
-            uint32 firstItemId = setEntry->itemId[0];
-            std::string icon;
-            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(firstItemId))
-            {
-                if (proto->DisplayInfoID)
-                {
-                    // We don't have easy icon access, client will use GetItemInfo
-                }
-            }
-
-            DCAddon::JsonValue setDef;
-            setDef.SetObject();
-            setDef.Set("name", DCAddon::JsonValue(name));
-            setDef.Set("items", itemsArr);
-            if (setEntry->required_skill_id)
-                setDef.Set("requiredSkill", DCAddon::JsonValue(setEntry->required_skill_id));
-            if (setEntry->required_skill_value)
-                setDef.Set("requiredSkillValue", DCAddon::JsonValue(setEntry->required_skill_value));
-
-            defs.Set(std::to_string(entryId), setDef);
-        }
-
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
-        msg.Set("type", "itemSets");
-        msg.Set("definitions", defs);
-        msg.Set("syncVersion", 1);
+        msg.SetPreEncodedJson(GetItemSetDefinitionsPayload());
         msg.Send(player);
     }
 
@@ -8816,6 +8825,41 @@ namespace DCCollection
             PreWarmPetCreatureCache(player);
     }
 
+    // Full definition sends are throttled per session: a request without syncVersion re-sent the
+    // whole mount/pet catalogue (350-580 KB) every time with no cooldown, a ~10,000x amplifier
+    // into the session's send queue. One full send per (type, offset) per window; a repeat inside
+    // it is dropped. Normal clients ask once per type (and transmog page) per session.
+    struct DefinitionsSendThrottle : public DataMap::Base
+    {
+        std::unordered_map<uint64, uint32> lastSendMs;
+    };
+
+    constexpr uint32 DEFINITIONS_RESEND_WINDOW_MS = 30 * IN_MILLISECONDS;
+    constexpr std::size_t DEFINITIONS_THROTTLE_MAX_KEYS = 512;
+
+    bool AllowDefinitionsSend(Player* player, uint8 type, uint32 offset)
+    {
+        DefinitionsSendThrottle* throttle =
+            player->CustomData.GetDefault<DefinitionsSendThrottle>("DCCollectionDefinitionsThrottle");
+
+        uint64 const key = (uint64(type) << 32) | offset;
+        uint32 const now = getMSTime();
+        auto const it = throttle->lastSendMs.find(key);
+        if (it != throttle->lastSendMs.end() && getMSTimeDiff(it->second, now) < DEFINITIONS_RESEND_WINDOW_MS)
+        {
+            LOG_DEBUG("module.dc", "DC-Collection: dropped repeated definitions request (type {}, offset {}) from {}",
+                type, offset, player->GetName());
+            return false;
+        }
+
+        // Offsets are client-chosen: keep the map bounded.
+        if (throttle->lastSendMs.size() >= DEFINITIONS_THROTTLE_MAX_KEYS)
+            throttle->lastSendMs.clear();
+
+        throttle->lastSendMs[key] = now;
+        return true;
+    }
+
     void HandleGetDefinitionsMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
@@ -8865,7 +8909,8 @@ namespace DCCollection
         // Handle itemSets separately (from DBC, not stored collection)
         if (type == static_cast<uint8>(CollectionType::ITEM_SET))
         {
-            SendItemSetDefinitions(player);
+            if (AllowDefinitionsSend(player, type, 0))
+                SendItemSetDefinitions(player);
             return;
         }
 
@@ -8975,7 +9020,7 @@ namespace DCCollection
             return;
         }
 
-        if (type >= 1 && type <= 6)
+        if (type >= 1 && type <= 6 && AllowDefinitionsSend(player, type, offset))
             SendDefinitions(player, type, offset, limit);
     }
 

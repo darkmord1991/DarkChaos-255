@@ -279,6 +279,19 @@ void MapMgr::Update(uint32 diff)
     if (m_updater.activated())
         m_updater.wait();
 
+    // DarkChaos: instances whose unload timer ran out are destroyed here, on the world thread,
+    // instead of inside MapInstanced::Update on a map worker (see MapInstanced::_pendingDestroys).
+    // Collected first: destroying a battleground teleports its players, and their teleport hooks
+    // must not invalidate this walk over i_maps. Base maps live until shutdown.
+    std::vector<MapInstanced*> pendingDestroys;
+    for (iter = i_maps.begin(); iter != i_maps.end(); ++iter)
+        if (MapInstanced* mapInstanced = iter->second->ToMapInstanced())
+            if (mapInstanced->HasPendingDestroys())
+                pendingDestroys.push_back(mapInstanced);
+
+    for (MapInstanced* mapInstanced : pendingDestroys)
+        mapInstanced->DestroyPendingInstances();
+
     if (mapUpdateStep < 3)
     {
         for (iter = i_maps.begin(); iter != i_maps.end(); ++iter)

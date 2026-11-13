@@ -433,6 +433,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->scalingApplied = false;
     state->countdownStarted = 0;
     state->participants.clear();
+    state->joinedAt.clear();
     state->bots.clear();
     state->botRun = false;
     state->lootAwards.clear();
@@ -911,8 +912,9 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     runEvent.difficulty = DarkChaos::CrossSystem::ContentDifficulty::MythicPlus;
     runEvent.keystoneLevel = state->keystoneLevel;
     runEvent.timedSuccess = !state->timerExpired;
-    runEvent.participants.reserve(state->participants.size());
-    for (ObjectGuid::LowType const guidLow : state->participants)
+    std::unordered_set<ObjectGuid::LowType> const credited = GetCreditedParticipants(state);
+    runEvent.participants.reserve(credited.size());
+    for (ObjectGuid::LowType const guidLow : credited)
         runEvent.participants.push_back(ObjectGuid::Create<HighGuid::Player>(guidLow));
     DarkChaos::CrossSystem::EventBus::instance()->PublishDungeonComplete(runEvent);
 
@@ -922,7 +924,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     {
         if (Player* player = ref.GetSource())
         {
-            if (state->participants.find(player->GetGUID().GetCounter()) != state->participants.end())
+            if (credited.count(player->GetGUID().GetCounter()))
             {
                 SendRunSummary(state, player);
                 ProcessAchievements(state, player, true);
@@ -1085,8 +1087,66 @@ void MythicPlusRunManager::AddParticipant(InstanceState* state, Player* player)
 
     ObjectGuid::LowType guidLow = player->GetGUID().GetCounter();
     state->participants.insert(guidLow);
+    state->joinedAt.emplace(guidLow, static_cast<uint64>(GameTime::GetGameTime().count()));
     if (player->GetSession() && player->GetSession()->IsBot())
         state->bots.insert(guidLow);
+}
+
+// Participants are never removed, so crediting `participants` paid every character that zoned
+// in at any point: alts taking turns in the instance each got a success row (Great Vault
+// progress), weekly best, score and Path credit, and a player invited just before the last boss
+// got the full payout. A completed run now pays only who is inside at completion (or died in it and
+// is running back) and was in the run within LATE_JOIN_GRACE_SECONDS of the timer starting (a
+// disconnect keeps the first entry).
+std::unordered_set<ObjectGuid::LowType> MythicPlusRunManager::GetCreditedParticipants(InstanceState const* state) const
+{
+    constexpr uint64 LATE_JOIN_GRACE_SECONDS = 120;
+
+    std::unordered_set<ObjectGuid::LowType> credited;
+    if (!state)
+        return credited;
+
+    Map* map = sMapMgr->FindMap(state->mapId, state->instanceId);
+    if (!map)
+        return credited;
+
+    uint64 const lateJoinLimit = state->startedAt ? state->startedAt + LATE_JOIN_GRACE_SECONDS : 0;
+
+    for (auto const& ref : map->GetPlayers())
+    {
+        Player* player = ref.GetSource();
+        if (!player)
+            continue;
+
+        ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
+        if (!state->participants.count(guidLow))
+            continue;
+
+        auto const joined = state->joinedAt.find(guidLow);
+        if (lateJoinLimit && joined != state->joinedAt.end() && joined->second > lateJoinLimit)
+            continue;
+
+        credited.insert(guidLow);
+    }
+
+    // A participant who died and released is a ghost outside the instance when the last boss
+    // falls; their corpse is still in it (map-local data, so no other map's player is touched).
+    for (ObjectGuid::LowType const guidLow : state->participants)
+    {
+        if (credited.count(guidLow))
+            continue;
+
+        if (!map->GetCorpseByPlayer(ObjectGuid::Create<HighGuid::Player>(guidLow)))
+            continue;
+
+        auto const joined = state->joinedAt.find(guidLow);
+        if (lateJoinLimit && joined != state->joinedAt.end() && joined->second > lateJoinLimit)
+            continue;
+
+        credited.insert(guidLow);
+    }
+
+    return credited;
 }
 
 bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor)
@@ -1541,9 +1601,17 @@ void MythicPlusRunManager::RecordRunResult(InstanceState const* state, bool succ
     // meant the other four players in every group earned no vault progress at
     // all. group_members stays identical across the rows so a single run is
     // still identifiable as one run.
-    std::unordered_set<ObjectGuid::LowType> recipients = state->participants;
-    if (state->ownerGuid)
-        recipients.insert(state->ownerGuid.GetCounter());
+    // A success row is vault progress, so a completed run writes them only for the credited
+    // participants (present at the end, in from the start). A failed run still records everyone.
+    std::unordered_set<ObjectGuid::LowType> recipients;
+    if (success)
+        recipients = GetCreditedParticipants(state);
+    else
+    {
+        recipients = state->participants;
+        if (state->ownerGuid)
+            recipients.insert(state->ownerGuid.GetCounter());
+    }
 
     for (ObjectGuid::LowType guidLow : recipients)
     {
@@ -1571,7 +1639,7 @@ void MythicPlusRunManager::RecordRunResult(InstanceState const* state, bool succ
     {
         uint32 weekStart = GetWeekStartTimestamp();
 
-        for (auto const& guidLow : state->participants)
+        for (auto const& guidLow : recipients)
         {
             // Check if this run is better than their current best
             // Better defined as: Higher Key OR (Same Key AND Faster Time)
@@ -1625,6 +1693,8 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         return;
     }
 
+    std::unordered_set<ObjectGuid::LowType> const credited = GetCreditedParticipants(state);
+
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
     {
@@ -1632,7 +1702,7 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         if (!player)
             continue;
 
-        if (state->participants.find(player->GetGUID().GetCounter()) == state->participants.end())
+        if (!credited.count(player->GetGUID().GetCounter()))
             continue;
 
         uint32 tokenCount;

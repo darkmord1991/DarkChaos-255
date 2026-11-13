@@ -1,3 +1,28 @@
+-- DarkChaos: GetAvailableRaces, GetAvailableClasses and GetClassesForRace push three values per row onto the Lua stack
+-- without asking for room, and a C function is only promised 20 free slots. With 22 playable races that is 66 values,
+-- written past the end of the stack whenever it has not grown that far, which corrupts memory in the 32-bit client (the
+-- x64 client checks in C). Lua grows the stack for a function's whole frame before running it, so calling them from a
+-- function with a large frame gives them the room. The padding locals are that frame; they are never used.
+do
+	local function WithRoom(fn, ...)
+		local results = { fn(...) };
+		local _01, _02, _03, _04, _05, _06, _07, _08, _09, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20;
+		local _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _40;
+		local _41, _42, _43, _44, _45, _46, _47, _48, _49, _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _60;
+		local _61, _62, _63, _64, _65, _66, _67, _68, _69, _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _80;
+		local _81, _82, _83, _84, _85, _86, _87, _88, _89, _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _100;
+		local _101, _102, _103, _104, _105, _106, _107, _108, _109, _110, _111, _112, _113, _114, _115, _116, _117, _118, _119, _120;
+		return unpack(results);
+	end
+
+	for _, name in ipairs({ "GetAvailableRaces", "GetAvailableClasses", "GetClassesForRace" }) do
+		local original = _G[name];
+		if ( type(original) == "function" ) then
+			_G[name] = function(...) return WithRoom(original, ...); end;
+		end
+	end
+end
+
 CHARACTER_FACING_INCREMENT = 2;
 MAX_RACES = 22;
 MAX_CLASSES_PER_RACE = 10;

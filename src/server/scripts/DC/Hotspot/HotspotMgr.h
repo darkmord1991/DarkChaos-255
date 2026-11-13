@@ -105,12 +105,13 @@ public:
     void OnPlayerLogout(Player* player);
 
     // Resolve the hotspot-facing zone id for a world position. On the DC
-    // downport continents the terrain reports a single baked area id for the
-    // whole map (750 -> 4923, 751 -> 4924), so the level bands are recovered
-    // from the authored band table instead. Returns 0 when the map is banded
-    // and the position falls outside every band; otherwise falls back to
-    // terrainZoneId.
-    uint32 ResolveZoneAt(uint32 mapId, float x, float y, uint32 terrainZoneId) const;
+    // downport continents the terrain cannot name the level band (750 reports
+    // one baked area id for the whole map, 751 still reports stock ids on some
+    // cloned tiles), so the bands are recovered from the authored band table
+    // instead. Returns 0 when the map is banded and the position falls outside
+    // every band or inside a carved-out sanctuary (Undercity, under Tirisfal -
+    // the reason z is needed); otherwise falls back to terrainZoneId.
+    uint32 ResolveZoneAt(uint32 mapId, float x, float y, float z, uint32 terrainZoneId) const;
     uint32 ResolvePlayerZone(Player* player) const;
 
     // API for Commands/Scripts

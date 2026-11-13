@@ -376,8 +376,11 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
             msg.erase(end, msg.end());
         }
 
-        // mod_playerbots: skip validation for playerbots module
-        auto playerbotsHyperlink = msg.find("Hfound:") != std::string::npos;
+        // mod_playerbots: skip validation for playerbots' own "found" links, but only on bot
+        // sessions. Matching the substring alone let any player put "Hfound:" anywhere in a line
+        // and send unvalidated |H/|T sequences to every client (and, through DC-GM's link
+        // handler, steer a GM into running dot commands).
+        bool const playerbotsHyperlink = IsBot() && msg.find("Hfound:") != std::string::npos;
         if (!playerbotsHyperlink)
         {
             // Validate hyperlinks

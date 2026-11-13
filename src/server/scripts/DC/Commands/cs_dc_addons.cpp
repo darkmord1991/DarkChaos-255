@@ -1,34 +1,35 @@
 /*
  * Consolidated DC addon-related commands.
  *
- * Commands (single entry: .dc):
- *  - .dc send <playername>
+ * Commands: GM/admin tools under .dca, the player difficulty switch under .dc:
+ *  - .dca send <playername>
  *      Send the current server XP snapshot to <playername> (addon-style whisper)
- *  - .dc sendforce <playername> | .dc sendforce-self
+ *  - .dca sendforce <playername> | .dca sendforce-self
  *      Force-send the current server XP snapshot, bypassing throttles. Use -self to target yourself.
- *  - .dc grant <playername> <amount>
+ *  - .dca grant <playername> <amount>
  *      Grant <amount> XP to <playername> using server GiveXP path.
- *  - .dc grantself <amount>
+ *  - .dca grantself <amount>
  *      Grant <amount> XP to your own character.
- *  - .dc info [playername|self]
+ *  - .dca info [playername|self]
  *      Show XP, next-level XP, level, GUID, and XP-blocked state.
- *  - .dc dedupe [playername|self]
+ *  - .dca dedupe [playername|self]
  *      Show the last DCRXP payload key and timestamp for dedupe diagnostics.
- *  - .dc clearflag [playername|self]
+ *  - .dca clearflag [playername|self]
  *      Remove PLAYER_FLAGS_NO_XP_GAIN and refresh the addon snapshot.
- *  - .dc relearnspells [playername|self]
+ *  - .dca relearnspells [playername|self]
  *      Re-run the DC First Start class spell grant for the target player.
  *
  * Examples:
- *  .dc send Alice
- *  .dc sendforce-self
- *  .dc grant Bob 100000
- *  .dc relearnspells self
+ *  .dca send Alice
+ *  .dca sendforce-self
+ *  .dca grant Bob 100000
+ *  .dca relearnspells self
  *
  * Notes:
- *  - This file consolidates DC-related GM commands into a single top-level command
- *    (".dc") to keep addon administration in one place. After changing this C++ file
- *    you must rebuild the server so the command is compiled and registered.
+ *  - .dc difficulty <normal|heroic|mythic|info> is the only player command here; `.dca reload
+ *    mythic` is admin-only, the rest GM. Every entry is a real subcommand with its own level.
+ *    The `dc` root is shared with mod-dungeon-clear's player subcommands, so this file must
+ *    never register a blank root handler on it again (see the comment in GetCommands).
  */
 #include "CommandScript.h"
 #include "Chat.h"
@@ -55,20 +56,106 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        // `.dc` is the player namespace, shared with mod-dungeon-clear (its `command` row is 0).
+        // Never register a blank invoker on it: a root handler would receive every unmatched
+        // `.dc <word>` a player types. The GM/admin tools live under their own root, `.dca`.
+        static ChatCommandTable dcTable =
+        {
+            // Players: the branch checks group leadership / GM itself.
+            { "difficulty",     HandleDifficulty,    SEC_PLAYER,        Console::No }
+        };
+        static ChatCommandTable dcaTable =
+        {
+            { "send",           HandleSend,          SEC_GAMEMASTER,    Console::No },
+            { "sendforce",      HandleSendForce,     SEC_GAMEMASTER,    Console::No },
+            { "sendforce-self", HandleSendForceSelf, SEC_GAMEMASTER,    Console::No },
+            { "info",           HandleInfo,          SEC_GAMEMASTER,    Console::No },
+            { "dedupe",         HandleDedupe,        SEC_GAMEMASTER,    Console::No },
+            { "grant",          HandleGrant,         SEC_GAMEMASTER,    Console::No },
+            { "grantself",      HandleGrantSelf,     SEC_GAMEMASTER,    Console::No },
+            { "clearflag",      HandleClearFlag,     SEC_GAMEMASTER,    Console::No },
+            { "relearnspells",  HandleRelearnSpells, SEC_GAMEMASTER,    Console::No },
+            // Rebuilds the Mythic+ profile map that map threads read: administrators only.
+            { "reload",         HandleReload,        SEC_ADMINISTRATOR, Console::No }
+        };
         static ChatCommandTable commandTable =
         {
-            // Single consolidated entry: .dc <subcommand> ...
-            { "dc", HandleDCRXPCommand, SEC_GAMEMASTER, Console::No }
+            { "dc",  dcTable },
+            { "dca", dcaTable }
         };
         return commandTable;
     }
 
-    // DCRXP commands (send, sendforce, grant, grantself)
+    static bool RunSub(ChatHandler* handler, std::string_view sub, std::vector<std::string_view> args)
+    {
+        args.insert(args.begin(), sub);
+        return HandleDCRXPCommand(handler, std::move(args));
+    }
+
+    static bool HandleSend(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "send", std::move(args));
+    }
+
+    static bool HandleSendForce(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "sendforce", std::move(args));
+    }
+
+    static bool HandleSendForceSelf(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "sendforce-self", std::move(args));
+    }
+
+    static bool HandleInfo(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "info", std::move(args));
+    }
+
+    static bool HandleDedupe(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "dedupe", std::move(args));
+    }
+
+    static bool HandleGrant(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "grant", std::move(args));
+    }
+
+    static bool HandleGrantSelf(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "grantself", std::move(args));
+    }
+
+    static bool HandleClearFlag(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "clearflag", std::move(args));
+    }
+
+    static bool HandleRelearnSpells(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "relearnspells", std::move(args));
+    }
+
+    static bool HandleDifficulty(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "difficulty", std::move(args));
+    }
+
+    static bool HandleReload(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        return RunSub(handler, "reload", std::move(args));
+    }
+
+    // Shared body of the subcommands above; `args[0]` is always the subcommand name.
     static bool HandleDCRXPCommand(ChatHandler* handler, std::vector<std::string_view> args)
     {
         if (args.empty())
         {
-            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | info [player|self] | dedupe [player|self] | grant <player> <amt> | grantself <amt> | clearflag [player|self] | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload <mythic|mythicplus|m+>");
+            handler->PSendSysMessage("Usage: .dca send <player> | sendforce <player> | sendforce-self | "
+                "info [player|self] | dedupe [player|self] | grant <player> <amt> | grantself <amt> | "
+                "clearflag [player|self] | relearnspells [player|self] | reload mythic; "
+                ".dc difficulty <normal|heroic|mythic|info>");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -88,7 +175,7 @@ public:
             ++it;
             if (it == args.end())
             {
-                handler->PSendSysMessage("Usage: .dc send <playername>");
+                handler->PSendSysMessage("Usage: .dca send <playername>");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -143,7 +230,7 @@ public:
             bool targetIsSelf = (subNorm.find("self") != std::string::npos);
             if (!targetIsSelf && it == args.end())
             {
-                handler->PSendSysMessage("Usage: .dc sendforce <playername>");
+                handler->PSendSysMessage("Usage: .dca sendforce <playername>");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -211,7 +298,7 @@ public:
             ++it;
             if (it == args.end())
             {
-                handler->PSendSysMessage("Usage: .dc grant <playername> <amount>");
+                handler->PSendSysMessage("Usage: .dca grant <playername> <amount>");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -220,7 +307,7 @@ public:
             ++it;
             if (it == args.end())
             {
-                handler->PSendSysMessage("Usage: .dc grant <playername> <amount>");
+                handler->PSendSysMessage("Usage: .dca grant <playername> <amount>");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -265,7 +352,7 @@ public:
             ++it;
             if (it == args.end())
             {
-                handler->PSendSysMessage("Usage: .dc grantself <amount>");
+                handler->PSendSysMessage("Usage: .dca grantself <amount>");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -507,7 +594,7 @@ public:
             ++it;
             if (it == args.end())
             {
-                handler->PSendSysMessage("Usage: .dc reload mythic");
+                handler->PSendSysMessage("Usage: .dca reload mythic");
                 handler->SetSentErrorMessage(true);
                 return false;
             }
@@ -524,12 +611,15 @@ public:
                 return true;
             }
 
-            handler->PSendSysMessage("Unknown reload target. Usage: .dc reload mythic");
+            handler->PSendSysMessage("Unknown reload target. Usage: .dca reload mythic");
             handler->SetSentErrorMessage(true);
             return false;
         }
 
-        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | info [player|self] | dedupe [player|self] | grant <player> <amt> | grantself <amt> | clearflag [player|self] | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload <mythic|mythicplus|m+>");
+        handler->PSendSysMessage("Unknown subcommand. "
+            "Usage: .dca send <player> | sendforce <player> | sendforce-self | info [player|self] | "
+            "dedupe [player|self] | grant <player> <amt> | grantself <amt> | clearflag [player|self] | "
+            "relearnspells [player|self] | reload mythic; .dc difficulty <normal|heroic|mythic|info>");
         handler->SetSentErrorMessage(true);
         return false;
     }

@@ -15,6 +15,7 @@
 
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "AchievementMgr.h"
 #include "Creature.h"
 #include "Quests/QuestDef.h"
 #include "Log.h"
@@ -600,6 +601,12 @@ namespace DarkChaos
             {
                 if (!player || !achievement)
                     return;
+
+                // Account-wide sync replays achievements another character earned onto this
+                // one: no essence for those, only for achievements this character completes.
+                if (AchievementMgr const* achievementMgr = player->GetAchievementMgr())
+                    if (achievementMgr->IsReplaying())
+                        return;
 
                 uint32 playerGuid = player->GetGUID().GetCounter();
                 if (!TryClaimArtifactAchievement(playerGuid, achievement->ID))

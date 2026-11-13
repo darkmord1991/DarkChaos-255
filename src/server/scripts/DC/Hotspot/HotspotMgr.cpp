@@ -316,17 +316,20 @@ static bool IsCityLikeArea(uint32 areaId)
 // Authored world-space extents of the level bands hotspots may use.
 //
 // These are AUTHORITATIVE, not a hint: the DC terrain downport bakes a single
-// area id into every ADT of a custom continent (map 750 -> 4923, map 751 ->
-// 4924, map 861 -> 4925), so Map::GetZoneId() cannot distinguish the seven
-// leveling bands that share map 750. Without this table every hotspot on 750
-// reports zone 4923 "Hyjal Frontier (113-130)" - the announce text lies to
-// level-80 players standing in the Darkshore band, and Hotspots.MaxPerZone
-// caps the entire continent instead of each band.
+// area id into every ADT of a custom continent (map 750 -> 4923, map 861 ->
+// 4925), so Map::GetZoneId() cannot distinguish the seven leveling bands that
+// share map 750. Without this table every hotspot on 750 reports zone 4923
+// "Hyjal Frontier (113-130)" - the announce text lies to level-80 players
+// standing in the Darkshore band, and Hotspots.MaxPerZone caps the entire
+// continent instead of each band. Map 751 mostly carries its DC zone ids, but
+// some cloned tiles still report the stock zone (characters saved there sit in
+// 36, 47, 139 and 267), so its terrain is not trusted either.
 //
 // Consequences of a map appearing here at all:
 //   * spawn discovery only samples inside these boxes on that map;
 //   * a position outside all authored content on a banded map is rejected
-//     outright, so Moonglade 4928 stays hotspot-free without an exclude entry;
+//     outright, so Moonglade 4928 stays hotspot-free without an exclude entry
+//     (Undercity 4940 needs one more step: see BAND_EXCLUSIONS);
 //   * the IsCityLikeArea guard is skipped. That guard exists to keep blind
 //     map-wide discovery out of Stormwind; a hand-authored band is already an
 //     explicit statement of intent. Isles of Giants 5006 carries the
@@ -334,10 +337,11 @@ static bool IsCityLikeArea(uint32 areaId)
 //
 // These boxes are used for SAMPLING only. On map 750 the six bands interleave,
 // so their bounding boxes necessarily overlap no matter how tight they are
-// (measured against live spawn extents: 9 of 15 pairs still overlap) - which
-// makes a box test useless for deciding WHICH band a position is in. That job
-// belongs to MAP750_BAND_GRID below. A probe aimed at one band that lands in
-// another is not wasted: it is simply pooled under the band the grid reports.
+// (measured against live spawn extents: 9 of 15 pairs still overlap; on map
+// 751 it is 10 of 28) - which makes a box test useless for deciding WHICH band
+// a position is in. That job belongs to the band grids below. A probe aimed at
+// one band that lands in another is not wasted: it is simply pooled under the
+// band the grid reports.
 //
 // Extents below are the live creature-spawn footprints (map 750 / 751 / 37).
 // Maps 850 and 1410 have almost no creatures (4 and 21 respectively), so their
@@ -361,9 +365,55 @@ static constexpr HotspotZoneBand ZONE_BANDS[] =
     {  750, 4929,  4157.9f,  8289.5f,  -1692.4f,   1307.6f  }, // Darkshore (80-90)
     {  750, 4930,  1882.0f,  5051.1f,  -8426.9f,  -3872.1f  }, // Azshara (80-90)
     {  750, 4931,  1195.3f,  4264.7f,  -3793.7f,   2410.1f  }, // Ashenvale (88-98)
-    // DC Plaguelands (map 751): single band covering the whole continent.
-    {  751, 4924,   902.2f,  3492.4f,  -6127.5f,   -821.3f  }, // Plaguelands (130-160)
+    // DC Plaguelands (map 751). 4940 Undercity is deliberately absent
+    // (sanctuary capital). Its spawns carry zoneId 4933, so the Tirisfal
+    // footprint is taken without the underground ones (see BAND_EXCLUSIONS).
+    {  751, 4924,  1273.5f,  3492.4f, -6127.5f, -2411.3f }, // Eastern Plaguelands (152-158)
+    {  751, 4932,   101.1f,  3097.7f, -2859.0f,  -184.9f }, // Western Plaguelands (148-153)
+    {  751, 4933,  1376.7f,  3150.6f, -1107.9f,  2541.2f }, // Tirisfal Glades (130-136)
+    {  751, 4935,  -804.2f,  1516.9f,  -592.5f,  2253.2f }, // Silverpine Forest (134-140)
+    {  751, 4936, -1862.7f,  1276.4f, -1838.5f,   670.7f }, // Hillsbrad Foothills (138-144)
+    {  751, 4937,  -894.3f,   982.8f, -4886.0f, -1956.0f }, // The Hinterlands (145-150)
+    {  751, 4938, -2460.8f,  -561.3f, -5516.3f, -1402.3f }, // Arathi Highlands (142-147)
+    {  751, 4939, -1939.8f,  -739.6f,   850.6f,  2049.6f }, // Ruins of Gilneas (130-136)
 };
+
+// ---------------------------------------------------------------------------
+// Sanctuaries carved out of a banded map, checked before the band grid.
+//
+// Undercity 4940 lies directly under the Tirisfal band: its spawns carry
+// zoneId 4933 and share x/y - and so grid cells - with the Ruins of Lordaeron
+// overhead, so turning its cells into '.' would take the Tirisfal surface
+// above it down too (268 surface Tirisfal spawns share the footprint). Height
+// separates the two cleanly: no live spawn in this box sits between z -20.7
+// and -18.9, and the 438 below that line (409 tagged 4933, 28 tagged 4935,
+// one untagged) are Undercity's.
+//
+// Discovery never lands in here by itself - it reads the ADT surface
+// (GetHeight from MAX_HEIGHT cannot reach the vmap floors below), which is the
+// overworld - so this mainly keeps real positions honest: a player or GM
+// standing in Undercity resolves to no band instead of to Tirisfal.
+// ---------------------------------------------------------------------------
+struct HotspotBandExclusion
+{
+    uint32 mapId;
+    float minX, maxX, minY, maxY;
+    float belowZ;
+};
+
+static constexpr HotspotBandExclusion BAND_EXCLUSIONS[] =
+{
+    { 751, 1200.0f, 1950.0f, -50.0f, 550.0f, -20.0f }, // Undercity 4940, under Tirisfal
+};
+
+static bool IsInBandExclusion(uint32 mapId, float x, float y, float z)
+{
+    for (HotspotBandExclusion const& ex : BAND_EXCLUSIONS)
+        if (ex.mapId == mapId && x >= ex.minX && x <= ex.maxX && y >= ex.minY && y <= ex.maxY && z < ex.belowZ)
+            return true;
+
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 // Band grid - which level band owns a given position on a multi-band map.
@@ -418,6 +468,50 @@ static constexpr char const* MAP750_BAND_GRID[] =
     "....F.........."   , // cellY   4   y   2048 ..  2559
 };
 
+// Map 751: the same query with map=751 and these codes, with one change - the
+// Undercity volume of BAND_EXCLUSIONS is resolved before the grid, so its
+// spawns are kept out of the vote:
+//
+//   CASE zoneId WHEN 4924 THEN 'A' WHEN 4932 THEN 'B' WHEN 4933 THEN 'C'
+//               WHEN 4935 THEN 'D' WHEN 4936 THEN 'E' WHEN 4937 THEN 'F'
+//               WHEN 4938 THEN 'G' WHEN 4939 THEN 'H' ELSE '.' END
+//   ... FROM creature WHERE map=751 AND NOT (position_x BETWEEN 1200 AND 1950
+//         AND position_y BETWEEN -50 AND 550 AND position_z < -20) GROUP BY 1,2,3
+//
+// (Counted in, the underground spawns hand cell (2,0) to Tirisfal 206 : 104;
+// on the surface it is Silverpine 76 : Tirisfal 63.)
+//
+// Measured against the 14,470 zone-tagged map-751 spawns outside that volume,
+// a 512yd cell reproduces the real zone for 97.7% of them (256yd: 99.4%,
+// 1024yd: 89.0%). Per band: Eastern Plaguelands 99.5, Western Plaguelands
+// 98.7, Tirisfal 95.5, Silverpine 98.4, Hillsbrad 97.7, Hinterlands 99.0,
+// Arathi 93.5, Gilneas 97.9. Every miss sits in a cell two bands share. 256yd
+// does not pay for itself: a cell nobody spawned in is a '.' and never hosts,
+// and the coded ground shrinks from 41.7 to 33.7 million square yards.
+//
+// No '.' here is a sanctuary - they are unspawned terrain. Undercity is kept
+// out by BAND_EXCLUSIONS, not by the grid.
+static constexpr char const* MAP751_BAND_GRID[] =
+{
+    ".......AAA.."   , // cellY -12   y  -6144 .. -5633
+    "G.......AAA."   , // cellY -11   y  -5632 .. -5121
+    "G..FFF.AAAAA"   , // cellY -10   y  -5120 .. -4609
+    "...FFFF.AAAA"   , // cellY  -9   y  -4608 .. -4097
+    "..GFFFFAAAAA"   , // cellY  -8   y  -4096 .. -3585
+    "GGGGFF.AAAAA"   , // cellY  -7   y  -3584 .. -3073
+    "GGGGFF.BAAAA"   , // cellY  -6   y  -3072 .. -2561
+    "GGGGFFBBBBA."   , // cellY  -5   y  -2560 .. -2049
+    "GGGGEEEBBBBB"   , // cellY  -4   y  -2048 .. -1537
+    "GGEEEEBBBBBB"   , // cellY  -3   y  -1536 .. -1025
+    ".EEEEEEEBCCC"   , // cellY  -2   y  -1024 ..  -513
+    "..EEEEEECCCC"   , // cellY  -1   y   -512 ..    -1
+    "..EEEEDDCCCC"   , // cellY   0   y      0 ..   511
+    ".HHDDDDDCCC."   , // cellY   1   y    512 ..  1023
+    ".HHDDDDDCCC."   , // cellY   2   y   1024 ..  1535
+    ".HHHDDDDCCC."   , // cellY   3   y   1536 ..  2047
+    "...HDDDDCC.."   , // cellY   4   y   2048 ..  2559
+};
+
 struct HotspotBandCode
 {
     char code;
@@ -442,10 +536,18 @@ static constexpr HotspotBandCode MAP750_BAND_CODES[] =
     { 'D', 4929 }, { 'E', 4930 }, { 'F', 4931 },
 };
 
+static constexpr HotspotBandCode MAP751_BAND_CODES[] =
+{
+    { 'A', 4924 }, { 'B', 4932 }, { 'C', 4933 }, { 'D', 4935 },
+    { 'E', 4936 }, { 'F', 4937 }, { 'G', 4938 }, { 'H', 4939 },
+};
+
 static constexpr HotspotBandGrid BAND_GRIDS[] =
 {
     { 750, 2, -17, 15, 22, MAP750_BAND_GRID, MAP750_BAND_CODES,
       static_cast<uint32>(std::size(MAP750_BAND_CODES)) },
+    { 751, -5, -12, 12, 17, MAP751_BAND_GRID, MAP751_BAND_CODES,
+      static_cast<uint32>(std::size(MAP751_BAND_CODES)) },
 };
 
 static HotspotBandGrid const* FindBandGrid(uint32 mapId)
@@ -484,8 +586,13 @@ static bool MapHasBands(uint32 mapId)
     return false;
 }
 
-uint32 HotspotMgr::ResolveZoneAt(uint32 mapId, float x, float y, uint32 terrainZoneId) const
+uint32 HotspotMgr::ResolveZoneAt(uint32 mapId, float x, float y, float z, uint32 terrainZoneId) const
 {
+    // Sanctuaries first: Undercity shares its x/y (and grid cells) with the
+    // Tirisfal band above it, so only height tells them apart.
+    if (IsInBandExclusion(mapId, x, y, z))
+        return 0;
+
     // Multi-band maps: the grid is authoritative.
     if (HotspotBandGrid const* grid = FindBandGrid(mapId))
         return ResolveFromBandGrid(*grid, x, y);
@@ -514,7 +621,7 @@ uint32 HotspotMgr::ResolvePlayerZone(Player* player) const
         return 0;
 
     return ResolveZoneAt(player->GetMapId(), player->GetPositionX(),
-        player->GetPositionY(), player->GetZoneId());
+        player->GetPositionY(), player->GetPositionZ(), player->GetZoneId());
 }
 
 void HotspotMgr::BuildZoneSampleBoxes()
@@ -633,7 +740,7 @@ static bool EvaluateCandidateTerrain(Map* map, uint32 mapId, float cx, float cy,
         return false;
 
     // Recover the level band on the DC downport continents (see ZONE_BANDS).
-    uint32 zoneId = sHotspotMgr->ResolveZoneAt(mapId, cx, cy, terrainZoneId);
+    uint32 zoneId = sHotspotMgr->ResolveZoneAt(mapId, cx, cy, gz, terrainZoneId);
     if (!IsZoneAllowed(zoneId))
         return false;
 
@@ -673,7 +780,7 @@ void HotspotMgr::LoadSpawnPointsFromDB()
         return;
     }
 
-    uint32 rebanded = 0;
+    uint32 stale = 0;
     do
     {
         Field* fields = result->Fetch();
@@ -685,23 +792,28 @@ void HotspotMgr::LoadSpawnPointsFromDB()
         p.y      = fields[4].Get<float>();
         p.z      = fields[5].Get<float>();
 
-        // Points cached before the band table existed carry the baked terrain
-        // zone (every map-750 row says 4923). Re-resolve from the position so
-        // MaxPerZone and the announce name track the real band; a point that
-        // now falls outside every band resolves to 0 and is filtered out at
-        // pick time rather than silently spawning in un-authored terrain.
-        uint32 resolved = ResolveZoneAt(p.mapId, p.x, p.y, p.zoneId);
-        if (resolved != p.zoneId)
+        // A cached point is only as good as the band it was sampled for. Keep
+        // it only while it still resolves to the band it was saved under.
+        // Re-banding it instead looks harmless but is not: every map-751 row
+        // predates that map's split into eight bands (all say 4924) and was
+        // sampled in its eastern part, so re-banded they would pin Tirisfal's
+        // hotspots to a 200-yard strip on its eastern edge (172 points, 3
+        // cells) and the Hinterlands' to a 120-yard one - and, being plenty,
+        // keep the band floor in RefillSpawnPool from ever sampling those
+        // bands properly. A point that now lies outside every band (0) goes
+        // the same way rather than spawning in un-authored terrain.
+        if (ResolveZoneAt(p.mapId, p.x, p.y, p.z, p.zoneId) != p.zoneId)
         {
-            p.zoneId = resolved;
-            ++rebanded;
+            ++stale;
+            continue;
         }
 
         _spawnPool.push_back(p);
     } while (result->NextRow());
 
-    LOG_INFO("server.loading", "Hotspots: Loaded {} cached spawn point(s) ({} re-resolved to their level band).",
-        _spawnPool.size(), rebanded);
+    LOG_INFO("server.loading",
+        "Hotspots: Loaded {} cached spawn point(s); skipped {} cached for a level band they no longer resolve to.",
+        _spawnPool.size(), stale);
 }
 
 void HotspotMgr::SaveSpawnPointToDB(HotspotSpawnPoint const& p)
@@ -719,21 +831,43 @@ void HotspotMgr::RefillSpawnPool()
 {
     // Target variety so spawns rarely repeat the same spot.
     constexpr size_t POOL_TARGET = 100;
+    // ...and a floor for every sampled band. The pool total alone stops being
+    // a signal once other maps have cached thousands of points: a band added
+    // later (map 751 went from one band to eight) was then never probed, so it
+    // could never host a hotspot.
+    constexpr size_t BAND_TARGET = 20;
 
     if (sHotspotsConfig.enabledMaps.empty())
         return;
 
     // Count only points that are usable under the CURRENT config. Counting the
     // raw pool size meant a DB full of points for maps that were later disabled
-    // (or re-banded to 0) parked discovery forever, so hotspots never appeared
-    // on a newly enabled map.
+    // parked discovery forever, so hotspots never appeared on a newly enabled
+    // map.
     size_t usable = 0;
+    std::unordered_map<uint32, size_t> usablePerZone;
     for (HotspotSpawnPoint const& p : _spawnPool)
-        if (IsMapEnabled(p.mapId) && IsZoneAllowed(p.zoneId))
-            ++usable;
+    {
+        if (!IsMapEnabled(p.mapId) || !IsZoneAllowed(p.zoneId))
+            continue;
 
+        ++usable;
+        ++usablePerZone[p.zoneId];
+    }
+
+    // Once the pool as a whole is healthy, spend the probes on the bands still
+    // below their floor. Not before: a band that cannot fill (all water, a map
+    // that will not load) must not stall discovery everywhere else.
+    std::vector<HotspotZoneSampleBox const*> starvedBoxes;
     if (usable >= POOL_TARGET)
-        return;
+    {
+        for (HotspotZoneSampleBox const& box : _zoneSampleBoxes)
+            if (usablePerZone[box.zoneId] < BAND_TARGET)
+                starvedBoxes.push_back(&box);
+
+        if (starvedBoxes.empty())
+            return;
+    }
 
     // Bound disk I/O: every cold (unloaded) grid we probe pulls .map/.vmtile/
     // .mmtile off disk (~several ms each). Cap cold-grid loads per call so a
@@ -756,27 +890,40 @@ void HotspotMgr::RefillSpawnPool()
         if (added >= MAX_NEW_POINTS)
             break;
 
-        // Pick the map first, then a band on it. Picking a band uniformly out
-        // of the global list instead would give map 750 (six bands) six times
-        // the probes of map 751 (one), starving the smaller continents.
-        uint32 mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
+        // Topping up: probe only the bands below their floor. Otherwise pick
+        // the map first, then a band on it. Picking a band uniformly out of the
+        // global list instead would give map 751 (eight bands) eight times the
+        // probes of map 37 (one), starving the smaller continents.
+        uint32 mapId = 0;
+        HotspotZoneSampleBox const* box = nullptr;
+        if (!starvedBoxes.empty())
+        {
+            box = starvedBoxes[urand(0, static_cast<uint32>(starvedBoxes.size()) - 1)];
+            mapId = box->mapId;
+        }
+        else
+        {
+            mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
 
-        boxesOnMap.clear();
-        for (HotspotZoneSampleBox const& box : _zoneSampleBoxes)
-            if (box.mapId == mapId)
-                boxesOnMap.push_back(&box);
+            boxesOnMap.clear();
+            for (HotspotZoneSampleBox const& candidate : _zoneSampleBoxes)
+                if (candidate.mapId == mapId)
+                    boxesOnMap.push_back(&candidate);
+
+            if (!boxesOnMap.empty())
+                box = boxesOnMap[urand(0, static_cast<uint32>(boxesOnMap.size()) - 1)];
+        }
 
         float cx, cy;
-        if (!boxesOnMap.empty())
+        if (box)
         {
             // Sampling inside an authored band has a far higher hit rate than
             // map-wide random points and keeps the pool inside the leveling
             // zones. On banded maps everything outside a band is rejected by
             // EvaluateCandidateTerrain anyway, so there is nothing to gain
             // from map-wide probes here.
-            HotspotZoneSampleBox const& box = *boxesOnMap[urand(0, static_cast<uint32>(boxesOnMap.size()) - 1)];
-            cx = frand(box.minX, box.maxX);
-            cy = frand(box.minY, box.maxY);
+            cx = frand(box->minX, box->maxX);
+            cy = frand(box->minY, box->maxY);
         }
         else
         {
@@ -862,7 +1009,27 @@ bool HotspotMgr::PickSpawnPoint(HotspotSpawnPoint& out)
     if (eligible.empty())
         return false;
 
-    out = *eligible[urand(0, static_cast<uint32>(eligible.size()) - 1)];
+    // The map is drawn in proportion to its eligible points, exactly as a plain
+    // uniform pick did, so the split between continents is unchanged. Within
+    // the map every band then gets the same odds: a band's share of the cache
+    // says nothing about how much it deserves a hotspot - map 751's Eastern
+    // Plaguelands kept ~4,600 points from that map's single-band days, while
+    // discovery fills a new band only up to its floor of 20.
+    uint32 const mapId = eligible[urand(0, static_cast<uint32>(eligible.size()) - 1)]->mapId;
+
+    std::vector<uint32> bandsOnMap;
+    for (HotspotSpawnPoint const* p : eligible)
+        if (p->mapId == mapId && std::find(bandsOnMap.begin(), bandsOnMap.end(), p->zoneId) == bandsOnMap.end())
+            bandsOnMap.push_back(p->zoneId);
+
+    uint32 const zoneId = bandsOnMap[urand(0, static_cast<uint32>(bandsOnMap.size()) - 1)];
+
+    std::vector<HotspotSpawnPoint const*> inBand;
+    for (HotspotSpawnPoint const* p : eligible)
+        if (p->mapId == mapId && p->zoneId == zoneId)
+            inBand.push_back(p);
+
+    out = *inBand[urand(0, static_cast<uint32>(inBand.size()) - 1)];
     return true;
 }
 
@@ -995,10 +1162,11 @@ bool HotspotMgr::SpawnHotspotAt(uint32 mapId, uint32 zoneId, float x, float y, f
     if (!GetBaseMapSafe(mapId))
         return false;
 
-    // Callers pass Player::GetZoneId(), which is the baked continent-wide area
-    // id on the DC downport maps; recover the band so the announce name and
-    // MaxPerZone accounting match a pool-spawned hotspot in the same spot.
-    if (uint32 band = ResolveZoneAt(mapId, x, y, zoneId))
+    // Callers pass Player::GetZoneId(), which on the DC downport maps is the
+    // baked continent-wide area id (750) or, on some tiles, a stock one (751);
+    // recover the band so the announce name and MaxPerZone accounting match a
+    // pool-spawned hotspot in the same spot.
+    if (uint32 band = ResolveZoneAt(mapId, x, y, z, zoneId))
         zoneId = band;
 
     Hotspot h;

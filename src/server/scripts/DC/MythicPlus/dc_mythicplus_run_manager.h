@@ -82,6 +82,9 @@ public:
         bool scalingApplied = false;
         ObjectGuid countdownBarrierGuid;
         std::unordered_set<ObjectGuid::LowType> participants;
+        // First time each participant was seen in the run (game time, seconds). Kept across a
+        // disconnect and rejoin; GetCreditedParticipants uses it to refuse late joiners.
+        std::unordered_map<ObjectGuid::LowType, uint64> joinedAt;
         // Participants driven by playerbots. They stay in every record the
         // run writes (deaths, score, vault rows) but are flagged so the
         // leaderboards can label them.
@@ -258,6 +261,9 @@ private:
     InstanceState const* GetState(Map* map) const;
     void RegisterGroupMembers(Player* activator, InstanceState* state);
     void AddParticipant(InstanceState* state, Player* player);
+    // Participants a completed run pays: in the instance at completion and in the run from
+    // (about) its start. `participants` itself only ever grows.
+    std::unordered_set<ObjectGuid::LowType> GetCreditedParticipants(InstanceState const* state) const;
     bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
     // A group only ever needs ONE keystone. Falls back to the activator's party
     // when the activator is not carrying a key, so the leader can start a run on

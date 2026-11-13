@@ -206,6 +206,18 @@ DarkChaos.Seasonal.EssenceItemID = 300312
 DarkChaos.Seasonal.WeeklyTokenCap = 5000
 
 #
+#    DarkChaos.Seasonal.TokenLogRetentionWeeks
+#        Description: Full weeks of dc_token_transaction_log kept before the current
+#                     week. The weekly token cap only reads the current week, and
+#                     nothing else reads the table. Older rows are deleted in batches
+#                     of 20,000 every 10 minutes, so a backlog drains over a few hours.
+#                     0 keeps every row (the table then grows by every award, bots
+#                     included).
+#        Default:     4
+#
+DarkChaos.Seasonal.TokenLogRetentionWeeks = 4
+
+#
 #    DarkChaos.Seasonal.WeeklyEssenceCap
 #        Description: Maximum Seasonal Essence earnable per week (0 = unlimited)
 #        Default:     1000
@@ -1455,18 +1467,28 @@ Hotspots.EnabledMaps = "37,850,1410,750,751"
 #                       6000 = Stratholme Valley   (map 850,  130-160)
 #                       6100 = Hyjal Frontier      (map 1410, 80-130)
 #                       4923 = Hyjal Frontier      (map 750,  113-130)
-#                       4924 = Plaguelands         (map 751,  130-160)
+#                       4924 = Eastern Plaguelands (map 751,  152-158)
 #                       4926 = Winterspring        (map 750,  104-115)
 #                       4927 = Felwood             (map 750,  96-106)
 #                       4929 = Darkshore           (map 750,  80-90)
 #                       4930 = Azshara             (map 750,  80-90)
 #                       4931 = Ashenvale           (map 750,  88-98)
+#                       4932 = Western Plaguelands (map 751,  148-153)
+#                       4933 = Tirisfal Glades     (map 751,  130-136)
+#                       4935 = Silverpine Forest   (map 751,  134-140)
+#                       4936 = Hillsbrad Foothills (map 751,  138-144)
+#                       4937 = The Hinterlands     (map 751,  145-150)
+#                       4938 = Arathi Highlands    (map 751,  142-147)
+#                       4939 = Ruins of Gilneas    (map 751,  130-136)
 #                     Not listed (add if you want hotspots there):
 #                       5006 = Isles of Giants     (map 1405)
-#        Default:     "268,6000,6100,4923,4924,4926,4927,4929,4930,4931"
+#                     Never get hotspots, listed or not (no level band):
+#                       4928 = Moonglade           (map 750,  sanctuary)
+#                       4940 = Undercity           (map 751,  capital)
+#        Default:     "268,6000,6100,4923,4924,4926,4927,4929,4930,4931,4932,4933,4935,4936,4937,4938,4939"
 #                     (core fallback when unset: "" = every enabled map)
 #
-Hotspots.EnabledZones = "268,6000,6100,4923,4924,4926,4927,4929,4930,4931"
+Hotspots.EnabledZones = "268,6000,6100,4923,4924,4926,4927,4929,4930,4931,4932,4933,4935,4936,4937,4938,4939"
 
 #
 #    Hotspots.ExcludedZones

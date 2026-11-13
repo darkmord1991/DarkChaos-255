@@ -290,10 +290,13 @@ JOIN (
 -- rows; a reference is one row per creature instead.
 --
 -- The rows carry `GroupId = 1`, so the whole reference is ONE loot group: when it
--- is rolled, exactly one item comes out, chosen by relative weight. Greens are
--- weight 100 and blues 25, which makes a blue a quarter as likely as a green
--- rather than a separate roll. Whether the reference is rolled at all is the
--- creature's business, and that chance is set per rank in step 6.
+-- is rolled, exactly one item comes out. In a group `Chance` is a PERCENT of that
+-- one roll, not a weight: LootGroup::Roll returns the first row whose Chance is
+-- >= 100. Greens are 1.86 and blues 0.465 (43 + 43 rows = 99.975%), so a blue is a
+-- quarter as likely as a green. (This file first said 100 / 25, which dropped only
+-- each band's first item; the live rows were corrected to these values before
+-- 2026-11-12, and the text now matches them.) Whether the reference is rolled at
+-- all is the creature's business, and that chance is set per rank in step 6.
 DELETE FROM `reference_loot_template` WHERE `Entry` BETWEEN 752200 AND 752204;
 
 INSERT INTO `reference_loot_template`
@@ -301,7 +304,7 @@ INSERT INTO `reference_loot_template`
 SELECT 752200 + CASE s.`band` WHEN 80 THEN 0 WHEN 88 THEN 1 WHEN 96 THEN 2
                               WHEN 104 THEN 3 ELSE 4 END,
        s.`entry`, 0,
-       IF(s.`quality` = 3, 25, 100),   -- blues a quarter as common as greens
+       IF(s.`quality` = 3, 0.465, 1.86),   -- percent of one roll; blues a quarter as common
        0, 1, 1, 1, 1
 FROM `dc_variety_stage` s;
 

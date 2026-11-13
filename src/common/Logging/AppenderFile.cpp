@@ -144,10 +144,14 @@ FILE* AppenderFile::OpenFile(std::string const& filename, std::string const& mod
     if (backup)
     {
         CloseFile();
+        // DarkChaos: only the timestamp's colons become '-'. Replacing them in the whole path also turned a Windows
+        // drive letter ("K:\...\logs") into a relative "K-\...\logs" folder, so every backup silently failed and the
+        // "w" open below then wiped the previous run's log.
+        std::string stamp = LogMessage::getTimeStr(GetEpochTime());
+        std::replace(stamp.begin(), stamp.end(), ':', '-');
         std::string newName(fullName);
         newName.push_back('.');
-        newName.append(LogMessage::getTimeStr(GetEpochTime()));
-        std::replace(newName.begin(), newName.end(), ':', '-');
+        newName.append(stamp);
         rename(fullName.c_str(), newName.c_str()); // no error handling... if we couldn't make a backup, just ignore
 
         if (_maxBackups && !_dynamicName)

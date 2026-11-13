@@ -21,6 +21,7 @@
 #include "DBCEnums.h"
 #include "InstanceSaveMgr.h"
 #include "Map.h"
+#include <vector>
 
 class MapInstanced : public Map
 {
@@ -46,6 +47,11 @@ public:
     }
     bool DestroyInstance(InstancedMaps::iterator& itr);
 
+    // DarkChaos: destroys the instances whose unload timer ran out in Update(). World thread only,
+    // called by MapMgr::Update once the map workers are done (see _pendingDestroys).
+    void DestroyPendingInstances();
+    [[nodiscard]] bool HasPendingDestroys() const { return !_pendingDestroys.empty(); }
+
     InstancedMaps& GetInstancedMaps() { return m_InstancedMaps; }
     void InitVisibilityDistance() override;
 
@@ -54,5 +60,10 @@ private:
     BattlegroundMap* CreateBattleground(uint32 InstanceId, Battleground* bg);
 
     InstancedMaps m_InstancedMaps;
+
+    // DarkChaos: Update() runs on a map worker, and destroying an instance there let ~InstanceMap
+    // erase from InstanceSaveMgr's unlocked save map while other workers read it. Update() only
+    // records the ids; DestroyPendingInstances() does the work on the world thread.
+    std::vector<uint32> _pendingDestroys;
 };
 #endif

@@ -12,6 +12,7 @@
 #include "Pet.h"
 #include "Config.h"
 #include "Chat.h"
+#include "CombatManager.h"
 #include "dc_phased_duels.h"
 #include "GameTime.h"
 #include "DatabaseEnv.h"
@@ -125,8 +126,17 @@ namespace DCPhasedDuels
     // must never run in such a bit or the duelists would see, and fight, that content.
     static std::unordered_map<uint32, uint32> sContentPhaseBitsByMap;
     static uint32 sContentPhaseBitsAllMaps = 0;
-    // Duelists whose duel actually started (countdown over), phased or not.
-    static std::unordered_set<ObjectGuid> sStartedDuelists;
+    // Duelists whose duel actually started (countdown over), phased or not, with what the
+    // end-of-duel restore needs to know about the start.
+    struct DuelStartSnapshot
+    {
+        // Both duelists were out of combat at the start. Otherwise the restore never runs: a duel
+        // accepted mid-fight (only the challenger must be out of combat) was a free full reset.
+        bool eligible = false;
+        // Spells already on cooldown at the start; the restore only clears cooldowns the duel started.
+        std::unordered_set<uint32> cooldownsAtStart;
+    };
+    static std::unordered_map<ObjectGuid, DuelStartSnapshot> sStartedDuelists;
     static uint32 sNextMatchId = 0;
 
     struct DuelSpectatorState
@@ -765,9 +775,48 @@ namespace DCPhasedDuels
         return true;
     }
 
-    void RestorePlayerState(Player* player)
+    DuelStartSnapshot MakeDuelStartSnapshot(Player* player, bool eligible)
     {
-        if (!player)
+        DuelStartSnapshot snapshot;
+        snapshot.eligible = eligible;
+        for (auto const& [spellId, cooldown] : player->GetSpellCooldownMap())
+        {
+            (void)cooldown;
+            snapshot.cooldownsAtStart.insert(spellId);
+        }
+        return snapshot;
+    }
+
+    // True while the player fights anything besides the duel opponent and their pets.
+    bool HasCombatOutsideDuel(Player* player, Player* opponent)
+    {
+        CombatManager const& combat = player->GetCombatManager();
+        if (combat.HasPvECombat())
+            return true;
+
+        for (auto const& [guid, ref] : combat.GetPvPCombatRefs())
+        {
+            (void)guid;
+            Unit* other = ref ? ref->GetOther(player) : nullptr;
+            if (!other)
+                continue;
+
+            Unit* owner = other->GetCharmerOrOwnerOrSelf();
+            if (owner != opponent && owner != player)
+                return true;
+        }
+
+        return false;
+    }
+
+    void RestorePlayerState(Player* player, Player* opponent, std::optional<DuelStartSnapshot> const& snapshot)
+    {
+        if (!player || !snapshot || !snapshot->eligible)
+            return;
+
+        // Fighting a creature or a third player now (the duel's own combat is still up here):
+        // no reset, or a duel next to a boss or an enemy is a free mid-fight refill.
+        if (HasCombatOutsideDuel(player, opponent))
             return;
 
         if (sConfig.resetHealthOnEnd)
@@ -787,7 +836,18 @@ namespace DCPhasedDuels
         }
 
         if (sConfig.resetCooldownsOnEnd)
-            player->RemoveAllSpellCooldown();
+        {
+            std::vector<uint32> startedDuringDuel;
+            for (auto const& [spellId, cooldown] : player->GetSpellCooldownMap())
+            {
+                (void)cooldown;
+                if (!snapshot->cooldownsAtStart.count(spellId))
+                    startedDuringDuel.push_back(spellId);
+            }
+
+            for (uint32 spellId : startedDuringDuel)
+                player->RemoveSpellCooldown(spellId, true);
+        }
 
         if (sConfig.restorePetHealthOnEnd)
         {
@@ -1059,9 +1119,13 @@ public:
         // Remembered for every started duel, phased or not: only these get the end-of-duel
         // health/power/cooldown reset (a declined or cancelled request never starts).
         {
+            bool const eligible = !player1->IsInCombat() && !player2->IsInCombat();
+            DuelStartSnapshot snapshot1 = MakeDuelStartSnapshot(player1, eligible);
+            DuelStartSnapshot snapshot2 = MakeDuelStartSnapshot(player2, eligible);
+
             std::lock_guard<std::mutex> lock(sDuelMutex);
-            sStartedDuelists.insert(player1->GetGUID());
-            sStartedDuelists.insert(player2->GetGUID());
+            sStartedDuelists[player1->GetGUID()] = std::move(snapshot1);
+            sStartedDuelists[player2->GetGUID()] = std::move(snapshot2);
         }
 
         Map* map = player1->GetMap();
@@ -1121,12 +1185,16 @@ public:
         if (!winner || !loser)
             return;
 
-        bool started = false;
+        std::optional<DuelStartSnapshot> winnerStart;
+        std::optional<DuelStartSnapshot> loserStart;
         {
             std::lock_guard<std::mutex> lock(sDuelMutex);
-            started = sStartedDuelists.erase(winner->GetGUID()) > 0;
-            started = sStartedDuelists.erase(loser->GetGUID()) > 0 || started;
+            if (auto node = sStartedDuelists.extract(winner->GetGUID()))
+                winnerStart = std::move(node.mapped());
+            if (auto node = sStartedDuelists.extract(loser->GetGUID()))
+                loserStart = std::move(node.mapped());
         }
+        bool const started = winnerStart.has_value() || loserStart.has_value();
 
         // Tracked duels are undone even if the system was switched off mid-duel
         std::optional<ActiveDuel> duel = TakeActiveDuel(winner->GetGUID(), loser->GetGUID());
@@ -1140,8 +1208,8 @@ public:
             return;
 
         // Restore player states
-        RestorePlayerState(winner);
-        RestorePlayerState(loser);
+        RestorePlayerState(winner, loser, winnerStart);
+        RestorePlayerState(loser, winner, loserStart);
 
         // Record duel end and update statistics
         if (duel)

@@ -187,15 +187,16 @@ public:
 
         static ChatCommandTable hlbgCommandTable =
         {
-            // Admin/GM commands
-            { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No },
+            // Admin/GM commands; status, get, history and results are read-only player views
+            // (players had them through the `command` table, which can no longer lower a level)
+            { "status", HandleHLBGStatusCommand, SEC_PLAYER, Console::No },
             { "qlist", HandleHLBGQueueListCommand, SEC_GAMEMASTER, Console::No },
-            { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No },
+            { "get",    HandleHLBGGetCommand,    SEC_PLAYER, Console::No },
             { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
             { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
             { "finish", HandleHLBGFinishCommand, SEC_GAMEMASTER, Console::No },
             { "end",    HandleHLBGFinishCommand, SEC_GAMEMASTER, Console::No },
-            { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
+            { "history",HandleHLBGHistoryCommand,SEC_PLAYER, Console::No },
             { "statsmanual",HandleHLBGStatsManualCommand,SEC_GAMEMASTER, Console::No },
             { "affix",  HandleHLBGAffixCommand,  SEC_GAMEMASTER, Console::No },
 
@@ -203,7 +204,7 @@ public:
             { "live",    HandleHLBGLive,    SEC_PLAYER, Console::No },
             // historyui/statsui intentionally removed: use DC-Leaderboards (/leaderboard)
             { "warmup",  HandleHLBGWarmup,  SEC_GAMEMASTER, Console::No },
-            { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
+            { "results", HandleHLBGResults, SEC_PLAYER, Console::No },
             { "spectate", HandleHLBGSpectateCommand, SEC_PLAYER, Console::No },
 
             // Nested 'queue' subtable for player queue actions
