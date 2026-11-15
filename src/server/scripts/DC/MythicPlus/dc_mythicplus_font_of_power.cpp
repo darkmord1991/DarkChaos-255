@@ -576,8 +576,10 @@ public:
                         Acore::StringFormat("|cff00ff00[Group Ready Check]|r +{} {}", descriptor.level, dungeonName),
                         GOSSIP_SENDER_MAIN, ACTION_START_READY);
 
-                    // Also show instant start for leader (bypasses ready check)
-                    if (group->IsLeader(player->GetGUID()))
+                    // Also show instant start for the leader (bypasses ready check), but only
+                    // with their own key: another member's key is spent only after its holder
+                    // accepted the ready check.
+                    if (group->IsLeader(player->GetGUID()) && descriptor.ownerGuid == player->GetGUID())
                     {
                         AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
                             Acore::StringFormat("Start Immediately (No Ready Check): +{} {}", descriptor.level, dungeonName),
@@ -661,6 +663,18 @@ public:
 
         if (action == ACTION_START_RUN)
         {
+            // The menu offers this only to a leader holding the key, but the key may have
+            // changed hands since it was built. Another member's key goes through the ready
+            // check, which asks its holder first.
+            KeystoneDescriptor descriptor;
+            std::string error;
+            if (!sMythicRuns->CanActivateKeystone(player, go, descriptor, error) ||
+                descriptor.ownerGuid != player->GetGUID())
+            {
+                InitiateGroupReadyCheck(player, go);
+                return true;
+            }
+
             sMythicRuns->TryActivateKeystone(player, go);
             return true;
         }

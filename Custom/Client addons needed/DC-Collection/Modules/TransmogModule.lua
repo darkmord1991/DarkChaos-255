@@ -653,11 +653,76 @@ function DC:ParseOutfitLink(linkData)
     }
 end
 
+-- Outfit names in links come from whoever posted the link: strip escape codes, brackets and
+-- control characters before showing them in chat or in a popup.
+local function SafeOutfitLinkName(name)
+    name = tostring(name or ""):gsub("[|%[%]%c]", "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then
+        name = "Outfit"
+    end
+    if #name > 40 then
+        name = name:sub(1, 40)
+    end
+    return name
+end
+
+-- Shift-click re-link: keeps the link data exactly (so the receiver previews the same look)
+-- but uses our own colour and "[Outfit: name]" label, whatever label the poster gave it.
+function DC:BuildOutfitChatLink(linkData)
+    if type(linkData) ~= "string" or not linkData:find("^dc:outfit:%d+:%d*:[^:|]*:[%x%-]*$") then
+        return nil
+    end
+    local outfit = self:ParseOutfitLink(linkData)
+    if not outfit then
+        return nil
+    end
+    local label = string.format("[%s: %s]", (L and L.OUTFIT) or "Outfit", SafeOutfitLinkName(outfit.name))
+    return string.format("|cff71d5ff|H%s|h%s|h|r", linkData, label)
+end
+
+-- Anyone can post a dc:outfit link, and applying one replaces the whole look, so a link click
+-- never applies directly: it asks first, naming the outfit.
+function DC:ConfirmApplyOutfitFromLink(linkData)
+    local outfit = type(linkData) == "string" and self:ParseOutfitLink(linkData)
+    if not outfit then
+        self:Print("Invalid outfit link.")
+        return false
+    end
+    if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then
+        return false
+    end
+
+    if not StaticPopupDialogs["DC_COLLECTION_APPLY_OUTFIT_LINK"] then
+        StaticPopupDialogs["DC_COLLECTION_APPLY_OUTFIT_LINK"] = {
+            text = "Apply the outfit \"%s\" from this chat link?\n\n"
+                .. "This replaces the transmogrification on all your slots (%s appearances).",
+            button1 = ACCEPT or "Accept",
+            button2 = CANCEL or "Cancel",
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            OnAccept = function(_, data)
+                if type(data) == "string" then
+                    DC:ApplyOutfitFromLink(data)
+                end
+            end,
+        }
+    end
+
+    local count = 0
+    for _ in pairs(outfit.state or {}) do
+        count = count + 1
+    end
+    StaticPopup_Show("DC_COLLECTION_APPLY_OUTFIT_LINK", SafeOutfitLinkName(outfit.name), tostring(count), linkData)
+    return true
+end
+
 function DC:PreviewOutfitFromLink(linkData)
     local outfit = self:ParseOutfitLink(linkData)
-    if not outfit then 
+    if not outfit then
         self:Print("Invalid outfit link.")
-        return 
+        return
     end
     
     if DressUpFrame and DressUpFrame.Show then
@@ -704,7 +769,7 @@ function DC:PreviewOutfitFromLink(linkData)
         end
         self:Print("Couldn't resolve this outfit's appearances yet. Open the Wardrobe once to load appearance data, then click the link again.")
     else
-        DC:Print("Previewing outfit: " .. (outfit.name or "Unknown"))
+        DC:Print("Previewing outfit: " .. SafeOutfitLinkName(outfit.name))
     end
 end
 
@@ -754,7 +819,7 @@ function DC:ApplyOutfitFromLink(linkData)
         end
     end
 
-    self:Print("Outfit '" .. (outfit.name or "") .. "' applied!")
+    self:Print("Outfit '" .. SafeOutfitLinkName(outfit.name) .. "' applied!")
     return true
 end
 

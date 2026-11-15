@@ -267,9 +267,10 @@ function GF:PopulateScheduledEvents(events)
     
     for i, event in ipairs(events) do
         local eventType = event.eventType or event.type or EVENT_TYPES.OTHER
-        local title = event.title or event.dungeonName or "Scheduled Event"
-        local description = event.description or event.note or ""
-        local organizer = event.organizer or event.leaderName or "Unknown"
+        -- Typed by the event's creator: escaped for the row and for the Sign Up message.
+        local title = GF.EscapeText(event.title or event.dungeonName or "Scheduled Event")
+        local description = GF.EscapeText(event.description or event.note or "")
+        local organizer = GF.EscapeText(event.organizer or event.leaderName or "Unknown")
         local scheduledTime = event.dateTime
         if not scheduledTime and event.scheduledTime then
             scheduledTime = date("%a %H:%M", event.scheduledTime)

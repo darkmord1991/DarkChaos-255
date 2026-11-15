@@ -410,6 +410,12 @@ public:
             return true;
         }
 
+        if (challengeType == CHALLENGE_SOLO && (player->GetGroup() || player->GetOriginalGroup()))
+        {
+            handler->SendSysMessage("Leave your group before you start the Solo Prestige challenge.");
+            return true;
+        }
+
         if (PrestigeAPI::StartChallenge(player, static_cast<uint8>(challengeType), prestigeLevel))
         {
             handler->PSendSysMessage("|cFF00FF00Challenge started: {}|r",

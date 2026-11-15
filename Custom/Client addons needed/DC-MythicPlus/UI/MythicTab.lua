@@ -635,7 +635,7 @@ function GF:PopulateMythicGroups(groups)
         end
 
         row.levelBadge:SetText("|cffffffff+" .. level .. "|r")
-        row.dungeonText:SetText(group.dungeon or "Unknown Dungeon")
+        row.dungeonText:SetText(GF.EscapeText(group.dungeon or "Unknown Dungeon"))
 
         local leaderName = group.leader or "Unknown"
         local markerText = ""
@@ -689,7 +689,7 @@ function GF:PopulateMythicGroups(groups)
 
         -- Note (if any)
         if group.note and group.note ~= "" then
-            row.noteText:SetText("|cff666666" .. group.note .. "|r")
+            row.noteText:SetText("|cff666666" .. GF.EscapeText(group.note) .. "|r")
             row.noteText:Show()
         else
             row.noteText:Hide()
@@ -2086,7 +2086,7 @@ function GF:RefreshApplicantPanel()
             row:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:AddLine("Applicant Message:", 1, 0.82, 0)
-                GameTooltip:AddLine(applicant.message, 1, 1, 1, true)
+                GameTooltip:AddLine(GF.EscapeText(applicant.message), 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Applied: " .. date("%H:%M:%S", applicant.timestamp), 0.6, 0.6, 0.6)
                 GameTooltip:Show()

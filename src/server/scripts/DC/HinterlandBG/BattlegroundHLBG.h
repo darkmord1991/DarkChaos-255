@@ -122,6 +122,8 @@ private:
     void RewardMatchOutcome(TeamId winnerTeamId);
     void RewardRandomKillHonor(Player* player);
     void RewardPlayerKill(Player* killer, Player* victim, uint32 scorePoints);
+    // Victim-side reward guard against kill trading; records the kill for the repeat window.
+    bool IsUnrewardedPlayerKill(Player* killer, Player* victim);
     void RewardNpcKill(Player* killer, Creature* unit, uint32 scorePoints, TeamId victimTeam, bool isBossKill);
     void AddPlayerContributionScore(ObjectGuid const& guid, uint32 points);
     void TeleportPlayerToTeamStart(Player* player) const;
@@ -189,6 +191,9 @@ private:
     std::map<ObjectGuid, Position> _playerLastPos;
     mutable std::map<ObjectGuid, uint32> _playerHKBaseline;
     std::map<ObjectGuid, uint32> _playerScores;
+    // (killer low guid << 32 | victim low guid) -> NowSec() of that killer's last kill of that victim.
+    // Pruned past the repeat window when it grows, cleared at every match reset and at match end.
+    std::unordered_map<uint64, uint32> _lastPlayerKillSec;
 
     std::unordered_set<uint32> _npcRewardEntriesAlliance;
     std::unordered_set<uint32> _npcRewardEntriesHorde;

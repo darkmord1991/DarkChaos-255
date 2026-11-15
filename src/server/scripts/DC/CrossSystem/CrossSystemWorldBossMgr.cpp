@@ -257,17 +257,28 @@ namespace DC
         // The post-kill grace period (see IsPlayerLockedOut) keeps THIS corpse lootable for them.
         // Only stamp players who are NOT already locked from a prior kill: re-stamping would move the
         // lock's start time to now, so grace would let an already-locked player loot every kill.
+        // The stamped set is recorded with the corpse: isTappedBy() follows the group live, so a
+        // character invited after the kill would pass it too, and only this record tells them apart.
         if (_lockoutEnabled && GetBossInfo(entry))
         {
+            KillRecord record;
+            record.corpse = boss->GetGUID();
+
             if (Map* map = boss->GetMap())
             {
                 map->DoForAllPlayers([&](Player* player)
                 {
                     if (player && player->IsInWorld() && boss->isTappedBy(player)
                         && GetLockoutRemaining(player, entry) == 0)
+                    {
                         LockPlayer(player, entry);
+                        record.credited.insert(player->GetGUID());
+                    }
                 });
             }
+
+            std::lock_guard<std::mutex> guard(_killRecordsLock);
+            _killRecords[entry] = std::move(record);
         }
 
         // Release the combat phase (kill path) so the corpse and its looters are back in the normal world.
@@ -535,6 +546,19 @@ namespace DC
         uint32 const expiry = const_cast<Player*>(player)->GetPlayerSetting(GetLockSource(entry), 0).value;
         uint32 const now = static_cast<uint32>(GameTime::GetGameTime().count());
         return expiry > now ? (expiry - now) : 0;
+    }
+
+    WorldBossMgr::KillCredit WorldBossMgr::GetKillCredit(Player const* player, ObjectGuid corpse) const
+    {
+        if (!player)
+            return KillCredit::NotCredited;
+
+        std::lock_guard<std::mutex> guard(_killRecordsLock);
+        auto it = _killRecords.find(corpse.GetEntry());
+        if (it == _killRecords.end() || it->second.corpse != corpse)
+            return KillCredit::Unrecorded;
+
+        return it->second.credited.count(player->GetGUID()) ? KillCredit::Credited : KillCredit::NotCredited;
     }
 
     void WorldBossMgr::ClearPlayerLockout(Player* player, uint32 entry)

@@ -13,6 +13,7 @@
 #include "dc_addon_utils.h"
 #include "dc_addon_groupfinder_mgr.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
+#include "DC/Spectator/dc_spectator_core.h"
 
 #include "Common.h"
 #include "ScriptMgr.h"
@@ -76,6 +77,59 @@ namespace Matchmaking
                 case QROLE_HEALER: return "healer";
                 default:           return "dps";
             }
+        }
+
+        // Aura the GM .freeze command applies (cs_misc.cpp SPELL_FREEZE).
+        constexpr uint32 SPELL_GM_FREEZE = 9454;
+
+        // Longest vote-kick reason relayed to the group, in UTF-8 code points.
+        constexpr std::size_t BOOT_REASON_MAX_CHARS = 64;
+
+        bool IsSpectatingAnything(Player* player)
+        {
+            return player->IsSpectator() || sSpectatorRegistry.IsSpectating(player->GetGUID());
+        }
+
+        // Why `player` may not join the queue, or nullptr. The stock LFGMgr::JoinLfg state
+        // checks (battleground or arena, battleground queue unless JoinBGAndLFG.Enable), plus
+        // DC spectating and the GM freeze.
+        char const* GetQueueJoinBlockReason(Player* player)
+        {
+            if (player->InBattleground() || player->InArena())
+                return "in a battleground or arena";
+            if (player->InBattlegroundQueue() && !sWorld->getBoolConfig(CONFIG_ALLOW_JOIN_BG_AND_LFG))
+                return "queued for a battleground or arena";
+            if (IsSpectatingAnything(player))
+                return "spectating";
+            if (player->HasAura(SPELL_GM_FREEZE))
+                return "frozen by a Game Master";
+            return nullptr;
+        }
+
+        // Why `player` may not be teleported into the dungeon now, or nullptr. The stock
+        // LFGMgr::TeleportPlayer conditions, plus the GM freeze and the battleground, arena and
+        // spectator states, any of which can have changed since the player queued.
+        char const* GetTeleportBlockReason(Player* player)
+        {
+            if (!player->IsAlive())
+                return "dead";
+            if (player->IsFalling() || player->HasUnitState(UNIT_STATE_JUMPING))
+                return "falling";
+            if (player->IsMirrorTimerActive(FATIGUE_TIMER))
+                return "suffering from fatigue";
+            if (player->GetVehicle())
+                return "in a vehicle";
+            if (player->GetCharm() || player->IsCharmed())
+                return "charmed or controlling another unit";
+            if (player->IsInCombat())
+                return "in combat";
+            if (player->InBattleground() || player->InArena())
+                return "in a battleground or arena";
+            if (IsSpectatingAnything(player))
+                return "spectating";
+            if (player->HasAura(SPELL_GM_FREEZE))
+                return "frozen by a Game Master";
+            return nullptr;
         }
     }
 
@@ -734,6 +788,12 @@ namespace Matchmaking
 
             for (Player* m : members)
             {
+                if (char const* stateReason = GetQueueJoinBlockReason(m))
+                {
+                    reject((members.size() > 1 ? m->GetName() + " is " : std::string("You are "))
+                        + stateReason + " and cannot queue.");
+                    return;
+                }
                 if (m->HasAura(lfg::LFG_SPELL_DUNGEON_DESERTER))
                 {
                     reject((members.size() > 1 ? m->GetName() + " has" : std::string("You have"))
@@ -2055,6 +2115,20 @@ namespace Matchmaking
                 continue;
             }
 
+            // Stock LFGMgr::TeleportPlayer refuses a dead, falling, fatigued, vehicle-bound, charmed or
+            // in-combat player; a GM-frozen one, a spectator, or one inside a battleground or arena must
+            // not use the pop to leave either. Such a member is dropped like a decline; the rest requeue.
+            if (!prop.IsBotMember(guid.GetCounter()))
+            {
+                if (char const* stateReason = GetTeleportBlockReason(p))
+                {
+                    culprits.insert(guid.GetCounter());
+                    if (failReason.empty())
+                        failReason = p->GetName() + " could not be teleported (" + stateReason + ").";
+                    continue;
+                }
+            }
+
             // Stock LFG lock statuses were checked at queue time, but a member may
             // have changed since (levelled, dropped an item, got saved elsewhere).
             std::string lockReason = GetEntryLockReason(p, prop.dungeonId, prop.difficulty, true);
@@ -2460,7 +2534,11 @@ namespace Matchmaking
             boot.victim     = victim;
             boot.kicker     = kicker;
             boot.victimName = victimPlayer->GetName();
-            boot.reason     = reason.empty() ? "No reason given" : reason;
+            // Shown to the whole group: no UI escape codes, and a bounded length.
+            boot.reason     = Utils::SanitizePlayerText(reason);
+            TruncateGroupFinderText(boot.reason, BOOT_REASON_MAX_CHARS);
+            if (boot.reason.empty())
+                boot.reason = "No reason given";
             boot.cancelTime = GameTime::GetGameTime().count() + _bootDurationSec;
 
             // Every real player still in the group votes. Kicker auto-agrees,

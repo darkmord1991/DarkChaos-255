@@ -380,8 +380,10 @@ end
 if not Wardrobe._shareListener then
     local f = CreateFrame("Frame")
     f:RegisterEvent("CHAT_MSG_ADDON")
-    f:SetScript("OnEvent", function(_, _, prefix, message, _, sender)
-        if prefix == ADDON_PREFIX then
+    f:SetScript("OnEvent", function(_, _, prefix, message, distribution, sender)
+        -- Shares are only ever sent as a WHISPER (SendOutfitToPlayer); one GUILD/RAID/BATTLEGROUND
+        -- message must not pop this dialog for every member at once.
+        if prefix == ADDON_PREFIX and distribution == "WHISPER" then
             -- Anti-spam: each valid payload raises a modal popup, so rate-limit
             -- per sender (anyone can whisper these).
             local who = tostring(sender or ""):gsub("%-.*$", ""):lower()

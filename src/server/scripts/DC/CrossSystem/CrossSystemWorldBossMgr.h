@@ -83,6 +83,16 @@ namespace DC
         bool IsPlayerLockedOut(Player const* player, uint32 entry) const;
         // Seconds until the player's lockout on this boss expires (0 if not locked).
         uint32 GetLockoutRemaining(Player const* player, uint32 entry) const;
+        // Whether the player was locked (credited) by the kill that left this corpse. Group
+        // membership is checked live by the core's loot code, so without this a character
+        // invited after the kill could loot it and never be locked.
+        enum class KillCredit : uint8
+        {
+            Unrecorded,   // no kill on record for this corpse (loot is filled before JustDied)
+            Credited,
+            NotCredited
+        };
+        KillCredit GetKillCredit(Player const* player, ObjectGuid corpse) const;
         // Clear a player's lockout on this boss (GM tooling / testing).
         void ClearPlayerLockout(Player* player, uint32 entry);
         // "1d 4h 12m" style formatter for lockout durations (shared by the loot message and commands).
@@ -141,6 +151,15 @@ namespace DC
         // Boss records waiting for the world thread (see QueueBossUpdate), in push order.
         std::mutex _queuedUpdatesLock;
         std::vector<DCAddon::JsonValue> _queuedUpdates;
+
+        // Per boss entry: the corpse of its latest kill and the players OnBossDied locked for it.
+        struct KillRecord
+        {
+            ObjectGuid corpse;
+            std::unordered_set<ObjectGuid> credited;
+        };
+        mutable std::mutex _killRecordsLock;
+        std::unordered_map<uint32, KillRecord> _killRecords;
 
         // Milliseconds not yet taken off the respawn countdowns: a world tick is far
         // shorter than a second, so Update() counts whole seconds out of this.

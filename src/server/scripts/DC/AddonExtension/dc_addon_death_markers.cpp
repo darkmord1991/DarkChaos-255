@@ -80,6 +80,20 @@ namespace DeathMarkers
                 g_markers.end());
         }
 
+        // Every marker rides every WRLD snapshot for its 24 h, so the list had no bound but the death rate: a
+        // player making and killing hardcore characters in a loop inflated each snapshot. Only the newest are kept.
+        constexpr std::size_t MAX_MARKERS = 100;
+
+        // Caller must hold g_markersMutex. g_markers is in recording order, oldest first.
+        void TrimToNewest()
+        {
+            if (g_markers.size() <= MAX_MARKERS)
+                return;
+
+            std::ptrdiff_t const excess = static_cast<std::ptrdiff_t>(g_markers.size() - MAX_MARKERS);
+            g_markers.erase(g_markers.begin(), g_markers.begin() + excess);
+        }
+
         // Transient "what is about to kill this player" info, captured at the moment lethal
         // damage/cause is determined (Player::EnvironmentalDamage / Unit::DealDamage) and
         // consumed moments later by ResolveDeathContext(). Keyed by victim GUID counter.
@@ -388,6 +402,7 @@ namespace DeathMarkers
             std::lock_guard<std::mutex> lock(g_markersMutex);
             for (DeathMarker& marker : loaded)
                 g_markers.push_back(std::move(marker));
+            TrimToNewest();
             g_nextMarkerId = std::max(g_nextMarkerId, maxId + 1);
 
             LOG_INFO("dc.addon", "DeathMarkers: loaded {} persisted marker(s) from dc_death_markers", loaded.size());
@@ -588,6 +603,7 @@ namespace DeathMarkers
             PruneExpired(now);
             marker.markerId = g_nextMarkerId++;
             g_markers.push_back(marker);
+            TrimToNewest();
         }
 
         PersistMarker(marker);
@@ -602,6 +618,7 @@ namespace DeathMarkers
 
         std::lock_guard<std::mutex> lock(g_markersMutex);
         PruneExpired(now);
+        TrimToNewest();
 
         for (DeathMarker const& m : g_markers)
             arr.Push(Serialize(m));

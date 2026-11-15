@@ -520,7 +520,8 @@ function GF:CreateWorldContentEntry(parent, item, contentType, entry)
     if contentType == "hotspot" then
         entry.nameText:SetText(item.zoneName or item.zone or "Unknown Zone")
     elseif contentType == "quest" or contentType == "other" then
-        entry.nameText:SetText(item.dungeonName or item.dungeon or item.raid or item.name or "Unknown Group")
+        entry.nameText:SetText(GF.EscapeText(item.dungeonName or item.dungeon or item.raid or item.name
+            or "Unknown Group"))
     else
         entry.nameText:SetText(item.name or "Unknown")
     end
@@ -551,10 +552,10 @@ function GF:CreateWorldContentEntry(parent, item, contentType, entry)
         entry.infoText:SetText((item.name or "Hotspot") .. " - |cff00ff00+" .. bonus .. "% Bonus|r")
     elseif contentType == "quest" or contentType == "other" then
         local leader = item.leader or "Unknown"
-        local note = item.note or "Open group listing"
+        local note = GF.EscapeText(item.note or "Open group listing")
         entry.infoText:SetText("Leader: " .. leader .. " - " .. note)
     else
-        entry.infoText:SetText(item.description or "No description")
+        entry.infoText:SetText(GF.EscapeText(item.description or "No description"))
     end
 
     if item.timeRemaining and item.timeRemaining > 0 then

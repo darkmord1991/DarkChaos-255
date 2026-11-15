@@ -1103,6 +1103,15 @@ namespace DCAddon
         std::string const& GetRequestId() const { return _requestId; }
         bool HasMore() const { return _currentIndex < _data.size(); }
 
+        // Total size of the data fields (for a JSON message, the JSON body)
+        size_t GetDataBytes() const
+        {
+            size_t bytes = 0;
+            for (std::string const& field : _data)
+                bytes += field.size();
+            return bytes;
+        }
+
         // Get data at index with type conversion
         std::string GetString(size_t index) const
         {
@@ -1823,6 +1832,13 @@ namespace DCAddon
         {
             ModuleEntry const* entry = FindModule(module);
             return entry && entry->enabled;
+        }
+
+        // True for a module code the server registered (a handler, an enable flag or a security level),
+        // enabled or not. A code the client made up is not known.
+        bool IsModuleKnown(std::string_view module) const
+        {
+            return FindModule(module) != nullptr;
         }
 
         void SetModuleEnabled(std::string const& module, bool enabled)

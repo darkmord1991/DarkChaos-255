@@ -63,6 +63,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include <memory>
 #include <atomic>
 #include <limits>
+#include <optional>
 
 namespace DCCollection
 {
@@ -2966,30 +2967,144 @@ namespace DCCollection
         return importedThisSession.insert(accountId).second;
     }
 
-    // Synchronous one-time gate, unchanged in behaviour from before the
-    // helper split above: prefer the persistent migration flag, otherwise
-    // fall back to the once-per-session set. (The login-chain async
-    // conversion is deferred; this keeps the import correct meanwhile.)
+    // =======================================================================
+    // Login preload
+    // =======================================================================
+
+    // What a character's first login reads from the database, loaded on the database threads when the account
+    // authenticates (CollectionAccountScript), i.e. while the player is still at the character list. The login
+    // finds it here; whatever has not arrived yet is read on the spot, as it always was. World thread only.
+    struct AccountLoginPreload
+    {
+        std::optional<std::vector<uint32>> petEntries;  // dc_collection_items pet rows, as stored
+        bool legacyImportNotDone = false;               // no legacy_transmog_import_v1 row when it was read
+    };
+
+    std::unordered_map<uint32, AccountLoginPreload> s_AccountLoginPreloads;
+
+    // Accounts whose legacy pet rows were migrated, and accounts whose legacy transmog import is recorded as
+    // done. Neither comes undone while the server runs, so neither is read again for the account.
+    std::unordered_set<uint32> s_PetRowsMigratedAccounts;
+    std::unordered_set<uint32> s_LegacyImportDoneAccounts;
+
+    std::string BuildPetRowsQuery(uint32 accountId)
+    {
+        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return std::string();
+
+        return Acore::StringFormat(
+            "SELECT {} FROM dc_collection_items "
+            "WHERE account_id = {} AND {} AND unlocked = 1",
+            itemsEntryCol, accountId, BuildItemsCollectionTypeWhereClause("collection_type", CollectionType::PET));
+    }
+
+    std::vector<uint32> ReadPetRows(QueryResult const& result)
+    {
+        std::vector<uint32> entries;
+        if (result)
+        {
+            do
+            {
+                entries.push_back(result->Fetch()[0].Get<uint32>());
+            } while (result->NextRow());
+        }
+
+        return entries;
+    }
+
+    // The account's pet rows for the legacy-row migration: the preloaded ones if they arrived, read now if not
+    std::vector<uint32> TakePetRows(uint32 accountId)
+    {
+        auto const it = s_AccountLoginPreloads.find(accountId);
+        if (it != s_AccountLoginPreloads.end() && it->second.petEntries)
+        {
+            std::vector<uint32> entries = std::move(*it->second.petEntries);
+            it->second.petEntries.reset();
+            return entries;
+        }
+
+        std::string const sql = BuildPetRowsQuery(accountId);
+        if (sql.empty())
+            return {};
+
+        return ReadPetRows(CharacterDatabase.Query(sql));
+    }
+
+    std::string BuildLegacyImportDoneQuery(uint32 accountId)
+    {
+        return Acore::StringFormat(
+            "SELECT 1 FROM dc_collection_migrations "
+            "WHERE account_id = {} AND migration_key = 'legacy_transmog_import_v1' LIMIT 1",
+            accountId);
+    }
+
+    void PreloadAccountImportData(uint32 accountId)
+    {
+        if (!s_PetRowsMigratedAccounts.count(accountId))
+        {
+            std::string const sql = BuildPetRowsQuery(accountId);
+            if (!sql.empty())
+            {
+                DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                    .WithCallback([accountId](QueryResult result)
+                {
+                    // A login that got here first has read the rows itself
+                    if (!s_PetRowsMigratedAccounts.count(accountId))
+                        s_AccountLoginPreloads[accountId].petEntries = ReadPetRows(result);
+                }));
+            }
+        }
+
+        if (sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_ENABLED, true) &&
+            HasCollectionMigrationsTable() && !s_LegacyImportDoneAccounts.count(accountId))
+        {
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(BuildLegacyImportDoneQuery(accountId))
+                .WithCallback([accountId](QueryResult result)
+            {
+                if (result)
+                    s_LegacyImportDoneAccounts.insert(accountId);
+                else if (!s_LegacyImportDoneAccounts.count(accountId))
+                    s_AccountLoginPreloads[accountId].legacyImportNotDone = true;
+            }));
+        }
+    }
+
+    // One-time gate of the legacy transmog import: the persistent migration flag where the table exists,
+    // otherwise the once-per-session set. The flag is preloaded when the account authenticates; a login that
+    // finds no answer yet reads it on the spot.
     bool ShouldRunTransmogLegacyImport(uint32 accountId)
     {
         if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_ENABLED, true))
             return false;
 
-        if (HasCollectionMigrationsTable())
+        if (!HasCollectionMigrationsTable())
+            return ShouldRunTransmogLegacyImportSessionFallback(accountId);
+
+        if (s_LegacyImportDoneAccounts.count(accountId))
+            return false;
+
+        // Read as not done when the account authenticated; the import that follows records it
+        auto const it = s_AccountLoginPreloads.find(accountId);
+        if (it != s_AccountLoginPreloads.end() && it->second.legacyImportNotDone)
         {
-            QueryResult r = CharacterDatabase.Query(
-                "SELECT 1 FROM dc_collection_migrations WHERE account_id = {} AND migration_key = 'legacy_transmog_import_v1' LIMIT 1",
-                accountId);
-            return r == nullptr;
+            it->second.legacyImportNotDone = false;
+            return true;
         }
 
-        return ShouldRunTransmogLegacyImportSessionFallback(accountId);
+        if (!CharacterDatabase.Query(BuildLegacyImportDoneQuery(accountId)))
+            return true;
+
+        s_LegacyImportDoneAccounts.insert(accountId);
+        return false;
     }
 
     void MarkTransmogLegacyImportDone(uint32 accountId)
     {
         if (!HasCollectionMigrationsTable())
             return;
+
+        s_LegacyImportDoneAccounts.insert(accountId);
 
         CharacterDatabase.Execute(
             "INSERT IGNORE INTO dc_collection_migrations (account_id, migration_key, done, done_at) "
@@ -3041,36 +3156,28 @@ namespace DCCollection
 
         // Migrate older PET collection rows that used learned spellIds instead of companion itemIds.
         // If entry_id is not a valid item_template entry, attempt to map it to the teaching item.
-        if (fullImport)
+        // The rows belong to the account and nothing writes new ones in the old form (pets are stored by
+        // item id everywhere), so one pass per account per world session covers every character of it.
+        if (fullImport && s_PetRowsMigratedAccounts.insert(accountId).second)
         {
-            QueryResult pets = CharacterDatabase.Query(
-                "SELECT {} FROM dc_collection_items "
-                "WHERE account_id = {} AND {} AND unlocked = 1",
-                itemsEntryCol, accountId, petTypeFilter);
-
-            if (pets)
+            for (uint32 entryId : TakePetRows(accountId))
             {
-                do
-                {
-                    uint32 entryId = pets->Fetch()[0].Get<uint32>();
-                    if (sObjectMgr->GetItemTemplate(entryId))
-                        continue;
+                if (sObjectMgr->GetItemTemplate(entryId))
+                    continue;
 
-                    uint32 mappedItemId = FindCompanionItemIdForSpell(entryId);
-                    if (!mappedItemId)
-                        continue;
+                uint32 mappedItemId = FindCompanionItemIdForSpell(entryId);
+                if (!mappedItemId)
+                    continue;
 
-                    trans->Append(
-                        "INSERT IGNORE INTO dc_collection_items "
-                        "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                        "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                        itemsEntryCol, accountId, typePetValue, mappedItemId);
+                trans->Append(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                    itemsEntryCol, accountId, typePetValue, mappedItemId);
 
-                    trans->Append(
-                        "DELETE FROM dc_collection_items WHERE account_id = {} AND {} AND {} = {}",
-                        accountId, petTypeFilter, itemsEntryCol, entryId);
-
-                } while (pets->NextRow());
+                trans->Append(
+                    "DELETE FROM dc_collection_items WHERE account_id = {} AND {} AND {} = {}",
+                    accountId, petTypeFilter, itemsEntryCol, entryId);
             }
         }
 
@@ -3501,9 +3608,134 @@ namespace DCCollection
         TeachCollectedSpellsBatchTick(state);
     }
 
+    namespace
+    {
+        enum class MountGate : uint8
+        {
+            Passed,
+            SpellClassRace,     // IsSpellFitByClassAndRace
+            HordeOnly,
+            AllianceOnly,
+            ItemClass,
+            ItemRace,
+            RidingSkill,        // the teaching item's RequiredSkill / RequiredSkillRank
+            Level               // the teaching item's RequiredLevel
+        };
+
+        // proto is set to the mount's teaching item when the gate got that far
+        MountGate CheckMountGate(Player* player, uint32 spellId, ItemTemplate const*& proto)
+        {
+            proto = nullptr;
+            if (!player->IsSpellFitByClassAndRace(spellId))
+                return MountGate::SpellClassRace;
+
+            uint32 const teachingItemId = FindMountItemIdForSpell(spellId);
+            proto = teachingItemId ? sObjectMgr->GetItemTemplate(teachingItemId) : nullptr;
+            if (!proto)
+                return MountGate::Passed;
+
+            if (proto->HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE)
+                return MountGate::HordeOnly;
+
+            if (proto->HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE)
+                return MountGate::AllianceOnly;
+
+            if ((proto->AllowableClass & player->getClassMask()) == 0)
+                return MountGate::ItemClass;
+
+            if ((proto->AllowableRace & player->getRaceMask()) == 0)
+                return MountGate::ItemRace;
+
+            if (proto->RequiredSkill != 0)
+            {
+                uint32 const skillValue = player->GetSkillValue(proto->RequiredSkill);
+                if (skillValue == 0 || skillValue < proto->RequiredSkillRank)
+                    return MountGate::RidingSkill;
+            }
+
+            if (player->GetLevel() < proto->RequiredLevel)
+                return MountGate::Level;
+
+            return MountGate::Passed;
+        }
+    }
+
+    // The collection is account-wide, so a summon and every teach re-apply the
+    // gates a character meets to learn the mount itself: the class/race rules
+    // (IsSpellFitByClassAndRace) and the teaching item's faction, class, race,
+    // riding-skill and level requirements, as Player::CanUseItem checks them.
+    // Without them any alt rode every mount on the account.
+    std::string GetMountRefusal(Player* player, uint32 spellId)
+    {
+        ItemTemplate const* proto = nullptr;
+        switch (CheckMountGate(player, spellId, proto))
+        {
+            case MountGate::SpellClassRace:
+                return "Your race or class cannot use that mount";
+            case MountGate::HordeOnly:
+                return "That mount is for the Horde only";
+            case MountGate::AllianceOnly:
+                return "That mount is for the Alliance only";
+            case MountGate::ItemClass:
+                return "Your class cannot use that mount";
+            case MountGate::ItemRace:
+                return "Your race cannot use that mount";
+            case MountGate::RidingSkill:
+            {
+                SkillLineEntry const* skill = sSkillLineStore.LookupEntry(proto->RequiredSkill);
+                bool const named = skill && skill->name[0] && *skill->name[0];
+                return Acore::StringFormat("That mount requires {} {}", named ? skill->name[0] : "skill",
+                    proto->RequiredSkillRank);
+            }
+            case MountGate::Level:
+                return Acore::StringFormat("That mount requires level {}", proto->RequiredLevel);
+            default:
+                return {};
+        }
+    }
+
     // Below this level (and without riding) the sync teaches no mounts. Crossing
     // it in-session re-runs the sync from OnPlayerLevelChanged.
     constexpr uint8 MOUNT_SYNC_MIN_LEVEL = 10;
+
+    // Per character. pending: a sync is scheduled and its result not applied yet, so a burst of level-ups (one
+    // GiveXP can raise many levels) runs one sync. waitingForProgress: the account owns a mount the character was
+    // not taught for want of level or riding skill, so the next level-up or riding rank runs the sync again.
+    struct MountSyncState : public DataMap::Base
+    {
+        uint32 scheduledAtMs = 0;
+        bool pending = false;
+        bool waitingForProgress = false;
+    };
+
+    constexpr char const* MOUNT_SYNC_STATE_KEY = "DCCollectionMountSync";
+    // A pending sync older than this was lost with the player's event queue; the next request schedules a new one
+    constexpr uint32 MOUNT_SYNC_PENDING_STALE_MS = 60 * IN_MILLISECONDS;
+
+    // A mount grant could not teach the character (CollectionGrant.cpp): the next level-up or riding rank re-checks
+    void MarkMountSyncWaiting(Player* player)
+    {
+        player->CustomData.GetDefault<MountSyncState>(MOUNT_SYNC_STATE_KEY)->waitingForProgress = true;
+    }
+
+    bool IsMountSyncWaiting(Player* player)
+    {
+        MountSyncState const* state = player->CustomData.Get<MountSyncState>(MOUNT_SYNC_STATE_KEY);
+        return state && state->waitingForProgress;
+    }
+
+    bool TeachesRidingSkill(SpellInfo const* spellInfo)
+    {
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            SpellEffectInfo const& effect = spellInfo->Effects[i];
+            if ((effect.Effect == SPELL_EFFECT_SKILL || effect.Effect == SPELL_EFFECT_SKILL_STEP) &&
+                effect.MiscValue == SKILL_RIDING)
+                return true;
+        }
+
+        return false;
+    }
 
     void SyncAccountWideCollectionsToCharacter(Player* player)
     {
@@ -3511,6 +3743,11 @@ namespace DCCollection
             return;
 
         if (!sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ON_LOGIN, true))
+            return;
+
+        MountSyncState* syncState = player->CustomData.GetDefault<MountSyncState>(MOUNT_SYNC_STATE_KEY);
+        uint32 const nowMs = getMSTime();
+        if (syncState->pending && getMSTimeDiff(syncState->scheduledAtMs, nowMs) < MOUNT_SYNC_PENDING_STALE_MS)
             return;
 
         // NOTE: This sync can be large for accounts with many mounts/pets.
@@ -3532,6 +3769,8 @@ namespace DCCollection
             return;
 
         ObjectGuid const playerGuid = player->GetGUID();
+        syncState->pending = true;
+        syncState->scheduledAtMs = nowMs;
 
         player->m_Events.AddEventAtOffset([playerGuid, accountId, itemsEntryCol, batchSize, batchDelayMs]()
         {
@@ -3546,6 +3785,10 @@ namespace DCCollection
                 Player* player = ObjectAccessor::FindPlayer(playerGuid);
                 if (!player || !player->GetSession())
                     return;
+
+                // Level and riding skill are read below, so a level-up from here on needs a sync of its own
+                MountSyncState* mountSync = player->CustomData.GetDefault<MountSyncState>(MOUNT_SYNC_STATE_KEY);
+                mountSync->pending = false;
 
                 std::vector<uint32> mounts;
                 std::vector<uint32> pets;
@@ -3601,12 +3844,27 @@ namespace DCCollection
                     spellsToTeach.push_back(spellId);
                 };
 
-                // Mounts
+                // Mounts. One the character may not ride (GetMountRefusal) stays owned by the account and is not
+                // taught here; when level or riding skill is what is missing, the next level-up or riding rank
+                // runs this sync again (below MOUNT_SYNC_MIN_LEVEL, crossing it does).
+                bool waitingForProgress = false;
                 if (canSyncMounts)
                 {
                     for (uint32 spellId : mounts)
-                        considerSpell(spellId);
+                    {
+                        if (!spellId || player->HasSpell(spellId))
+                            continue;
+
+                        ItemTemplate const* proto = nullptr;
+                        MountGate const gate = CheckMountGate(player, spellId, proto);
+                        if (gate == MountGate::Passed)
+                            considerSpell(spellId);
+                        else if (gate == MountGate::RidingSkill || gate == MountGate::Level)
+                            waitingForProgress = true;
+                    }
                 }
+
+                mountSync->waitingForProgress = waitingForProgress;
 
                 // Pets
                 for (uint32 entryId : pets)
@@ -3850,7 +4108,348 @@ namespace DCCollection
         return items;
     }
 
-    CollectionBuckets LoadOwnedCollectionBuckets(uint32 accountId,
+    // Appearance favorites live in their own table, keyed like dc_transmog_collection
+    // (account, display id), so the 1.4M-row wardrobe table needs no extra column.
+    constexpr char const* kAppearanceFavoritesTable = "dc_transmog_favorites";
+
+    // =======================================================================
+    // Asynchronous collection reads
+    // =======================================================================
+
+    // The collection read requests (handshake, full collection, sync, stats, one collection type, shop, bonuses,
+    // wishlist, shop history) used to run their queries on the world thread: 1 to 7 per request, about 30 per
+    // login. Each now hands its statements to the database worker threads, and its reply is built on the world
+    // thread once all of them have returned (DCAddon::EnqueueQueryCallback, drained every tick).
+
+    struct CollectionRead
+    {
+        bool world = false;  // WorldDatabase instead of CharacterDatabase
+        std::string sql;     // empty: not run, its result stays null
+    };
+
+    using CollectionReadResults = std::vector<QueryResult>;
+    using CollectionReadBuild = std::function<void(Player*, CollectionReadResults const&)>;
+
+    // Defined with the read throttle (ThrottleCollectionRead)
+    void SetCollectionReadInFlight(Player* player, uint16 throttleKey, bool inFlight);
+
+    namespace
+    {
+        struct CollectionReadBatch
+        {
+            ObjectGuid playerGuid;
+            uint16 throttleKey = 0;
+            std::string requestId;
+            CollectionReadResults results;
+            std::size_t pending = 0;
+            CollectionReadBuild build;
+        };
+
+        // As the router does around a handler: the reply carries the id of the request that started the read,
+        // and an exception is logged instead of leaving the world update
+        void BuildCollectionReadReply(Player* player, std::string const& requestId, CollectionReadBuild const& build,
+            CollectionReadResults const& results)
+        {
+            std::string const outerRequestId = DCAddon::GetCurrentRequestId();
+            DCAddon::SetCurrentRequestContext(requestId);
+            try
+            {
+                build(player, results);
+            }
+            catch (...)
+            {
+                LOG_ERROR("module.dc", "DC-Collection: building a read reply for {} threw", player->GetName());
+            }
+            DCAddon::SetCurrentRequestContext(outerRequestId);
+        }
+
+        void CompleteCollectionReads(CollectionReadBatch const& batch)
+        {
+            // Connected rather than in world: a player in the middle of a teleport still gets the reply
+            Player* player = ObjectAccessor::FindConnectedPlayer(batch.playerGuid);
+            if (!player)
+                return;
+
+            if (batch.throttleKey)
+                SetCollectionReadInFlight(player, batch.throttleKey, false);
+
+            if (player->GetSession())
+                BuildCollectionReadReply(player, batch.requestId, batch.build, batch.results);
+        }
+    }
+
+    // Runs `reads` on the database worker threads and `build` on the world thread once every one has returned,
+    // with the results in the order given. A throttled read (throttleKey != 0) stays in flight until then, so
+    // the throttle holds a repeat instead of queueing a second set of statements behind the first.
+    void RunCollectionReads(Player* player, uint16 throttleKey, std::vector<CollectionRead> const& reads,
+        CollectionReadBuild build, std::source_location site = std::source_location::current())
+    {
+        auto batch = std::make_shared<CollectionReadBatch>();
+        batch->playerGuid = player->GetGUID();
+        batch->throttleKey = throttleKey;
+        batch->requestId = DCAddon::GetCurrentRequestId();
+        batch->results.resize(reads.size());
+        batch->build = std::move(build);
+
+        for (CollectionRead const& read : reads)
+        {
+            if (!read.sql.empty())
+                ++batch->pending;
+        }
+
+        if (!batch->pending)
+        {
+            BuildCollectionReadReply(player, batch->requestId, batch->build, batch->results);
+            return;
+        }
+
+        if (throttleKey)
+            SetCollectionReadInFlight(player, throttleKey, true);
+
+        for (std::size_t i = 0; i < reads.size(); ++i)
+        {
+            if (reads[i].sql.empty())
+                continue;
+
+            QueryCallback query = reads[i].world ? WorldDatabase.AsyncQuery(reads[i].sql) :
+                CharacterDatabase.AsyncQuery(reads[i].sql);
+
+            // Continuations run one at a time on the world thread, so the counter needs no lock
+            DCAddon::EnqueueQueryCallback(query.WithCallback([batch, i](QueryResult result)
+            {
+                batch->results[i] = std::move(result);
+                if (--batch->pending == 0)
+                    CompleteCollectionReads(*batch);
+            }), site);
+        }
+    }
+
+    // One account's dc_collection_items rows (unlocked only) with what every collection reply needs from them:
+    // the type as stored, the entry, the favorite flag and when it was acquired. This one statement replaces the
+    // separate owned, favorite, count and recent-additions reads (up to seven per request).
+    struct OwnedItemRow
+    {
+        uint8 typeId = 0;
+        uint32 entryId = 0;
+        bool favorite = false;
+        uint32 acquiredAt = 0;
+    };
+
+    struct OwnedCollectionSnapshot
+    {
+        bool itemsTable = false;                  // false: dc_collection_items has no entry column
+        std::vector<OwnedItemRow> items;
+        std::vector<uint32> legacyTitles;         // dc_title_collection, as stored
+        std::vector<uint32> appearanceFavorites;  // favorited display ids the account still owns, sorted
+    };
+
+    enum OwnedSnapshotRead : std::size_t
+    {
+        OWNED_READ_ITEMS,
+        OWNED_READ_LEGACY_TITLES,
+        OWNED_READ_APPEARANCE_FAVORITES,
+        OWNED_READ_APPEARANCES,
+        OWNED_SNAPSHOT_READS
+    };
+
+    // The statements behind one snapshot: OWNED_SNAPSHOT_READS entries of a CollectionRead list from `first`
+    struct OwnedSnapshotPlan
+    {
+        uint32 accountId = 0;
+        std::size_t first = 0;
+        bool itemsTable = false;
+        bool appearancesQueued = false;
+        uint64 appearanceGeneration = 0;
+    };
+
+    std::string BuildOwnedRowsQuery(uint32 accountId, std::optional<CollectionType> type)
+    {
+        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return std::string();
+
+        // Columns the separate reads selected; a database without one of them still gets the rest
+        std::string const favoriteExpr = CharacterColumnExists("dc_collection_items", "is_favorite") ?
+            "is_favorite" : "0";
+        std::string const acquiredExpr = CharacterColumnExists("dc_collection_items", "acquired_date") ?
+            "IFNULL(UNIX_TIMESTAMP(acquired_date), 0)" : "0";
+        std::string const typeFilter = type ?
+            " AND " + BuildItemsCollectionTypeWhereClause("collection_type", *type) : std::string();
+
+        return Acore::StringFormat(
+            "SELECT collection_type, {}, {}, {} FROM dc_collection_items "
+            "WHERE account_id = {} AND unlocked = 1{} "
+            "ORDER BY collection_type ASC, {} ASC",
+            itemsEntryCol, favoriteExpr, acquiredExpr, accountId, typeFilter, itemsEntryCol);
+    }
+
+    // Adds the statements of one account's snapshot to `reads`. `type` limits the rows to one collection type;
+    // `appearanceFavorites` also reads the favorited appearances. The account's appearance list comes with them
+    // when the wardrobe cache does not have it yet, so building the reply never has to read it on the spot.
+    OwnedSnapshotPlan AddOwnedSnapshotReads(std::vector<CollectionRead>& reads, uint32 accountId,
+        std::optional<CollectionType> type, bool appearanceFavorites)
+    {
+        OwnedSnapshotPlan plan;
+        plan.accountId = accountId;
+        plan.first = reads.size();
+        reads.resize(reads.size() + OWNED_SNAPSHOT_READS);
+
+        if (!type || *type != CollectionType::TRANSMOG)
+        {
+            reads[plan.first + OWNED_READ_ITEMS].sql = BuildOwnedRowsQuery(accountId, type);
+            plan.itemsTable = !reads[plan.first + OWNED_READ_ITEMS].sql.empty();
+        }
+
+        if (plan.itemsTable && (!type || *type == CollectionType::TITLE))
+            reads[plan.first + OWNED_READ_LEGACY_TITLES].sql = BuildLegacyTitleCollectionQuery(accountId);
+
+        if (appearanceFavorites && accountId && CharacterTableExists(kAppearanceFavoritesTable))
+            reads[plan.first + OWNED_READ_APPEARANCE_FAVORITES].sql = Acore::StringFormat(
+                "SELECT display_id FROM dc_transmog_favorites WHERE account_id = {}", accountId);
+
+        bool const needsAppearances = !type || *type == CollectionType::TRANSMOG || appearanceFavorites;
+        if (needsAppearances && accountId && !IsAccountAppearanceCacheLoaded(accountId))
+        {
+            plan.appearancesQueued = true;
+            plan.appearanceGeneration = GetAppearanceCacheGeneration(accountId);
+            reads[plan.first + OWNED_READ_APPEARANCES].sql = BuildAccountAppearancesQuery(accountId);
+        }
+
+        return plan;
+    }
+
+    void ReadOwnedRows(QueryResult const& result, std::vector<OwnedItemRow>& rows)
+    {
+        if (!result)
+            return;
+
+        bool const typeIsEnum = ItemsCollectionTypeIsEnum();
+        rows.reserve(result->GetRowCount());
+        do
+        {
+            Field* fields = result->Fetch();
+
+            OwnedItemRow row;
+            row.typeId = typeIsEnum ? ItemsCollectionTypeFromString(fields[0].Get<std::string>()) :
+                fields[0].Get<uint8>();
+            row.entryId = fields[1].Get<uint32>();
+            row.favorite = fields[2].Get<uint8>() == 1;
+            row.acquiredAt = fields[3].Get<uint32>();
+            rows.push_back(row);
+        } while (result->NextRow());
+    }
+
+    // World thread: seeds the wardrobe cache when its statement ran, then reads the snapshot
+    OwnedCollectionSnapshot ReadOwnedSnapshot(OwnedSnapshotPlan const& plan, CollectionReadResults const& results)
+    {
+        if (plan.appearancesQueued)
+        {
+            SeedAccountAppearanceCache(plan.accountId, results[plan.first + OWNED_READ_APPEARANCES],
+                plan.appearanceGeneration);
+        }
+
+        OwnedCollectionSnapshot snapshot;
+        snapshot.itemsTable = plan.itemsTable;
+        ReadOwnedRows(results[plan.first + OWNED_READ_ITEMS], snapshot.items);
+
+        if (QueryResult const& legacy = results[plan.first + OWNED_READ_LEGACY_TITLES])
+        {
+            do
+            {
+                uint32 const entryId = legacy->Fetch()[0].Get<uint32>();
+                if (entryId)
+                    snapshot.legacyTitles.push_back(entryId);
+            } while (legacy->NextRow());
+        }
+
+        // A favorite row can outlive its appearance (a revoke does not touch it); it is only
+        // sent while the appearance is in the wardrobe again.
+        if (QueryResult const& favorites = results[plan.first + OWNED_READ_APPEARANCE_FAVORITES])
+        {
+            do
+            {
+                uint32 const displayId = favorites->Fetch()[0].Get<uint32>();
+                if (HasTransmogAppearanceUnlocked(plan.accountId, displayId))
+                    snapshot.appearanceFavorites.push_back(displayId);
+            } while (favorites->NextRow());
+
+            SortUniqueCollectionItems(snapshot.appearanceFavorites);
+        }
+
+        return snapshot;
+    }
+
+    // Owned entries of one type, sorted: titles as their CharTitles ID plus the legacy title rows, appearances
+    // from the wardrobe cache. What LoadPlayerCollection returns, from a snapshot.
+    std::vector<uint32> GetOwnedEntries(OwnedCollectionSnapshot const& snapshot, uint32 accountId,
+        CollectionType type)
+    {
+        if (type == CollectionType::TRANSMOG)
+            return GetCollectedAppearances(accountId);
+
+        std::vector<uint32> items;
+        if (!snapshot.itemsTable)
+            return items;
+
+        for (OwnedItemRow const& row : snapshot.items)
+        {
+            if (row.typeId != static_cast<uint8>(type) || !row.entryId)
+                continue;
+
+            uint32 entryId = row.entryId;
+            if (type == CollectionType::TITLE)
+            {
+                if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
+                    entryId = titleEntry->ID;
+            }
+
+            items.push_back(entryId);
+        }
+
+        if (type == CollectionType::TITLE)
+        {
+            for (uint32 legacyId : snapshot.legacyTitles)
+            {
+                if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(legacyId))
+                    items.push_back(titleEntry->ID);
+            }
+        }
+
+        SortUniqueCollectionItems(items);
+        return items;
+    }
+
+    // Favorited entries of one type, sorted, in the ids the owned payloads use (titles
+    // resolve to their CharTitles ID, appearances are display ids).
+    std::vector<uint32> GetFavoriteEntries(OwnedCollectionSnapshot const& snapshot, CollectionType type)
+    {
+        if (type == CollectionType::TRANSMOG)
+            return snapshot.appearanceFavorites;
+
+        std::vector<uint32> items;
+        for (OwnedItemRow const& row : snapshot.items)
+        {
+            if (row.typeId != static_cast<uint8>(type) || !row.favorite || !row.entryId)
+                continue;
+
+            uint32 entryId = row.entryId;
+            if (type == CollectionType::TITLE)
+            {
+                if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
+                    entryId = titleEntry->ID;
+            }
+
+            items.push_back(entryId);
+        }
+
+        SortUniqueCollectionItems(items);
+        return items;
+    }
+
+    // The owned buckets the hash and the full collection are built from. Only the count of the
+    // appearance bucket is ever used (the hash and the owned payload skip appearances), so callers
+    // that want neither count skip it.
+    CollectionBuckets BuildOwnedBuckets(OwnedCollectionSnapshot const& snapshot, uint32 accountId,
         CollectionCounts* counts = nullptr, uint32* totalOwnedItems = nullptr)
     {
         CollectionBuckets buckets;
@@ -3860,76 +4459,17 @@ namespace DCCollection
         if (totalOwnedItems)
             *totalOwnedItems = 0;
 
-        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
+        if (!snapshot.itemsTable)
             return buckets;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT collection_type, {} FROM dc_collection_items "
-            "WHERE account_id = {} AND unlocked = 1 "
-            "ORDER BY collection_type ASC, {} ASC",
-            itemsEntryCol, accountId, itemsEntryCol);
-
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                CollectionType type;
-                if (!TryParseOwnedCollectionType(&fields[0], type))
-                    continue;
-
-                // Appearances are owned through the wardrobe table (below), not these rows.
-                if (type == CollectionType::TRANSMOG)
-                    continue;
-
-                uint32 entryId = fields[1].Get<uint32>();
-                if (!entryId)
-                    continue;
-
-                if (type == CollectionType::TITLE)
-                {
-                    if (CharTitlesEntry const* titleEntry =
-                        ResolveTitleEntryByAnyKey(entryId))
-                    {
-                        entryId = titleEntry->ID;
-                    }
-                }
-
-                buckets[GetCollectionTypeSlot(type)].push_back(entryId);
-            } while (result->NextRow());
-        }
-
-        // Only the count of this bucket is ever used (the hash and the owned payload skip
-        // appearances), so callers that want neither count skip the copy.
-        if (counts || totalOwnedItems)
-            buckets[GetCollectionTypeSlot(CollectionType::TRANSMOG)] = GetCollectedAppearances(accountId);
-
-        auto& titleItems =
-            buckets[GetCollectionTypeSlot(CollectionType::TITLE)];
-        auto legacyTitles = LoadLegacyTitleCollection(accountId);
-        for (uint32 entryId : legacyTitles)
-        {
-            if (CharTitlesEntry const* titleEntry =
-                ResolveTitleEntryByAnyKey(entryId))
-            {
-                titleItems.push_back(titleEntry->ID);
-            }
-        }
-
         for (CollectionType type : kOwnedCollectionTypes)
         {
-            auto& items = buckets[GetCollectionTypeSlot(type)];
-            if (items.empty())
+            if (type == CollectionType::TRANSMOG && !counts && !totalOwnedItems)
                 continue;
 
-            std::sort(items.begin(), items.end());
-            items.erase(std::unique(items.begin(), items.end()), items.end());
-        }
-
-        for (CollectionType type : kOwnedCollectionTypes)
-        {
             std::size_t const slot = GetCollectionTypeSlot(type);
+            buckets[slot] = GetOwnedEntries(snapshot, accountId, type);
+
             uint32 const ownedCount = static_cast<uint32>(buckets[slot].size());
             if (counts)
                 (*counts)[slot] = ownedCount;
@@ -3940,71 +4480,17 @@ namespace DCCollection
         return buckets;
     }
 
-    // Appearance favorites live in their own table, keyed like dc_transmog_collection
-    // (account, display id), so the 1.4M-row wardrobe table needs no extra column.
-    constexpr char const* kAppearanceFavoritesTable = "dc_transmog_favorites";
-
-    // Favorited appearances (display ids) the account still owns, sorted. A favorite
-    // row can outlive its appearance (a revoke does not touch it); it is only sent
-    // while the appearance is in the wardrobe again. Empty until the SQL is applied.
-    std::vector<uint32> LoadFavoriteAppearanceIds(uint32 accountId)
-    {
-        std::vector<uint32> items;
-        if (!accountId || !CharacterTableExists(kAppearanceFavoritesTable))
-            return items;
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT display_id FROM dc_transmog_favorites WHERE account_id = {}", accountId);
-        if (!result)
-            return items;
-
-        do
-        {
-            uint32 const displayId = result->Fetch()[0].Get<uint32>();
-            if (HasTransmogAppearanceUnlocked(accountId, displayId))
-                items.push_back(displayId);
-        } while (result->NextRow());
-
-        SortUniqueCollectionItems(items);
-        return items;
-    }
-
-    // Favorited entries of one type, sorted, in the ids the owned payloads use (titles
-    // resolve to their CharTitles ID, appearances are display ids).
-    std::vector<uint32> LoadFavoriteCollectionIds(uint32 accountId, CollectionType type)
-    {
-        std::vector<uint32> items;
-        if (!accountId)
-            return items;
-
-        if (type == CollectionType::TRANSMOG)
-            return LoadFavoriteAppearanceIds(accountId);
-
-        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
-            return items;
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT {} FROM dc_collection_items "
-            "WHERE account_id = {} AND {} AND unlocked = 1 AND is_favorite = 1",
-            itemsEntryCol, accountId, BuildItemsCollectionTypeWhereClause("collection_type", type));
-
-        AppendPlayerCollectionRows(result, type, items);
-        SortUniqueCollectionItems(items);
-        return items;
-    }
-
     // { mounts = [...], pets = [...], heirlooms, titles, transmog }: every favorite list,
     // for the replies that tell a client its cached collection is current. Favorites are
     // not in the collection hash, so without this a favorite set on another machine
     // would never reach a client whose owned ids already match.
-    DCAddon::JsonValue BuildFavoriteListsJson(uint32 accountId)
+    DCAddon::JsonValue BuildFavoriteListsJson(OwnedCollectionSnapshot const& snapshot)
     {
         DCAddon::JsonValue lists;
         lists.SetObject();
         for (CollectionType type : kOwnedCollectionTypesByJsonKey)
         {
-            std::vector<uint32> const ids = LoadFavoriteCollectionIds(accountId, type);
+            std::vector<uint32> const ids = GetFavoriteEntries(snapshot, type);
             DCAddon::JsonValue arr;
             arr.SetArray(ids.size());
             for (uint32 id : ids)
@@ -4014,8 +4500,10 @@ namespace DCCollection
         return lists;
     }
 
-    // Load collection counts for all types
-    std::map<CollectionType, uint32> LoadCollectionCounts(uint32 accountId)
+    // Owned count per type for the stats reply: distinct stored entries for mounts, pets and
+    // heirlooms, the owned title and appearance lists for the other two.
+    std::map<CollectionType, uint32> BuildCollectionCounts(OwnedCollectionSnapshot const& snapshot,
+        uint32 accountId)
     {
         std::map<CollectionType, uint32> counts;
 
@@ -4027,37 +4515,52 @@ namespace DCCollection
             counts[static_cast<CollectionType>(t)] = 0;
         }
 
-        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
+        if (!snapshot.itemsTable)
             return counts;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT collection_type, COUNT(DISTINCT {}) FROM dc_collection_items "
-            "WHERE account_id = {} AND unlocked = 1 "
-            "GROUP BY collection_type",
-            itemsEntryCol, accountId);
-
-        if (result)
+        std::map<CollectionType, std::unordered_set<uint32>> distinctEntries;
+        for (OwnedItemRow const& row : snapshot.items)
         {
-            do
-            {
-                Field* fields = result->Fetch();
-                CollectionType type;
-                if (!TryParseOwnedCollectionType(&fields[0], type))
-                    continue;
-
-                if (type == CollectionType::TITLE || type == CollectionType::TRANSMOG)
-                    continue;
-
-                counts[type] = fields[1].Get<uint32>();
-            } while (result->NextRow());
+            CollectionType const type = static_cast<CollectionType>(row.typeId);
+            if (type == CollectionType::MOUNT || type == CollectionType::PET || type == CollectionType::HEIRLOOM)
+                distinctEntries[type].insert(row.entryId);
         }
 
+        for (auto const& [type, entries] : distinctEntries)
+            counts[type] = static_cast<uint32>(entries.size());
+
         counts[CollectionType::TITLE] = static_cast<uint32>(
-            LoadPlayerCollection(accountId, CollectionType::TITLE).size());
+            GetOwnedEntries(snapshot, accountId, CollectionType::TITLE).size());
         counts[CollectionType::TRANSMOG] = static_cast<uint32>(GetCollectedAppearances(accountId).size());
 
         return counts;
+    }
+
+    struct RecentAddition
+    {
+        uint8 typeId = 0;
+        uint32 entryId = 0;
+        uint32 timestamp = 0;
+    };
+
+    // The newest `limit` rows of any type, newest first; equal times keep the statement's type, entry order
+    std::vector<RecentAddition> GetRecentAdditions(OwnedCollectionSnapshot const& snapshot, uint32 limit)
+    {
+        std::vector<OwnedItemRow const*> newest;
+        newest.reserve(snapshot.items.size());
+        for (OwnedItemRow const& row : snapshot.items)
+            newest.push_back(&row);
+
+        std::stable_sort(newest.begin(), newest.end(), [](OwnedItemRow const* a, OwnedItemRow const* b)
+        {
+            return a->acquiredAt > b->acquiredAt;
+        });
+
+        std::vector<RecentAddition> recent;
+        for (std::size_t i = 0; i < newest.size() && recent.size() < limit; ++i)
+            recent.push_back({ newest[i]->typeId, newest[i]->entryId, newest[i]->acquiredAt });
+
+        return recent;
     }
 
     // Check whether an account owns a given collection item (unlocked)
@@ -4117,80 +4620,141 @@ namespace DCCollection
 
     std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
 
-    // Get total counts for definitions (for % calculations).
-    // The definition tables are static world data, so the counts are cached
-    // and refreshed at most every 5 minutes instead of re-queried per request.
-    std::map<CollectionType, uint32> LoadTotalDefinitions()
+    // Total counts for definitions (for % calculations). The definition tables are static world data: the counts
+    // are loaded at startup, and once they are 5 minutes old the next caller starts a refresh on the database
+    // threads and still gets the previous numbers. Nothing here blocks a request after startup.
+    namespace
     {
-        static std::map<CollectionType, uint32> s_cachedTotals;
-        static uint32 s_cachedAtMs = 0;
-        constexpr uint32 CACHE_TTL_MS = 5 * 60 * 1000;
-
-        uint32 nowMs = getMSTime();
-        if (!s_cachedTotals.empty() && getMSTimeDiff(s_cachedAtMs, nowMs) < CACHE_TTL_MS)
-            return s_cachedTotals;
-
-        std::map<CollectionType, uint32> totals;
-
-        if (WorldTableExists("dc_collection_definitions"))
+        struct TotalDefinitionsCache
         {
-            QueryResult result = WorldDatabase.Query(
-                "SELECT collection_type, COUNT(*) FROM dc_collection_definitions "
-                "WHERE enabled = 1 "
-                "GROUP BY collection_type");
+            std::mutex lock;
+            std::map<CollectionType, uint32> totals;
+            bool loaded = false;
+            bool refreshing = false;
+            uint32 loadedAtMs = 0;
+        };
+
+        TotalDefinitionsCache& GetTotalDefinitionsCache()
+        {
+            static TotalDefinitionsCache cache;
+            return cache;
+        }
+
+        constexpr uint32 TOTAL_DEFINITIONS_TTL_MS = 5 * MINUTE * IN_MILLISECONDS;
+
+        // Every count in one statement. Rows are (source, collection type, count): source 0 is the generic
+        // dc_collection_definitions table, source 1 the curated per-type tables.
+        std::string BuildTotalDefinitionsQuery()
+        {
+            std::string sql;
+            auto add = [&sql](std::string const& select)
+            {
+                if (!sql.empty())
+                    sql += " UNION ALL ";
+                sql += "(" + select + ")";
+            };
+
+            if (WorldTableExists("dc_collection_definitions"))
+                add("SELECT 0, collection_type, COUNT(*) FROM dc_collection_definitions "
+                    "WHERE enabled = 1 GROUP BY collection_type");
+            if (WorldTableExists("dc_mount_definitions"))
+                add("SELECT 1, 1, COUNT(*) FROM dc_mount_definitions");
+            if (WorldTableExists("dc_pet_definitions"))
+                add("SELECT 1, 2, COUNT(*) FROM dc_pet_definitions");
+            if (WorldTableExists("dc_toy_definitions"))
+                add("SELECT 1, 3, COUNT(*) FROM dc_toy_definitions");
+            if (WorldTableExists("dc_heirloom_definitions"))
+                add("SELECT 1, 4, COUNT(*) FROM dc_heirloom_definitions");
+
+            return sql;
+        }
+
+        std::map<CollectionType, uint32> ReadTotalDefinitions(QueryResult const& result)
+        {
+            std::map<CollectionType, uint32> totals;
+            std::map<CollectionType, uint32> curated;
 
             if (result)
             {
                 do
                 {
                     Field* fields = result->Fetch();
-                    CollectionType type = static_cast<CollectionType>(fields[0].Get<uint8>());
-                    totals[type] = fields[1].Get<uint32>();
+                    CollectionType const type = static_cast<CollectionType>(fields[1].Get<uint32>());
+                    (fields[0].Get<uint32>() == 0 ? totals : curated)[type] = fields[2].Get<uint32>();
                 } while (result->NextRow());
+            }
+
+            // Fallbacks when the generic definitions table is missing or unpopulated.
+            auto ensureTotal = [&](CollectionType type, uint32 value)
+            {
+                if (totals.find(type) == totals.end())
+                    totals[type] = value;
+            };
+
+            // Titles can always be enumerated from DBC.
+            ensureTotal(CollectionType::TITLE,
+                static_cast<uint32>(sCharTitlesStore.GetNumRows() > 0 ? (sCharTitlesStore.GetNumRows() - 1) : 0));
+
+            // Transmog definitions are built in-memory from item_template.
+            ensureTotal(CollectionType::TRANSMOG, static_cast<uint32>(GetTransmogAppearanceVariantKeysCached().size()));
+
+            // Prefer curated per-type tables if they exist.
+            for (auto const& [type, count] : curated)
+                ensureTotal(type, count);
+
+            return totals;
+        }
+
+        void StoreTotalDefinitions(std::map<CollectionType, uint32> const& totals)
+        {
+            TotalDefinitionsCache& cache = GetTotalDefinitionsCache();
+            std::lock_guard<std::mutex> guard(cache.lock);
+            cache.totals = totals;
+            cache.loaded = true;
+            cache.refreshing = false;
+            cache.loadedAtMs = getMSTime();
+        }
+    }
+
+    std::map<CollectionType, uint32> LoadTotalDefinitions()
+    {
+        TotalDefinitionsCache& cache = GetTotalDefinitionsCache();
+
+        std::map<CollectionType, uint32> current;
+        bool loaded = false;
+        bool refresh = false;
+        {
+            std::lock_guard<std::mutex> guard(cache.lock);
+            loaded = cache.loaded;
+            if (loaded)
+            {
+                current = cache.totals;
+                if (!cache.refreshing && getMSTimeDiff(cache.loadedAtMs, getMSTime()) >= TOTAL_DEFINITIONS_TTL_MS)
+                {
+                    cache.refreshing = true;
+                    refresh = true;
+                }
             }
         }
 
-        // Fallbacks when the generic definitions table is missing or unpopulated.
-        auto ensureTotal = [&](CollectionType type, uint32 value)
-        {
-            if (totals.find(type) == totals.end())
-                totals[type] = value;
-        };
+        if (loaded && !refresh)
+            return current;
 
-        // Titles can always be enumerated from DBC.
-        ensureTotal(CollectionType::TITLE, static_cast<uint32>(sCharTitlesStore.GetNumRows() > 0 ? (sCharTitlesStore.GetNumRows() - 1) : 0));
+        std::string const sql = BuildTotalDefinitionsQuery();
 
-        // Transmog definitions are built in-memory from item_template.
-        ensureTotal(CollectionType::TRANSMOG, static_cast<uint32>(GetTransmogAppearanceVariantKeysCached().size()));
-
-        // Prefer curated per-type tables if they exist.
-        if (WorldTableExists("dc_mount_definitions"))
+        if (refresh && !sql.empty())
         {
-            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_mount_definitions");
-            if (r)
-                ensureTotal(CollectionType::MOUNT, r->Fetch()[0].Get<uint32>());
-        }
-        if (WorldTableExists("dc_pet_definitions"))
-        {
-            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_pet_definitions");
-            if (r)
-                ensureTotal(CollectionType::PET, r->Fetch()[0].Get<uint32>());
-        }
-        if (WorldTableExists("dc_toy_definitions"))
-        {
-            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_toy_definitions");
-            if (r)
-                ensureTotal(CollectionType::TOY, r->Fetch()[0].Get<uint32>());
-        }
-        if (WorldTableExists("dc_heirloom_definitions"))
-        {
-            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_heirloom_definitions");
-            if (r)
-                ensureTotal(CollectionType::HEIRLOOM, r->Fetch()[0].Get<uint32>());
+            DCAddon::EnqueueQueryCallback(WorldDatabase.AsyncQuery(sql).WithCallback([](QueryResult result)
+            {
+                StoreTotalDefinitions(ReadTotalDefinitions(result));
+            }));
+            return current;
         }
 
-        s_cachedTotals = totals;
-        s_cachedAtMs = nowMs;
+        // First load (CollectionWorldScript::OnStartup), or no definition table to count
+        std::map<CollectionType, uint32> totals =
+            ReadTotalDefinitions(sql.empty() ? QueryResult(nullptr) : WorldDatabase.Query(sql));
+        StoreTotalDefinitions(totals);
         return totals;
     }
 
@@ -4228,18 +4792,21 @@ namespace DCCollection
     // Transmog Helpers Part 2 moved to dc_addon_wardrobe.cpp
 
     // Load wishlist
-    std::vector<std::pair<uint8, uint32>> LoadWishlist(uint32 accountId)
+    std::string BuildWishlistQuery(uint32 accountId)
     {
-        std::vector<std::pair<uint8, uint32>> wishlist;
-
         std::string const& wishIdCol = GetWishlistIdColumn();
         if (wishIdCol.empty())
-            return wishlist;
+            return std::string();
 
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT collection_type, {} FROM dc_collection_wishlist "
             "WHERE account_id = {} ORDER BY added_date DESC",
             wishIdCol, accountId);
+    }
+
+    std::vector<std::pair<uint8, uint32>> ReadWishlistRows(QueryResult const& result)
+    {
+        std::vector<std::pair<uint8, uint32>> wishlist;
 
         if (result)
         {
@@ -4266,53 +4833,13 @@ namespace DCCollection
         return wishlist;
     }
 
-    struct RecentAddition
+    std::vector<std::pair<uint8, uint32>> LoadWishlist(uint32 accountId)
     {
-        uint8 typeId = 0;
-        uint32 entryId = 0;
-        uint32 timestamp = 0;
-    };
+        std::string const sql = BuildWishlistQuery(accountId);
+        if (sql.empty())
+            return {};
 
-    std::vector<RecentAddition> LoadRecentAdditions(uint32 accountId, uint32 limit)
-    {
-        std::vector<RecentAddition> recent;
-
-        if (!accountId || limit == 0)
-            return recent;
-
-        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
-            return recent;
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT collection_type, {}, IFNULL(UNIX_TIMESTAMP(acquired_date), 0) "
-            "FROM dc_collection_items "
-            "WHERE account_id = {} AND unlocked = 1 "
-            "ORDER BY acquired_date DESC LIMIT {}",
-            itemsEntryCol, accountId, limit);
-
-        if (result)
-        {
-            do
-            {
-                Field* f = result->Fetch();
-                RecentAddition entry;
-                if (ItemsCollectionTypeIsEnum())
-                {
-                    std::string t = f[0].Get<std::string>();
-                    entry.typeId = ItemsCollectionTypeFromString(t);
-                }
-                else
-                {
-                    entry.typeId = f[0].Get<uint8>();
-                }
-                entry.entryId = f[1].Get<uint32>();
-                entry.timestamp = f[2].Get<uint32>();
-                recent.push_back(entry);
-            } while (result->NextRow());
-        }
-
-        return recent;
+        return ReadWishlistRows(CharacterDatabase.Query(sql));
     }
 
     // Check if item is on wishlist
@@ -4851,7 +5378,7 @@ namespace DCCollection
         }
 
         void SendSyncCollectionUpToDateAck(Player* player,
-            uint32 serverHash)
+            uint32 serverHash, DCAddon::JsonValue favorites)
         {
             DCAddon::JsonValue emptyCollections;
             emptyCollections.SetObject();
@@ -4863,7 +5390,7 @@ namespace DCCollection
             payload.Set("upToDate", true);
             payload.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
             // The owned ids match, but favorites are outside the hash: send them.
-            payload.Set("favorites", BuildFavoriteListsJson(GetAccountId(player)));
+            payload.Set("favorites", std::move(favorites));
 
             SendCollectionWave1Payload(player,
                 DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
@@ -4871,16 +5398,11 @@ namespace DCCollection
         }
     }
 
-    void SendHandshakeAck(Player* player, uint32 clientHash)
+    void SendHandshakeAckReply(Player* player, OwnedCollectionSnapshot const& snapshot, uint32 accountId,
+        uint32 clientHash)
     {
-        if (!player || !player->GetSession())
-            return;
-
-        uint32 accountId = GetAccountId(player);
-
         uint32 totalOwnedItems = 0;
-        CollectionBuckets buckets = LoadOwnedCollectionBuckets(accountId,
-            nullptr, &totalOwnedItems);
+        CollectionBuckets buckets = BuildOwnedBuckets(snapshot, accountId, nullptr, &totalOwnedItems);
         uint32 serverHash = GenerateCollectionHashFromSortedBuckets(buckets);
         bool needsSync = (serverHash != clientHash);
 
@@ -4893,7 +5415,7 @@ namespace DCCollection
         // A client in sync asks for no full collection, the only other carrier of
         // favorites; a mismatched one gets them with that full collection.
         if (!needsSync)
-            payload.Set("favorites", BuildFavoriteListsJson(accountId));
+            payload.Set("favorites", BuildFavoriteListsJson(snapshot));
 
         // Publish per-type curated definitions syncVersions so the client can
         // skip CMSG_GET_DEFINITIONS entirely for types where its cached copy
@@ -4917,18 +5439,27 @@ namespace DCCollection
             payload.Encode());
     }
 
-    void SendFullCollection(Player* player)
+    void SendHandshakeAck(Player* player, uint32 clientHash, uint16 throttleKey)
     {
         if (!player || !player->GetSession())
             return;
 
-        uint32 accountId = GetAccountId(player);
+        std::vector<CollectionRead> reads;
+        OwnedSnapshotPlan const plan = AddOwnedSnapshotReads(reads, GetAccountId(player), std::nullopt, true);
+        RunCollectionReads(player, throttleKey, reads,
+            [plan, clientHash](Player* target, CollectionReadResults const& results)
+        {
+            SendHandshakeAckReply(target, ReadOwnedSnapshot(plan, results), plan.accountId, clientHash);
+        });
+    }
 
+    // The SMSG_FULL_COLLECTION payload of a snapshot
+    std::string BuildFullCollectionPayload(OwnedCollectionSnapshot const& snapshot, uint32 accountId)
+    {
         CollectionCounts counts = {};
         uint32 totalOwnedItems = 0;
 
-        CollectionBuckets loaded = LoadOwnedCollectionBuckets(accountId,
-            &counts, &totalOwnedItems);
+        CollectionBuckets loaded = BuildOwnedBuckets(snapshot, accountId, &counts, &totalOwnedItems);
 
         // Load totals for percentages.
         auto totals = LoadTotalDefinitions();
@@ -4948,24 +5479,62 @@ namespace DCCollection
         // locally from the owned ids, and a different value would resync them forever.
         CollectionBuckets favorites;
         for (CollectionType type : kOwnedCollectionTypesByJsonKey)
-            favorites[GetCollectionTypeSlot(type)] = LoadFavoriteCollectionIds(accountId, type);
+            favorites[GetCollectionTypeSlot(type)] = GetFavoriteEntries(snapshot, type);
 
-        std::string rawData = BuildFullCollectionDataJson(loaded, favorites, counts, totals,
+        return BuildFullCollectionDataJson(loaded, favorites, counts, totals,
             serverHash, timestamp, mountSpeedBonus, nextThreshold,
             mountsToNext, totalOwnedItems, transmogOwnedSyncVersion);
-
-        SendCollectionWave1Payload(player,
-            DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
-            rawData);
     }
 
-    void SendStats(Player* player, bool includeRecent = false)
+    void SendFullCollection(Player* player, uint16 throttleKey)
     {
         if (!player || !player->GetSession())
             return;
 
-        uint32 accountId = GetAccountId(player);
-        auto counts = LoadCollectionCounts(accountId);
+        std::vector<CollectionRead> reads;
+        OwnedSnapshotPlan const plan = AddOwnedSnapshotReads(reads, GetAccountId(player), std::nullopt, true);
+        RunCollectionReads(player, throttleKey, reads, [plan](Player* target, CollectionReadResults const& results)
+        {
+            SendCollectionWave1Payload(target, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
+                BuildFullCollectionPayload(ReadOwnedSnapshot(plan, results), plan.accountId));
+        });
+    }
+
+    // The client sends a hash of its locally cached collection. If it matches the server hash the
+    // full payload is skipped: the reply is an empty SMSG_FULL_COLLECTION carrying the hash.
+    void SendSyncCollection(Player* player, uint32 clientHash, uint16 throttleKey)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        std::vector<CollectionRead> reads;
+        OwnedSnapshotPlan const plan = AddOwnedSnapshotReads(reads, GetAccountId(player), std::nullopt, true);
+        RunCollectionReads(player, throttleKey, reads,
+            [plan, clientHash](Player* target, CollectionReadResults const& results)
+        {
+            OwnedCollectionSnapshot const snapshot = ReadOwnedSnapshot(plan, results);
+            if (clientHash != 0)
+            {
+                uint32 const serverHash =
+                    GenerateCollectionHashFromSortedBuckets(BuildOwnedBuckets(snapshot, plan.accountId));
+                if (serverHash == clientHash)
+                {
+                    // Up to date -- avoid the (expensive) full payload rebuild.
+                    SendSyncCollectionUpToDateAck(target, serverHash, BuildFavoriteListsJson(snapshot));
+                    return;
+                }
+            }
+
+            // Hash mismatch (or not provided): fall back to full payload.
+            SendCollectionWave1Payload(target, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
+                BuildFullCollectionPayload(snapshot, plan.accountId));
+        });
+    }
+
+    void SendStatsReply(Player* player, OwnedCollectionSnapshot const& snapshot, uint32 accountId,
+        bool includeRecent)
+    {
+        auto counts = BuildCollectionCounts(snapshot, accountId);
         auto totals = LoadTotalDefinitions();
 
         char const* typeNames[] = { "", "mounts", "pets", "toys", "heirlooms", "titles", "transmog" };
@@ -5014,7 +5583,7 @@ namespace DCCollection
         if (includeRecent)
         {
             constexpr uint32 RECENT_MAX_ITEMS = 12;
-            auto recentRows = LoadRecentAdditions(accountId, RECENT_MAX_ITEMS);
+            auto recentRows = GetRecentAdditions(snapshot, RECENT_MAX_ITEMS);
 
             DCAddon::JsonValue recent;
             recent.SetArray();
@@ -5118,15 +5687,22 @@ namespace DCCollection
             payload.Encode());
     }
 
-    void SendBonuses(Player* player)
+    void SendStats(Player* player, bool includeRecent, uint16 throttleKey)
     {
         if (!player || !player->GetSession())
             return;
 
-        uint32 accountId = GetAccountId(player);
-        auto counts = LoadCollectionCounts(accountId);
-        uint32 mountCount = counts[CollectionType::MOUNT];
+        std::vector<CollectionRead> reads;
+        OwnedSnapshotPlan const plan = AddOwnedSnapshotReads(reads, GetAccountId(player), std::nullopt, false);
+        RunCollectionReads(player, throttleKey, reads,
+            [plan, includeRecent](Player* target, CollectionReadResults const& results)
+        {
+            SendStatsReply(target, ReadOwnedSnapshot(plan, results), plan.accountId, includeRecent);
+        });
+    }
 
+    void SendBonusesReply(Player* player, uint32 mountCount)
+    {
         DCAddon::JsonValue payload;
         payload.SetObject();
         payload.Set("mountSpeedBonus", GetMountSpeedBonusPercent(mountCount));
@@ -5142,6 +5718,26 @@ namespace DCCollection
         SendCollectionWave1Payload(player,
             DCAddon::Opcode::Collection::SMSG_BONUSES,
             payload.Encode());
+    }
+
+    // Only the mount count is used: one COUNT instead of every type's count plus the title and appearance lists
+    void SendBonuses(Player* player, uint16 throttleKey)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string const sql = itemsEntryCol.empty() ? std::string() : Acore::StringFormat(
+            "SELECT COUNT(DISTINCT {}) FROM dc_collection_items "
+            "WHERE account_id = {} AND unlocked = 1 AND {}",
+            itemsEntryCol, GetAccountId(player),
+            BuildItemsCollectionTypeWhereClause("collection_type", CollectionType::MOUNT));
+
+        RunCollectionReads(player, throttleKey, { { false, sql } },
+            [](Player* target, CollectionReadResults const& results)
+        {
+            SendBonusesReply(target, results[0] ? results[0]->Fetch()[0].Get<uint32>() : 0);
+        });
     }
 
     void SendCurrencies(Player* player)
@@ -5169,8 +5765,10 @@ namespace DCCollection
             ? "price_points" : "0";
     }
 
-    void SendShopData(Player* player, std::string const& category,
-        bool omitStatic = false)
+    void SendShopDataReply(Player* player, QueryResult const& result, OwnedCollectionSnapshot const& snapshot,
+        std::string const& category, bool omitStatic);
+
+    void SendShopData(Player* player, std::string const& category, bool omitStatic, uint16 throttleKey)
     {
         if (!player || !player->GetSession())
             return;
@@ -5243,8 +5841,20 @@ namespace DCCollection
 
         query += " ORDER BY featured DESC, id ASC LIMIT 100";
 
-        QueryResult result = useCharacterShop ? CharacterDatabase.Query(query) :
-            WorldDatabase.Query(query);
+        // The shop rows, and the account's owned rows for the "owned" marks
+        std::vector<CollectionRead> reads = { { !useCharacterShop, query } };
+        OwnedSnapshotPlan const plan = AddOwnedSnapshotReads(reads, accountId, std::nullopt, false);
+        RunCollectionReads(player, throttleKey, reads,
+            [plan, category, omitStatic](Player* target, CollectionReadResults const& results)
+        {
+            SendShopDataReply(target, results[0], ReadOwnedSnapshot(plan, results), category, omitStatic);
+        });
+    }
+
+    void SendShopDataReply(Player* player, QueryResult const& result, OwnedCollectionSnapshot const& snapshot,
+        std::string const& category, bool omitStatic)
+    {
+        uint32 const accountId = GetAccountId(player);
 
         DCAddon::JsonValue items;
         items.SetArray();
@@ -5257,7 +5867,7 @@ namespace DCCollection
             {
                 if (t == static_cast<int>(CollectionType::TOY))
                     continue; // Toys are disabled
-                auto owned = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
+                auto owned = GetOwnedEntries(snapshot, accountId, static_cast<CollectionType>(t));
                 for (uint32 id : owned)
                 {
                     ownedItems.insert(std::to_string(t) + "_" + std::to_string(id));
@@ -5415,147 +6025,34 @@ namespace DCCollection
             DCAddon::Opcode::Collection::SMSG_SHOP_DATA, payload);
     }
 
-    void SendShopHistory(Player* player, uint32 limit = 50, uint32 offset = 0)
+    // One purchase of the history page. Buffered before the shop metadata is resolved: when the
+    // shop table lives in the world DB the LEFT JOIN is unavailable, and resolving per row cost one
+    // query each (up to `limit`, default 50).
+    struct ShopHistoryRow
     {
-        if (!player || !player->GetSession())
-            return;
+        uint32 purchaseId = 0;
+        uint32 shopId = 0;
+        uint32 costTokens = 0;
+        uint32 costEmblems = 0;
+        uint32 characterId = 0;
+        std::string characterName;
+        uint32 costGold = 0;
+        uint32 purchaseDate = 0;
+        uint32 costPoints = 0;
+        uint8 collType = 0;
+        uint32 entryId = 0;
+    };
 
-        if (!CharacterTableExists("dc_collection_shop_purchases"))
-        {
-            DCAddon::JsonValue items;
-            items.SetArray();
-
-            DCAddon::JsonValue payload;
-            payload.SetObject();
-            payload.Set("items", items);
-            payload.Set("count", static_cast<uint32>(0));
-            payload.Set("total", static_cast<uint32>(0));
-            payload.Set("limit", static_cast<uint32>(0));
-            payload.Set("offset", static_cast<uint32>(0));
-            SendCollectionJsonPayload(player,
-                DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY, payload);
-            return;
-        }
-
-        std::string const& purchaseIdCol = GetShopPurchaseIdColumn();
-        std::string const& purchaseShopCol = GetShopPurchaseShopColumn();
-        std::string const& purchaseTokensCol = GetShopPurchaseTokensColumn();
-        std::string const& purchaseEmblemsCol = GetShopPurchaseEmblemsColumn();
-
-        if (purchaseIdCol.empty() || purchaseShopCol.empty() ||
-            purchaseTokensCol.empty() || purchaseEmblemsCol.empty())
-        {
-            DCAddon::SendError(player, MODULE, "Shop history table schema mismatch",
-                DCAddon::ErrorCode::BAD_FORMAT,
-                DCAddon::Opcode::Collection::SMSG_ERROR);
-            return;
-        }
-
-        if (limit == 0)
-            limit = 50;
-        if (limit > 200)
-            limit = 200;
-
-        uint32 accountId = GetAccountId(player);
-
-        std::string const& characterIdCol = GetShopPurchaseCharacterIdColumn();
-        std::string const& characterNameCol = GetShopPurchaseCharacterNameColumn();
-        std::string const& purchaseGoldCol = GetShopPurchaseGoldColumn();
-
-        bool canJoinCharacterShop = CharacterTableExists("dc_collection_shop") &&
-            CharacterColumnExists("dc_collection_shop", "id") &&
-            CharacterColumnExists("dc_collection_shop", "collection_type");
-
-        std::string characterShopEntryCol;
-        if (canJoinCharacterShop)
-        {
-            if (CharacterColumnExists("dc_collection_shop", "entry_id"))
-                characterShopEntryCol = "entry_id";
-            else if (CharacterColumnExists("dc_collection_shop", "entry"))
-                characterShopEntryCol = "entry";
-
-            if (characterShopEntryCol.empty())
-                canJoinCharacterShop = false;
-        }
-
-        bool canResolveWorldShopMetadata = false;
-        std::string worldShopEntryCol;
-        if (!canJoinCharacterShop && WorldTableExists("dc_collection_shop"))
-        {
-            worldShopEntryCol = GetWorldEntryColumn("dc_collection_shop");
-            canResolveWorldShopMetadata = !worldShopEntryCol.empty();
-        }
-
-        std::string characterIdExpr = characterIdCol.empty() ?
-            "0" : ("p." + characterIdCol);
-        std::string characterNameExpr = characterNameCol.empty() ?
-            "''" : ("COALESCE(p." + characterNameCol + ", '')");
-        std::string goldExpr = purchaseGoldCol.empty() ?
-            "0" : ("p." + purchaseGoldCol);
-        std::string pointsExpr = CharacterColumnExists("dc_collection_shop_purchases", "cost_points") ?
-            "p.cost_points" : "0";
-
-        QueryResult totalResult = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_collection_shop_purchases WHERE account_id = {}",
-            accountId);
-
-        uint32 total = 0;
-        if (totalResult)
-            total = totalResult->Fetch()[0].Get<uint32>();
-
-        std::string query =
-            "SELECT p." + purchaseIdCol + ", p." + purchaseShopCol +
-            ", p." + purchaseTokensCol + ", p." + purchaseEmblemsCol +
-            ", " + characterIdExpr + ", " + characterNameExpr +
-            ", " + goldExpr + ", UNIX_TIMESTAMP(p.purchase_date), " + pointsExpr;
-
-        if (canJoinCharacterShop)
-            query += ", COALESCE(s.collection_type, 0), COALESCE(s." +
-                characterShopEntryCol + ", 0)";
-
-        query += " FROM dc_collection_shop_purchases p ";
-
-        if (canJoinCharacterShop)
-            query += "LEFT JOIN dc_collection_shop s ON s.id = p." +
-                purchaseShopCol + " ";
-
-        query += "WHERE p.account_id = " + std::to_string(accountId) + " ";
-        query += "ORDER BY p.purchase_date DESC, p." + purchaseIdCol + " DESC ";
-        query += "LIMIT " + std::to_string(limit) + " OFFSET " +
-            std::to_string(offset);
-
-        QueryResult result = CharacterDatabase.Query(query);
-
-        DCAddon::JsonValue items;
-        items.SetArray();
-        uint32 count = 0;
-
-        // Buffer the page before resolving shop metadata: when the shop table
-        // lives in the world DB the LEFT JOIN above is unavailable, and
-        // resolving per row cost one query each (up to `limit`, default 50).
-        struct HistoryRow
-        {
-            uint32 purchaseId = 0;
-            uint32 shopId = 0;
-            uint32 costTokens = 0;
-            uint32 costEmblems = 0;
-            uint32 characterId = 0;
-            std::string characterName;
-            uint32 costGold = 0;
-            uint32 purchaseDate = 0;
-            uint32 costPoints = 0;
-            uint8 collType = 0;
-            uint32 entryId = 0;
-        };
-
-        std::vector<HistoryRow> rows;
+    std::vector<ShopHistoryRow> ReadShopHistoryRows(QueryResult const& result, bool joinedCharacterShop)
+    {
+        std::vector<ShopHistoryRow> rows;
         if (result)
         {
             do
             {
                 Field* fields = result->Fetch();
 
-                HistoryRow row;
+                ShopHistoryRow row;
                 row.purchaseId = fields[0].Get<uint32>();
                 row.shopId = fields[1].Get<uint32>();
                 row.costTokens = fields[2].Get<uint32>();
@@ -5566,7 +6063,7 @@ namespace DCCollection
                 row.purchaseDate = fields[7].Get<uint32>();
                 row.costPoints = fields[8].Get<uint32>();
 
-                if (canJoinCharacterShop)
+                if (joinedCharacterShop)
                 {
                     row.collType = fields[9].Get<uint8>();
                     row.entryId = fields[10].Get<uint32>();
@@ -5576,39 +6073,55 @@ namespace DCCollection
             } while (result->NextRow());
         }
 
-        if (canResolveWorldShopMetadata && !rows.empty())
+        return rows;
+    }
+
+    // The world-DB shop entries of the page, in one statement
+    std::string BuildShopHistoryMetadataQuery(std::vector<ShopHistoryRow> const& rows,
+        std::string const& worldShopEntryCol)
+    {
+        std::string shopIdList;
+        for (auto const& row : rows)
         {
-            std::string shopIdList;
-            for (auto const& row : rows)
-            {
-                if (!shopIdList.empty())
-                    shopIdList += ",";
-                shopIdList += std::to_string(row.shopId);
-            }
+            if (!shopIdList.empty())
+                shopIdList += ",";
+            shopIdList += std::to_string(row.shopId);
+        }
 
-            std::unordered_map<uint32, std::pair<uint8, uint32>> shopMeta;
-            if (QueryResult shopResult = WorldDatabase.Query(
-                "SELECT id, collection_type, " + worldShopEntryCol +
-                " FROM dc_collection_shop WHERE id IN (" + shopIdList + ")"))
-            {
-                do
-                {
-                    Field* shopFields = shopResult->Fetch();
-                    shopMeta[shopFields[0].Get<uint32>()] = {
-                        shopFields[1].Get<uint8>(), shopFields[2].Get<uint32>() };
-                } while (shopResult->NextRow());
-            }
+        return "SELECT id, collection_type, " + worldShopEntryCol +
+            " FROM dc_collection_shop WHERE id IN (" + shopIdList + ")";
+    }
 
-            for (auto& row : rows)
+    void ApplyShopHistoryMetadata(std::vector<ShopHistoryRow>& rows, QueryResult const& shopResult)
+    {
+        std::unordered_map<uint32, std::pair<uint8, uint32>> shopMeta;
+        if (shopResult)
+        {
+            do
             {
-                auto it = shopMeta.find(row.shopId);
-                if (it != shopMeta.end())
-                {
-                    row.collType = it->second.first;
-                    row.entryId = it->second.second;
-                }
+                Field* shopFields = shopResult->Fetch();
+                shopMeta[shopFields[0].Get<uint32>()] = {
+                    shopFields[1].Get<uint8>(), shopFields[2].Get<uint32>() };
+            } while (shopResult->NextRow());
+        }
+
+        for (auto& row : rows)
+        {
+            auto it = shopMeta.find(row.shopId);
+            if (it != shopMeta.end())
+            {
+                row.collType = it->second.first;
+                row.entryId = it->second.second;
             }
         }
+    }
+
+    void SendShopHistoryReply(Player* player, std::vector<ShopHistoryRow> const& rows, uint32 total,
+        uint32 limit, uint32 offset)
+    {
+        DCAddon::JsonValue items;
+        items.SetArray();
+        uint32 count = 0;
 
         if (!rows.empty())
         {
@@ -5734,21 +6247,126 @@ namespace DCCollection
             DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY, payload);
     }
 
-    void SendWishlistData(Player* player)
+    void SendShopHistory(Player* player, uint32 limit, uint32 offset, uint16 throttleKey)
     {
         if (!player || !player->GetSession())
             return;
 
-        if (!sConfigMgr->GetOption<bool>(Config::WISHLIST_ENABLED, true))
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
         {
-            DCAddon::SendError(player, MODULE, "Wishlist is currently disabled",
-                DCAddon::ErrorCode::MODULE_DISABLED, DCAddon::Opcode::Collection::SMSG_ERROR);
+            SendShopHistoryReply(player, {}, 0, 0, 0);
             return;
         }
 
-        uint32 accountId = GetAccountId(player);
-        auto wishlist = LoadWishlist(accountId);
+        std::string const& purchaseIdCol = GetShopPurchaseIdColumn();
+        std::string const& purchaseShopCol = GetShopPurchaseShopColumn();
+        std::string const& purchaseTokensCol = GetShopPurchaseTokensColumn();
+        std::string const& purchaseEmblemsCol = GetShopPurchaseEmblemsColumn();
 
+        if (purchaseIdCol.empty() || purchaseShopCol.empty() ||
+            purchaseTokensCol.empty() || purchaseEmblemsCol.empty())
+        {
+            DCAddon::SendError(player, MODULE, "Shop history table schema mismatch",
+                DCAddon::ErrorCode::BAD_FORMAT,
+                DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        if (limit == 0)
+            limit = 50;
+        if (limit > 200)
+            limit = 200;
+
+        uint32 accountId = GetAccountId(player);
+
+        std::string const& characterIdCol = GetShopPurchaseCharacterIdColumn();
+        std::string const& characterNameCol = GetShopPurchaseCharacterNameColumn();
+        std::string const& purchaseGoldCol = GetShopPurchaseGoldColumn();
+
+        bool canJoinCharacterShop = CharacterTableExists("dc_collection_shop") &&
+            CharacterColumnExists("dc_collection_shop", "id") &&
+            CharacterColumnExists("dc_collection_shop", "collection_type");
+
+        std::string characterShopEntryCol;
+        if (canJoinCharacterShop)
+        {
+            if (CharacterColumnExists("dc_collection_shop", "entry_id"))
+                characterShopEntryCol = "entry_id";
+            else if (CharacterColumnExists("dc_collection_shop", "entry"))
+                characterShopEntryCol = "entry";
+
+            if (characterShopEntryCol.empty())
+                canJoinCharacterShop = false;
+        }
+
+        bool canResolveWorldShopMetadata = false;
+        std::string worldShopEntryCol;
+        if (!canJoinCharacterShop && WorldTableExists("dc_collection_shop"))
+        {
+            worldShopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+            canResolveWorldShopMetadata = !worldShopEntryCol.empty();
+        }
+
+        std::string characterIdExpr = characterIdCol.empty() ?
+            "0" : ("p." + characterIdCol);
+        std::string characterNameExpr = characterNameCol.empty() ?
+            "''" : ("COALESCE(p." + characterNameCol + ", '')");
+        std::string goldExpr = purchaseGoldCol.empty() ?
+            "0" : ("p." + purchaseGoldCol);
+        std::string pointsExpr = CharacterColumnExists("dc_collection_shop_purchases", "cost_points") ?
+            "p.cost_points" : "0";
+
+        std::string const totalQuery = Acore::StringFormat(
+            "SELECT COUNT(*) FROM dc_collection_shop_purchases WHERE account_id = {}",
+            accountId);
+
+        std::string query =
+            "SELECT p." + purchaseIdCol + ", p." + purchaseShopCol +
+            ", p." + purchaseTokensCol + ", p." + purchaseEmblemsCol +
+            ", " + characterIdExpr + ", " + characterNameExpr +
+            ", " + goldExpr + ", UNIX_TIMESTAMP(p.purchase_date), " + pointsExpr;
+
+        if (canJoinCharacterShop)
+            query += ", COALESCE(s.collection_type, 0), COALESCE(s." +
+                characterShopEntryCol + ", 0)";
+
+        query += " FROM dc_collection_shop_purchases p ";
+
+        if (canJoinCharacterShop)
+            query += "LEFT JOIN dc_collection_shop s ON s.id = p." +
+                purchaseShopCol + " ";
+
+        query += "WHERE p.account_id = " + std::to_string(accountId) + " ";
+        query += "ORDER BY p.purchase_date DESC, p." + purchaseIdCol + " DESC ";
+        query += "LIMIT " + std::to_string(limit) + " OFFSET " +
+            std::to_string(offset);
+
+        RunCollectionReads(player, throttleKey, { { false, totalQuery }, { false, query } },
+            [canJoinCharacterShop, canResolveWorldShopMetadata, worldShopEntryCol, limit, offset, throttleKey](
+                Player* target, CollectionReadResults const& results)
+        {
+            uint32 const total = results[0] ? results[0]->Fetch()[0].Get<uint32>() : 0;
+            std::vector<ShopHistoryRow> const rows = ReadShopHistoryRows(results[1], canJoinCharacterShop);
+            if (!canResolveWorldShopMetadata || rows.empty())
+            {
+                SendShopHistoryReply(target, rows, total, limit, offset);
+                return;
+            }
+
+            // The shop table lives in the world DB: the page's shop entries take a second read
+            std::string const metadataQuery = BuildShopHistoryMetadataQuery(rows, worldShopEntryCol);
+            RunCollectionReads(target, throttleKey, { { true, metadataQuery } },
+                [rows, total, limit, offset](Player* recipient, CollectionReadResults const& metadata)
+            {
+                std::vector<ShopHistoryRow> resolved = rows;
+                ApplyShopHistoryMetadata(resolved, metadata[0]);
+                SendShopHistoryReply(recipient, resolved, total, limit, offset);
+            });
+        });
+    }
+
+    void SendWishlistReply(Player* player, std::vector<std::pair<uint8, uint32>> const& wishlist)
+    {
         DCAddon::JsonValue items;
         items.SetArray();
 
@@ -5771,6 +6389,25 @@ namespace DCCollection
 
         SendCollectionJsonPayload(player,
             DCAddon::Opcode::Collection::SMSG_WISHLIST_DATA, payload);
+    }
+
+    void SendWishlistData(Player* player, uint16 throttleKey)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!sConfigMgr->GetOption<bool>(Config::WISHLIST_ENABLED, true))
+        {
+            DCAddon::SendError(player, MODULE, "Wishlist is currently disabled",
+                DCAddon::ErrorCode::MODULE_DISABLED, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        RunCollectionReads(player, throttleKey, { { false, BuildWishlistQuery(GetAccountId(player)) } },
+            [](Player* target, CollectionReadResults const& results)
+        {
+            SendWishlistReply(target, ReadWishlistRows(results[0]));
+        });
     }
 
     void SendItemLearned(Player* player, CollectionType type, uint32 entryId)
@@ -6624,52 +7261,6 @@ namespace DCCollection
         }
     }
 
-    // The collection is account-wide, so a summon re-applies the gates a character
-    // meets to learn the mount itself: the class/race rules the collection's own
-    // teaching uses (IsSpellFitByClassAndRace) and the teaching item's faction,
-    // class, race, riding-skill and level requirements, as Player::CanUseItem
-    // checks them. Without them any alt rode every mount on the account.
-    // Returns why this character may not ride the mount, empty when it may.
-    static std::string GetMountRefusal(Player* player, uint32 spellId)
-    {
-        if (!player->IsSpellFitByClassAndRace(spellId))
-            return "Your race or class cannot use that mount";
-
-        uint32 const teachingItemId = FindMountItemIdForSpell(spellId);
-        ItemTemplate const* proto = teachingItemId ? sObjectMgr->GetItemTemplate(teachingItemId) : nullptr;
-        if (!proto)
-            return {};
-
-        if (proto->HasFlag2(ITEM_FLAG2_FACTION_HORDE) && player->GetTeamId(true) != TEAM_HORDE)
-            return "That mount is for the Horde only";
-
-        if (proto->HasFlag2(ITEM_FLAG2_FACTION_ALLIANCE) && player->GetTeamId(true) != TEAM_ALLIANCE)
-            return "That mount is for the Alliance only";
-
-        if ((proto->AllowableClass & player->getClassMask()) == 0)
-            return "Your class cannot use that mount";
-
-        if ((proto->AllowableRace & player->getRaceMask()) == 0)
-            return "Your race cannot use that mount";
-
-        if (proto->RequiredSkill != 0)
-        {
-            uint32 const skillValue = player->GetSkillValue(proto->RequiredSkill);
-            if (skillValue == 0 || skillValue < proto->RequiredSkillRank)
-            {
-                SkillLineEntry const* skill = sSkillLineStore.LookupEntry(proto->RequiredSkill);
-                bool const named = skill && skill->name[0] && *skill->name[0];
-                return Acore::StringFormat("That mount requires {} {}", named ? skill->name[0] : "skill",
-                    proto->RequiredSkillRank);
-            }
-        }
-
-        if (player->GetLevel() < proto->RequiredLevel)
-            return Acore::StringFormat("That mount requires level {}", proto->RequiredLevel);
-
-        return {};
-    }
-
     static bool CanCharacterRideMount(Player* player, uint32 spellId)
     {
         return GetMountRefusal(player, spellId).empty();
@@ -7083,36 +7674,203 @@ namespace DCCollection
     }
 
     // =======================================================================
+    // Read Request Floor
+    // =======================================================================
+
+    // HANDSHAKE, GET_FULL_COLLECTION, SYNC_COLLECTION, GET_STATS, GET_BONUSES, GET_COLLECTION, GET_SHOP,
+    // GET_SHOP_HISTORY and GET_WISHLIST each read the character database, with nothing bounding them per session:
+    // about 70 a second per account over the addon channel plus the native bridge, which reaches the same handlers
+    // through the router. Each request kind (GET_COLLECTION per collection type) now runs at most once per window,
+    // and never while its previous read is still with the database. A repeat is held, a newer one replacing it,
+    // and runs with its own request id once both have passed, so the client still gets its answer, built from
+    // current data. Dropping it would strand the client: DC-Collection clears its in-flight flag for a request
+    // kind only when the reply arrives.
+    using CollectionReadRun = void (*)(Player*, DCAddon::ParsedMessage const&, uint16 throttleKey);
+
+    struct CollectionReadThrottle : public DataMap::Base
+    {
+        struct Slot
+        {
+            uint32 lastRunMs = 0;
+            bool ran = false;
+            bool inFlight = false;  // its statements are still with the database (RunCollectionReads)
+            uint32 inFlightSinceMs = 0;
+            std::optional<DCAddon::ParsedMessage> held;
+            CollectionReadRun heldRun = nullptr;
+        };
+
+        std::unordered_map<uint16, Slot> slots;  // keyed by CollectionReadKey
+    };
+
+    // Held requests run from CollectionWorldScript::OnUpdate, i.e. on the world thread like the handlers that
+    // queue them. A player event would run them on that player's map thread, next to other map threads using
+    // the module's shared caches. One entry per (player, key) at most: a slot is queued only when it was empty.
+    std::vector<std::pair<ObjectGuid, uint16>> s_HeldCollectionReads;
+
+    constexpr uint32 COLLECTION_READ_WINDOW_MS = 2 * IN_MILLISECONDS;
+    // A read whose reply has not been built after this long stops holding the next one, so a stalled database
+    // cannot block a request kind for the rest of the session
+    constexpr uint32 COLLECTION_READ_IN_FLIGHT_MAX_MS = 15 * IN_MILLISECONDS;
+    // A held request stays in memory until its window ends; real read requests are a few dozen bytes
+    constexpr std::size_t COLLECTION_READ_HELD_MAX_BYTES = 512;
+
+    constexpr uint16 CollectionReadKey(uint8 opcode, uint8 subKey = 0)
+    {
+        return static_cast<uint16>((uint32(opcode) << 8) | subKey);
+    }
+
+    CollectionReadThrottle::Slot& GetCollectionReadSlot(Player* player, uint16 key)
+    {
+        return player->CustomData.GetDefault<CollectionReadThrottle>("DCCollectionReadThrottle")->slots[key];
+    }
+
+    void SetCollectionReadInFlight(Player* player, uint16 throttleKey, bool inFlight)
+    {
+        CollectionReadThrottle::Slot& slot = GetCollectionReadSlot(player, throttleKey);
+        slot.inFlight = inFlight;
+        if (inFlight)
+            slot.inFlightSinceMs = getMSTime();
+    }
+
+    bool IsCollectionReadInFlight(CollectionReadThrottle::Slot const& slot, uint32 now)
+    {
+        return slot.inFlight && getMSTimeDiff(slot.inFlightSinceMs, now) < COLLECTION_READ_IN_FLIGHT_MAX_MS;
+    }
+
+    void RunHeldCollectionRead(Player* player, CollectionReadThrottle::Slot& slot, uint16 key)
+    {
+        if (!slot.held || !slot.heldRun)
+            return;
+
+        DCAddon::ParsedMessage const msg = std::move(*slot.held);
+        CollectionReadRun const run = slot.heldRun;
+        slot.held.reset();
+        slot.heldRun = nullptr;
+        slot.lastRunMs = getMSTime();
+        slot.ran = true;
+
+        // The router checked the module when the request arrived; a config reload may have disabled it since
+        if (!DCAddon::MessageRouter::Instance().IsModuleEnabled(MODULE))
+            return;
+
+        // As the router does around a handler: the reply carries the request id, and no exception leaves the event
+        DCAddon::SetCurrentRequestContext(msg.GetRequestId());
+        try
+        {
+            run(player, msg, key);
+        }
+        catch (...)
+        {
+            LOG_ERROR("module.dc", "DC-Collection: held read request 0x{:02X} from {} threw",
+                msg.GetOpcode(), player->GetName());
+        }
+        DCAddon::ClearCurrentRequestContext();
+    }
+
+    // Runs the request now, or holds it until the window of the last run of the same kind has ended and that
+    // run's read has come back
+    void ThrottleCollectionRead(Player* player, DCAddon::ParsedMessage const& msg, uint16 key, CollectionReadRun run)
+    {
+        CollectionReadThrottle::Slot& slot = GetCollectionReadSlot(player, key);
+        uint32 const now = getMSTime();
+        uint32 const elapsed = slot.ran ? getMSTimeDiff(slot.lastRunMs, now) : COLLECTION_READ_WINDOW_MS;
+
+        // Should a queued held run ever be lost, later requests must not queue behind it
+        bool const heldStale = slot.held && elapsed >= 2 * COLLECTION_READ_WINDOW_MS;
+        if ((!slot.held || heldStale) && elapsed >= COLLECTION_READ_WINDOW_MS && !IsCollectionReadInFlight(slot, now))
+        {
+            slot.held.reset();
+            slot.lastRunMs = now;
+            slot.ran = true;
+            run(player, msg, key);
+            return;
+        }
+
+        if (msg.GetDataBytes() > COLLECTION_READ_HELD_MAX_BYTES)
+        {
+            LOG_DEBUG("module.dc", "DC-Collection: dropped oversized repeated read request 0x{:02X} from {}",
+                msg.GetOpcode(), player->GetName());
+            return;
+        }
+
+        // A request already held is replaced, and its queued run takes the newer one
+        bool const schedule = !slot.held;
+        slot.held.emplace(msg);
+        slot.heldRun = run;
+        if (schedule)
+            s_HeldCollectionReads.emplace_back(player->GetGUID(), key);
+    }
+
+    // World thread (CollectionWorldScript::OnUpdate): runs every held read whose window has ended and whose
+    // previous read has come back
+    void ProcessHeldCollectionReads()
+    {
+        if (s_HeldCollectionReads.empty())
+            return;
+
+        uint32 const now = getMSTime();
+        std::vector<std::pair<ObjectGuid, uint16>> pending;
+        pending.swap(s_HeldCollectionReads);
+
+        for (auto const& [playerGuid, key] : pending)
+        {
+            Player* player = ObjectAccessor::FindConnectedPlayer(playerGuid);
+            if (!player)
+                continue;
+
+            CollectionReadThrottle::Slot& slot = GetCollectionReadSlot(player, key);
+            if (!slot.held)
+                continue;
+
+            // A player between maps keeps the request until arriving
+            bool const windowOpen = slot.ran && getMSTimeDiff(slot.lastRunMs, now) < COLLECTION_READ_WINDOW_MS;
+            if (!player->IsInWorld() || windowOpen || IsCollectionReadInFlight(slot, now))
+            {
+                s_HeldCollectionReads.emplace_back(playerGuid, key);
+                continue;
+            }
+
+            RunHeldCollectionRead(player, slot, key);
+        }
+    }
+
+    // =======================================================================
     // Message Handlers
     // =======================================================================
 
-    void HandleHandshake(Player* player, DCAddon::ParsedMessage const& msg)
+    void RunHandshake(Player* player, DCAddon::ParsedMessage const& msg, uint16 throttleKey)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
-            SendHandshakeAck(player, 0);
+            SendHandshakeAck(player, 0, throttleKey);
             return;
         }
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 clientHash = json["hash"].AsUInt32();
 
-        SendHandshakeAck(player, clientHash);
+        SendHandshakeAck(player, clientHash, throttleKey);
     }
 
-    void HandleGetFullCollection(Player* player, DCAddon::ParsedMessage const& /*msg*/)
+    void HandleHandshake(Player* player, DCAddon::ParsedMessage const& msg)
     {
-        SendFullCollection(player);
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_HANDSHAKE),
+            RunHandshake);
     }
 
-    void HandleSyncCollection(Player* player, DCAddon::ParsedMessage const& msg)
+    void RunGetFullCollection(Player* player, DCAddon::ParsedMessage const& /*msg*/, uint16 throttleKey)
     {
-        if (!player || !player->GetSession())
-            return;
+        SendFullCollection(player, throttleKey);
+    }
 
-        // Client sends a hash of its locally cached collection. If it matches
-        // the server hash we can skip sending the full payload entirely and
-        // just reply with an empty SMSG_FULL_COLLECTION carrying the hash.
+    void HandleGetFullCollection(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_FULL_COLLECTION),
+            RunGetFullCollection);
+    }
+
+    void RunSyncCollection(Player* player, DCAddon::ParsedMessage const& msg, uint16 throttleKey)
+    {
         uint32 clientHash = 0;
         if (DCAddon::IsJsonMessage(msg))
         {
@@ -7121,25 +7879,16 @@ namespace DCCollection
                 clientHash = json["hash"].AsUInt32();
         }
 
-        if (clientHash != 0)
-        {
-            uint32 accountId = GetAccountId(player);
-            CollectionBuckets buckets = LoadOwnedCollectionBuckets(accountId);
-            uint32 serverHash = GenerateCollectionHashFromSortedBuckets(buckets);
-
-            if (serverHash == clientHash)
-            {
-                // Up to date -- avoid the (expensive) full payload rebuild.
-                SendSyncCollectionUpToDateAck(player, serverHash);
-                return;
-            }
-        }
-
-        // Hash mismatch (or not provided): fall back to full payload.
-        SendFullCollection(player);
+        SendSyncCollection(player, clientHash, throttleKey);
     }
 
-    void HandleGetStats(Player* player, DCAddon::ParsedMessage const& msg)
+    void HandleSyncCollection(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_SYNC_COLLECTION),
+            RunSyncCollection);
+    }
+
+    void RunGetStats(Player* player, DCAddon::ParsedMessage const& msg, uint16 throttleKey)
     {
         // Include recent by default to keep the UI consistent across client versions
         // (older clients may send an empty/non-JSON stats request).
@@ -7151,15 +7900,27 @@ namespace DCCollection
                 includeRecent = json["includeRecent"].AsBool();
         }
 
-        SendStats(player, includeRecent);
+        SendStats(player, includeRecent, throttleKey);
     }
 
-    void HandleGetBonuses(Player* player, DCAddon::ParsedMessage const& /*msg*/)
+    void HandleGetStats(Player* player, DCAddon::ParsedMessage const& msg)
     {
-        SendBonuses(player);
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_STATS),
+            RunGetStats);
     }
 
-    void HandleGetShop(Player* player, DCAddon::ParsedMessage const& msg)
+    void RunGetBonuses(Player* player, DCAddon::ParsedMessage const& /*msg*/, uint16 throttleKey)
+    {
+        SendBonuses(player, throttleKey);
+    }
+
+    void HandleGetBonuses(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_BONUSES),
+            RunGetBonuses);
+    }
+
+    void RunGetShop(Player* player, DCAddon::ParsedMessage const& msg, uint16 throttleKey)
     {
         std::string category = "all";
         bool omitStatic = false;
@@ -7179,7 +7940,14 @@ namespace DCCollection
             }
         }
 
-        SendShopData(player, category, omitStatic);
+        SendShopData(player, category, omitStatic, throttleKey);
+    }
+
+    // One key for every category: the category is a client string, and a key per value would undo the floor
+    void HandleGetShop(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_SHOP),
+            RunGetShop);
     }
 
     void HandleBuyItemMessage(Player* player, DCAddon::ParsedMessage const& msg)
@@ -7202,7 +7970,7 @@ namespace DCCollection
         SendCurrencies(player);
     }
 
-    void HandleGetShopHistory(Player* player, DCAddon::ParsedMessage const& msg)
+    void RunGetShopHistory(Player* player, DCAddon::ParsedMessage const& msg, uint16 throttleKey)
     {
         uint32 limit = 50;
         uint32 offset = 0;
@@ -7216,12 +7984,25 @@ namespace DCCollection
                 offset = json["offset"].AsUInt32();
         }
 
-        SendShopHistory(player, limit, offset);
+        SendShopHistory(player, limit, offset, throttleKey);
     }
 
-    void HandleGetWishlist(Player* player, DCAddon::ParsedMessage const& /*msg*/)
+    // One key for every page: a repeat is held and the newest page wins
+    void HandleGetShopHistory(Player* player, DCAddon::ParsedMessage const& msg)
     {
-        SendWishlistData(player);
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_SHOP_HISTORY),
+            RunGetShopHistory);
+    }
+
+    void RunGetWishlist(Player* player, DCAddon::ParsedMessage const& /*msg*/, uint16 throttleKey)
+    {
+        SendWishlistData(player, throttleKey);
+    }
+
+    void HandleGetWishlist(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        ThrottleCollectionRead(player, msg, CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_WISHLIST),
+            RunGetWishlist);
     }
 
     // =======================================================================
@@ -8735,15 +9516,8 @@ namespace DCCollection
         msg.Send(player);
     }
 
-    void SendCollection(Player* player, uint8 type)
+    void SendCollectionReply(Player* player, uint8 type, OwnedCollectionSnapshot const& snapshot, uint32 accountId)
     {
-        if (!player || !player->GetSession())
-            return;
-
-        uint32 accountId = GetAccountId(player);
-        if (!accountId)
-            return;
-
         CollectionType ct = static_cast<CollectionType>(type);
 
         std::string typeName;
@@ -8762,7 +9536,7 @@ namespace DCCollection
         DCAddon::JsonValue items;
         items.SetObject();
 
-        auto owned = LoadPlayerCollection(accountId, ct);
+        auto owned = GetOwnedEntries(snapshot, accountId, ct);
         uint32 titlesGranted = 0;
 
         if (ct == CollectionType::TITLE)
@@ -8793,7 +9567,7 @@ namespace DCCollection
         // Favorites ride on each entry. Older clients store the entry as it comes, so they
         // read is_favorite too; "favoritesIncluded" tells newer clients the flags are
         // authoritative (a server without favorites sends none).
-        std::vector<uint32> const favorites = LoadFavoriteCollectionIds(accountId, ct);
+        std::vector<uint32> const favorites = GetFavoriteEntries(snapshot, ct);
 
         for (uint32 id : owned)
         {
@@ -8823,6 +9597,26 @@ namespace DCCollection
         // previews for not-yet-collected pets.
         if (ct == CollectionType::PET)
             PreWarmPetCreatureCache(player);
+    }
+
+    void SendCollection(Player* player, uint8 type, uint16 throttleKey)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 const accountId = GetAccountId(player);
+        if (!accountId)
+            return;
+
+        // This type's rows only; appearances come from the wardrobe cache and their favorites table
+        CollectionType const ct = static_cast<CollectionType>(type);
+        std::vector<CollectionRead> reads;
+        OwnedSnapshotPlan const plan = AddOwnedSnapshotReads(reads, accountId, ct, ct == CollectionType::TRANSMOG);
+        RunCollectionReads(player, throttleKey, reads,
+            [plan, type](Player* target, CollectionReadResults const& results)
+        {
+            SendCollectionReply(target, type, ReadOwnedSnapshot(plan, results), plan.accountId);
+        });
     }
 
     // Full definition sends are throttled per session: a request without syncVersion re-sent the
@@ -9024,15 +9818,9 @@ namespace DCCollection
             SendDefinitions(player, type, offset, limit);
     }
 
-    void HandleGetCollectionMessage(Player* player, DCAddon::ParsedMessage const& msg)
+    // The collection type a GET_COLLECTION request names, 0 when it names none
+    uint8 GetRequestedCollectionType(DCAddon::ParsedMessage const& msg)
     {
-        if (!DCAddon::IsJsonMessage(msg))
-        {
-            DCAddon::SendError(player, MODULE, "Invalid request format",
-                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
-            return;
-        }
-
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint8 type = 0;
 
@@ -9054,6 +9842,26 @@ namespace DCCollection
             }
         }
 
+        return type;
+    }
+
+    void RunGetCollection(Player* player, DCAddon::ParsedMessage const& msg, uint16 throttleKey)
+    {
+        uint8 const type = GetRequestedCollectionType(msg);
+        if (type >= 1 && type <= 6)
+            SendCollection(player, type, throttleKey);
+    }
+
+    void HandleGetCollectionMessage(Player* player, DCAddon::ParsedMessage const& msg)
+    {
+        if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        uint8 const type = GetRequestedCollectionType(msg);
         if (type == 0)
         {
             DCAddon::SendError(player, MODULE, "Unknown collection type",
@@ -9073,8 +9881,10 @@ namespace DCCollection
             return;
         }
 
+        // A floor per collection type: the login sync asks for every type at once
         if (type >= 1 && type <= 6)
-            SendCollection(player, type);
+            ThrottleCollectionRead(player, msg,
+                CollectionReadKey(DCAddon::Opcode::Collection::CMSG_GET_COLLECTION, type), RunGetCollection);
     }
 
     void HandleAddWishlistMessage(Player* player, DCAddon::ParsedMessage const& msg)
@@ -9252,6 +10062,115 @@ namespace DCCollection
             return cache;
         }
 
+        // Rows read on the database threads (PreloadTransmogRows) must not refill an entry that was invalidated
+        // or erased after they were read. Guarded by TransmogCacheMutex().
+        struct TransmogPreloadState
+        {
+            uint32 inFlight = 0;
+            uint64 clock = 0;
+            std::unordered_map<uint32, uint64> changedAt;  // guid -> clock of its last invalidation or erase
+        };
+
+        static TransmogPreloadState& TransmogPreloads()
+        {
+            static TransmogPreloadState state;
+            return state;
+        }
+
+        // With TransmogCacheMutex() held, whenever an entry is invalidated or erased
+        static void NoteTransmogCacheChange(uint32 guid)
+        {
+            TransmogPreloadState& preloads = TransmogPreloads();
+            if (preloads.inFlight)
+                preloads.changedAt[guid] = ++preloads.clock;
+        }
+
+        // Loads the rows `sql` selects (guid, slot, fake_entry, real_entry; a NULL slot is a character without
+        // rows) into the cache from the database threads, so a login finds them instead of reading them on the
+        // spot. `guids` get an entry even when no row comes back. A character that is online keeps its entry:
+        // its session maintains it.
+        static void PreloadTransmogRows(std::string const& sql, std::vector<uint32> guids)
+        {
+            uint64 startClock = 0;
+            {
+                std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                TransmogPreloadState& preloads = TransmogPreloads();
+                ++preloads.inFlight;
+                startClock = preloads.clock;
+            }
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                .WithCallback([guids = std::move(guids), startClock](QueryResult result)
+            {
+                std::unordered_map<uint32, CharacterTransmogCache> loaded;
+                for (uint32 guid : guids)
+                    loaded[guid].loadedOnce = true;
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        CharacterTransmogCache& cache = loaded[fields[0].Get<uint32>()];
+                        cache.loadedOnce = true;
+                        if (fields[1].IsNull())
+                            continue;
+
+                        uint8 const slot = static_cast<uint8>(fields[1].Get<uint32>());
+                        if (slot >= EQUIPMENT_SLOT_END)
+                            continue;
+
+                        CachedTransmogRow row;
+                        row.fakeEntry = fields[2].Get<uint32>();
+                        row.realEntry = fields[3].Get<uint32>();
+                        cache.bySlot[slot] = row;
+                    } while (result->NextRow());
+                }
+
+                std::unordered_set<uint32> online;
+                for (auto const& [guid, cache] : loaded)
+                {
+                    if (ObjectAccessor::FindConnectedPlayer(ObjectGuid::Create<HighGuid::Player>(guid)))
+                        online.insert(guid);
+                }
+
+                std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                TransmogPreloadState& preloads = TransmogPreloads();
+                for (auto& [guid, cache] : loaded)
+                {
+                    auto const changed = preloads.changedAt.find(guid);
+                    if (online.count(guid) || (changed != preloads.changedAt.end() && changed->second > startClock))
+                        continue;
+
+                    TransmogCacheByGuid()[guid] = std::move(cache);
+                }
+
+                if (--preloads.inFlight == 0)
+                    preloads.changedAt.clear();
+            }));
+        }
+
+        // Every character of the account, when it authenticates
+        static void PreloadAccountTransmogRows(uint32 accountId)
+        {
+            std::string const& accountCol = GetCharactersAccountColumn();
+            if (accountCol.empty())
+                return;
+
+            PreloadTransmogRows(Acore::StringFormat(
+                "SELECT c.guid, t.slot, t.fake_entry, t.real_entry FROM characters c "
+                "LEFT JOIN dc_character_transmog t ON t.guid = c.guid WHERE c.{} = {}",
+                accountCol, accountId), {});
+        }
+
+        // One character, when it logs out: back at the character list the player may pick it again
+        static void PreloadCharacterTransmogRows(uint32 guid)
+        {
+            PreloadTransmogRows(Acore::StringFormat(
+                "SELECT guid, slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}", guid),
+                { guid });
+        }
+
         static CharacterTransmogCache LoadCharacterTransmogCache(uint32 guid)
         {
             CharacterTransmogCache cache;
@@ -9324,6 +10243,7 @@ namespace DCCollection
         {
             std::lock_guard<std::mutex> lock(TransmogCacheMutex());
             TransmogCacheByGuid().erase(guid);
+            NoteTransmogCacheChange(guid);
         }
 
         static void ApplyCachedTransmogOnLogin(Player* player)
@@ -9333,18 +10253,30 @@ namespace DCCollection
 
             uint32 guid = player->GetGUID().GetCounter();
 
-            CharacterTransmogCache cache = LoadCharacterTransmogCache(guid);
-            if (cache.bySlot.empty())
+            // Usually loaded already: by the preload (when the account authenticated or the character last logged
+            // out), or by the first visible-item lookup while the inventory loaded. Read now only if neither did.
+            CharacterTransmogCache cache;
+            bool cached = false;
             {
                 std::lock_guard<std::mutex> lock(TransmogCacheMutex());
-                TransmogCacheByGuid()[guid] = std::move(cache);
-                return;
+                auto const it = TransmogCacheByGuid().find(guid);
+                if (it != TransmogCacheByGuid().end() && it->second.loadedOnce)
+                {
+                    cache = it->second;
+                    cached = true;
+                }
             }
 
+            if (!cached)
             {
+                cache = LoadCharacterTransmogCache(guid);
+
                 std::lock_guard<std::mutex> lock(TransmogCacheMutex());
                 TransmogCacheByGuid()[guid] = cache;
             }
+
+            if (cache.bySlot.empty())
+                return;
 
             for (auto const& [slot, row] : cache.bySlot)
             {
@@ -9391,6 +10323,11 @@ namespace DCCollection
                 UpdateMountSpeedBonus(player);
                 return;
             }
+
+            // The account's appearance list, loaded in the background so that the client's first collection
+            // requests and the loot/equip unlock hooks find it cached. Normally loaded already when the account
+            // authenticated (ProcessAccountLoginPreloads); a relog gets here without it, logout having dropped it.
+            WarmAccountAppearanceCacheAsync(GetAccountId(player));
 
             // Seed account-wide collections from already-known mounts/pets/titles.
             ImportExistingCollections(player);
@@ -9491,9 +10428,12 @@ namespace DCCollection
             if (!IsModuleEnabled() || DCAddon::IsBotRecipient(player))
                 return;
 
-            // The login sync skipped mounts below the threshold. A character that
-            // levels or is boosted past it would otherwise wait for its next login.
-            if (oldLevel < MOUNT_SYNC_MIN_LEVEL && player->GetLevel() >= MOUNT_SYNC_MIN_LEVEL)
+            // The login sync skipped mounts below the threshold, or ones whose teaching item needs a higher level
+            // or more riding skill. A character that levels or is boosted past it would otherwise wait for its
+            // next login. A multi-level gain runs one sync (SyncAccountWideCollectionsToCharacter coalesces).
+            bool const crossedMountLevel =
+                oldLevel < MOUNT_SYNC_MIN_LEVEL && player->GetLevel() >= MOUNT_SYNC_MIN_LEVEL;
+            if (crossedMountLevel || (player->GetLevel() > oldLevel && IsMountSyncWaiting(player)))
                 SyncAccountWideCollectionsToCharacter(player);
         }
 
@@ -9511,6 +10451,13 @@ namespace DCCollection
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
             if (!spellInfo)
                 return;
+
+            // A riding rank may let the character ride collected mounts the last sync held back
+            if (IsMountSyncWaiting(player) && TeachesRidingSkill(spellInfo))
+            {
+                SyncAccountWideCollectionsToCharacter(player);
+                return;
+            }
 
             uint32 accountId = GetAccountId(player);
             if (!accountId)
@@ -9803,6 +10750,10 @@ namespace DCCollection
             EraseCharacterTransmogCache(guid);
             WardrobeVisuals::Erase(player->GetGUID());
 
+            // Back at the character list the player may pick this character again: have its rows ready
+            if (IsModuleEnabled() && !DCAddon::IsBotRecipient(player))
+                PreloadCharacterTransmogRows(guid);
+
             // Allow the pet creature-cache pre-warm to fire again next session
             // (the client creature cache is cleared on relog).
             ClearPetPrewarmState(guid);
@@ -9812,6 +10763,8 @@ namespace DCCollection
     void InvalidateCharacterTransmogCache(uint32 guid)
     {
         std::lock_guard<std::mutex> lock(CollectionPlayerScript::TransmogCacheMutex());
+        CollectionPlayerScript::NoteTransmogCacheChange(guid);
+
         auto& byGuid = CollectionPlayerScript::TransmogCacheByGuid();
         auto it = byGuid.find(guid);
         if (it != byGuid.end())
@@ -9845,6 +10798,101 @@ namespace DCCollection
     };
 
     // =======================================================================
+    // Account login preload
+    // =======================================================================
+
+    namespace
+    {
+        // Filled on the socket's network thread (OnAccountLogin), drained on the world thread
+        std::mutex s_AccountPreloadQueueMutex;
+        std::vector<uint32> s_AccountPreloadQueue;
+
+        // World thread only. An account that reconnects over and over does not get a fresh set of statements
+        // each time.
+        std::unordered_map<uint32, uint32> s_AccountPreloadedAtMs;
+        constexpr uint32 ACCOUNT_PRELOAD_INTERVAL_MS = 10 * IN_MILLISECONDS;
+    }
+
+    // World thread (CollectionWorldScript::OnUpdate). An account that just authenticated spends a few seconds at
+    // the character list at least: time enough to have in memory what its character's login would otherwise read
+    // on the world thread (the appearance list, the legacy-import inputs, every character's transmog rows).
+    void ProcessAccountLoginPreloads()
+    {
+        std::vector<uint32> accounts;
+        {
+            std::lock_guard<std::mutex> lock(s_AccountPreloadQueueMutex);
+            if (s_AccountPreloadQueue.empty())
+                return;
+
+            accounts.swap(s_AccountPreloadQueue);
+        }
+
+        if (!IsModuleEnabled())
+            return;
+
+        uint32 const now = getMSTime();
+        for (uint32 accountId : accounts)
+        {
+            auto const [it, first] = s_AccountPreloadedAtMs.try_emplace(accountId, now);
+            if (!first)
+            {
+                if (getMSTimeDiff(it->second, now) < ACCOUNT_PRELOAD_INTERVAL_MS)
+                    continue;
+
+                it->second = now;
+            }
+
+            WarmAccountAppearanceCacheAsync(accountId);
+            PreloadAccountImportData(accountId);
+            CollectionPlayerScript::PreloadAccountTransmogRows(accountId);
+        }
+    }
+
+    class CollectionAccountScript : public AccountScript
+    {
+    public:
+        CollectionAccountScript() : AccountScript("dc_collection_account", { ACCOUNTHOOK_ON_ACCOUNT_LOGIN }) {}
+
+        // Not the world thread: only hand the account over
+        void OnAccountLogin(uint32 accountId) override
+        {
+            std::lock_guard<std::mutex> lock(s_AccountPreloadQueueMutex);
+            s_AccountPreloadQueue.push_back(accountId);
+        }
+    };
+
+    // Runs every schema check the collection reads and the login make, so that none of them is a first,
+    // blocking check in the middle of a request. The checks cache their own results.
+    void WarmCollectionSchemaProbes()
+    {
+        GetCharEntryColumn("dc_collection_items");
+        ItemsCollectionTypeIsEnum();
+        GetItemsCollectionTypeColumnSpec();
+        BuildOwnedRowsQuery(0, std::nullopt);
+        BuildLegacyTitleCollectionQuery(0);
+        BuildWishlistQuery(0);
+        WishlistCollectionTypeIsEnum();
+        HasCollectionMigrationsTable();
+        GetCharactersAccountColumn();
+        CharacterTableExists(kAppearanceFavoritesTable);
+        CharacterColumnExists("dc_transmog_collection", "obtained_via");
+
+        GetShopPurchaseIdColumn();
+        GetShopPurchaseShopColumn();
+        GetShopPurchaseTokensColumn();
+        GetShopPurchaseEmblemsColumn();
+        GetShopPurchaseCharacterIdColumn();
+        GetShopPurchaseCharacterNameColumn();
+        GetShopPurchaseGoldColumn();
+        CharacterColumnExists("dc_collection_shop_purchases", "cost_points");
+
+        for (char const* column : { "id", "collection_type", "entry_id", "price_tokens", "price_emblems",
+            "price_points", "discount_percent", "available_from", "available_until", "stock_remaining", "featured",
+            "enabled" })
+            CharacterColumnExists("dc_collection_shop", column);
+    }
+
+    // =======================================================================
     // World Script for Configuration
     // =======================================================================
 
@@ -9852,6 +10900,12 @@ namespace DCCollection
     {
     public:
         CollectionWorldScript() : WorldScript("dc_collection_world") {}
+
+        void OnUpdate(uint32 /*diff*/) override
+        {
+            ProcessHeldCollectionReads();
+            ProcessAccountLoginPreloads();
+        }
 
         void OnAfterConfigLoad(bool reload) override
         {
@@ -9882,10 +10936,21 @@ namespace DCCollection
 
         void OnStartup() override
         {
+            // Every schema check of the read and login paths, while nobody waits on the world thread
+            WarmCollectionSchemaProbes();
+
             // Item/creature templates, spells and DBC stores are all loaded by
-            // now; build the curated definition caches before players connect.
+            // now; build the curated definition caches and the catalogue totals
+            // before players connect.
             if (IsModuleEnabled())
+            {
                 WarmCuratedDefinitionsCaches();
+                LoadTotalDefinitions();
+            }
+
+            // The mount gate (GetMountRefusal) reads this map from grants that quest and loot hooks issue on map
+            // threads; fill it here, single-threaded, instead of on whichever thread looks first.
+            FindMountItemIdForSpell(0);
         }
     };
 
@@ -10054,6 +11119,7 @@ void AddSC_dc_addon_collection()
     new CollectionPlayerScript();
     new CollectionMiscScript();
     new CollectionWorldScript();
+    new CollectionAccountScript();
     new CollectionWave1NativeServerScript();
 
     AddSC_dc_addon_wardrobe(); // Call Wardrobe registration

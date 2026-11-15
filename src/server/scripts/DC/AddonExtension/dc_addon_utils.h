@@ -64,6 +64,47 @@ namespace Utils
     }
 
     // -------------------------------------------------------------------------
+    // Player free text shown to other players
+    // -------------------------------------------------------------------------
+    // Text one player types (a Group Finder note, an outfit name, a vote-kick
+    // reason) ends up in other players' FontStrings and chat frames, where every
+    // '|' starts a UI escape: |c colour, |T texture, |H link, |K, |n newline.
+    // JSON and SQL escaping protect the wire and the database, not the UI that
+    // renders the text. This drops every '|' and every ASCII control character
+    // (0x00-0x1F, 0x7F; a line break or tab becomes one space) and trims spaces
+    // at both ends. Only ASCII bytes are removed, so multi-byte UTF-8 sequences
+    // pass through intact. Apply it where the text is received, before any
+    // length check, storage or relay.
+    inline std::string SanitizePlayerText(std::string_view input)
+    {
+        std::string out;
+        out.reserve(input.size());
+
+        for (char const c : input)
+        {
+            unsigned char const byte = static_cast<unsigned char>(c);
+            if (c == '|')
+                continue;
+
+            if (byte < 0x20 || byte == 0x7F)
+            {
+                if ((c == '\n' || c == '\r' || c == '\t') && !out.empty() && out.back() != ' ')
+                    out.push_back(' ');
+                continue;
+            }
+
+            out.push_back(c);
+        }
+
+        std::size_t const first = out.find_first_not_of(' ');
+        if (first == std::string::npos)
+            return std::string();
+
+        std::size_t const last = out.find_last_not_of(' ');
+        return out.substr(first, last - first + 1);
+    }
+
+    // -------------------------------------------------------------------------
     // Outbound JSON well-formedness check
     // -------------------------------------------------------------------------
     // Two JSON strategies coexist in this tree: the JsonValue DOM (well-formed

@@ -583,13 +583,14 @@ namespace GroupFinder
             listingType = LISTING_MYTHIC_PLUS;
 
         uint32 dungeonId = static_cast<uint32>(JsonGetInt(json, "dungeonId", 0));
-        std::string dungeonName = JsonGetString(json, "dungeonName", "Unknown");
+        // Shown to every player who browses the finder: no UI escape codes.
+        std::string dungeonName = Utils::SanitizePlayerText(JsonGetString(json, "dungeonName", "Unknown"));
         uint8 keystoneLevel = static_cast<uint8>(JsonGetInt(json, "keyLevel", 0));
         uint16 minIlvl = static_cast<uint16>(JsonGetInt(json, "minIlvl", 0));
         uint8 needTank = static_cast<uint8>(JsonGetInt(json, "needTank", 1));
         uint8 needHealer = static_cast<uint8>(JsonGetInt(json, "needHealer", 1));
         uint8 needDps = static_cast<uint8>(JsonGetInt(json, "needDps", 3));
-        std::string note = JsonGetString(json, "note", "");
+        std::string note = Utils::SanitizePlayerText(JsonGetString(json, "note", ""));
         int32 difficultyId = JsonGetInt(json, "difficultyId", -1);
         if (difficultyId < 0 && json["difficulty"].IsNumber())
             difficultyId = json["difficulty"].AsInt32();
@@ -737,7 +738,8 @@ namespace GroupFinder
             roleMask = static_cast<uint8>(json["role"].AsInt32());
         }
 
-        std::string message = JsonGetString(json, "message", "");
+        // Relayed to the listing's leader: no UI escape codes.
+        std::string message = Utils::SanitizePlayerText(JsonGetString(json, "message", ""));
 
         if (listingId <= 0)
         {
@@ -1276,15 +1278,15 @@ namespace GroupFinder
         // Extract event data
         uint8 eventType = static_cast<uint8>(JsonGetInt(json, "eventType", LISTING_MYTHIC_PLUS));
         uint32 dungeonId = static_cast<uint32>(JsonGetInt(json, "dungeonId", 0));
-        std::string dungeonName = JsonGetString(json, "dungeonName", "Unknown");
+        std::string dungeonName = Utils::SanitizePlayerText(JsonGetString(json, "dungeonName", "Unknown"));
         uint8 keystoneLevel = static_cast<uint8>(JsonGetInt(json, "keyLevel", 0));
         uint32 scheduledTime = static_cast<uint32>(JsonGetInt(json, "scheduledTime", 0));
         uint8 maxSignups = static_cast<uint8>(std::clamp<int32>(
             JsonGetInt(json, "maxSignups", 5), 1, GROUP_FINDER_EVENT_MAX_SIGNUPS));
-        std::string note = JsonGetString(json, "note", "");
+        std::string note = Utils::SanitizePlayerText(JsonGetString(json, "note", ""));
 
-        // Cut to the column widths: both strings are cached and sent to
-        // everyone who opens the event list.
+        // Stripped of UI escape codes above and cut to the column widths here:
+        // both strings are cached and sent to everyone who opens the event list.
         TruncateGroupFinderText(dungeonName, GF_MAX_NAME_CHARS);
         TruncateGroupFinderText(note, GF_MAX_NOTE_CHARS);
 
@@ -1426,7 +1428,7 @@ namespace GroupFinder
         auto json = GetJsonData(msg);
         uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
         uint8 role = static_cast<uint8>(JsonGetInt(json, "role", 0));
-        std::string note = JsonGetString(json, "note", "");
+        std::string note = Utils::SanitizePlayerText(JsonGetString(json, "note", ""));
         TruncateGroupFinderText(note, GF_MAX_NOTE_CHARS);
 
         // Escape user-provided note to prevent SQL injection

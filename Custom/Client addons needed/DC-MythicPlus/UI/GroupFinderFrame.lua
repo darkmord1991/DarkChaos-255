@@ -717,6 +717,16 @@ end
 -- Print Helper
 -- =====================================================================
 
+-- Free text other players typed (listing note, dungeon or event name, event description,
+-- applicant message) is shown with '|' doubled, so colour codes, textures and links render as
+-- plain text, even from a server that does not strip them (security audit 2026-11-10).
+function GF.EscapeText(text)
+    if text == nil then
+        return nil
+    end
+    return (string.gsub(tostring(text), "|", "||"))
+end
+
 local function Print(selfOrMsg, maybeMsg)
     local text = maybeMsg
     if text == nil then
@@ -1007,17 +1017,17 @@ local function CompactEntryName(entry, kind)
         if GF.DescribeLiveEntry then
             return (GF.DescribeLiveEntry(entry))
         end
-        return entry.dungeon or entry.dungeonName or entry.mapName
-            or entry.name or "Live Run"
+        return GF.EscapeText(entry.dungeon or entry.dungeonName or entry.mapName
+            or entry.name or "Live Run")
     end
 
     if kind == "queues" then
-        return entry.dungeonName or entry.dungeon or entry.raid
-            or entry.name or "Application"
+        return GF.EscapeText(entry.dungeonName or entry.dungeon or entry.raid
+            or entry.name or "Application")
     end
 
-    return entry.dungeonName or entry.dungeon or entry.raid
-        or entry.name or "Group Listing"
+    return GF.EscapeText(entry.dungeonName or entry.dungeon or entry.raid
+        or entry.name or "Group Listing")
 end
 
 local function CompactEntryMeta(entry, kind)
@@ -1048,7 +1058,7 @@ local function CompactEntryMeta(entry, kind)
         table.insert(parts, tostring(entry.difficulty))
     end
     if entry.note and entry.note ~= "" then
-        table.insert(parts, entry.note)
+        table.insert(parts, GF.EscapeText(entry.note))
     end
 
     if #parts == 0 then
@@ -1115,7 +1125,7 @@ function GF:CompactSelectRow(row, entry)
     -- Locked rows (level requirement not met) are display-only, like retail.
     if entry and entry.locked then
         self:SetStatusMessage((entry.lockReason or "Not available yet")
-            .. " - " .. (entry.dungeonName or entry.name or "this content") .. ".")
+            .. " - " .. GF.EscapeText(entry.dungeonName or entry.name or "this content") .. ".")
         return
     end
 
@@ -1196,7 +1206,7 @@ local function CompactRowOnEnter(self)
     -- Retail shows the requirement on hover for anything locked.
     if entry and (entry.locked or entry.reqLevel or entry.reqItemLevel) then
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(entry.dungeonName or entry.name or "", 1, 1, 1)
+        GameTooltip:SetText(GF.EscapeText(entry.dungeonName or entry.name or ""), 1, 1, 1)
         if entry.difficultyName and entry.difficultyName ~= "" then
             GameTooltip:AddLine(entry.difficultyName, 0.7, 0.7, 0.7)
         end

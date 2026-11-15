@@ -182,38 +182,54 @@ public:
     // Per CALL_ENABLED_BOOLEAN_HOOKS, returning true here BLOCKS the item for this player.
     bool OnAllowedForPlayerLootCheck(Player const* player, ObjectGuid source) override
     {
-        return IsLockedForBoss(player, source.GetEntry());
+        return IsLockedForBoss(player, source);
     }
 
     // Corpse open. Fires once in Player::SendLoot; the natural place for the one-shot message.
     bool OnAllowedToLootContainerCheck(Player const* player, ObjectGuid source) override
     {
-        uint32 const entry = source.GetEntry();
-        if (!IsLockedForBoss(player, entry))
+        if (!IsLockedForBoss(player, source))
             return false; // allow
 
         if (player)
         {
+            uint32 const entry = source.GetEntry();
             std::string name = "this world boss";
             if (DarkChaos::CrossSystem::WorldBossInfo* info = sWorldBossMgr->GetBossInfo(entry))
                 name = info->displayName;
 
-            uint32 const remaining = sWorldBossMgr->GetLockoutRemaining(player, entry);
-            ChatHandler(player->GetSession()).SendSysMessage(
-                Acore::StringFormat("|cffff2020Loot lockout:|r you have already claimed {} this reset. Available again in {}.",
-                                    name, WorldBossMgr::FormatDuration(remaining)));
+            if (sWorldBossMgr->IsPlayerLockedOut(player, entry))
+            {
+                uint32 const remaining = sWorldBossMgr->GetLockoutRemaining(player, entry);
+                ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat(
+                    "|cffff2020Loot lockout:|r you have already claimed {} this reset. Available again in {}.",
+                    name, WorldBossMgr::FormatDuration(remaining)));
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat(
+                    "|cffff2020Loot lockout:|r only players who were there when {} died can loot it.", name));
+            }
         }
         return true; // block opening the corpse (engine also sends LOOT_ERROR_DIDNT_KILL)
     }
 
 private:
-    // True only when the source is one of our registered world bosses AND the player is locked out.
-    static bool IsLockedForBoss(Player const* player, uint32 entry)
+    // True only when the source is one of our registered world bosses AND the player may not loot
+    // it: locked out by an earlier kill, or not locked (credited) by the kill that left this corpse.
+    static bool IsLockedForBoss(Player const* player, ObjectGuid source)
     {
         if (!sWorldBossMgr->IsLockoutEnabled() || !player)
             return false;
+
+        uint32 const entry = source.GetEntry();
         if (!sWorldBossMgr->GetBossInfo(entry)) // not a managed world boss -> never interfere
             return false;
+
+        // Unrecorded while the core fills the loot, which runs before the boss's JustDied.
+        if (sWorldBossMgr->GetKillCredit(player, source) == WorldBossMgr::KillCredit::NotCredited)
+            return true;
+
         return sWorldBossMgr->IsPlayerLockedOut(player, entry);
     }
 };

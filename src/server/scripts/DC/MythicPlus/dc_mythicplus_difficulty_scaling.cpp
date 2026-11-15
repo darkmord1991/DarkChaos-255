@@ -30,8 +30,9 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
 {
     LOG_INFO("server.loading", "Loading Mythic+ dungeon profiles...");
 
-    _dungeonProfiles.clear();
-    _activeSeasonId = 0;
+    // Built off to the side and published whole at the end; the snapshot the map
+    // threads are reading is never touched (see ScalingData).
+    std::unique_ptr<ScalingData> data = std::make_unique<ScalingData>();
 
     QueryResult result = WorldDatabase.Query("SELECT map_id, name, heroic_enabled, mythic_enabled, "
                                              "base_health_mult, base_damage_mult, "
@@ -42,6 +43,7 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
 
     if (!result)
     {
+        // Nothing is published, so a reload keeps the profiles already loaded.
         LOG_WARN("server.loading", ">> No dungeon profiles found in dc_dungeon_mythic_profile");
         return;
     }
@@ -103,21 +105,34 @@ void MythicDifficultyScaling::LoadDungeonProfiles()
             profile.mythicDamageMult = profile.baseDamageMult > 1.0f ? profile.baseDamageMult : 1.20f;
         }
 
-        _dungeonProfiles[profile.mapId] = profile;
+        data->dungeonProfiles[profile.mapId] = profile;
         ++count;
 
     } while (result->NextRow());
 
     LOG_INFO("server.loading", ">> Loaded {} Mythic+ dungeon profiles", count);
 
-    LoadScalingMultipliers();
-    LoadDungeonSetup();
-    LoadBossEntries();
-    LoadDifficultyVariantEntries();
+    LoadScalingMultipliers(*data);
+    LoadDungeonSetup(*data);
+    LoadBossEntries(*data);
+    LoadDifficultyVariantEntries(*data);
 
     // Use unified season helper for consistent season ID across all systems
-    _activeSeasonId = DarkChaos::GetActiveSeasonId();
-    LOG_INFO("server.loading", ">> Active Mythic+ season (ID {})", _activeSeasonId);
+    data->activeSeasonId = DarkChaos::GetActiveSeasonId();
+    LOG_INFO("server.loading", ">> Active Mythic+ season (ID {})", data->activeSeasonId);
+
+    // Publish. The previous snapshot stays in _snapshots: a map thread may still
+    // be reading it or hold a DungeonProfile* into it.
+    std::lock_guard<std::mutex> guard(_loadLock);
+    ScalingData* published = data.get();
+    _snapshots.push_back(std::move(data));
+    _data.store(published, std::memory_order_release);
+}
+
+uint32 MythicDifficultyScaling::GetActiveSeasonId() const
+{
+    ScalingData const* data = _data.load(std::memory_order_acquire);
+    return data ? data->activeSeasonId : 0;
 }
 
 namespace
@@ -153,9 +168,9 @@ float GetFallbackMultiplier(uint32 keystoneLevel)
 constexpr uint32 MAX_PRECOMPUTED_KEYSTONE_LEVEL = 40;
 }
 
-void MythicDifficultyScaling::LoadScalingMultipliers()
+void MythicDifficultyScaling::LoadScalingMultipliers(ScalingData& data)
 {
-    _scalingMultipliers.clear();
+    std::unordered_map<uint32, std::pair<float, float>>& multipliers = data.scalingMultipliers;
 
     uint32 dbRows = 0;
     if (QueryResult result = WorldDatabase.Query(
@@ -167,7 +182,7 @@ void MythicDifficultyScaling::LoadScalingMultipliers()
             uint32 level = fields[0].Get<uint32>();
             float hp = fields[1].Get<float>();
             float damage = fields[2].Get<float>();
-            _scalingMultipliers[level] = { hp, damage };
+            multipliers[level] = { hp, damage };
             ++dbRows;
         }
         while (result->NextRow());
@@ -182,22 +197,20 @@ void MythicDifficultyScaling::LoadScalingMultipliers()
     uint32 filled = 0;
     for (uint32 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL; level <= MAX_PRECOMPUTED_KEYSTONE_LEVEL; ++level)
     {
-        if (_scalingMultipliers.find(level) != _scalingMultipliers.end())
+        if (multipliers.find(level) != multipliers.end())
             continue;
 
         float fallback = GetFallbackMultiplier(level);
-        _scalingMultipliers[level] = { fallback, fallback };
+        multipliers[level] = { fallback, fallback };
         ++filled;
     }
 
     LOG_INFO("server.loading", ">> Cached {} Mythic+ scaling entries ({} from DB, {} from fallback curve)",
-             _scalingMultipliers.size(), dbRows, filled);
+             multipliers.size(), dbRows, filled);
 }
 
-void MythicDifficultyScaling::LoadDungeonSetup()
+void MythicDifficultyScaling::LoadDungeonSetup(ScalingData& data)
 {
-    _dungeonSetup.clear();
-
     QueryResult result = WorldDatabase.Query(
         "SELECT map_id, is_unlocked, mythic_plus_enabled, IFNULL(season_lock, 0) FROM dc_dungeon_setup");
 
@@ -215,17 +228,21 @@ void MythicDifficultyScaling::LoadDungeonSetup()
         entry.unlocked = fields[1].Get<bool>();
         entry.mythicPlusEnabled = fields[2].Get<bool>();
         entry.seasonLock = fields[3].Get<uint32>();
-        _dungeonSetup[mapId] = entry;
+        data.dungeonSetup[mapId] = entry;
     }
     while (result->NextRow());
 
-    LOG_INFO("server.loading", ">> Cached {} dc_dungeon_setup rows", _dungeonSetup.size());
+    LOG_INFO("server.loading", ">> Cached {} dc_dungeon_setup rows", data.dungeonSetup.size());
 }
 
 bool MythicDifficultyScaling::IsDungeonFeatured(uint32 mapId, uint32 seasonId) const
 {
-    auto itr = _dungeonSetup.find(mapId);
-    if (itr == _dungeonSetup.end())
+    ScalingData const* data = _data.load(std::memory_order_acquire);
+    if (!data)
+        return false;
+
+    auto itr = data->dungeonSetup.find(mapId);
+    if (itr == data->dungeonSetup.end())
         return false;
 
     DungeonSetupEntry const& entry = itr->second;
@@ -233,10 +250,8 @@ bool MythicDifficultyScaling::IsDungeonFeatured(uint32 mapId, uint32 seasonId) c
     return entry.unlocked && entry.mythicPlusEnabled && seasonMatches;
 }
 
-void MythicDifficultyScaling::LoadBossEntries()
+void MythicDifficultyScaling::LoadBossEntries(ScalingData& data)
 {
-    _bossEntries.clear();
-
     // creditType 0 is a creature kill credit, so creditEntry is a
     // creature_template entry. creditType 1 is a spell/script credit and
     // carries no creature to scale.
@@ -252,21 +267,20 @@ void MythicDifficultyScaling::LoadBossEntries()
 
     do
     {
-        _bossEntries.insert(result->Fetch()[0].Get<uint32>());
+        data.bossEntries.insert(result->Fetch()[0].Get<uint32>());
     } while (result->NextRow());
 
-    LOG_INFO("server.loading", ">> Cached {} dungeon boss entries from instance_encounters", _bossEntries.size());
+    LOG_INFO("server.loading", ">> Cached {} dungeon boss entries from instance_encounters", data.bossEntries.size());
 }
 
 bool MythicDifficultyScaling::IsBossEntry(uint32 creatureEntry) const
 {
-    return _bossEntries.find(creatureEntry) != _bossEntries.end();
+    ScalingData const* data = _data.load(std::memory_order_acquire);
+    return data && data->bossEntries.find(creatureEntry) != data->bossEntries.end();
 }
 
-void MythicDifficultyScaling::LoadDifficultyVariantEntries()
+void MythicDifficultyScaling::LoadDifficultyVariantEntries(ScalingData& data)
 {
-    _difficultyVariantEntries.clear();
-
     QueryResult result = WorldDatabase.Query(
         "SELECT difficulty_entry_1 FROM creature_template WHERE difficulty_entry_1 > 0 "
         "UNION SELECT difficulty_entry_2 FROM creature_template WHERE difficulty_entry_2 > 0 "
@@ -280,15 +294,16 @@ void MythicDifficultyScaling::LoadDifficultyVariantEntries()
 
     do
     {
-        _difficultyVariantEntries.insert(result->Fetch()[0].Get<uint32>());
+        data.difficultyVariantEntries.insert(result->Fetch()[0].Get<uint32>());
     } while (result->NextRow());
 
-    LOG_INFO("server.loading", ">> Cached {} difficulty template entries", _difficultyVariantEntries.size());
+    LOG_INFO("server.loading", ">> Cached {} difficulty template entries", data.difficultyVariantEntries.size());
 }
 
 bool MythicDifficultyScaling::IsDifficultyVariantEntry(uint32 creatureEntry) const
 {
-    return _difficultyVariantEntries.find(creatureEntry) != _difficultyVariantEntries.end();
+    ScalingData const* data = _data.load(std::memory_order_acquire);
+    return data && data->difficultyVariantEntries.find(creatureEntry) != data->difficultyVariantEntries.end();
 }
 
 bool MythicDifficultyScaling::UsesLegacyStatCurve(uint32 mapId) const
@@ -299,8 +314,12 @@ bool MythicDifficultyScaling::UsesLegacyStatCurve(uint32 mapId) const
 
 DungeonProfile* MythicDifficultyScaling::GetDungeonProfile(uint32 mapId)
 {
-    auto itr = _dungeonProfiles.find(mapId);
-    if (itr != _dungeonProfiles.end())
+    ScalingData* data = _data.load(std::memory_order_acquire);
+    if (!data)
+        return nullptr;
+
+    auto itr = data->dungeonProfiles.find(mapId);
+    if (itr != data->dungeonProfiles.end())
         return &itr->second;
     return nullptr;
 }
@@ -407,11 +426,14 @@ void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLeve
         return;
     }
 
-    if (auto itr = _scalingMultipliers.find(keystoneLevel); itr != _scalingMultipliers.end())
+    if (ScalingData const* data = _data.load(std::memory_order_acquire))
     {
-        hpMult = itr->second.first;
-        damageMult = itr->second.second;
-        return;
+        if (auto itr = data->scalingMultipliers.find(keystoneLevel); itr != data->scalingMultipliers.end())
+        {
+            hpMult = itr->second.first;
+            damageMult = itr->second.second;
+            return;
+        }
     }
 
     // Beyond the precomputed range. Compute without touching the map: this runs

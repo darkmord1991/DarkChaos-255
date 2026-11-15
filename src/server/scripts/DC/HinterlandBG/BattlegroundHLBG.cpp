@@ -51,6 +51,10 @@ namespace
     constexpr uint32 HLBGQuestCreditPlayerKill = 920111;
     constexpr uint32 HLBGQuestCreditGuardKill = 920112;
     constexpr uint32 HLBGQuestCreditLeaderKill = 920113;
+    // A killer is paid for the same victim at most once per this many seconds.
+    constexpr uint32 HLBGRepeatKillWindowSec = 60;
+    // Tracked killer/victim pairs before entries past the repeat window are pruned.
+    constexpr std::size_t HLBGRepeatKillTrackMax = 2048;
     constexpr uint32 HLBGHudSyncIntervalMs = 1000;
     constexpr uint32 HLBGHudHeartbeatIntervalMs = 30000;
     constexpr uint32 HLBGAfkTickIntervalMs = 2000;
@@ -515,6 +519,7 @@ void BattlegroundHLBG::ResetMatchState()
     _playerLastPos.clear();
     _playerScores.clear();
     _playerHKBaseline.clear();
+    _lastPlayerKillSec.clear();
 
     for (auto const& playerEntry : GetPlayers())
         ResetPlayerTracking(playerEntry.second);
@@ -1133,9 +1138,41 @@ void BattlegroundHLBG::AddPlayerContributionScore(ObjectGuid const& guid, uint32
         static_cast<BattlegroundHLBGScore*>(itr->second)->ResourcesCaptured += points;
 }
 
+// Two accounts on opposite teams could trade kills for Emblems, honor and quest credit, since
+// only the killer was checked. No payout when the victim is AFK-flagged, is on the killer's own
+// account (an alt bot), or was already killed by this killer within HLBGRepeatKillWindowSec.
+bool BattlegroundHLBG::IsUnrewardedPlayerKill(Player* killer, Player* victim)
+{
+    uint32 const now = NowSec();
+    uint64 const pairKey = (static_cast<uint64>(killer->GetGUID().GetCounter()) << 32)
+        | victim->GetGUID().GetCounter();
+
+    if (_lastPlayerKillSec.size() >= HLBGRepeatKillTrackMax)
+    {
+        std::erase_if(_lastPlayerKillSec, [now](auto const& entry)
+        {
+            return now - entry.second >= HLBGRepeatKillWindowSec;
+        });
+    }
+
+    auto [itr, inserted] = _lastPlayerKillSec.try_emplace(pairKey, now);
+    bool const repeatKill = !inserted && now - itr->second < HLBGRepeatKillWindowSec;
+    itr->second = now;
+
+    if (repeatKill || IsPlayerAfkFlagged(victim))
+        return true;
+
+    WorldSession const* killerSession = killer->GetSession();
+    WorldSession const* victimSession = victim->GetSession();
+    return killerSession && victimSession && killerSession->GetAccountId() == victimSession->GetAccountId();
+}
+
 void BattlegroundHLBG::RewardPlayerKill(Player* killer, Player* victim, uint32 scorePoints)
 {
     if (!killer || !victim)
+        return;
+
+    if (IsUnrewardedPlayerKill(killer, victim))
         return;
 
     auto rewardMember = [this, scorePoints](Player* player)
@@ -1536,6 +1573,7 @@ void BattlegroundHLBG::RewardMatchOutcome(TeamId winnerTeamId)
 void BattlegroundHLBG::EndBattleground(TeamId winnerTeamId)
 {
     RewardMatchOutcome(winnerTeamId);
+    _lastPlayerKillSec.clear();
     ClearAffixEffects();
     ClearAffixWeather();
     ClearAffixLight();

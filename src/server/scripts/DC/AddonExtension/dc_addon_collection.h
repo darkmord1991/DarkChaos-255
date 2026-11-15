@@ -82,6 +82,16 @@ namespace DCCollection
         bool notifyPlayer = true);
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId);
 
+    // The account appearance cache behind GetCollectedAppearances / HasTransmogAppearanceUnlocked loads
+    // synchronously on a miss. Logins warm it in the background; a collection read that finds it cold runs
+    // BuildAccountAppearancesQuery with its own statements and seeds it from the result, passing the
+    // generation it read before queueing (an invalidation in between makes the result stale).
+    bool IsAccountAppearanceCacheLoaded(uint32 accountId);
+    uint64 GetAppearanceCacheGeneration(uint32 accountId);
+    std::string BuildAccountAppearancesQuery(uint32 accountId);
+    void SeedAccountAppearanceCache(uint32 accountId, QueryResult const& result, uint64 generation);
+    void WarmAccountAppearanceCacheAsync(uint32 accountId);
+
     // Appearance ownership lives only in dc_transmog_collection (the wardrobe). Rows of type
     // TRANSMOG in dc_collection_items are legacy and nothing reads them any more.
     struct AppearanceUnlock

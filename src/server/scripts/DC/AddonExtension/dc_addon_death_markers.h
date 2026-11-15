@@ -58,7 +58,8 @@ namespace DeathMarkers
     std::string BuildFailureReason(DeathContext const& ctx);
 
     // Record a death marker for a challenge-mode (e.g., Iron Prestige / Hardcore).
-    // The marker is kept for 24 hours (server time) and is pushed to online clients via WRLD updates.
+    // The marker is kept for 24 hours (server time), at most the newest 100 of them, and is pushed to online
+    // clients via WRLD updates.
     // `failureReason` defaults to nullptr, meaning "compose it from the resolved death context"
     // via BuildFailureReason(); pass a string only to override that with a mode-specific one.
     void RecordChallengeDeath(Player* victim, Unit* killer, char const* modeId, char const* modeLabel, char const* failureReason = nullptr);

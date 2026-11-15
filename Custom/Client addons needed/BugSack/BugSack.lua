@@ -261,18 +261,8 @@ do
 			updateSack()
 		end)
 
-		if BugSack.Serialize then
-			sendButton = CreateFrame("Button", "BugSackSendButton", window, "UIPanelButtonTemplate2")
-			sendButton:SetPoint("LEFT", prevButton, "RIGHT")
-			sendButton:SetPoint("RIGHT", nextButton, "LEFT")
-			sendButton:SetText(L["Send bugs"])
-			sendButton:SetScript("OnClick", function()
-				local eo = currentSackContents[sackCurrent]
-				local popup = StaticPopup_Show("BugSackSendBugs", eo.session)
-				popup.data = eo.session
-				window:Hide()
-			end)
-		end
+		-- DC: no "Send bugs" button. Receiving is disabled (see OnBugComm), so a sent report would
+		-- never arrive anywhere.
 
 		local scroll = CreateFrame("ScrollFrame", "BugSackFrameScroll", window, "UIPanelScrollFrameTemplate")
 		scroll:SetPoint("TOPLEFT", window, 16, -36)
@@ -505,6 +495,8 @@ function BugSack:SendBugsToUser(player, session)
 	print(L["%d bugs have been sent to %s. He must have BugSack to be able to examine them."]:format(#errors, player))
 end
 
+-- DC: NOT registered (see PLAYER_LOGIN). It stored whatever any player sent on any channel as
+-- persistent error entries, with no opt-in and no size limit (security audit 2026-11-10).
 function BugSack:OnBugComm(prefix, message, distribution, sender)
 	if prefix ~= "BugSack" or not self.Deserialize then return end
 
@@ -584,9 +576,9 @@ BugSack:SetScript("OnEvent", function(self, event, addon)
 		local session = self:GetErrors(BugGrabber:GetSessionId())
 		if #session > 0 then self:OnError() end
 
-		if self.RegisterComm then
-			self:RegisterComm("BugSack", "OnBugComm")
-		end
+		-- DC: the "BugSack" comm prefix is deliberately not registered. Peer bug reports were
+		-- accepted from anyone and saved to SavedVariables; AceComm also only spools multipart
+		-- messages for registered prefixes, so this removes that memory growth too.
 
 		-- Set up our error event handler
 		BugGrabber.RegisterCallback(self, "BugGrabber_BugGrabbed", "OnError")

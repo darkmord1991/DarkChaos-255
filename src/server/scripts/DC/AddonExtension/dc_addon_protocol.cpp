@@ -75,6 +75,12 @@ namespace
         "NATIVE";
     constexpr char const* STATS_TRANSPORT_LEGACY_MIXED =
         "LEGACY_MIXED";
+    // Stats bucket for every module code the router does not know
+    constexpr char const* STATS_MODULE_UNKNOWN =
+        "UNKN";
+    // Server-side pseudo module: chunk streams abandoned at logout
+    constexpr char const* STATS_MODULE_CHUNK =
+        "CHUNK";
     constexpr char const* REQUEST_TYPE_NATIVE =
         "NATIVE";
     constexpr char const* COLUMN_NATIVE_BUILD_FINGERPRINT =
@@ -2365,13 +2371,12 @@ static void FlushStats(uint32 guid = 0)
                     stats.firstRequest,
                     stats.lastRequest
                 );
-
-                stats = StatsEntry(); // Reset delta stats
             }
         }
 
-        // If flushing specific player, remove them from memory
-        it = (guid != 0) ? s_StatsBuffer.erase(it) : ++it;
+        // Every flushed player leaves memory, not only one flushed at logout: the deltas are in the transaction,
+        // and keeping the reset entries kept every module key a session had ever used until it logged out.
+        it = s_StatsBuffer.erase(it);
     }
     CharacterDatabase.CommitTransaction(trans);
 }
@@ -2382,8 +2387,13 @@ static void UpdateProtocolStats(Player* player, std::string const& moduleCode, s
     if (!s_AddonConfig.EnableProtocolLogging || !player) return;
     if (DCAddon::IsBotRecipient(player)) return;
 
+    // The module code is the client's on most paths (the request frame, its pending request, the error reply to an
+    // unknown module). Each made-up code used to add a buffer entry for the session and a permanent stats row.
+    bool const knownModule = moduleCode == STATS_MODULE_CHUNK
+        || DCAddon::MessageRouter::Instance().IsModuleKnown(moduleCode);
+
     // Sanitize module code
-    std::string safeModule = moduleCode;
+    std::string safeModule = knownModule ? moduleCode : STATS_MODULE_UNKNOWN;
     safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(),
         [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
     if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
@@ -2958,6 +2968,30 @@ namespace DCAddon
 // RATE LIMITING
 // ============================================================================
 
+// A flood of dropped frames or messages is reported once per this many ms with a count, not once per drop
+constexpr uint32 ADDON_DROP_REPORT_MS = 10 * IN_MILLISECONDS;
+
+struct AddonDropReport
+{
+    uint32 unreported = 0;
+    uint32 lastReportMs = 0;
+    bool reported = false;
+
+    // Counts one drop. Returns how many drops to report now, 0 while the last report is younger than the window.
+    uint32 Count(uint32 nowMs)
+    {
+        ++unreported;
+        if (reported && getMSTimeDiff(lastReportMs, nowMs) < ADDON_DROP_REPORT_MS)
+            return 0;
+
+        uint32 const count = unreported;
+        unreported = 0;
+        lastReportMs = nowMs;
+        reported = true;
+        return count;
+    }
+};
+
 struct PlayerMessageTracker
 {
     uint32 messageCount = 0;
@@ -2966,6 +3000,10 @@ struct PlayerMessageTracker
     uint32 muteExpireTime = 0;
     uint32 violationCount = 0;     // Track repeated violations for exponential backoff
     uint32 lastViolationTime = 0;  // For violation decay
+    DCAddon::RequestTokenBucket frameBucket;  // ConsumeAddonFrameBudget
+    AddonDropReport frameDrops;
+    AddonDropReport messageDrops;
+    AddonDropReport chunkRejects;
 };
 
 static std::unordered_map<uint32, PlayerMessageTracker> s_MessageTrackers;
@@ -3073,6 +3111,50 @@ static bool CheckAddonRequestRateLimit(Player* player, std::string const& payloa
     return IsUiCriticalCollectionRequest(payload)
         ? CheckUiCriticalRateLimit(player)
         : CheckRateLimit(player);
+}
+
+// Every DC frame draws on this budget before anything parses or logs it, chunk frames included. The limits above
+// only see whole messages after reassembly, so a stream of malformed chunk headers used to write one
+// dc_addon_protocol_errors row and one WARN line per frame with nothing in front of it. The client sends at most
+// 20 frames at once and 10 a second after that (DCAddonProtocol.lua _throttle) plus its handshake; the budget is
+// twice the message limit as burst and the message limit plus the UI-critical lane per second.
+static bool ConsumeAddonFrameBudget(Player* player)
+{
+    uint32 const accountId = player->GetSession()->GetAccountId();
+    uint32 const burst = 2 * s_AddonConfig.MaxMessagesPerSecond;
+    uint32 const perSecond = s_AddonConfig.MaxMessagesPerSecond + UI_CRITICAL_REQUESTS_PER_SECOND;
+
+    std::lock_guard<std::mutex> lock(s_MessageTrackersMutex);
+    if (s_MessageTrackers[accountId].frameBucket.TryConsume(burst, perSecond, getMSTime()))
+        return true;
+
+    g_ProtocolMetrics.rateLimitDrops++;
+    return false;
+}
+
+enum class AddonDropKind : uint8
+{
+    Frame,          // over the frame budget
+    Message,        // over the message limit
+    ChunkReject     // a chunk header past the chunk count or pending-stream limits
+};
+
+// Counts one drop of that kind for the player's account. Returns how many to report now, 0 inside the report window.
+static uint32 CountAddonDrop(Player* player, AddonDropKind kind)
+{
+    uint32 const accountId = player->GetSession()->GetAccountId();
+
+    std::lock_guard<std::mutex> lock(s_MessageTrackersMutex);
+    PlayerMessageTracker& tracker = s_MessageTrackers[accountId];
+    switch (kind)
+    {
+        case AddonDropKind::Frame:
+            return tracker.frameDrops.Count(getMSTime());
+        case AddonDropKind::Message:
+            return tracker.messageDrops.Count(getMSTime());
+        default:
+            return tracker.chunkRejects.Count(getMSTime());
+    }
 }
 
 // Native requests (CMSG 0x521-0x541) skip all of the above. A login sends up to
@@ -3358,9 +3440,9 @@ static void HandleBatch(Player* player, DCAddon::ParsedMessage const& msg)
             // Apply rate limiting per logical sub-message to avoid bypass via batching.
             if (!CheckAddonRequestRateLimit(player, subMsg))
             {
-                uint8 droppedOpcode = ExtractOpcode(subMsg);
-                LOG_WARN("module.dc", "[RateLimit] DROPPED batch sub-message from {}: module={}, opcode=0x{:02X}",
-                    player->GetName(), entry.module, droppedOpcode);
+                if (uint32 const drops = CountAddonDrop(player, AddonDropKind::Message))
+                    LOG_WARN("module.dc", "[RateLimit] Dropped {} message(s) from {}, latest a batch sub-message: "
+                        "module={}, opcode=0x{:02X}", drops, player->GetName(), entry.module, ExtractOpcode(subMsg));
                 continue;
             }
 
@@ -3675,7 +3757,7 @@ public:
                 EscapeSQLString(player->GetName())
             );
 
-            UpdateProtocolStats(player, "CHUNK", STATS_TRANSPORT_ADDON,
+            UpdateProtocolStats(player, STATS_MODULE_CHUNK, STATS_TRANSPORT_ADDON,
                 true, true, false);
         }
 
@@ -3788,8 +3870,9 @@ public:
         if (totalChunks > s_AddonConfig.MaxChunksPerMessage)
         {
             g_ProtocolMetrics.parseErrors++;
-            LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: totalChunks={} exceeds limit {}",
-                player->GetName(), totalChunks, s_AddonConfig.MaxChunksPerMessage);
+            if (uint32 const rejects = CountAddonDrop(player, AddonDropKind::ChunkReject))
+                LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED {} chunk frame(s), latest: totalChunks={} "
+                    "exceeds limit {}", player->GetName(), rejects, totalChunks, s_AddonConfig.MaxChunksPerMessage);
             if (s_AddonConfig.EnableProtocolLogging)
             {
                 LogProtocolErrorEvent(player, payload, "chunk_limit", "Chunk count exceeds server limit");
@@ -3839,8 +3922,9 @@ public:
                 if (s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)
                 {
                     g_ProtocolMetrics.parseErrors++;
-                    LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
-                        player->GetName(), s_ChunkedMessages.size());
+                    if (uint32 const rejects = CountAddonDrop(player, AddonDropKind::ChunkReject))
+                        LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED {} chunk frame(s), latest: global "
+                            "pending chunks limit reached ({})", player->GetName(), rejects, s_ChunkedMessages.size());
                     if (s_AddonConfig.EnableProtocolLogging)
                         LogProtocolErrorEvent(player, payload, "chunk_pending_limit",
                             "Too many pending chunked messages");
@@ -3898,6 +3982,16 @@ public:
         std::string rawPayload = msg.substr(3);  // Everything after "DC\t"
         g_ProtocolMetrics.messagesReceived++;
 
+        // Every frame, chunk or not, pays the frame budget before it is parsed or logged
+        if (!ConsumeAddonFrameBudget(player))
+        {
+            if (uint32 const drops = CountAddonDrop(player, AddonDropKind::Frame))
+                LOG_WARN("module.dc", "[RateLimit] Dropped {} addon frame(s) from {} (account {}): over the frame "
+                    "budget", drops, player->GetName(), player->GetSession()->GetAccountId());
+            msg.clear();
+            return;
+        }
+
         // Check if this is a chunked message that needs reassembly
         std::string reassembledPayload;
         if (TryReassembleChunk(player, rawPayload, reassembledPayload))
@@ -3916,6 +4010,17 @@ public:
         }
 
         std::string payload = rawPayload;
+
+        // Check rate limit before anything below logs or answers the message. A small list of UI-critical requests
+        // draws on its own bucket and does not count against the shared limit.
+        if (!CheckAddonRequestRateLimit(player, payload))
+        {
+            if (uint32 const drops = CountAddonDrop(player, AddonDropKind::Message))
+                LOG_WARN("module.dc", "[RateLimit] Dropped {} message(s) from {}, latest module={}, opcode=0x{:02X}",
+                    drops, player->GetName(), ExtractModuleCode(payload), ExtractOpcode(payload));
+            msg.clear();
+            return;
+        }
 
         // Security limit: reject oversized payloads to prevent JSON parsing attacks
         if (payload.length() > s_AddonConfig.MaxJsonPayloadSize)
@@ -3953,18 +4058,6 @@ public:
         if (s_AddonConfig.EnableDebugLog)
             LOG_DEBUG("module.dc", "[DC-INCOMING] player={}, module={}, opcode=0x{:02X}, payloadLen={}",
                 player->GetName(), ExtractModuleCode(payload), incomingOpcode, payload.length());
-
-        // Check rate limit before processing. A small list of UI-critical requests
-        // draws on its own bucket and does not count against the shared limit.
-        if (!CheckAddonRequestRateLimit(player, payload))
-        {
-            // Log dropped messages for diagnostics
-            uint8 droppedOpcode = ExtractOpcode(payload);
-            LOG_WARN("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X}",
-                player->GetName(), ExtractModuleCode(payload), droppedOpcode);
-            msg.clear();
-            return;
-        }
 
         if (s_AddonConfig.EnableDebugLog)
             LOG_DEBUG("dc.addon", "Routing DC message from {}: {}", player->GetName(), payload);

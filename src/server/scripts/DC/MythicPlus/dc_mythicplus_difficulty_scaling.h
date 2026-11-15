@@ -11,9 +11,13 @@
 #include "Map.h"
 #include "InstanceScript.h"
 #include "Player.h"
+#include <atomic>
+#include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 enum Expansion : uint8
 {
@@ -106,10 +110,13 @@ class MythicDifficultyScaling
 public:
     static MythicDifficultyScaling* instance();
 
-    // Initialize and load dungeon profiles from database
+    // Initialize and load dungeon profiles from database. Safe to call again
+    // (`.dca reload mythic`) while map threads are scaling creatures: see ScalingData.
     void LoadDungeonProfiles();
 
-    // Get dungeon profile for a given map
+    // Get dungeon profile for a given map. Read-only for callers. The pointer stays
+    // valid until shutdown, even across a reload, but a caller must not keep it
+    // past the current call: a reload publishes new profiles that it would miss.
     DungeonProfile* GetDungeonProfile(uint32 mapId);
 
     // Check if keystone is active for Mythic+ scaling
@@ -127,7 +134,7 @@ public:
     // either unrestricted or locked to the given season?
     bool IsDungeonFeatured(uint32 mapId, uint32 seasonId) const;
 
-    uint32 GetActiveSeasonId() const { return _activeSeasonId; }
+    uint32 GetActiveSeasonId() const;
 
     // Is this creature entry a real dungeon encounter?
     //
@@ -164,27 +171,43 @@ public:
 
 private:
     MythicDifficultyScaling() = default;
-    std::unordered_map<uint32, DungeonProfile> _dungeonProfiles;
-    std::unordered_map<uint32, DungeonSetupEntry> _dungeonSetup;
-    uint32 _activeSeasonId = 0;
-    std::unordered_map<uint32, std::pair<float, float>> _scalingMultipliers;
 
-    // Read once at load from instance_encounters. Read-only afterwards,
-    // which matters because IsBossEntry is called from the creature spawn
-    // path on several map threads at once.
-    std::unordered_set<uint32> _bossEntries;
+    // Everything LoadDungeonProfiles reads from the world DB. The creature spawn
+    // path, the per-hit damage hook and the keystone code read it on several map
+    // threads at once without a lock, so a published snapshot is never changed:
+    // a reload builds a new one and swaps the pointer. A replaced snapshot is
+    // kept until shutdown, because a map thread may still be reading it or hold
+    // a DungeonProfile* from it. Reloads are rare admin actions, so that costs
+    // little.
+    struct ScalingData
+    {
+        std::unordered_map<uint32, DungeonProfile> dungeonProfiles;
+        std::unordered_map<uint32, DungeonSetupEntry> dungeonSetup;
+        std::unordered_map<uint32, std::pair<float, float>> scalingMultipliers;
 
-    // Every entry referenced as a difficulty_entry_1/2/3 by some other
-    // template. Same threading contract as _bossEntries: written once at
-    // load, read-only from the spawn path afterwards.
-    std::unordered_set<uint32> _difficultyVariantEntries;
+        // From instance_encounters: see IsBossEntry.
+        std::unordered_set<uint32> bossEntries;
+
+        // Every entry referenced as a difficulty_entry_1/2/3 by some other
+        // template: see IsDifficultyVariantEntry.
+        std::unordered_set<uint32> difficultyVariantEntries;
+
+        uint32 activeSeasonId = 0;
+    };
+
+    // The published snapshot (nullptr until the first load).
+    std::atomic<ScalingData*> _data{ nullptr };
+
+    // Owns every snapshot ever published, the current one included. Guarded by _loadLock.
+    std::vector<std::unique_ptr<ScalingData>> _snapshots;
+    std::mutex _loadLock;
 
     // Helper to determine expansion from map ID
     static uint8 GetExpansionForMap(uint32 mapId);
-    void LoadScalingMultipliers();
-    void LoadDungeonSetup();
-    void LoadBossEntries();
-    void LoadDifficultyVariantEntries();
+    static void LoadScalingMultipliers(ScalingData& data);
+    static void LoadDungeonSetup(ScalingData& data);
+    static void LoadBossEntries(ScalingData& data);
+    static void LoadDifficultyVariantEntries(ScalingData& data);
 };
 
 #define sMythicScaling MythicDifficultyScaling::instance()

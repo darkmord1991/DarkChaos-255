@@ -166,10 +166,19 @@ namespace
                 LOG_INFO("scripts.dc", "Prestige Challenges: Loaded {} active challenge(s) for player {}",
                     challenges.size(), player->GetName());
 
-                if (!challenges.empty())
+                // A group survives a logout without firing the join hook again, so a Solo
+                // challenge is checked here as well; failing it drops it from the count.
+                std::size_t activeCount = challenges.size();
+                if (PrestigeChallengeSystem::instance()->FailSoloIfGrouped(player))
+                {
+                    activeCount = static_cast<std::size_t>(std::count_if(challenges.begin(), challenges.end(),
+                        [](ChallengeProgress const& c) { return c.challengeType != CHALLENGE_SOLO; }));
+                }
+
+                if (activeCount > 0)
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage(
-                        "|cFFFFD700You have {} active prestige challenge(s)!|r", challenges.size());
+                        "|cFFFFD700You have {} active prestige challenge(s)!|r", activeCount);
                 }
             }));
         }
@@ -255,6 +264,10 @@ namespace
             // A challenge covers a whole climb, so it starts right after a prestige, before the
             // character has gained a level; started near the top it would complete for free.
             if (player->GetLevel() > PrestigeAPI::GetRestartLevel(player))
+                return false;
+
+            // Joining a group fails a Solo challenge, so it cannot start inside one either.
+            if (challengeType == CHALLENGE_SOLO && (player->GetGroup() || player->GetOriginalGroup()))
                 return false;
 
             // Check if player already has this challenge active
@@ -385,6 +398,25 @@ namespace
             {
                 FailChallenge(player, CHALLENGE_SOLO, "You joined a group");
             }
+        }
+
+        // OnJoinGroup only sees a group being joined. A player who stays in a group they
+        // already had (across a logout, or since before the challenge) is caught here, at
+        // login and on every level-up. A battleground raid does not count here, but the
+        // regular group kept aside while the player is inside one (the original group) does.
+        bool FailSoloIfGrouped(Player* player)
+        {
+            if (!player || !soloEnabled)
+                return false;
+
+            Group* group = player->GetGroup();
+            bool const grouped = (group && !group->isBGGroup() && !group->isBFGroup()) ||
+                player->GetOriginalGroup();
+            if (!grouped || !HasActiveChallenge(player, CHALLENGE_SOLO))
+                return false;
+
+            FailChallenge(player, CHALLENGE_SOLO, "You are in a group");
+            return true;
         }
 
         void CheckSpeedChallenge(Player* player)
@@ -658,6 +690,9 @@ namespace
 
         void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
         {
+            // A Solo challenge must not complete (or carry on) for a player found in a group.
+            PrestigeChallengeSystem::instance()->FailSoloIfGrouped(player);
+
             // Check if challenges are completed when reaching max level
             PrestigeChallengeSystem::instance()->CheckChallengeCompletion(player);
         }

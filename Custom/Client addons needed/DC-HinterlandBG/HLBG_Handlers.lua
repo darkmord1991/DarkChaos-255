@@ -1303,30 +1303,18 @@ pcall(function()
         return false
     end
 
+    -- SYSTEM only: say/yell/whisper/party/raid/guild carry other players' text, and hiding
+    -- a line that merely contains "[HLBG_" would let any player send invisible spoofed payloads.
     ChatFrame_AddMessageEventFilter('CHAT_MSG_SYSTEM', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_SAY', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_YELL', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_GUILD', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_PARTY', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_PARTY_LEADER', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_RAID', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_RAID_LEADER', _hlbgFilter)
-    ChatFrame_AddMessageEventFilter('CHAT_MSG_WHISPER', _hlbgFilter)
 end)
 
--- Some servers send HLBG payloads to regular chat (not addon channel). Listen broadly
+-- Chat fallback for the server's tagged payloads. The server sends them only as SYSTEM
+-- messages (ChatHandler::SendSysMessage); every other chat type is player speech and must
+-- never be parsed as protocol (security audit 2026-11-10). Everything else uses the DC protocol.
 local chatFrame = CreateFrame('Frame')
-chatFrame:RegisterEvent('CHAT_MSG_SAY')
-chatFrame:RegisterEvent('CHAT_MSG_YELL')
-chatFrame:RegisterEvent('CHAT_MSG_GUILD')
-chatFrame:RegisterEvent('CHAT_MSG_PARTY')
-chatFrame:RegisterEvent('CHAT_MSG_PARTY_LEADER')
-chatFrame:RegisterEvent('CHAT_MSG_RAID')
-chatFrame:RegisterEvent('CHAT_MSG_RAID_LEADER')
 chatFrame:RegisterEvent('CHAT_MSG_SYSTEM')
-chatFrame:RegisterEvent('CHAT_MSG_WHISPER')
 chatFrame:SetScript('OnEvent', function(_, ev, msg)
-    if type(msg) ~= 'string' then return end
+    if ev ~= 'CHAT_MSG_SYSTEM' or type(msg) ~= 'string' then return end
     CaptureLog('CHAT_IN', { event = ev, msg = msg })
     -- STATUS (chat fallback)
     local b = msg:match('%[HLBG_STATUS%]%s*(.*)')

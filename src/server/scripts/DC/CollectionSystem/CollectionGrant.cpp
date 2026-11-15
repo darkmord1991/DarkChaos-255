@@ -42,6 +42,7 @@ namespace DCCollection
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
     uint32 FindCompanionItemIdForSpell(uint32 spellId);
     uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId);
+    void MarkMountSyncWaiting(Player* player);
 
     namespace
     {
@@ -386,7 +387,17 @@ namespace DCCollection
             return true;
         }
 
-        return TeachSpellIfPossible(player, ResolveTeachableSpell(type, entryId));
+        uint32 const spellId = ResolveTeachableSpell(type, entryId);
+
+        // The grant stands for the account either way; the login / level-up sync re-checks this character
+        if (type == CollectionType::MOUNT && spellId && !player->HasSpell(spellId) &&
+            !GetMountRefusal(player, spellId).empty())
+        {
+            MarkMountSyncWaiting(player);
+            return false;
+        }
+
+        return TeachSpellIfPossible(player, spellId);
     }
 
     void RefreshClientSpellList(Player* player)

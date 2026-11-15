@@ -2659,10 +2659,18 @@ local orig_SetItemRef = SetItemRef
 function SetItemRef(link, text, button, chatFrame)
     if type(link) == "string" then
         if string.sub(link, 1, 9) == "dc:outfit" then
-            -- Default click previews; Shift+Click or RightClick applies.
-            local wantsApply = (button == "RightButton") or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown())
-            if wantsApply and type(DC.ApplyOutfitFromLink) == "function" then
-                DC:ApplyOutfitFromLink(link)
+            -- Shift-click quotes the link into chat (like mount/pet links), a plain click previews,
+            -- and right-click asks before applying. Any player can post these links, so nothing
+            -- here may change the look without a confirmation (security audit 2026-11-10).
+            if type(IsModifiedClick) == "function" and IsModifiedClick("CHATLINK") then
+                local chatLink = type(DC.BuildOutfitChatLink) == "function" and DC:BuildOutfitChatLink(link)
+                if chatLink and type(DC.InsertLinkToChat) == "function" then
+                    DC:InsertLinkToChat(chatLink)
+                elseif chatLink and type(ChatEdit_InsertLink) == "function" then
+                    ChatEdit_InsertLink(chatLink)
+                end
+            elseif button == "RightButton" and type(DC.ConfirmApplyOutfitFromLink) == "function" then
+                DC:ConfirmApplyOutfitFromLink(link)
             elseif type(DC.PreviewOutfitFromLink) == "function" then
                 DC:PreviewOutfitFromLink(link)
             end

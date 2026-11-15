@@ -16,13 +16,17 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "AchievementMgr.h"
+#include "Battleground.h"
 #include "Creature.h"
+#include "Formulas.h"
 #include "Quests/QuestDef.h"
 #include "Log.h"
 #include "Chat.h"
 #include "Config.h"
 #include "GameTime.h"
 #include "Map.h"
+#include "World.h"
+#include "WorldSession.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
@@ -396,12 +400,14 @@ namespace DarkChaos
                         std::min<uint64>(loggedRaw, std::numeric_limits<uint32>::max()));
 
                     std::lock_guard<std::mutex> guard(s_weeklyEarnedMutex);
-                    WeeklyEarnedEntry& entry = s_weeklyEarned[player_guid];
 
-                    // A late callback for a week that has since rolled over must not
-                    // resurrect the old total.
-                    if (entry.weekStart != weekStart)
+                    // A late callback for a player who has logged out since, or for a
+                    // week that has since rolled over, must not resurrect the old total.
+                    auto itr = s_weeklyEarned.find(player_guid);
+                    if (itr == s_weeklyEarned.end() || itr->second.weekStart != weekStart)
                         return;
+
+                    WeeklyEarnedEntry& entry = itr->second;
 
                     // Awards granted while the query was in flight were counted
                     // optimistically into entry.earned; the log now includes them,
@@ -411,11 +417,19 @@ namespace DarkChaos
                 }));
         }
 
-        static bool IsAtWeeklyTokenCap(uint32 player_guid, [[maybe_unused]] uint32 season = 1)
+        enum class WeeklyCapState : uint8
+        {
+            Below,
+            Reached,
+            Loading     // the week's total is still being read from the log
+        };
+
+        // Starts the seeding query on the first check of the week.
+        static WeeklyCapState GetWeeklyTokenCapState(uint32 player_guid)
         {
             uint32 const cap = GetWeeklyTokenCap();
             if (cap == 0)
-                return false;
+                return WeeklyCapState::Below;
 
             uint32 const weekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
 
@@ -431,13 +445,20 @@ namespace DarkChaos
                 SeedWeeklyEarnedAsync(player_guid, weekStart);
             }
 
+            if (!entry.seeded)
+                return WeeklyCapState::Loading;
+
+            return entry.earned >= cap ? WeeklyCapState::Reached : WeeklyCapState::Below;
+        }
+
+        static bool IsAtWeeklyTokenCap(uint32 player_guid, [[maybe_unused]] uint32 season = 1)
+        {
             // Fail open until the seed lands. This matches the behaviour the cap
             // had while it was disabled and keeps one DB round-trip from denying
-            // a reward the player actually earned.
-            if (!entry.seeded)
-                return false;
-
-            return entry.earned >= cap;
+            // a quest or creature reward the player actually earned (those can
+            // not be repeated at will). The PvP award does not use this: see
+            // OnPlayerPVPKill.
+            return GetWeeklyTokenCapState(player_guid) == WeeklyCapState::Reached;
         }
 
         // Count an award against the in-memory weekly total. Call this only for
@@ -477,6 +498,83 @@ namespace DarkChaos
         }
 
         // =====================================================================
+        // PvP kill eligibility
+        // =====================================================================
+        //
+        // A PvP kill pays only when the core would call it honorable (see
+        // Player::RewardHonor): the victim is on the other team and not grey to
+        // the killer. It never pays for a victim on the killer's own account or
+        // IP, and one killer is paid for one victim at most once per cooldown,
+        // so a second account or a willing friend cannot be farmed.
+
+        constexpr uint64 PVP_VICTIM_COOLDOWN_MS = 5 * MINUTE * IN_MILLISECONDS;
+        constexpr std::size_t PVP_VICTIM_PRUNE_SIZE = 4096;
+        constexpr std::size_t PVP_VICTIM_HARD_LIMIT = 65536;
+
+        static bool IsHonorableTokenKill(Player* killer, Player* victim)
+        {
+            if (victim->HasNoPVPCreditAura() || killer->HasAura(SPELL_AURA_PLAYER_INACTIVE))
+                return false;
+
+            WorldSession* killerSession = killer->GetSession();
+            WorldSession* victimSession = victim->GetSession();
+            if (!killerSession || !victimSession)
+                return false;
+
+            if (killerSession->GetAccountId() == victimSession->GetAccountId())
+                return false;
+
+            // Bot and headless sessions carry a placeholder address ("bot",
+            // "headless"), which would match every other bot.
+            if (!killerSession->IsBot() && !victimSession->IsBot() &&
+                killerSession->GetRemoteAddress() == victimSession->GetRemoteAddress())
+                return false;
+
+            // Arena: the core gives no honor there but counts a kill of the other team.
+            if (killer->InArena())
+                return killer->GetBgTeamId() != victim->GetBgTeamId();
+
+            if (killer->GetTeamId() == victim->GetTeamId() && !sWorld->IsFFAPvPRealm())
+                return false;
+
+            return victim->GetLevel() > Acore::XP::GetGrayLevel(killer->GetLevel());
+        }
+
+        // True when this killer may be paid for this victim now; starts the cooldown.
+        static bool TryClaimPvpVictim(uint32 killerGuid, uint32 victimGuid)
+        {
+            static std::mutex s_pvpVictimMutex;
+            static std::unordered_map<uint64, uint64> s_pvpVictimPaidAtMs;
+
+            uint64 const key = (uint64(killerGuid) << 32) | uint64(victimGuid);
+            uint64 const nowMs = GameTime::GetGameTimeMS().count();
+
+            std::lock_guard<std::mutex> guard(s_pvpVictimMutex);
+
+            auto paid = s_pvpVictimPaidAtMs.find(key);
+            if (paid != s_pvpVictimPaidAtMs.end() && nowMs < paid->second + PVP_VICTIM_COOLDOWN_MS)
+                return false;
+
+            if (s_pvpVictimPaidAtMs.size() >= PVP_VICTIM_PRUNE_SIZE)
+            {
+                for (auto it = s_pvpVictimPaidAtMs.begin(); it != s_pvpVictimPaidAtMs.end();)
+                {
+                    if (nowMs >= it->second + PVP_VICTIM_COOLDOWN_MS)
+                        it = s_pvpVictimPaidAtMs.erase(it);
+                    else
+                        ++it;
+                }
+
+                // Every entry is still cooling down: refuse rather than grow without bound.
+                if (s_pvpVictimPaidAtMs.size() >= PVP_VICTIM_HARD_LIMIT)
+                    return false;
+            }
+
+            s_pvpVictimPaidAtMs[key] = nowMs;
+            return true;
+        }
+
+        // =====================================================================
         // Player Script Hooks
         // =====================================================================
 
@@ -486,7 +584,7 @@ namespace DarkChaos
             PlayerTokenHooks() : PlayerScript("PlayerTokenHooks",
             {
                 PLAYERHOOK_ON_ACHI_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_PVP_KILL,
-                PLAYERHOOK_ON_LOGOUT
+                PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_PLAYER_ENTER_COMBAT
             }) {}
 
             void OnPlayerLogout(Player* player) override
@@ -495,12 +593,25 @@ namespace DarkChaos
                     ForgetWeeklyEarned(player->GetGUID().GetCounter());
             }
 
+            // The PvP award waits for the weekly total to load (see OnPlayerPVPKill).
+            // Start that load when a fight with a player begins, so it is in by the kill.
+            void OnPlayerEnterCombat(Player* player, Unit* enemy) override
+            {
+                if (!player || !enemy || !enemy->GetCharmerOrOwnerPlayerOrPlayerItself())
+                    return;
+
+                GetWeeklyTokenCapState(player->GetGUID().GetCounter());
+            }
+
             void OnPlayerPVPKill(Player* killer, Player* victim) override
             {
                 if (!killer || !victim)
                     return;
 
                 if (killer == victim || killer->GetGUID() == victim->GetGUID())
+                    return;
+
+                if (!IsHonorableTokenKill(killer, victim))
                     return;
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
@@ -512,15 +623,24 @@ namespace DarkChaos
                 if (reward == 0)
                     return;
 
-                // Check weekly cap
-                if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter(), season))
+                uint32 killerGuid = killer->GetGUID().GetCounter();
+
+                // Check weekly cap. Unlike quests, kills can be repeated at will, so
+                // a total that is still loading (after a relog) counts as capped.
+                WeeklyCapState const capState = GetWeeklyTokenCapState(killerGuid);
+                if (capState == WeeklyCapState::Reached)
                 {
                     ChatHandler(killer->GetSession()).PSendSysMessage("|cffff0000 Weekly token cap reached! No tokens awarded.|r");
                     return;
                 }
 
+                if (capState == WeeklyCapState::Loading)
+                    return;
+
+                if (!TryClaimPvpVictim(killerGuid, victim->GetGUID().GetCounter()))
+                    return;
+
                 // Award tokens using centralized utility
-                uint32 killerGuid = killer->GetGUID().GetCounter();
                 DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                     killerGuid, CURRENCY_UPGRADE_TOKEN, reward, season, killer, true);
 

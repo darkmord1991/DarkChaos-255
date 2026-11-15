@@ -449,6 +449,13 @@ private:
 //
 // Unlike the vehicle script this one has NO area/zone constant and casts no
 // spells, so neither of the two map-750 porting hazards applies to it.
+//
+// The rest of the Cata scene (Malfurion arriving, the event credit) was never
+// ported. Since 2026-11-14 quest 13900 asks for the priestess kills directly
+// and Balren of the Claw takes the turn-in, so Azshara is only a cameo: she
+// taunts and leaves. She used to stay for good, and while she stood within
+// AZSHARA_SEARCH_RANGE EventActorNearby() kept the scene from ever running
+// again until the next server start.
 // ---------------------------------------------------------------------------
 enum OfferingToAzshara
 {
@@ -459,9 +466,12 @@ enum OfferingToAzshara
     NPC_QUEEN_AZSHARA             = 3734416,
     NPC_MALFURION_STORMRAGE       = 3734422,
 
+    SAY_AZSHARA_WHO_DARES         = 0,  // creature_text 3734416 group 0
+
     AZSHARA_TRIGGER_RANGE         = 50,
     AZSHARA_SEARCH_RANGE          = 80,
-    AZSHARA_CHECK_MS              = 3000
+    AZSHARA_CHECK_MS              = 3000,
+    AZSHARA_CAMEO_MS              = 30000
 };
 
 Position const kPriestessPos[4] =
@@ -518,7 +528,12 @@ struct npc_offering_to_azshara_controller : public ScriptedAI
         // The last priestess dying is what calls Azshara up.
         if (_priestessesUp && !me->FindNearestCreature(NPC_DARKSCALE_PRIESTESS, float(AZSHARA_SEARCH_RANGE), true))
         {
-            me->SummonCreature(NPC_QUEEN_AZSHARA, kQueenPos, TEMPSUMMON_MANUAL_DESPAWN);
+            if (Creature* queen = me->SummonCreature(NPC_QUEEN_AZSHARA, kQueenPos, TEMPSUMMON_TIMED_DESPAWN,
+                AZSHARA_CAMEO_MS))
+            {
+                queen->AI()->Talk(SAY_AZSHARA_WHO_DARES);
+            }
+
             _priestessesUp = false;
         }
     }

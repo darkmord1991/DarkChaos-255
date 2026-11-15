@@ -28,6 +28,7 @@
 #include "Item.h"
 #include "Config.h"
 #include "SharedDefines.h"
+#include "WorldSession.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
@@ -66,9 +67,19 @@ namespace
         {CLASS_DRUID, {{48102, 48104, 48106, 48108, 48110, 50428, 47666}, "Druid Tier 9.5 + Weapons"}}
     };
 
+    // Players see only their own currency and upgrade data; a GM (or the console) keeps the selected target.
+    Player* GetUpgradeCommandTarget(ChatHandler* handler)
+    {
+        WorldSession* session = handler->GetSession();
+        if (session && session->GetSecurity() < SEC_GAMEMASTER)
+            return session->GetPlayer();
+
+        return handler->getSelectedPlayerOrSelf();
+    }
+
     Player* ResolveUpgradeCommandPlayer(ChatHandler* handler)
     {
-        Player* player = handler->getSelectedPlayerOrSelf();
+        Player* player = GetUpgradeCommandTarget(handler);
         if (!player)
             handler->SendSysMessage("Select a player in-game or target one first.");
 
@@ -839,7 +850,7 @@ public:
             firstUpgradeTokens, firstUpgradeEssence);
 
         uint8 equippedSlot = EQUIPMENT_SLOT_END;
-        Player* player = handler->getSelectedPlayerOrSelf();
+        Player* player = GetUpgradeCommandTarget(handler);
         Item* equippedItem = FindEquippedItemByEntry(player, itemId, equippedSlot);
         if (!equippedItem)
         {

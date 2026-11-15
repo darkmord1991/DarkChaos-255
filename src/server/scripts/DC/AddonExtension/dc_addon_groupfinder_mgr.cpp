@@ -8,6 +8,7 @@
 #include "Common.h"
 #include "dc_addon_groupfinder_mgr.h"
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "DatabaseEnv.h"
 #include "CharacterDatabase.h"
 #include "Config.h"
@@ -315,7 +316,8 @@ void GroupFinderMgr::LoadFromDatabase()
             listing.groupGuid = fields[2].Get<uint32>();
             listing.listingType = fields[3].Get<uint8>();
             listing.dungeonId = fields[4].Get<uint32>();
-            listing.dungeonName = fields[5].Get<std::string>();
+            // Rows written before player text was sanitized on receipt: strip UI escape codes here too.
+            listing.dungeonName = Utils::SanitizePlayerText(fields[5].Get<std::string>());
             listing.difficulty = fields[6].Get<uint8>();
             listing.keystoneLevel = fields[7].Get<uint8>();
             listing.minIlvl = fields[8].Get<uint16>();
@@ -325,7 +327,7 @@ void GroupFinderMgr::LoadFromDatabase()
             listing.needTank = fields[12].Get<uint8>();
             listing.needHealer = fields[13].Get<uint8>();
             listing.needDps = fields[14].Get<uint8>();
-            listing.note = fields[15].Get<std::string>();
+            listing.note = Utils::SanitizePlayerText(fields[15].Get<std::string>());
             listing.createdAt = fields[16].Get<time_t>();
             listing.expiresAt = listing.createdAt + (_listingExpireMinutes * 60);
             listing.active = true;
@@ -359,7 +361,7 @@ void GroupFinderMgr::LoadFromDatabase()
             app.playerClass = fields[5].Get<uint8>();
             app.playerLevel = fields[6].Get<uint8>();
             app.playerIlvl = fields[7].Get<uint16>();
-            app.note = fields[8].Get<std::string>();
+            app.note = Utils::SanitizePlayerText(fields[8].Get<std::string>());
             app.status = fields[9].Get<uint8>();
             app.createdAt = fields[10].Get<time_t>();
 
@@ -387,12 +389,12 @@ void GroupFinderMgr::LoadFromDatabase()
             event.leaderGuid = fields[1].Get<uint32>();
             event.eventType = fields[2].Get<uint8>();
             event.dungeonId = fields[3].Get<uint32>();
-            event.title = fields[4].Get<std::string>();
+            event.title = Utils::SanitizePlayerText(fields[4].Get<std::string>());
             event.keystoneLevel = fields[5].Get<uint8>();
             event.scheduledTime = fields[6].Get<time_t>();
             event.maxSignups = fields[7].Get<uint8>();
             event.currentSignups = fields[8].Get<uint8>();
-            event.description = fields[9].Get<std::string>();
+            event.description = Utils::SanitizePlayerText(fields[9].Get<std::string>());
             event.status = fields[10].Get<uint8>();
 
             _events[event.id] = event;
@@ -425,7 +427,7 @@ void GroupFinderMgr::LoadFromDatabase()
             signup.playerName = fields[3].Get<std::string>();
             signup.role = fields[4].Get<uint8>();
             signup.status = fields[5].Get<uint8>();
-            signup.note = fields[6].Get<std::string>();
+            signup.note = Utils::SanitizePlayerText(fields[6].Get<std::string>());
             signup.createdAt = fields[7].Get<time_t>();
 
             _eventSignups[eventId].push_back(signup);

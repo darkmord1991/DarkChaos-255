@@ -24,14 +24,30 @@
 //   therefore be cached permanently like positive ones; the TTL is kept only so
 //   that applying a migration to a running server is picked up without a
 //   restart. Do not reintroduce runtime DDL to make use of it.
+//
+//   Only the FIRST probe of a key blocks its caller. When a negative result
+//   expires, the caller still gets "missing" and the key is checked again in the
+//   background (45 of the 174 probes in the DC tree look for something the live
+//   database does not have, and each of them used to block a request once a
+//   minute). A migration applied to a running server is therefore picked up one
+//   call later than before: the call after the TTL starts the re-check, the next
+//   one sees its result.
 
 #include "DatabaseEnv.h"
 
 #include <chrono>
 #include <mutex>
+#include <source_location>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+
+namespace DCAddon
+{
+    // Defined in AddonExtension/dc_addon_protocol.cpp (dc_addon_namespace.h declares it with its default argument).
+    // Thread-safe; the continuation runs on the world thread.
+    void EnqueueQueryCallback(QueryCallback&& callback, std::source_location site);
+}
 
 namespace DC
 {
@@ -39,36 +55,39 @@ namespace DbSchema
 {
 namespace detail
 {
-    // How long a "does not exist" answer stays cached before we re-probe.
+    // How long a "does not exist" answer stays cached before it is checked again.
     constexpr std::chrono::seconds NEGATIVE_TTL{ 60 };
+
+    enum class ProbeState
+    {
+        Unknown,        // never probed: the caller probes now
+        Present,        // exists (cached permanently)
+        Missing,        // did not exist when last checked, and that answer is still fresh
+        MissingExpired  // did not exist, and it is time to check again in the background
+    };
 
     class ProbeCache
     {
     public:
-        // True if this key is known to exist (cached permanently).
-        bool IsPresent(std::string const& key)
+        // What is known about the key. MissingExpired is reported once per NEGATIVE_TTL (the key is stamped
+        // again here), so one background re-check runs per key at a time.
+        ProbeState Lookup(std::string const& key)
         {
             std::lock_guard<std::mutex> lock(_mutex);
-            return _present.contains(key);
-        }
 
-        // True if this key missed recently enough that re-probing can be skipped.
-        // Expired entries are dropped so the next call probes again.
-        bool MissedRecently(std::string const& key)
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
+            if (_present.contains(key))
+                return ProbeState::Present;
 
             auto const it = _missedAt.find(key);
             if (it == _missedAt.end())
-                return false;
+                return ProbeState::Unknown;
 
-            if (std::chrono::steady_clock::now() - it->second >= NEGATIVE_TTL)
-            {
-                _missedAt.erase(it);
-                return false;
-            }
+            auto const now = std::chrono::steady_clock::now();
+            if (now - it->second < NEGATIVE_TTL)
+                return ProbeState::Missing;
 
-            return true;
+            it->second = now;
+            return ProbeState::MissingExpired;
         }
 
         void MarkPresent(std::string const& key)
@@ -89,19 +108,54 @@ namespace detail
         std::unordered_set<std::string> _present;
         std::unordered_map<std::string, std::chrono::steady_clock::time_point> _missedAt;
     };
+
+    // sql-ok: table/column names are compile-time literals from callers, never user input
+    inline std::string TableProbeSql(std::string const& tableName)
+    {
+        return Acore::StringFormat(
+            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'",
+            tableName);
+    }
+
+    // sql-ok: table/column names are compile-time literals from callers, never user input
+    inline std::string ColumnProbeSql(std::string const& tableName, std::string const& columnName)
+    {
+        return Acore::StringFormat(
+            "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' "
+            "AND COLUMN_NAME = '{}'",
+            tableName, columnName);
+    }
+
+    // Background re-check of a key that was missing: it becomes present when the probe finds it. The caches
+    // are function statics, so the reference outlives every queued continuation.
+    inline void RecheckMissing(ProbeCache& cache, std::string const& key, QueryCallback&& probe)
+    {
+        DCAddon::EnqueueQueryCallback(probe.WithCallback([&cache, key](QueryResult result)
+        {
+            if (result)
+                cache.MarkPresent(key);
+        }), std::source_location::current());
+    }
 }
 
     inline bool WorldTableExists(std::string const& tableName)
     {
         static detail::ProbeCache cache;
 
-        if (cache.IsPresent(tableName))
-            return true;
+        switch (cache.Lookup(tableName))
+        {
+            case detail::ProbeState::Present:
+                return true;
+            case detail::ProbeState::Missing:
+                return false;
+            case detail::ProbeState::MissingExpired:
+                detail::RecheckMissing(cache, tableName, WorldDatabase.AsyncQuery(detail::TableProbeSql(tableName)));
+                return false;
+            default:
+                break;
+        }
 
-        if (cache.MissedRecently(tableName))
-            return false;
-
-        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))  // sql-ok: table/column names are compile-time literals from callers, never user input
+        if (!WorldDatabase.Query(detail::TableProbeSql(tableName)))
         {
             cache.MarkMissing(tableName);
             return false;
@@ -117,11 +171,19 @@ namespace detail
 
         std::string const key = tableName + "." + columnName;
 
-        if (cache.IsPresent(key))
-            return true;
-
-        if (cache.MissedRecently(key))
-            return false;
+        switch (cache.Lookup(key))
+        {
+            case detail::ProbeState::Present:
+                return true;
+            case detail::ProbeState::Missing:
+                return false;
+            case detail::ProbeState::MissingExpired:
+                detail::RecheckMissing(cache, key,
+                    WorldDatabase.AsyncQuery(detail::ColumnProbeSql(tableName, columnName)));
+                return false;
+            default:
+                break;
+        }
 
         if (!WorldTableExists(tableName))
         {
@@ -129,7 +191,7 @@ namespace detail
             return false;
         }
 
-        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))  // sql-ok: table/column names are compile-time literals from callers, never user input
+        if (!WorldDatabase.Query(detail::ColumnProbeSql(tableName, columnName)))
         {
             cache.MarkMissing(key);
             return false;
@@ -143,13 +205,21 @@ namespace detail
     {
         static detail::ProbeCache cache;
 
-        if (cache.IsPresent(tableName))
-            return true;
+        switch (cache.Lookup(tableName))
+        {
+            case detail::ProbeState::Present:
+                return true;
+            case detail::ProbeState::Missing:
+                return false;
+            case detail::ProbeState::MissingExpired:
+                detail::RecheckMissing(cache, tableName,
+                    CharacterDatabase.AsyncQuery(detail::TableProbeSql(tableName)));
+                return false;
+            default:
+                break;
+        }
 
-        if (cache.MissedRecently(tableName))
-            return false;
-
-        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))  // sql-ok: table/column names are compile-time literals from callers, never user input
+        if (!CharacterDatabase.Query(detail::TableProbeSql(tableName)))
         {
             cache.MarkMissing(tableName);
             return false;
@@ -165,11 +235,19 @@ namespace detail
 
         std::string const key = tableName + "." + columnName;
 
-        if (cache.IsPresent(key))
-            return true;
-
-        if (cache.MissedRecently(key))
-            return false;
+        switch (cache.Lookup(key))
+        {
+            case detail::ProbeState::Present:
+                return true;
+            case detail::ProbeState::Missing:
+                return false;
+            case detail::ProbeState::MissingExpired:
+                detail::RecheckMissing(cache, key,
+                    CharacterDatabase.AsyncQuery(detail::ColumnProbeSql(tableName, columnName)));
+                return false;
+            default:
+                break;
+        }
 
         if (!CharacterTableExists(tableName))
         {
@@ -177,7 +255,7 @@ namespace detail
             return false;
         }
 
-        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))  // sql-ok: table/column names are compile-time literals from callers, never user input
+        if (!CharacterDatabase.Query(detail::ColumnProbeSql(tableName, columnName)))
         {
             cache.MarkMissing(key);
             return false;

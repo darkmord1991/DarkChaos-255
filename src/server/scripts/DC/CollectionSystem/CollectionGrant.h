@@ -142,8 +142,19 @@ namespace DCCollection
     bool ValidateCollectibleEntry(CollectionType type, uint32 entryId);
 
     /// Teaches/applies an already-owned collectible to one character without
-    /// touching the DB. Returns true when something actually changed.
+    /// touching the DB. Returns true when something actually changed. A mount
+    /// the character may not ride (GetMountRefusal) is not taught; the account
+    /// keeps it and the login / level-up sync teaches it once the character
+    /// qualifies.
     bool ApplyCollectibleToCharacter(Player* player, CollectionType type, uint32 entryId);
+
+    /// Why this character may not be taught or summon the collected mount
+    /// spell, empty when it may: the class/race rules (IsSpellFitByClassAndRace)
+    /// and the teaching item's faction, class, race, riding-skill and level
+    /// requirements, as Player::CanUseItem checks them. The summon handler,
+    /// the login / level-up sync and ApplyCollectibleToCharacter all use it.
+    /// Implemented in dc_addon_collection.cpp.
+    std::string GetMountRefusal(Player* player, uint32 spellId);
 
     /// Resends the character's whole spell list (SMSG_INITIAL_SPELLS) shortly
     /// after a silent addSpell. The client builds the spellbook and the

@@ -699,6 +699,76 @@ function AzerothAdmin:TicketHackTimer()
   end
 end]]
 
+-- A SYSTEM line can carry a player's own text (".ticket viewid" echoes the ticket message), and
+-- several patterns in AddMessage are unanchored with more than one greedy capture: on a long
+-- crafted line they backtrack for minutes and freeze the client. Longer lines skip them and the
+-- linkifier, and are shown as they are (security audit 2026-11-10).
+local AA_MAX_PARSED_LINE = 512
+
+-- Fills the ticket detail panel from ".ticket viewid" output: one SYSTEM line, or several when the
+-- message has line breaks. Linear time, because the message is player text and this also runs on
+-- lines longer than AA_MAX_PARSED_LINE (the whole ticket header and message arrive as one line, so
+-- a ticket of a few hundred characters is already that long). Returns true when the line belonged
+-- to a ticket message.
+local function CaptureTicketMessage(text)
+  local buffer = AzerothAdmin.db.profile.buffer
+  local start = string.find(text, "Ticket Message", 1, true)
+  if start then
+    -- Same capture as "Ticket Message.-:%s*%[(.*)%]": from the first ":[" after the label to the
+    -- last "]" of the line; with no "]" after it, the line starts a multi-line message.
+    local _, open = string.find(text, "^Ticket Message.-:%s*%[", start)
+    if not open then
+      return false
+    end
+    local close = string.match(text, "^.*()%]")
+    if close and close > open then
+      local singleLineMsg = string.sub(text, open + 1, close - 1)
+      ma_ticketdetail.originalText = "|cffffff00"..singleLineMsg
+      ma_ticketdetail:SetText("|cffffff00"..singleLineMsg)
+      ma_ticketdetail:SetCursorPosition(0)
+      ma_ticketdetail:ClearFocus()
+      ma_ticketdetailscrollframe:SetVerticalScroll(0)
+    else
+      -- This is the start of a multiline ticket message, keep the beginning
+      buffer.ticketMessageBuffer = string.sub(text, open + 1)
+    end
+    return true
+  elseif buffer.ticketMessageBuffer then
+    -- We're collecting a multi-line ticket message
+    -- Check if this line ends the message (contains the closing bracket)
+    -- Pattern stops at ] to handle WoW color codes like |r that may follow
+    local endMatch = string.match(text, "^(.*)%]")
+    if endMatch then
+      -- This is the last line, append it and display the complete message
+      local fullMessage = buffer.ticketMessageBuffer .. "\n" .. endMatch
+      print("Server response - Setting ticket message:", fullMessage, "Length:", string.len(fullMessage))
+      ma_ticketdetail.originalText = "|cffffff00"..fullMessage
+      ma_ticketdetail:SetText("|cffffff00"..fullMessage)
+      ma_ticketdetail:SetCursorPosition(0)
+      ma_ticketdetail:ClearFocus()
+      ma_ticketdetailscrollframe:SetVerticalScroll(0)
+      print("EditBox text after server set:", ma_ticketdetail:GetText())
+      -- Store the message in the tickets buffer
+      local currentTicketId = ma_ticketid:GetText()
+      if currentTicketId and currentTicketId ~= "" then
+        for k, v in ipairs(buffer.tickets) do
+          if v.tNumber == currentTicketId then
+            buffer.tickets[k].tMsg = fullMessage
+            break
+          end
+        end
+      end
+      -- Clear the buffer
+      buffer.ticketMessageBuffer = nil
+    else
+      -- This is a middle line, append it to the buffer
+      buffer.ticketMessageBuffer = buffer.ticketMessageBuffer .. "\n" .. text
+    end
+    return true
+  end
+  return false
+end
+
 function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
   -- frame is the object that was hooked (one of the ChatFrames)
   local originalAddMessage = self.hooks and self.hooks[frame] and self.hooks[frame].AddMessage
@@ -710,10 +780,12 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
     return
   end
 
+  local tooLongToParse = id == 1 and type(text) == "string" and #text > AA_MAX_PARSED_LINE
+
   -- Logout can still produce chat output while AceDB state is already being
   -- torn down. In that case bypass AzerothAdmin parsing and forward the text.
   if not (charDb and style) then
-    if id == 1 then
+    if id == 1 and not tooLongToParse then
       text = MangLinkifier_ProcessServerLine(text)
     end
     originalAddMessage(frame, text, r, g, b, id)
@@ -722,6 +794,13 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
 
   local catchedSth = false
   local output = style.showchat
+  if tooLongToParse then
+    -- Only the linear-time ticket capture runs; the line itself is shown unparsed.
+    if not CaptureTicketMessage(text) or output == true then
+      originalAddMessage(frame, text, r, g, b, id)
+    end
+    return
+  end
   if id == 1 then --make sure that the message comes from the server, message id = 1
     --Catches if Toggle is still on for some reason, but search frame is not up, and disables it so messages arent caught
     if charDb.requests.toggle and not ma_popupframe:IsVisible() then
@@ -1083,24 +1162,34 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
     for name in string.gmatch(text, Strings["ma_GmatchNewTicket"]) do
       PlaySoundFile(ROOT_PATH.."Sound\\mail.wav")
     end
-    -- hook player account info
-    for status, char, guid, account, id, level, ip, login, latency in string.gmatch(text, Strings["ma_GmatchAccountInfo"]) do
-      if self.db.char.requests.tpinfo then
+    -- hook player account info. The flag is checked before matching: these multi-capture
+    -- patterns are expensive, and are only wanted while player info was requested.
+    if self.db.char.requests.tpinfo then
+      local accountInfoPattern = Strings["ma_GmatchAccountInfo"]
+      for status, char, guid, account, id, level, ip, login, latency in string.gmatch(text, accountInfoPattern) do
         if status == "" then
           status = Locale["ma_Online"]
         else
           status = Locale["ma_Offline"]
         end
-        --table.insert(self.db.profile.buffer.tpinfo, {char = {pStatus = status, pGuid = guid, pAcc = account, pId = id, pLevel = level, pIp = ip}})
-        ma_tpinfo_text:SetText(ma_tpinfo_text:GetText()..Locale["ma_TicketsInfoPlayer"]..char.." ("..guid..")\n"..Locale["ma_TicketsInfoStatus"]..status.."\n"..Locale["ma_TicketsInfoAccount"]..account.." ("..id..")\n"..Locale["ma_TicketsInfoAccLevel"]..level.."\n"..Locale["ma_TicketsInfoLastIP"]..ip.."\n"..Locale["ma_TicketsInfoLatency"]..latency)
+        ma_tpinfo_text:SetText(ma_tpinfo_text:GetText()
+          ..Locale["ma_TicketsInfoPlayer"]..char.." ("..guid..")\n"
+          ..Locale["ma_TicketsInfoStatus"]..status.."\n"
+          ..Locale["ma_TicketsInfoAccount"]..account.." ("..id..")\n"
+          ..Locale["ma_TicketsInfoAccLevel"]..level.."\n"
+          ..Locale["ma_TicketsInfoLastIP"]..ip.."\n"
+          ..Locale["ma_TicketsInfoLatency"]..latency)
         catchedSth = true
         output = AzerothAdmin.db.profile.style.showchat
       end
     end
     -- hook player account info
-    for played, level, money in string.gmatch(text, Strings["ma_GmatchAccountInfo2"]) do
-      if self.db.char.requests.tpinfo then
-        ma_tpinfo_text:SetText(ma_tpinfo_text:GetText().."\n"..Locale["ma_TicketsInfoPlayedTime"]..played.."\n"..Locale["ma_TicketsInfoLevel"]..level.."\n"..Locale["ma_TicketsInfoMoney"]..money)
+    if self.db.char.requests.tpinfo then
+      for played, level, money in string.gmatch(text, Strings["ma_GmatchAccountInfo2"]) do
+        ma_tpinfo_text:SetText(ma_tpinfo_text:GetText().."\n"
+          ..Locale["ma_TicketsInfoPlayedTime"]..played.."\n"
+          ..Locale["ma_TicketsInfoLevel"]..level.."\n"
+          ..Locale["ma_TicketsInfoMoney"]..money)
         catchedSth = true
         output = AzerothAdmin.db.profile.style.showchat
         self.db.char.requests.tpinfo = false
@@ -1143,95 +1232,40 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
 --        output = AzerothAdmin.db.profile.style.showchat
         output = AzerothAdmin.db.profile.style.showchat
     end
-    -- get results of ticket list. In Trinity, everything will be constructed off the list
+    -- get results of ticket list. In Trinity, everything will be constructed off the list.
+    -- Only while the ticket list was requested: this is the costliest pattern of the hook.
     local foundTickets = false
-    for id, char, create, update in string.gmatch(text, Strings["ma_GmatchTickets"]) do
-        -- Clean up the ticket ID by removing non-numeric characters
-        id = string.match(id, "%d+") or id
-        -- Check if this ticket already exists to prevent duplicates
-        local isDuplicate = false
-        for _, ticket in ipairs(self.db.profile.buffer.tickets) do
-            if ticket.tNumber == id then
-                isDuplicate = true
-                break
-            end
-        end
-        if not isDuplicate then
-            table.insert(AzerothAdmin.db.profile.buffer.tickets, {tNumber = id, tChar = char, tLCreate = create, tLUpdate = update, tMsg = ""})
-            foundTickets = true
-        end
-        local ticketCount = 0
-        for _ in pairs(AzerothAdmin.db.profile.buffer.tickets) do ticketCount = ticketCount + 1 end
-        ticketCount = 0
-        catchedSth = true
-        output = AzerothAdmin.db.profile.style.showchat
-        self.db.char.requests.ticketbody = id
-        self.db.char.msgDeltaTime = time()
+    if self.db.char.requests.ticket then
+      for id, char, create, update in string.gmatch(text, Strings["ma_GmatchTickets"]) do
+          -- Clean up the ticket ID by removing non-numeric characters
+          id = string.match(id, "%d+") or id
+          -- Check if this ticket already exists to prevent duplicates
+          local isDuplicate = false
+          for _, ticket in ipairs(self.db.profile.buffer.tickets) do
+              if ticket.tNumber == id then
+                  isDuplicate = true
+                  break
+              end
+          end
+          if not isDuplicate then
+              table.insert(AzerothAdmin.db.profile.buffer.tickets,
+                  {tNumber = id, tChar = char, tLCreate = create, tLUpdate = update, tMsg = ""})
+              foundTickets = true
+          end
+          catchedSth = true
+          output = AzerothAdmin.db.profile.style.showchat
+          self.db.char.requests.ticketbody = id
+          self.db.char.msgDeltaTime = time()
+      end
     end
     -- Update the display after parsing all tickets in this message
     if foundTickets and AzerothAdminCommands and AzerothAdminCommands.InlineScrollUpdate then
         AzerothAdminCommands.InlineScrollUpdate()
     end
     -- Match ticket message - handle messages that may span multiple chat lines
-    if string.find(text, "Ticket Message") then
-        -- Check if it's a complete single-line message first
-        local singleLineMsg = string.match(text, "Ticket Message.-:%s*%[(.*)%]")
-        if singleLineMsg then
-            ma_ticketdetail.originalText = "|cffffff00"..singleLineMsg
-            ma_ticketdetail:SetText("|cffffff00"..singleLineMsg)
-            ma_ticketdetail:SetCursorPosition(0)
-            ma_ticketdetail:ClearFocus()
-            ma_ticketdetailscrollframe:SetVerticalScroll(0)
-            catchedSth = true
-            output = AzerothAdmin.db.profile.style.showchat
-        else
-            -- This is the start of a multiline ticket message, extract the beginning
-            local ticketMsgStart = string.match(text, "Ticket Message.-:%s*%[(.*)$")
-            if ticketMsgStart then
-                -- Initialize the buffer with the first part
-                if not AzerothAdmin.db.profile.buffer.ticketMessageBuffer then
-                    AzerothAdmin.db.profile.buffer.ticketMessageBuffer = ""
-                end
-                AzerothAdmin.db.profile.buffer.ticketMessageBuffer = ticketMsgStart
-                catchedSth = true
-                output = AzerothAdmin.db.profile.style.showchat
-            end
-        end
-    elseif AzerothAdmin.db.profile.buffer.ticketMessageBuffer then
-        -- We're collecting a multi-line ticket message
-        -- Check if this line ends the message (contains the closing bracket)
-        -- Pattern stops at ] to handle WoW color codes like |r that may follow
-        local endMatch = string.match(text, "^(.*)%]")
-        if endMatch then
-            -- This is the last line, append it and display the complete message
-            local fullMessage = AzerothAdmin.db.profile.buffer.ticketMessageBuffer .. "\n" .. endMatch
-            print("Server response - Setting ticket message:", fullMessage, "Length:", string.len(fullMessage))
-            ma_ticketdetail.originalText = "|cffffff00"..fullMessage
-            ma_ticketdetail:SetText("|cffffff00"..fullMessage)
-            ma_ticketdetail:SetCursorPosition(0)
-            ma_ticketdetail:ClearFocus()
-            ma_ticketdetailscrollframe:SetVerticalScroll(0)
-            print("EditBox text after server set:", ma_ticketdetail:GetText())
-            -- Store the message in the tickets buffer
-            local currentTicketId = ma_ticketid:GetText()
-            if currentTicketId and currentTicketId ~= "" then
-                for k, v in ipairs(AzerothAdmin.db.profile.buffer.tickets) do
-                    if v.tNumber == currentTicketId then
-                        AzerothAdmin.db.profile.buffer.tickets[k].tMsg = fullMessage
-                        break
-                    end
-                end
-            end
-            -- Clear the buffer
-            AzerothAdmin.db.profile.buffer.ticketMessageBuffer = nil
-            catchedSth = true
-            output = AzerothAdmin.db.profile.style.showchat
-        else
-            -- This is a middle line, append it to the buffer
-            AzerothAdmin.db.profile.buffer.ticketMessageBuffer = AzerothAdmin.db.profile.buffer.ticketMessageBuffer .. "\n" .. text
-            catchedSth = true
-            output = AzerothAdmin.db.profile.style.showchat
-        end
+    if CaptureTicketMessage(text) then
+        catchedSth = true
+        output = AzerothAdmin.db.profile.style.showchat
     end
     for eraseme in string.gmatch(text, "Showing list of open tickets") do
         catchedSth = true

@@ -74,6 +74,9 @@ namespace HLBG
     namespace
     {
         constexpr uint64 HLBG_RESPONSE_CACHE_TTL_MS = 1000;
+        // Leaderboard types 1..7 (QuerySeasonalLeaderboard) and the widest page a client may ask for.
+        constexpr uint32 HLBG_LEADERBOARD_TYPE_COUNT = 7;
+        constexpr uint32 HLBG_LEADERBOARD_MAX_LIMIT = 200;
 
         struct AllTimeViewColumns
         {
@@ -97,20 +100,12 @@ namespace HLBG
         static std::unordered_map<uint32, uint32> s_lastRequestMs;
         static std::mutex s_rateLimitMutex;  // Thread safety for rate limiting
 
-        struct CachedLeaderboardPayload
-        {
-            std::string response;
-            uint64 expiresAtMs = 0;
-        };
-
         struct CachedAllTimeStatsPayload
         {
             std::string response;
             uint64 expiresAtMs = 0;
         };
 
-        static std::unordered_map<uint64, CachedLeaderboardPayload>
-            s_cachedLeaderboardPayloads;
         static std::unordered_map<uint32, CachedAllTimeStatsPayload>
             s_cachedAllTimeStatsPayloads;
         static std::mutex s_responseCacheMutex;
@@ -120,12 +115,17 @@ namespace HLBG
             return static_cast<uint64>(GameTime::GetGameTimeMS().count());
         }
 
-        static uint64 MakeLeaderboardCacheKey(uint32 leaderboardType,
-            uint32 season, uint32 limit)
+        static uint64 MakeLeaderboardCacheKey(uint32 leaderboardType, uint32 season)
         {
-            return (static_cast<uint64>(leaderboardType) << 48)
-                | (static_cast<uint64>(season) << 16)
-                | static_cast<uint64>(limit);
+            return (static_cast<uint64>(leaderboardType) << 32) | static_cast<uint64>(season);
+        }
+
+        // Seasons a stats request may name: 0 and anything past the current season mean the
+        // current one (as dc_addon_leaderboards.cpp does), so the cache key space stays closed.
+        static uint32 ClampRequestedSeason(uint32 season)
+        {
+            uint32 const currentSeason = HLBGService::Instance().GetSeason();
+            return (season == 0 || season > currentSeason) ? currentSeason : season;
         }
 
         static bool HasUnifiedStatTables()
@@ -1186,22 +1186,29 @@ namespace HLBG
         return true;
     }
 
-    static bool BuildSeasonalLeaderboardResponse(
+    // One board query per (type, season) at HLBG_LEADERBOARD_MAX_LIMIT; every requested limit is
+    // cut from it. A failure ("No data available") is cached the same way: an empty season or a
+    // varied limit used to miss the cache and rerun the aggregate synchronously on every request.
+    struct CachedLeaderboardEntries
+    {
+        bool ok = false;
+        std::vector<LeaderboardEntry> entries;
+        std::string error;
+        uint64 expiresAtMs = 0;
+    };
+
+    static std::unordered_map<uint64, CachedLeaderboardEntries> s_cachedLeaderboardEntries;
+
+    static std::string BuildSeasonalLeaderboardResponse(
         uint32 leaderboardType,
         uint32 season,
-        uint32 limit,
-        std::string& outResponse,
-        std::string& outError)
+        std::vector<LeaderboardEntry> const& entries,
+        uint32 limit)
     {
-        std::vector<LeaderboardEntry> entries;
-        if (!QuerySeasonalLeaderboard(leaderboardType, season, limit, entries,
-            outError))
-        {
-            return false;
-        }
+        std::size_t const count = std::min<std::size_t>(entries.size(), limit);
 
         std::string jsonEntries = "[";
-        for (size_t i = 0; i < entries.size(); ++i)
+        for (size_t i = 0; i < count; ++i)
         {
             if (i > 0)
                 jsonEntries += ",";
@@ -1216,12 +1223,11 @@ namespace HLBG
         }
         jsonEntries += "]";
 
-        outResponse = Acore::StringFormat(
+        return Acore::StringFormat(
             "{{\"leaderboardType\":{},\"season\":{},\"entries\":{}}}",
             leaderboardType,
             season,
             jsonEntries);
-        return true;
     }
 
     static bool GetCachedSeasonalLeaderboardResponse(
@@ -1231,35 +1237,47 @@ namespace HLBG
         std::string& outResponse,
         std::string& outError)
     {
-        uint64 const cacheKey = MakeLeaderboardCacheKey(leaderboardType,
-            season, limit);
-        uint64 const nowMs = GetNowMs();
-
+        // Checked before the cache so an arbitrary type cannot add keys to it.
+        if (leaderboardType < 1 || leaderboardType > HLBG_LEADERBOARD_TYPE_COUNT)
         {
-            std::lock_guard<std::mutex> lock(s_responseCacheMutex);
-            auto itr = s_cachedLeaderboardPayloads.find(cacheKey);
-            if (itr != s_cachedLeaderboardPayloads.end()
-                && itr->second.expiresAtMs > nowMs)
-            {
-                outResponse = itr->second.response;
-                return true;
-            }
-        }
-
-        std::string response;
-        if (!BuildSeasonalLeaderboardResponse(leaderboardType, season, limit,
-            response, outError))
-        {
+            outError = "Invalid leaderboard type";
             return false;
         }
 
-        CachedLeaderboardPayload payload;
-        payload.response = response;
-        payload.expiresAtMs = nowMs + HLBG_RESPONSE_CACHE_TTL_MS;
+        uint64 const cacheKey = MakeLeaderboardCacheKey(leaderboardType, season);
+        uint64 const nowMs = GetNowMs();
 
-        std::lock_guard<std::mutex> lock(s_responseCacheMutex);
-        s_cachedLeaderboardPayloads[cacheKey] = payload;
-        outResponse = payload.response;
+        CachedLeaderboardEntries board;
+        bool cached = false;
+        {
+            std::lock_guard<std::mutex> lock(s_responseCacheMutex);
+            auto itr = s_cachedLeaderboardEntries.find(cacheKey);
+            if (itr != s_cachedLeaderboardEntries.end()
+                && itr->second.expiresAtMs > nowMs)
+            {
+                board = itr->second;
+                cached = true;
+            }
+        }
+
+        if (!cached)
+        {
+            board.ok = QuerySeasonalLeaderboard(leaderboardType, season,
+                HLBG_LEADERBOARD_MAX_LIMIT, board.entries, board.error);
+            board.expiresAtMs = nowMs + HLBG_RESPONSE_CACHE_TTL_MS;
+
+            std::lock_guard<std::mutex> lock(s_responseCacheMutex);
+            s_cachedLeaderboardEntries[cacheKey] = board;
+        }
+
+        if (!board.ok)
+        {
+            outError = board.error;
+            return false;
+        }
+
+        outResponse = BuildSeasonalLeaderboardResponse(leaderboardType, season,
+            board.entries, limit);
         return true;
     }
 
@@ -1722,10 +1740,8 @@ namespace HLBG
             }
         }
 
-        if (season == 0)
-            season = HLBGService::Instance().GetSeason();
-
-        limit = std::min<uint32>(limit, 200u);
+        season = ClampRequestedSeason(season);
+        limit = std::clamp<uint32>(limit, 1u, HLBG_LEADERBOARD_MAX_LIMIT);
 
         std::string const requestToken = ExtractStatsRequestToken(data);
 
@@ -1780,8 +1796,7 @@ namespace HLBG
             }
         }
 
-        if (season == 0)
-            season = HLBGService::Instance().GetSeason();
+        season = ClampRequestedSeason(season);
 
         std::string const requestToken = ExtractStatsRequestToken(data);
 

@@ -622,6 +622,10 @@ namespace DCCollection
     constexpr size_t MAX_NOTIFIED_APPEARANCES_PER_PLAYER = 10000;
     static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
     static std::mutex s_WardrobeMutex;  // Thread safety for wardrobe caches
+    // Per account, bumped by every invalidation: a background load started before one must not refill the
+    // entry it cleared. Per account because every logout invalidates, bots' included.
+    static std::unordered_map<uint32, uint64> s_AppearanceCacheGenerations;
+    static std::unordered_set<uint32> s_AppearanceCacheWarmsInFlight;
 
     // Centralized in DCAddon::Utils; thin forwarder keeps local call sites intact.
     static void AppendUnsignedJsonNumber(std::string& out, uint32 value)
@@ -680,6 +684,7 @@ namespace DCCollection
         std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         s_AccountUnlockedTransmogAppearances.erase(accountId);
         s_AccountCollectedAppearancesPayloads.erase(accountId);
+        ++s_AppearanceCacheGenerations[accountId];
     }
 
     // Session notification helpers: keep the actual storage private to this translation unit.
@@ -695,6 +700,27 @@ namespace DCCollection
         sessionNotifiedAppearances.erase(guid);
     }
 
+    std::string BuildAccountAppearancesQuery(uint32 accountId)
+    {
+        return Acore::StringFormat("SELECT display_id FROM dc_transmog_collection WHERE account_id = {}", accountId);
+    }
+
+    static std::shared_ptr<std::unordered_set<uint32> const> ReadAccountAppearances(QueryResult const& result)
+    {
+        auto unlocked = std::make_shared<std::unordered_set<uint32>>();
+        if (!result)
+            return unlocked;
+
+        do
+        {
+            uint32 const displayId = result->Fetch()[0].Get<uint32>();
+            if (displayId)
+                unlocked->insert(displayId);
+        } while (result->NextRow());
+
+        return unlocked;
+    }
+
     static std::shared_ptr<std::unordered_set<uint32> const> GetAccountUnlockedTransmogAppearances(uint32 accountId)
     {
         {
@@ -704,24 +730,9 @@ namespace DCCollection
                 return it->second;
         }
 
-        auto unlocked = std::make_shared<std::unordered_set<uint32>>();
-
-        // Load from dc_transmog_collection table. Intentionally synchronous:
-        // this is a cache-miss-only path, so it blocks the world thread at
-        // most once per account per server uptime.
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT display_id FROM dc_transmog_collection WHERE account_id = {}",
-            accountId);
-
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                uint32 dId = fields[0].Get<uint32>();
-                if (dId) unlocked->insert(dId);
-            } while (result->NextRow());
-        }
+        // Synchronous only on a cache miss: logins load the entry in the background
+        // (WarmAccountAppearanceCacheAsync) and the collection reads load it with their own statements.
+        auto unlocked = ReadAccountAppearances(CharacterDatabase.Query(BuildAccountAppearancesQuery(accountId)));
 
         std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
@@ -730,6 +741,60 @@ namespace DCCollection
 
         s_AccountUnlockedTransmogAppearances[accountId] = unlocked;
         return unlocked;
+    }
+
+    bool IsAccountAppearanceCacheLoaded(uint32 accountId)
+    {
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+        return s_AccountUnlockedTransmogAppearances.count(accountId) != 0;
+    }
+
+    uint64 GetAppearanceCacheGeneration(uint32 accountId)
+    {
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+        auto const it = s_AppearanceCacheGenerations.find(accountId);
+        return it != s_AppearanceCacheGenerations.end() ? it->second : 0;
+    }
+
+    void SeedAccountAppearanceCache(uint32 accountId, QueryResult const& result, uint64 generation)
+    {
+        auto unlocked = ReadAccountAppearances(result);
+
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+        // An entry cached meanwhile is at least as new (recording an appearance loads it first), and an
+        // invalidation since the statement was queued makes this result stale
+        auto const current = s_AppearanceCacheGenerations.find(accountId);
+        if (generation != (current != s_AppearanceCacheGenerations.end() ? current->second : 0) ||
+            s_AccountUnlockedTransmogAppearances.count(accountId))
+            return;
+
+        s_AccountUnlockedTransmogAppearances[accountId] = unlocked;
+    }
+
+    void WarmAccountAppearanceCacheAsync(uint32 accountId)
+    {
+        if (!accountId)
+            return;
+
+        uint64 generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+            if (s_AccountUnlockedTransmogAppearances.count(accountId) ||
+                !s_AppearanceCacheWarmsInFlight.insert(accountId).second)
+                return;
+
+            auto const current = s_AppearanceCacheGenerations.find(accountId);
+            generation = current != s_AppearanceCacheGenerations.end() ? current->second : 0;
+        }
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(BuildAccountAppearancesQuery(accountId))
+            .WithCallback([accountId, generation](QueryResult result)
+        {
+            SeedAccountAppearanceCache(accountId, result, generation);
+
+            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+            s_AppearanceCacheWarmsInFlight.erase(accountId);
+        }));
     }
 
     static CachedCollectedAppearancesPayload GetCollectedAppearancesPayload(
@@ -2318,7 +2383,8 @@ namespace DCCollection
                     DCAddon::JsonValue obj;
                     obj.SetObject();
                     obj.Set("id", f[0].Get<uint32>());
-                    obj.Set("name", f[1].Get<std::string>());
+                    // Rows published before name/tags were sanitized on receipt.
+                    obj.Set("name", DCAddon::Utils::SanitizePlayerText(f[1].Get<std::string>()));
                     obj.Set("author", f[2].Get<std::string>());
                     obj.Set("items", f[3].Get<std::string>());
                     obj.Set("upvotes", f[4].Get<uint32>());
@@ -2327,7 +2393,7 @@ namespace DCCollection
                     obj.Set("is_favorite", f[7].Get<bool>());
                     obj.Set("my_vote", f[8].Get<int32>());
                     obj.Set("views", f[9].Get<uint32>());
-                    obj.Set("tags", f[10].Get<std::string>());
+                    obj.Set("tags", DCAddon::Utils::SanitizePlayerText(f[10].Get<std::string>()));
                     obj.Set("author_account_id", f[11].Get<uint32>());
                     obj.Set("author_guid", f[12].Get<uint32>());
                     obj.Set("created_at", f[13].Get<std::string>());
@@ -2356,10 +2422,11 @@ namespace DCCollection
             return;
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
-        std::string name = json["name"].AsString();
+        // Name and tags are shown to every player browsing the community tab: no UI escape codes.
+        std::string name = DCAddon::Utils::SanitizePlayerText(json["name"].AsString());
         std::string items = json["items"].AsString();
         std::string tags = "";
-        if (json.HasKey("tags")) tags = json["tags"].AsString();
+        if (json.HasKey("tags")) tags = DCAddon::Utils::SanitizePlayerText(json["tags"].AsString());
 
         if (!FitsTextColumn(name, COMMUNITY_NAME_MAX_CHARS) || !FitsTextColumn(tags, COMMUNITY_TAGS_MAX_CHARS) ||
             items.size() > OUTFIT_ITEMS_MAX_BYTES)
@@ -2545,10 +2612,11 @@ namespace DCCollection
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
-        std::string name = json["name"].AsString();
+        // Same rule as HandleCommunityPublish: name and tags reach every viewer.
+        std::string name = DCAddon::Utils::SanitizePlayerText(json["name"].AsString());
         std::string items = json["items"].AsString();
         std::string tags = "";
-        if (json.HasKey("tags")) tags = json["tags"].AsString();
+        if (json.HasKey("tags")) tags = DCAddon::Utils::SanitizePlayerText(json["tags"].AsString());
 
         if (!FitsTextColumn(name, COMMUNITY_NAME_MAX_CHARS) || !FitsTextColumn(tags, COMMUNITY_TAGS_MAX_CHARS) ||
             items.size() > OUTFIT_ITEMS_MAX_BYTES)
@@ -3450,7 +3518,7 @@ namespace DCCollection
                         }
 
                         Field* f = commResult->Fetch();
-                        std::string name = f[0].Get<std::string>();
+                        std::string name = DCAddon::Utils::SanitizePlayerText(f[0].Get<std::string>());
                         std::string author = f[1].Get<std::string>();
                         std::string items = f[2].Get<std::string>();
 

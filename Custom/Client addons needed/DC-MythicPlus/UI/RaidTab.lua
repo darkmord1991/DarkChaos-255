@@ -516,7 +516,8 @@ function GF:PopulateRaidGroups(groups)
             row.bg:SetColorTexture(0.1, 0.12, 0.15, 0.9)
         end
 
-        row.raidText:SetText(string.format("%s |cffaaaaaa(%s)|r", group.raid, group.difficulty))
+        row.raidText:SetText(string.format("%s |cffaaaaaa(%s)|r",
+            GF.EscapeText(group.raid), GF.EscapeText(group.difficulty)))
 
         local markerText = ""
         local leaderColor = "ffffff"
@@ -532,12 +533,12 @@ function GF:PopulateRaidGroups(groups)
         end
 
         row.infoText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Leader: |cff%s%s|r%s",
-            group.progress, leaderColor, leaderName, markerText))
+            GF.EscapeText(group.progress), leaderColor, leaderName, markerText))
 
         row.spotsText:SetText(string.format("|cff00ff00%d spots|r", group.spots))
 
         if group.note and group.note ~= "" and group.note ~= group.progress then
-            row.noteText:SetText("|cff888888" .. group.note .. "|r")
+            row.noteText:SetText("|cff888888" .. GF.EscapeText(group.note) .. "|r")
             row.noteText:Show()
         else
             row.noteText:Hide()
@@ -581,7 +582,7 @@ end
 
 function GF:ApplyToRaid(raidId, raidName)
     GF.Print("Applying to raid #" .. raidId .. "...")
-    GF:ShowApplicationDialog(raidId, raidName or "Raid Group")
+    GF:ShowApplicationDialog(raidId, GF.EscapeText(raidName) or "Raid Group")
 end
 
 function GF:CancelRaidGroup(raidId)

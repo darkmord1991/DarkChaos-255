@@ -304,9 +304,32 @@ namespace World
         DCAddon::RareSpawns::SendSnapshot(player);
     }
 
+    // GET_CONTENT floor, per session. Every request queued the whole snapshot (on the addon transport also a
+    // chunked copy, one update per boss and the rare list), and the native opcode reaches this handler at the
+    // native budget of 40 a second per account. A repeat inside the window is dropped: the snapshot the first
+    // request sent reaches every addon's WRLD handler, and later changes are pushed as SMSG_UPDATE anyway.
+    constexpr uint64 GET_CONTENT_COOLDOWN_MS = 3 * IN_MILLISECONDS;
+
+    struct GetContentFloor : public DataMap::Base
+    {
+        uint64 lastMs = 0;
+    };
+
     // Handler: Client requests world content
     static void HandleGetContent(Player* player, ParsedMessage const& /*msg*/)
     {
+        if (!player)
+            return;
+
+        GetContentFloor* requestFloor = player->CustomData.GetDefault<GetContentFloor>("DCWorldGetContentFloor");
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (requestFloor->lastMs && nowMs - requestFloor->lastMs < GET_CONTENT_COOLDOWN_MS)
+        {
+            LOG_DEBUG("dc.addon", "WRLD: dropped repeated GET_CONTENT from {}", player->GetName());
+            return;
+        }
+
+        requestFloor->lastMs = nowMs;
         SendWorldContentSnapshot(player);
     }
 
