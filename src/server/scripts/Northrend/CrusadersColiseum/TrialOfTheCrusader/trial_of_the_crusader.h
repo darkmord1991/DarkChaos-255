@@ -189,6 +189,7 @@ enum NPCs
     NPC_BEASTS_COMBAT_STALKER                       = 36549,
     NPC_JARAXXUS                                    = 34780,
     NPC_MISTRESS_OF_PAIN                            = 34826,
+    NPC_FELFLAME_INFERNAL                           = 34815,
 
     NPC_PURPLE_GROUND                               = 35651,
     NPC_OPEN_PORTAL_TARGET                          = 17965,
@@ -229,8 +230,12 @@ enum NPCs
 
     NPC_LIGHTBANE                                   = 34497,
     NPC_DARKBANE                                    = 34496,
+    NPC_CONCENTRATED_DARK                           = 34628,
+    NPC_CONCENTRATED_LIGHT                          = 34630,
 
     NPC_ANUBARAK                                    = 34564,
+    NPC_SCARAB                                      = 34605,
+    NPC_BURROWER                                    = 34607,
 };
 
 enum GOs
@@ -381,6 +386,8 @@ enum TrialOfTheCrusaderActions
 {
     // Sent by the instance to Gormok, the Twin Val'kyr and Anub'arak on a wipe
     ACTION_DESPAWN_SUMMONS                          = -1,
+    // Sent by the instance to Anub'arak when the floor breaks; respawns after a wipe skip the intro
+    ACTION_ANUBARAK_INTRO_SUBMERGE                  = 1,
 };
 
 enum TrialOfTheCrusaderModels
