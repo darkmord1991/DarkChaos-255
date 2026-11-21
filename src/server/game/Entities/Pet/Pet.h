@@ -47,7 +47,7 @@ public:
     void AddToWorld() override;
     void RemoveFromWorld() override;
 
-    float GetNativeObjectScale() const override;
+    // GetNativeObjectScale() is not overridden: the client already applies the CreatureFamily scale.
     void SetDisplayId(uint32 modelId, std::optional<float> displayScale = {}) override;
 
     PetType getPetType() const { return m_petType; }
