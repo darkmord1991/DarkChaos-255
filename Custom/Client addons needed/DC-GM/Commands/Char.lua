@@ -497,7 +497,7 @@ end
 
 function AzerothAdminCommands.GroupGoButton()
   local cname = ma_charactertarget:GetText()
-  AzerothAdmin:ChatMsg(".groupsummon "..cname)
+  AzerothAdmin:ChatMsg(".group summon "..cname)
 
 end
 
