@@ -34,6 +34,7 @@
 #include "Time/GameTime.h"
 #include "ScriptedCreature.h"
 #include "Chat.h"
+#include "WorldSession.h"
 #include <unordered_set>
 #include <unordered_map>
 
@@ -82,6 +83,11 @@ enum ShipEvents
 {
     EVENT_START_WAYPOINTS       = 1,
     EVENT_CHECK_ESCAPE          = 2,
+};
+
+enum ShipData
+{
+    SHIP_DATA_SINKING           = 1,        // GetData: 1 while the ship is sinking
 };
 
 // ============================================================================
@@ -343,20 +349,16 @@ public:
         {
             LOG_INFO("scripts.dc", "Giant Isles Cannon: Player {} entered cannon", player->GetName());
 
-            // Check if player has the quest (or allow for testing without quest)
+            // Only quest holders get a ship; staff may bypass for testing.
             QuestStatus questStatus = player->GetQuestStatus(QUEST_SINK_THE_SCOUT);
             LOG_INFO("scripts.dc", "Giant Isles Cannon: Quest {} status = {}", QUEST_SINK_THE_SCOUT, uint32(questStatus));
 
-            // For now, allow usage even without quest for testing
-            // TODO: Re-enable quest check after testing
-            /*
-            if (questStatus != QUEST_STATUS_INCOMPLETE)
+            if (questStatus != QUEST_STATUS_INCOMPLETE && player->GetSession()->GetSecurity() < SEC_GAMEMASTER)
             {
                 me->Whisper("You need the 'Sink the Zandalari Scout' quest to use this cannon.",
                     LANG_UNIVERSAL, player);
                 return;
             }
-            */
 
             // Check if player already has a ship spawned
             auto it = PlayerShipMap.find(player->GetGUID());
@@ -448,22 +450,18 @@ public:
 
         void OnPlayerExitCannon(Player* player)
         {
-            // Check if player has a ship and clean up if quest not complete
+            // Always despawn a live, non-sinking ship: dropping the mapping without it left orphan ships per cycle.
             auto it = PlayerShipMap.find(player->GetGUID());
             if (it != PlayerShipMap.end())
             {
                 if (Creature* ship = ObjectAccessor::GetCreature(*me, it->second))
                 {
-                    // Only despawn if quest is still incomplete (player abandoned)
-                    if (player->GetQuestStatus(QUEST_SINK_THE_SCOUT) == QUEST_STATUS_INCOMPLETE)
+                    bool sinking = ship->IsAIEnabled && ship->AI()->GetData(SHIP_DATA_SINKING) != 0;
+                    if (ship->IsAlive() && !sinking)
                     {
-                        // Check if ship is still alive (not already sunk)
-                        if (ship->IsAlive())
-                        {
-                            ship->DespawnOrUnsummon(1s);
-                            me->Whisper("The ship is escaping! You'll have to try again.",
-                                LANG_UNIVERSAL, player);
-                        }
+                        ship->DespawnOrUnsummon(1s);
+                        me->Whisper("The ship is escaping! You'll have to try again.",
+                            LANG_UNIVERSAL, player);
                     }
                 }
 
@@ -602,6 +600,23 @@ public:
             _hitCount = 0;
             _isSinking = false;
             _sinkTimer = 0;
+        }
+
+        uint32 GetData(uint32 type) const override
+        {
+            return (type == SHIP_DATA_SINKING && _isSinking) ? 1 : 0;
+        }
+
+        // Runs on every removal path (sunk, timed out, abandoned, GM despawn): drop all tracking for this ship.
+        void OnDespawn() override
+        {
+            ObjectGuid const shipGuid = me->GetGUID();
+            ShipLastRegisteredHitSec.erase(shipGuid);
+            ShipHitCount.erase(shipGuid);
+
+            auto it = PlayerShipMap.find(me->GetCreatorGUID());
+            if (it != PlayerShipMap.end() && it->second == shipGuid)
+                PlayerShipMap.erase(it);
         }
 
         // Called by cannon AI when a cannon spell is fired

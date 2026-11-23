@@ -3505,12 +3505,18 @@ namespace
                 if (itr != _contribution.end())
                     personal = itr->second;
 
-                // Dying on the sand doesn't forfeit anything, and neither does
-                // spending the battle at a far-off bunker; only spectators from a
-                // safe distance go without.
-                bool const atTheFront = player->GetDistance2d(FrontlineAnchor.x, FrontlineAnchor.y) <= FRONTLINE_REWARD_RADIUS;
-                if (personal == 0 && (!victory || !atTheFront))
+                // Dying on the sand doesn't forfeit anything, but War-Tokens need some
+                // contribution (a hit, or presence at a kill): parked alts at the front
+                // used to be paid for standing there.
+                if (personal == 0)
+                {
+                    bool const atTheFront =
+                        player->GetDistance2d(FrontlineAnchor.x, FrontlineAnchor.y) <= FRONTLINE_REWARD_RADIUS;
+                    if (victory && atTheFront)
+                        ChatHandler(player->GetSession()).SendSysMessage(
+                            "|cff00ff00[Invasion]|r Beach secured. Join the fighting to earn War-Tokens.");
                     return;
+                }
 
                 // War-Tokens: a flat showing-up reward plus contribution, scaled up
                 // by how dug-in the enemy was and how much of its plan the team

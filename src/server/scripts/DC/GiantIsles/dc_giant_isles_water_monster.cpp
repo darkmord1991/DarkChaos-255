@@ -12,7 +12,10 @@
 #include "MoveSplineInit.h"
 #include "ObjectMgr.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include "GameTime.h"
 #include <fmt/format.h>
+#include <mutex>
+#include <unordered_map>
 
 using namespace std::chrono_literals;
 
@@ -37,6 +40,11 @@ enum WaterMonsterData
 };
 
 static constexpr uint32 DESPAWN_IF_NOT_ATTACKED_MS = 2 * MINUTE * IN_MILLISECONDS;
+static constexpr uint32 STONE_COOLDOWN_SEC = 60;
+
+// Ancient Stone GUID -> game time (s) when it may summon again.
+static std::mutex sStoneCooldownLock;
+static std::unordered_map<ObjectGuid, uint32> sStoneReadyAt;
 
 static Position const GiantWaterMonsterPath[] =
 {
@@ -96,34 +104,37 @@ public:
         return go->GetEntry() == GO_ANCIENT_STONE;
     }
 
+    // Group size and "already awake" rules; checked again on select because a held GO menu can be
+    // selected later (and by several group members at once).
+    static bool CanDisturbWater(Player* player, GameObject* go)
+    {
+        // Allow GMs to bypass group requirements for testing
+        if (player->IsGameMaster())
+            return true;
+
+        Group* group = player->GetGroup();
+        uint8 memberCount = group ? group->GetMembersCount() : 0;
+        if (memberCount < 2 || memberCount > 5)
+        {
+            player->SendSystemMessage("You need a group of 2-5 players to disturb the water.");
+            return false;
+        }
+
+        if (go->FindNearestCreature(NPC_GIANT_WATER_MONSTER, 200.0f, true))
+        {
+            player->SendSystemMessage("The ancient terror is already awake!");
+            return false;
+        }
+
+        return true;
+    }
+
     bool OnGossipHello(Player* player, GameObject* go) override
     {
         LOG_DEBUG("scripts.dc.giantisles", "OnGossipHello by {}.", player->GetName());
 
-        // Allow GMs to bypass group requirements for testing
-        Group* group = player->GetGroup();
-        if (!player->IsGameMaster())
-        {
-            if (!group)
-            {
-                player->SendSystemMessage("You need a group of 2-5 players to disturb the water.");
-                return true;
-            }
-
-            uint8 memberCount = group->GetMembersCount();
-            if (memberCount < 2 || memberCount > 5)
-            {
-                player->SendSystemMessage("You need a group of 2-5 players to disturb the water.");
-                return true;
-            }
-        }
-
-        // Check if already spawned (non-GMs are prevented from starting if boss is active)
-        if (!player->IsGameMaster() && go->FindNearestCreature(NPC_GIANT_WATER_MONSTER, 200.0f, true))
-        {
-            player->SendSystemMessage("The ancient terror is already awake!");
+        if (!CanDisturbWater(player, go))
             return true;
-        }
 
         AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Throw the stone into the water", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
@@ -140,6 +151,23 @@ public:
         if (action == GOSSIP_ACTION_INFO_DEF + 1)
         {
             LOG_DEBUG("scripts.dc.giantisles", "OnGossipSelect by {}, attempting spawn.", player->GetName());
+
+            CloseGossipMenuFor(player);
+            if (!CanDisturbWater(player, go))
+                return true;
+
+            // Short per-stone cooldown on top of the awake check, so held menus cannot chain extra bosses.
+            uint32 const now = static_cast<uint32>(GameTime::GetGameTime().count());
+            {
+                std::lock_guard<std::mutex> guard(sStoneCooldownLock);
+                uint32& readyAt = sStoneReadyAt[go->GetGUID()];
+                if (!player->IsGameMaster() && readyAt > now)
+                {
+                    player->SendSystemMessage("The water is still settling. Try again shortly.");
+                    return true;
+                }
+                readyAt = now + STONE_COOLDOWN_SEC;
+            }
 
             player->CastSpell(player, SPELL_THROW_VISUAL, true);
 
