@@ -127,9 +127,11 @@ void WorldSession::HandleGossipSelectOptionOpcode(WorldPacket& recv_data)
     else if (guid.IsGameObject())
     {
         go = _player->GetMap()->GetGameObject(guid);
-        if (!go)
+        // DarkChaos: the same checks as CMSG_GAMEOBJ_USE. A menu stays open on the client, and without them it could be
+        // answered from anywhere on the map or after the object despawned (security audit 2026-11-18).
+        if (!go || !go->isSpawned() || !go->IsWithinDistInMap(_player, go->GetInteractionDistance()))
         {
-            LOG_DEBUG("network", "WORLD: HandleGossipSelectOptionOpcode - GameObject ({}) not found.", guid.ToString());
+            LOG_DEBUG("network", "WORLD: HandleGossipSelectOptionOpcode - GameObject ({}) not found or out of range.", guid.ToString());
             return;
         }
     }
