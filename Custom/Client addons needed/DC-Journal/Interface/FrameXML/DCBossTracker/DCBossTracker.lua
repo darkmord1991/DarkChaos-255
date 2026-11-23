@@ -732,6 +732,19 @@ function T.SetTimerFill(fraction)
     fill:Show()
 end
 
+-- "Forces 30/58 (51%)" plus whether the requirement is met, or nil when the run
+-- has no forces requirement (required 0 or missing). The count may pass the
+-- requirement; the percentage stops at 100.
+function T.FormatForces(current, required)
+    required = tonumber(required) or 0
+    if required <= 0 then
+        return nil
+    end
+    current = math.max(0, tonumber(current) or 0)
+    local pct = math.min(100, math.floor(current * 100 / required))
+    return string.format("Forces %d/%d (%d%%)", current, required, pct), current >= required
+end
+
 -- Public API for DC-MythicPlus (Core.lua): push the normalized HUD state.
 function T.SetMythicPlus(data)
     if type(data) ~= "table" then
@@ -751,6 +764,10 @@ function T.SetMythicPlus(data)
     m.affixes    = type(data.affixes) == "table" and data.affixes or {}
     m.bosses     = type(data.bosses) == "table" and data.bosses or {}
     m.enemies    = tonumber(data.enemiesKilled) or 0
+    -- Enemy forces: absent from an older server's payload (and when forces do
+    -- not gate the run), which keeps the plain "Enemies slain" line.
+    m.forces         = tonumber(data.forces) or 0
+    m.forcesRequired = tonumber(data.forcesRequired) or 0
     m.basisAt    = GetTime() or 0
     m.tickAccum  = 1 -- force an immediate tick
 
@@ -950,7 +967,13 @@ function T.LayoutMythicPlus()
             T.SetLine(shown, killed and T.ICON_CHECK or T.ICON_DASH, text, color[1], color[2], color[3])
         end
 
-        if m.enemies > 0 and shown < T.MAX_LINES then
+        local forcesText, forcesDone = T.FormatForces(m.forces, m.forcesRequired)
+        if forcesText and shown < T.MAX_LINES then
+            shown = shown + 1
+            local color = forcesDone and T.COLOR_DONE or T.COLOR_PENDING
+            T.SetLine(shown, forcesDone and T.ICON_CHECK or T.ICON_DASH, forcesText,
+                color[1], color[2], color[3])
+        elseif m.enemies > 0 and shown < T.MAX_LINES then
             shown = shown + 1
             T.SetLine(shown, T.ICON_DASH,
                 string.format("Enemies slain: %d", m.enemies),

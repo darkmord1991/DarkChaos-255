@@ -42,6 +42,7 @@
 #include "DC/AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_mythicplus.h"
+#include "DC/DungeonQoL/dc_dungeon_qol.h"
 #include "DC/GreatVault/GreatVault.h"
 #include <algorithm>
 #include <cmath>
@@ -62,6 +63,27 @@ constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
 constexpr uint64 MILLISECONDS_PER_SECOND = 1000;
 constexpr uint32 COUNTDOWN_BARRIER_ENTRY = 700003;
 constexpr uint32 COUNTDOWN_BARRIER_EARLY_DESPAWN_SECONDS = 1;
+
+// Time-graded keystone upgrade and its token bonus (MythicPlus.Upgrade.*).
+constexpr uint32 DEFAULT_UPGRADE_THREE_LEVELS_TIME_LEFT_PCT = 55;
+constexpr uint32 DEFAULT_UPGRADE_TWO_LEVELS_TIME_LEFT_PCT = 40;
+constexpr uint32 DEFAULT_UPGRADE_BONUS_TOKENS_PCT_PER_LEVEL = 25;
+constexpr uint8 UPGRADE_STEPS_TIMED = 1;
+constexpr uint8 UPGRADE_STEPS_TWO_LEVELS = 2;
+constexpr uint8 UPGRADE_STEPS_THREE_LEVELS = 3;
+constexpr uint32 PERCENT = 100;
+// Ceiling on the summed token bonus (grade + personal best), so a typo in the
+// config cannot mint thousands of tokens per run.
+constexpr uint32 MAX_TOKEN_BONUS_PCT = 500;
+
+// Enemy forces: share of the start-time hostile trash a run has to kill.
+constexpr float DEFAULT_FORCES_CLEAR_SHARE = 0.58f;
+// Absorbs float error in count * share, so 50 * 0.58 needs 29 and not 30.
+constexpr double FORCES_SHARE_EPSILON = 1e-6;
+constexpr uint32 FORCES_ANNOUNCE_STEP_PCT = 25;
+
+// Personal best token bonus.
+constexpr uint32 DEFAULT_PERSONAL_BEST_BONUS_PCT = 20;
 
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
 constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
@@ -462,8 +484,26 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->npcsKilled = 0;
     state->bossesKilled = 0;
     state->tokensAwarded = 0;
+    state->tokensByPlayer.clear();
+    state->tokenBonusPctByPlayer.clear();
+    state->personalBestPlayers.clear();
     state->upgradeLevel = 0;
+    state->upgradeSteps = 0;
+    state->timeLeftPct = 0;
     state->keystoneUpgraded = false;
+    state->deathPenaltySeconds = 0;
+    state->timePenaltyTotal = 0;
+    state->forcesGateCompletion = false;
+    state->forcesTotal = 0;
+    state->forcesRequired = 0;
+    state->forcesKilled = 0;
+    state->forcesRoster.clear();
+    state->forcesCounted.clear();
+    state->forcesAnnouncedSteps = 0;
+    state->forcesMissingAnnounced = false;
+    state->lastBossGuid.Clear();
+    state->lastBossEntry = 0;
+    state->personalBestSeconds.clear();
     state->deathsByPlayer.clear();
     state->deathsByBoss.clear();
     BuildBossTracking(state);
@@ -614,7 +654,7 @@ uint32 MythicPlusRunManager::GetKeystoneLevel(Map* map) const
 }
 
 bool MythicPlusRunManager::RespawnPlayerAtEntrance(Player* player,
-    float healthPct)
+    float healthPct, bool* atCheckpoint)
 {
     if (!player)
         return false;
@@ -634,10 +674,21 @@ bool MythicPlusRunManager::RespawnPlayerAtEntrance(Player* player,
 
     player->ResurrectPlayer(healthPct);
     player->SpawnCorpseBones();
-    TeleportPlayerToEntrance(player, map);
 
-    LOG_DEBUG("mythic.run", "Player {} released in Mythic+ +{} and was returned to the dungeon entrance",
-        player->GetName(), uint32(state->keystoneLevel));
+    // The last killed boss when nobody is fighting (DungeonQoL checkpoint release), else the entrance.
+    Position checkpoint;
+    bool const useCheckpoint = DC::DungeonQoL::GetMythicPlusReleaseCheckpoint(map, checkpoint);
+    if (useCheckpoint)
+        player->TeleportTo(map->GetId(), checkpoint.GetPositionX(), checkpoint.GetPositionY(),
+            checkpoint.GetPositionZ(), checkpoint.GetOrientation());
+    else
+        TeleportPlayerToEntrance(player, map);
+
+    if (atCheckpoint)
+        *atCheckpoint = useCheckpoint;
+
+    LOG_DEBUG("mythic.run", "Player {} released in Mythic+ +{} and was returned to the {}",
+        player->GetName(), uint32(state->keystoneLevel), useCheckpoint ? "last boss checkpoint" : "dungeon entrance");
     return true;
 }
 
@@ -678,6 +729,9 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
 
     AddParticipant(state, player);
     ++state->deaths;
+
+    // Before the forced HUD push below, so that push carries the new end time.
+    ApplyDeathTimePenalty(state, map, player);
 
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DEATHS, state->deaths);
     UpdateHud(state, map, true, "death");
@@ -800,13 +854,31 @@ void MythicPlusRunManager::HandleCreatureKill(Creature* creature, Unit* /*killer
     if (!state || state->completed || state->failed)
         return;
 
-    if (!creature->IsHostileToPlayers() || creature->IsPet() || creature->IsTotem())
-        return;
-
     if (IsBossCreature(creature))
         return; // Boss-specific handling occurs in HandleBossDeath
 
-    ++state->npcsKilled;
+    if (creature->IsHostileToPlayers() && !creature->IsPet() && !creature->IsTotem())
+        ++state->npcsKilled;
+
+    // Forces are checked separately from the statistic above: a creature on the
+    // start-time roster counts even if a script changed its faction since.
+    if (!CreditEnemyForces(state, creature))
+        return;
+
+    // No forced HUD push per trash kill (an AoE pull kills ten at once and each
+    // push is a DB write); the periodic snapshot carries the new count.
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::FORCES_CURRENT, state->forcesKilled);
+    AnnounceEnemyForcesProgress(state, map);
+
+    if (!AreCompletionObjectivesMet(state))
+        return;
+
+    // Every boss was already down: this kill finished the forces and the run.
+    // Hand the loot generator the last boss if its object is still on the map
+    // (corpse or awaiting respawn); a despawned summon boss resolves to null and
+    // GenerateBossLoot pays from the boss kill record alone.
+    Creature* lastBoss = state->lastBossGuid ? map->GetCreature(state->lastBossGuid) : nullptr;
+    CompleteRun(state, map, lastBoss);
 }
 
 void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
@@ -828,6 +900,8 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         return;
 
     ++state->bossesKilled;
+    state->lastBossGuid = creature->GetGUID();
+    state->lastBossEntry = creature->GetEntry();
 
     // Record boss death time for statistics
     state->bossDeathTimes.push_back(GameTime::GetGameTime().count());
@@ -857,7 +931,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         bossName + "|r (" + std::to_string(killedBosses) + "/" +
         std::to_string(totalBosses) + ")");
 
-    if (!AreCompletionObjectivesMet(state))
+    if (!AreBossObjectivesMet(state))
     {
         uint32 remainingBosses = (totalBosses > killedBosses) ?
             (totalBosses - killedBosses) : 0;
@@ -872,12 +946,29 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         return;
     }
 
+    if (!AreEnemyForcesMet(state))
+    {
+        // The run now completes on the trash kill that fills the forces
+        // (HandleCreatureKill), still against the par timer.
+        AnnounceMissingEnemyForces(state, map);
+        return;
+    }
+
+    CompleteRun(state, map, creature);
+}
+
+void MythicPlusRunManager::CompleteRun(InstanceState* state, Map* map, Creature* lastBoss)
+{
+    if (!state || !map)
+        return;
+
     state->completed = true;
     state->failed = false;
 
-    // Settle the par timer before anything reads it. A run finished past the
-    // par time still completes and still pays out, but it does not upgrade the
-    // keystone (see AutoUpgradeKeystone).
+    // Settle the par timer before anything reads it, against the end time the
+    // death penalties have pulled in. A run finished past it still completes
+    // and still pays out, but it does not upgrade the keystone (see
+    // AutoUpgradeKeystone).
     //
     // GetGameTime().count() is signed (chrono rep is long), so bind it to a
     // uint64 first rather than comparing it against timerEndsAt inline - that
@@ -889,16 +980,23 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         state->timerExpired = true;
     }
 
+    // The grade feeds the token bonus (AwardTokens) and the keystone
+    // (AutoUpgradeKeystone), so it is decided before either runs.
+    SettleRunGrade(state, completionTime);
+
     SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 1);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
     UpdateHud(state, map, true, "complete");
 
     // End-of-run reward mode: generate all loot now, never at kill time.
-    if (rewardsAtRunEndOnly)
-        GenerateBossLoot(creature, map, state);
+    // lastBoss is null only when the run completed on a trash kill after its
+    // last boss despawned; GenerateBossLoot then pays from bossKillStamps.
+    if (sConfigMgr->GetOption<bool>("MythicPlus.RewardsAtRunEndOnly", true))
+        GenerateBossLoot(lastBoss, map, state);
 
-    AwardTokens(state, creature->GetEntry());
-    RecordRunResult(state, true, creature->GetEntry());
+    uint32 const bossEntry = lastBoss ? lastBoss->GetEntry() : state->lastBossEntry;
+    AwardTokens(state, bossEntry);
+    RecordRunResult(state, true, bossEntry);
 
     // Automate keystone upgrade
     AutoUpgradeKeystone(state);
@@ -1695,6 +1793,20 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
 
     std::unordered_set<ObjectGuid::LowType> const credited = GetCreditedParticipants(state);
 
+    // Bonus percentages on top of the base payout. The timed grade pays every
+    // credited participant alike; the personal best bonus is per character and
+    // only for one who beat their own best time on this map and key level. Item
+    // drops are left alone: the only item knobs are per boss (BossItems /
+    // FinalBossItems), so the extra reward for a fast run is paid in tokens.
+    uint32 const timedBonusPct = state->completed && !state->failed
+        ? GetUpgradeTuning().bonusTokensPctPerLevel * state->upgradeSteps
+        : 0;
+    uint32 const personalBestBonusPct = sConfigMgr->GetOption<uint32>(
+        "MythicPlus.PersonalBestBonusPct", DEFAULT_PERSONAL_BEST_BONUS_PCT);
+    uint32 runDuration = 0;
+    if (uint64 const now = GameTime::GetGameTime().count(); state->startedAt && now >= state->startedAt)
+        runDuration = static_cast<uint32>(now - state->startedAt);
+
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
     {
@@ -1702,7 +1814,8 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         if (!player)
             continue;
 
-        if (!credited.count(player->GetGUID().GetCounter()))
+        ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
+        if (!credited.count(guidLow))
             continue;
 
         uint32 tokenCount;
@@ -1725,6 +1838,25 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
 
         tokenCount = std::max<uint32>(tokenCount, 1);
 
+        uint32 bonusPct = timedBonusPct;
+        if (personalBestBonusPct && state->completed && !state->failed && runDuration)
+        {
+            // Cache-only: WarmPersonalBests loaded it when the timer started.
+            auto const best = state->personalBestSeconds.find(guidLow);
+            if (best != state->personalBestSeconds.end() && best->second && runDuration < best->second)
+            {
+                bonusPct += personalBestBonusPct;
+                state->personalBestPlayers.insert(guidLow);
+            }
+        }
+
+        bonusPct = std::min(bonusPct, MAX_TOKEN_BONUS_PCT);
+        if (bonusPct)
+            tokenCount = static_cast<uint32>(uint64(tokenCount) * (PERCENT + bonusPct) / PERCENT);
+
+        state->tokensByPlayer[guidLow] = tokenCount;
+        state->tokenBonusPctByPlayer[guidLow] = bonusPct;
+
         ItemPosCountVec dest;
         if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, tokenEntry, tokenCount) == EQUIP_ERR_OK)
         {
@@ -1741,7 +1873,14 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
 
         // Addon users read the token count off the result frame instead.
         if (!PlayerUsesRunSummaryAddon(player))
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Awarded {} tokens.", tokenCount);
+        {
+            if (bonusPct)
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cff00ff00[Mythic+]|r Awarded {} tokens (+{}% bonus).", tokenCount, bonusPct);
+            else
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "|cff00ff00[Mythic+]|r Awarded {} tokens.", tokenCount);
+        }
 
         // Track tokens for run summary (only for keystone owner)
         if (player->GetGUID() == state->ownerGuid)
@@ -2343,10 +2482,30 @@ void MythicPlusRunManager::SendRunResultPayload(InstanceState* state, Player* pl
     payload << "\"enemiesKilled\":" << state->npcsKilled << ',';
     payload << "\"deaths\":" << uint32(state->deaths) << ',';
     payload << "\"wipes\":" << uint32(state->wipes) << ',';
-    payload << "\"tokensAwarded\":" << state->tokensAwarded << ',';
+
+    // Tokens are per player now (the personal best bonus is personal), so the
+    // viewer sees their own count; the owner's stays the fallback.
+    ObjectGuid::LowType viewerGuid = player->GetGUID().GetCounter();
+    auto const viewerTokens = state->tokensByPlayer.find(viewerGuid);
+    auto const viewerBonus = state->tokenBonusPctByPlayer.find(viewerGuid);
+    payload << "\"tokensAwarded\":"
+            << (viewerTokens != state->tokensByPlayer.end() ? viewerTokens->second : state->tokensAwarded) << ',';
+    payload << "\"tokenBonusPct\":"
+            << (viewerBonus != state->tokenBonusPctByPlayer.end() ? viewerBonus->second : 0u) << ',';
+    payload << "\"personalBest\":" << (state->personalBestPlayers.count(viewerGuid) ? 1 : 0) << ',';
+    payload << "\"upgradeSteps\":" << uint32(state->upgradeSteps) << ',';
+    payload << "\"timeLeftPct\":" << state->timeLeftPct << ',';
+    payload << "\"timed\":" << (state->completed && !state->failed && !state->timerExpired ? 1 : 0) << ',';
+    payload << "\"timePenalty\":" << state->timePenaltyTotal << ',';
+    // Absent unless forces gated this run, so an addon can tell "not tracked"
+    // from "0 killed".
+    if (state->forcesGateCompletion)
+    {
+        payload << "\"forces\":" << state->forcesKilled << ',';
+        payload << "\"forcesRequired\":" << state->forcesRequired << ',';
+    }
 
     // Only this player's own rewards - loot is personal, not group-wide.
-    ObjectGuid::LowType viewerGuid = player->GetGUID().GetCounter();
     payload << "\"rewards\":[";
     bool firstReward = true;
     for (InstanceState::LootAward const& award : state->lootAwards)
@@ -2424,6 +2583,13 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     handler.PSendSysMessage("|cffffd700Keystone Level:|r +{}",
         static_cast<uint32>(state->keystoneLevel));
     handler.PSendSysMessage("|cffffd700Duration:|r {} min {} sec", minutes, seconds);
+    if (state->timerExpired)
+        handler.SendSysMessage("|cffffd700Timer:|r |cffff6600Over par|r");
+    else
+        handler.PSendSysMessage("|cffffd700Timer:|r |cff00ff00Timed|r with {}% of par left (+{})",
+            state->timeLeftPct, static_cast<uint32>(state->upgradeSteps));
+    if (state->timePenaltyTotal)
+        handler.PSendSysMessage("|cffffd700Death penalties:|r -{} sec", state->timePenaltyTotal);
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
 
     // Combat statistics
@@ -2432,6 +2598,9 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
         "|cffffffffBosses Killed:|r {}", state->bossesKilled));
     handler.SendSysMessage(Acore::StringFormat(
         "|cffffffffEnemies Killed:|r {}", state->npcsKilled));
+    if (state->forcesGateCompletion)
+        handler.SendSysMessage(Acore::StringFormat(
+            "|cffffffffEnemy Forces:|r {}/{}", state->forcesKilled, state->forcesRequired));
     handler.SendSysMessage(Acore::StringFormat(
         "|cffffffffTotal Deaths:|r {}", static_cast<uint32>(state->deaths)));
     handler.SendSysMessage(Acore::StringFormat(
@@ -2439,9 +2608,19 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
 
     // Rewards
+    ObjectGuid::LowType const viewerGuid = player->GetGUID().GetCounter();
+    auto const viewerTokens = state->tokensByPlayer.find(viewerGuid);
+    auto const viewerBonus = state->tokenBonusPctByPlayer.find(viewerGuid);
+    uint32 const tokens = viewerTokens != state->tokensByPlayer.end() ? viewerTokens->second : state->tokensAwarded;
+    uint32 const bonusPct = viewerBonus != state->tokenBonusPctByPlayer.end() ? viewerBonus->second : 0u;
     handler.SendSysMessage("|cffff8000Rewards:|r");
-    handler.SendSysMessage(Acore::StringFormat(
-        "|cffffffffTokens Awarded:|r {}", state->tokensAwarded));
+    if (bonusPct)
+        handler.SendSysMessage(Acore::StringFormat(
+            "|cffffffffTokens Awarded:|r {} (+{}% bonus{})", tokens, bonusPct,
+            state->personalBestPlayers.count(viewerGuid) ? ", new personal best" : ""));
+    else
+        handler.SendSysMessage(Acore::StringFormat(
+            "|cffffffffTokens Awarded:|r {}", tokens));
 
     if (state->keystoneUpgraded)
     {
@@ -2466,15 +2645,71 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
 
     handler.SendSysMessage("|cff00ff00========================================|r");
 
-    // Performance message
+    // Performance message. The keystone grade comes from the time left, not
+    // from deaths (deaths only cost time through the death penalty).
+    if (state->timerExpired)
+        handler.SendSysMessage("|cffff6600Over the timer - beat the par time to upgrade the keystone.|r");
+    else if (state->upgradeSteps >= UPGRADE_STEPS_THREE_LEVELS)
+        handler.SendSysMessage("|cff00ff00Blazing fast - timed for +3!|r");
+    else if (state->upgradeSteps == UPGRADE_STEPS_TWO_LEVELS)
+        handler.SendSysMessage("|cff00ff00Excellent pace - timed for +2!|r");
+    else
+        handler.SendSysMessage("|cffffaa00Timed!|r");
+
     if (state->deaths == 0)
         handler.SendSysMessage("|cff00ff00Flawless Victory - No Deaths!|r");
-    else if (state->deaths <= 5)
-        handler.SendSysMessage("|cff00ff00Excellent Performance!|r");
-    else if (state->deaths <= 10)
-        handler.SendSysMessage("|cffffaa00Good Effort!|r");
-    else
-        handler.SendSysMessage("|cffff6600Room for Improvement!|r");
+}
+
+MythicPlusRunManager::UpgradeTuning MythicPlusRunManager::GetUpgradeTuning()
+{
+    UpgradeTuning tuning;
+    tuning.threeLevelsTimeLeftPct = std::min(PERCENT, sConfigMgr->GetOption<uint32>(
+        "MythicPlus.Upgrade.ThreeLevelsTimeLeftPct", DEFAULT_UPGRADE_THREE_LEVELS_TIME_LEFT_PCT));
+    tuning.twoLevelsTimeLeftPct = std::min(PERCENT, sConfigMgr->GetOption<uint32>(
+        "MythicPlus.Upgrade.TwoLevelsTimeLeftPct", DEFAULT_UPGRADE_TWO_LEVELS_TIME_LEFT_PCT));
+    tuning.downgradeWhenOverTime = sConfigMgr->GetOption<bool>("MythicPlus.Upgrade.DowngradeWhenOverTime", false);
+    tuning.bonusTokensPctPerLevel = sConfigMgr->GetOption<uint32>(
+        "MythicPlus.Upgrade.BonusTokensPctPerLevel", DEFAULT_UPGRADE_BONUS_TOKENS_PCT_PER_LEVEL);
+    return tuning;
+}
+
+uint8 MythicPlusRunManager::GradeTimedRun(uint32 timeLeftPct, UpgradeTuning const& tuning)
+{
+    if (timeLeftPct >= tuning.threeLevelsTimeLeftPct)
+        return UPGRADE_STEPS_THREE_LEVELS;
+
+    if (timeLeftPct >= tuning.twoLevelsTimeLeftPct)
+        return UPGRADE_STEPS_TWO_LEVELS;
+
+    return UPGRADE_STEPS_TIMED;
+}
+
+// Grades a completed run by the share of the par time still left, measured
+// against the end time the death penalties pulled in. The par itself
+// (hudTimerDuration) is the denominator, so a death costs the same share at any
+// point of the run.
+void MythicPlusRunManager::SettleRunGrade(InstanceState* state, uint64 completionTime)
+{
+    if (!state)
+        return;
+
+    state->upgradeSteps = 0;
+    state->timeLeftPct = 0;
+
+    if (state->timerExpired)
+        return;
+
+    // No par timer configured: the run cannot be graded on time, so it earns
+    // the plain timed upgrade.
+    if (!state->timerEndsAt || !state->hudTimerDuration)
+    {
+        state->upgradeSteps = UPGRADE_STEPS_TIMED;
+        return;
+    }
+
+    uint64 const timeLeft = state->timerEndsAt > completionTime ? state->timerEndsAt - completionTime : 0;
+    state->timeLeftPct = static_cast<uint32>(std::min<uint64>(PERCENT, timeLeft * PERCENT / state->hudTimerDuration));
+    state->upgradeSteps = GradeTimedRun(state->timeLeftPct, GetUpgradeTuning());
 }
 
 void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
@@ -2484,34 +2719,22 @@ void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
 
     ObjectGuid::LowType ownerGuidLow = state->ownerGuid.GetCounter();
     uint8 currentLevel = state->keystoneLevel;
+    bool const downgradeWhenOverTime = GetUpgradeTuning().downgradeWhenOverTime;
 
-    // Calculate upgrade based on death performance
-    // 0-5 deaths = +2 levels
-    // 6-10 deaths = +1 level
-    // 11-14 deaths = same level
-    // 15+ deaths = downgrade (but shouldn't happen as run fails at 15)
+    // Graded by time, not deaths (SettleRunGrade): a timed run gains
+    // upgradeSteps levels (+1, +2 with TwoLevelsTimeLeftPct of par left, +3
+    // with ThreeLevelsTimeLeftPct). Deaths cost time through the death penalty
+    // and fail the run at the death budget. Over par the key holds its level,
+    // or loses one with MythicPlus.Upgrade.DowngradeWhenOverTime.
+    int32 levelDelta = 0;
+    if (!state->timerExpired)
+        levelDelta = state->upgradeSteps;
+    else if (downgradeWhenOverTime)
+        levelDelta = -1;
 
-    uint8 newLevel = currentLevel;
-
-    if (state->deaths <= 5)
-        newLevel = std::min<uint8>(MythicPlusConstants::MAX_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel + 2));
-    else if (state->deaths <= 10)
-        newLevel = std::min<uint8>(MythicPlusConstants::MAX_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel + 1));
-    else if (state->deaths <= 14)
-        newLevel = currentLevel; // Maintain same level
-    else
-        newLevel = std::max<uint8>(MythicPlusConstants::MIN_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel - 1)); // Downgrade
-
-    // Beating the dungeon is not enough - it has to be beaten inside the par
-    // timer. Without this the countdown was decorative: a group could take any
-    // amount of time and still bank a two-level upgrade purely on death count.
-    if (state->timerExpired && newLevel > currentLevel)
-    {
-        LOG_INFO("mythic.run",
-                 "Run for instance {} finished over the par timer; holding keystone at +{} instead of +{}",
-                 state->instanceId, uint32(currentLevel), uint32(newLevel));
-        newLevel = currentLevel;
-    }
+    uint8 const newLevel = static_cast<uint8>(std::clamp<int32>(
+        static_cast<int32>(currentLevel) + levelDelta,
+        MythicPlusConstants::MIN_KEYSTONE_LEVEL, MythicPlusConstants::MAX_KEYSTONE_LEVEL));
 
     state->upgradeLevel = newLevel;
     state->keystoneUpgraded = true;
@@ -2519,15 +2742,20 @@ void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
     PersistKeystoneLevel(ownerGuidLow, newLevel);
     GenerateNewKeystone(ownerGuidLow, newLevel);
 
+    // The chest tier is the grade the run earned (0 over par). It equals the
+    // levels gained except at the keystone cap, where the key cannot climb but
+    // the run still earned - and was paid for - its grade.
     if (Map* map = sMapMgr->FindMap(state->mapId, state->instanceId))
     {
-        uint32 chestTier = newLevel > currentLevel ? static_cast<uint32>(newLevel - currentLevel) : 0;
-        SetHudWorldState(state, map, MythicPlusConstants::Hud::CHEST_TIER, chestTier);
+        SetHudWorldState(state, map, MythicPlusConstants::Hud::CHEST_TIER, state->upgradeSteps);
         UpdateHud(state, map, true, "upgrade");
     }
 
-    LOG_INFO("mythic.run", "Auto-upgraded keystone for player {} from +{} to +{} (deaths: {})",
-             ownerGuidLow, currentLevel, newLevel, state->deaths);
+    LOG_INFO("mythic.run",
+             "Keystone for player {}: +{} -> +{} ({}, {}% of par left, grade +{}, deaths {}, death penalty {}s)",
+             ownerGuidLow, uint32(currentLevel), uint32(newLevel),
+             state->timerExpired ? "over par" : "timed", state->timeLeftPct,
+             uint32(state->upgradeSteps), state->deaths, state->timePenaltyTotal);
 }
 
 namespace
@@ -2927,7 +3155,16 @@ bool MythicPlusRunManager::VoteToCancelRun(Player* player, Map* map)
     }
 
     uint32 requiredVotes = sConfigMgr->GetOption<uint32>("MythicPlus.CancellationVotesRequired", 2);
-    uint32 currentVotes = state->cancellationVotes.size();
+
+    // Participants are never removed, so only votes of characters inside the instance right now count:
+    // otherwise one person could vote, leave, and vote again on an alt.
+    uint32 currentVotes = 0;
+    for (auto const& ref : map->GetPlayers())
+    {
+        Player* present = ref.GetSource();
+        if (present && state->cancellationVotes.count(present->GetGUID().GetCounter()))
+            ++currentVotes;
+    }
 
     // Announce vote
     AnnounceToInstance(map, Acore::StringFormat(
@@ -3147,6 +3384,17 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     ApplyKeystoneScaling(map, state->keystoneLevel);
     state->scalingApplied = true;
 
+    // Snapshot the per-kill/per-death tuning for the whole run, so neither hot
+    // path reads config and a config reload cannot change a running run. The
+    // roster is taken here, after the activation respawn has settled behind
+    // the countdown barrier (instances keep every grid loaded, so the spawn
+    // store covers the whole dungeon). botRun is known by now: StartBotRun
+    // sets it right after activation, well before the countdown ends.
+    state->deathPenaltySeconds = sConfigMgr->GetOption<uint32>(
+        "MythicPlus.DeathTimePenaltySeconds", MythicPlusConstants::DEFAULT_DEATH_TIME_PENALTY_SECONDS);
+    state->timePenaltyTotal = 0;
+    BuildEnemyForcesRoster(state, map);
+
     // Remove root spell from all players to allow movement
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
@@ -3174,7 +3422,13 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     SetHudWorldState(state, map, MythicPlusConstants::Hud::KEYSTONE_LEVEL, state->keystoneLevel);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DUNGEON_ID, state->mapId);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, state->totalBosses);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::FORCES_CURRENT, state->forcesKilled);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::FORCES_REQUIRED,
+        state->forcesGateCompletion ? state->forcesRequired : 0);
     UpdateHud(state, map, true, "start");
+
+    // Needs startedAt (the callbacks match on it) and the final participant set.
+    WarmPersonalBests(state);
 
     // Withdraw the standalone DENC boss tracker: the group may have walked in
     // and had it drawn well before the keystone was activated, and from here the
@@ -3227,6 +3481,10 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     }
 
     AnnounceToInstance(map, "|cff00ff00Mythic+ timer started! Good luck!|r");
+    if (state->forcesGateCompletion)
+        AnnounceToInstance(map, Acore::StringFormat(
+            "|cffff8000[Mythic+]|r Defeat every boss and |cffffffff{}|r of the {} enemies to complete the run.",
+            state->forcesRequired, state->forcesTotal));
 
     LOG_INFO("mythic.run", "Started Mythic+ run for instance {} (map {}) at keystone level +{}",
              state->instanceId, state->mapId, state->keystoneLevel);
@@ -3401,6 +3659,8 @@ void MythicPlusRunManager::InitializeHud(InstanceState* state, Map* map)
     SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 0);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10));
     SetHudWorldState(state, map, MythicPlusConstants::Hud::CHEST_TIER, 0);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::FORCES_CURRENT, 0);
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::FORCES_REQUIRED, 0);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_DURATION, state->hudTimerDuration);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::OWNER_GUID_LOW, state->ownerGuid.GetCounter());
 
@@ -3475,27 +3735,71 @@ void MythicPlusRunManager::ProcessHudUpdates()
         if (!map)
             continue;
 
-        // Par timer. This is the only place the countdown is compared against
-        // the clock during a run; previously timerEndsAt was written once and
-        // then only ever read for display, so running out of time had no
-        // effect whatsoever.
-        if (!state.timerExpired && !state.completed && !state.failed &&
-            state.startedAt && state.timerEndsAt && now >= state.timerEndsAt)
-        {
-            state.timerExpired = true;
-            AnnounceToInstance(map,
-                "|cffff0000[Mythic+]|r Time is up! The dungeon can still be completed, "
-                "but the keystone will not be upgraded.");
-            LOG_INFO("mythic.run", "Par timer expired for instance {} (map {}, +{})",
-                     state.instanceId, state.mapId, uint32(state.keystoneLevel));
-            UpdateHud(&state, map, true, "timer_expired");
-        }
+        // Par timer. Compared against the clock here every sweep, and right
+        // after a death penalty pulls the end time in (ApplyDeathTimePenalty).
+        CheckParTimerExpired(&state, map, now);
 
         if (!hudEnabled && !aioEnabled)
             continue;
 
         ProcessHudUpdatesInternal(&state, map);
     }
+}
+
+bool MythicPlusRunManager::CheckParTimerExpired(InstanceState* state, Map* map, uint64 now)
+{
+    // Previously timerEndsAt was written once and then only ever read for
+    // display, so running out of time had no effect whatsoever.
+    if (!state || !map || state->timerExpired || state->completed || state->failed ||
+        !state->startedAt || !state->timerEndsAt || now < state->timerEndsAt)
+    {
+        return false;
+    }
+
+    state->timerExpired = true;
+    AnnounceToInstance(map, GetUpgradeTuning().downgradeWhenOverTime
+        ? "|cffff0000[Mythic+]|r Time is up! The dungeon can still be completed, "
+          "but the keystone will lose a level."
+        : "|cffff0000[Mythic+]|r Time is up! The dungeon can still be completed, "
+          "but the keystone will not be upgraded.");
+    LOG_INFO("mythic.run", "Par timer expired for instance {} (map {}, +{}, death penalty {}s)",
+             state->instanceId, state->mapId, uint32(state->keystoneLevel), state->timePenaltyTotal);
+    UpdateHud(state, map, true, "timer_expired");
+    return true;
+}
+
+void MythicPlusRunManager::ApplyDeathTimePenalty(InstanceState* state, Map* map, Player* victim)
+{
+    if (!state || !map || !state->deathPenaltySeconds)
+        return;
+
+    // Only while the par timer is running: a death in the countdown has no
+    // timer to shorten, and past par there is nothing left to take.
+    if (!state->startedAt || !state->timerEndsAt || state->timerExpired)
+        return;
+
+    // Never before the start, so the HUD cannot be handed an end time in the
+    // past of the run itself.
+    uint64 const earliestEnd = state->startedAt;
+    uint64 const penalty = state->deathPenaltySeconds;
+    uint64 const newEnd = state->timerEndsAt > earliestEnd + penalty
+        ? state->timerEndsAt - penalty
+        : earliestEnd;
+    uint32 const applied = static_cast<uint32>(state->timerEndsAt - newEnd);
+    if (!applied)
+        return;
+
+    state->timerEndsAt = newEnd;
+    state->timePenaltyTotal += applied;
+
+    AnnounceToInstance(map, Acore::StringFormat(
+        "|cffff8000[Mythic+]|r {} died: |cffff0000-{}s|r on the timer.",
+        victim ? victim->GetName() : std::string("A player"), applied));
+
+    // The caller pushes the HUD next (forced "death" update), which is how the
+    // HUD learns the new end time: TIMER_REMAINING and the snapshot's
+    // "remaining" are both computed from timerEndsAt.
+    CheckParTimerExpired(state, map, static_cast<uint64>(GameTime::GetGameTime().count()));
 }
 
 void MythicPlusRunManager::ProcessHudUpdatesInternal(InstanceState* state, Map* map)
@@ -3671,6 +3975,18 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << "\"keyChange\":" << keyChange << ',';
     payload << "\"reason\":\"" << EscapeJson(reason) << "\",";
     payload << "\"bestTime\":" << bestTime << ',';
+    // Seconds the death penalty took off the par: "remaining" already counts
+    // it, "duration" stays the full par, so the effective limit is the difference.
+    payload << "\"timePenalty\":" << state->timePenaltyTotal << ',';
+    payload << "\"upgradeSteps\":" << uint32(state->upgradeSteps) << ',';
+    // Absent unless forces gate this run: the addon hides the counter when the
+    // field is missing (old server, forces off, exempt bot run).
+    if (state->forcesGateCompletion)
+    {
+        payload << "\"forces\":" << state->forcesKilled << ',';
+        payload << "\"forcesRequired\":" << state->forcesRequired << ',';
+        payload << "\"forcesTotal\":" << state->forcesTotal << ',';
+    }
 
     payload << "\"affixes\":[";
     for (size_t i = 0; i < state->activeAffixes.size(); ++i)
@@ -3847,6 +4163,226 @@ bool MythicPlusRunManager::IsFinalBossEncounter(InstanceState const* state, Crea
 }
 
 bool MythicPlusRunManager::AreCompletionObjectivesMet(InstanceState const* state) const
+{
+    return AreBossObjectivesMet(state) && AreEnemyForcesMet(state);
+}
+
+bool MythicPlusRunManager::AreEnemyForcesMet(InstanceState const* state) const
+{
+    if (!state)
+        return false;
+
+    return !state->forcesGateCompletion || state->forcesKilled >= state->forcesRequired;
+}
+
+// The filter for "enemy forces": hostile trash the group is meant to fight.
+// No alive check here - CreditEnemyForces runs it on a corpse; the roster
+// builder adds IsAlive() itself.
+bool MythicPlusRunManager::IsEnemyForcesCandidate(Creature const* creature) const
+{
+    if (!creature)
+        return false;
+
+    // Placed in the world DB. Summons (affix adds, boss adds, totems, pets)
+    // carry no spawn id; checking IsSummon as well keeps that true even if a
+    // script ever hands one a spawn id.
+    if (!creature->GetSpawnId() || creature->IsSummon() || creature->IsPet() ||
+        creature->IsTotem() || creature->IsGuardian() || creature->IsControlledByPlayer())
+    {
+        return false;
+    }
+
+    // Critters, triggers/stalkers, civilians and creatures that cannot fight
+    // or cannot be targeted would inflate the count with things nobody kills.
+    if (creature->IsCritter() || creature->IsTrigger() || creature->IsCivilian() ||
+        creature->HasFlagsExtra(CREATURE_FLAG_EXTRA_CANNOT_ENTER_COMBAT) ||
+        creature->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+    {
+        return false;
+    }
+
+    // Same hostility test the kill statistic and the keystone scaling use.
+    if (!creature->IsHostileToPlayers())
+        return false;
+
+    return !IsBossCreature(creature);
+}
+
+void MythicPlusRunManager::BuildEnemyForcesRoster(InstanceState* state, Map* map)
+{
+    if (!state || !map)
+        return;
+
+    state->forcesGateCompletion = false;
+    state->forcesTotal = 0;
+    state->forcesRequired = 0;
+    state->forcesKilled = 0;
+    state->forcesRoster.clear();
+    state->forcesCounted.clear();
+    state->forcesAnnouncedSteps = 0;
+    state->forcesMissingAnnounced = false;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.Forces.Enable", true))
+        return;
+
+    // mod-dungeon-clear drives bot-only runs and may route past trash packs,
+    // so those runs only need forces when the realm asks for it. A group made
+    // only of bots counts as one even without the botRun flag (it is set just
+    // after activation returns, so a zero-length countdown could beat it here).
+    bool const botOnly = state->botRun ||
+        (!state->participants.empty() && state->bots.size() >= state->participants.size());
+    if (botOnly && !sConfigMgr->GetOption<bool>("MythicPlus.Forces.RequiredForBotRuns", false))
+        return;
+
+    float const share = std::clamp(sConfigMgr->GetOption<float>(
+        "MythicPlus.Forces.ClearShare", DEFAULT_FORCES_CLEAR_SHARE), 0.0f, 1.0f);
+    if (share <= 0.0f)
+        return;
+
+    // The store is a multimap and can briefly hold two objects for one spawn
+    // id around a respawn; the set counts each spawn once.
+    for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+    {
+        (void)spawnId;
+        if (!creature || creature->GetMap() != map || !creature->IsInWorld() || !creature->IsAlive())
+            continue;
+
+        if (IsEnemyForcesCandidate(creature))
+            state->forcesRoster.insert(creature->GetSpawnId());
+    }
+
+    state->forcesTotal = static_cast<uint32>(state->forcesRoster.size());
+    if (!state->forcesTotal)
+    {
+        LOG_INFO("mythic.run", "Enemy forces: no hostile trash in instance {} (map {}); bosses alone complete the run",
+                 state->instanceId, state->mapId);
+        return;
+    }
+
+    uint32 const required = static_cast<uint32>(std::ceil(
+        static_cast<double>(state->forcesTotal) * share - FORCES_SHARE_EPSILON));
+    state->forcesRequired = std::clamp<uint32>(required, 1, state->forcesTotal);
+    state->forcesGateCompletion = true;
+
+    LOG_INFO("mythic.run", "Enemy forces for instance {} (map {}, +{}): {} of {} hostile trash required ({:.0f}%)",
+             state->instanceId, state->mapId, uint32(state->keystoneLevel),
+             state->forcesRequired, state->forcesTotal, share * PERCENT);
+}
+
+// Credits one trash kill. A spawn id counts once for the whole run (a
+// respawned copy is not new forces), and only if it was on the start roster or
+// passes the same filter now - so a DB spawn that appeared after the start
+// counts, a summon never does.
+bool MythicPlusRunManager::CreditEnemyForces(InstanceState* state, Creature const* creature)
+{
+    if (!state || !creature || !state->forcesGateCompletion || !state->startedAt)
+        return false;
+
+    ObjectGuid::LowType const spawnId = creature->GetSpawnId();
+    if (!spawnId || creature->IsSummon() || state->forcesCounted.count(spawnId))
+        return false;
+
+    bool const onRoster = state->forcesRoster.erase(spawnId) > 0;
+    if (!onRoster && !IsEnemyForcesCandidate(creature))
+        return false;
+
+    state->forcesCounted.insert(spawnId);
+    ++state->forcesKilled;
+    return true;
+}
+
+void MythicPlusRunManager::AnnounceEnemyForcesProgress(InstanceState* state, Map* map)
+{
+    if (!state || !map || !state->forcesGateCompletion || !state->forcesRequired)
+        return;
+
+    uint32 const pct = state->forcesKilled >= state->forcesRequired
+        ? PERCENT
+        : state->forcesKilled * PERCENT / state->forcesRequired;
+    uint8 const steps = static_cast<uint8>(pct / FORCES_ANNOUNCE_STEP_PCT);
+    if (steps <= state->forcesAnnouncedSteps)
+        return;
+
+    state->forcesAnnouncedSteps = steps;
+    AnnounceToInstance(map, Acore::StringFormat(
+        "|cffff8000[Mythic+]|r Enemy forces: |cff00ff00{}%|r ({}/{})",
+        steps * FORCES_ANNOUNCE_STEP_PCT, state->forcesKilled, state->forcesRequired));
+}
+
+void MythicPlusRunManager::AnnounceMissingEnemyForces(InstanceState* state, Map* map)
+{
+    if (!state || !map || state->forcesMissingAnnounced || !state->forcesGateCompletion)
+        return;
+
+    if (state->forcesKilled >= state->forcesRequired)
+        return;
+
+    state->forcesMissingAnnounced = true;
+    uint32 const missing = state->forcesRequired - state->forcesKilled;
+    // Rounded up, so "0% missing" is never shown while an enemy is still needed.
+    uint32 const missingPct = (missing * PERCENT + state->forcesRequired - 1) / state->forcesRequired;
+    AnnounceToInstance(map, Acore::StringFormat(
+        "|cffffa500[Mythic+]|r All bosses defeated - {}% of the enemy forces still needed ({} more {}).",
+        missingPct, missing, missing == 1 ? "enemy" : "enemies"));
+}
+
+// Loads each non-bot participant's best successful time on this map and key
+// level, one async prepared query each (at most a group's worth). The results
+// land on the world thread through DCAddon::EnqueueQueryCallback and are matched
+// back to this run by instance key + start time, so a late answer for a run
+// that already ended (or a recycled instance) is dropped. Nothing waits on them:
+// a participant whose answer has not arrived by the payout simply gets no
+// personal best bonus. Bots are skipped, as for the history achievements.
+void MythicPlusRunManager::WarmPersonalBests(InstanceState* state)
+{
+    if (!state || !state->startedAt || !state->keystoneLevel)
+        return;
+
+    state->personalBestSeconds.clear();
+    if (!sConfigMgr->GetOption<uint32>("MythicPlus.PersonalBestBonusPct", DEFAULT_PERSONAL_BEST_BONUS_PCT))
+        return;
+
+    uint64 const instanceKey = state->instanceKey;
+    uint64 const startedAt = state->startedAt;
+
+    for (ObjectGuid::LowType const guidLow : state->participants)
+    {
+        if (state->bots.count(guidLow))
+            continue;
+
+        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_PERSONAL_BEST);
+        stmt->SetData(0, guidLow);
+        stmt->SetData(1, state->mapId);
+        stmt->SetData(2, static_cast<uint32>(state->keystoneLevel));
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(stmt)
+            .WithPreparedCallback([this, instanceKey, startedAt, guidLow](PreparedQueryResult result)
+        {
+            if (!result)
+                return;
+
+            Field const* fields = result->Fetch();
+            if (fields[0].IsNull())
+                return;
+
+            uint32 const best = fields[0].Get<uint32>();
+            if (!best)
+                return;
+
+            std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+            auto itr = _instanceStates.find(instanceKey);
+            if (itr == _instanceStates.end() || itr->second.startedAt != startedAt ||
+                itr->second.completed || itr->second.failed)
+            {
+                return;
+            }
+
+            itr->second.personalBestSeconds[guidLow] = best;
+        }));
+    }
+}
+
+bool MythicPlusRunManager::AreBossObjectivesMet(InstanceState const* state) const
 {
     if (!state)
         return false;

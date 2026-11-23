@@ -68,6 +68,10 @@ namespace MythicPlusConstants
     constexpr float MYTHIC_BASE_MULTIPLIER = 2.0f;
     constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 
+    // Seconds a counted death takes off the par timer (MythicPlus.DeathTimePenaltySeconds).
+    // Shared so the keystone tooltip quotes the same default the run applies.
+    constexpr uint32 DEFAULT_DEATH_TIME_PENALTY_SECONDS = 5;
+
     /**
      * Get keystone level from item ID
      * @param itemId Item entry from item_template
@@ -208,6 +212,11 @@ namespace MythicPlusConstants
         constexpr uint32 OWNER_GUID_LOW        = WORLD_STATE_BASE + 13;
         constexpr uint32 TIMER_DURATION        = WORLD_STATE_BASE + 14;
         constexpr uint32 COUNTDOWN_REMAINING   = WORLD_STATE_BASE + 15;
+        // Enemy forces (MythicPlus.Forces.*): trash killed / trash the run needs.
+        // Required stays 0 while forces do not gate completion (switched off,
+        // exempt bot run, or a dungeon with no trash), which hides the counter.
+        constexpr uint32 FORCES_CURRENT        = WORLD_STATE_BASE + 16;
+        constexpr uint32 FORCES_REQUIRED       = WORLD_STATE_BASE + 17;
 
         constexpr uint32 BOSS_ENTRY_BASE       = WORLD_STATE_BASE + 32;
         constexpr uint32 BOSS_KILLTIME_BASE    = WORLD_STATE_BASE + 64;

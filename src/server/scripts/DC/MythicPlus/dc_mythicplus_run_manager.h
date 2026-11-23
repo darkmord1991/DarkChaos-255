@@ -48,6 +48,21 @@ public:
         std::string description;
     };
 
+    // Time-graded keystone upgrade (MythicPlus.Upgrade.*). Read from config on
+    // each call; only completion and the keystone tooltip ask for it. The
+    // defaults live in GetUpgradeTuning, the single reader.
+    struct UpgradeTuning
+    {
+        uint32 threeLevelsTimeLeftPct = 0;
+        uint32 twoLevelsTimeLeftPct = 0;
+        bool downgradeWhenOverTime = false;
+        uint32 bonusTokensPctPerLevel = 0;
+    };
+
+    static UpgradeTuning GetUpgradeTuning();
+    // Levels a TIMED run earns for the given share of par left: 1, 2 or 3.
+    static uint8 GradeTimedRun(uint32 timeLeftPct, UpgradeTuning const& tuning);
+
     // Define InstanceState first so it can be used in method signatures
     struct InstanceState
     {
@@ -67,10 +82,20 @@ public:
         uint32 npcsKilled = 0;         // Total non-boss hostile creatures killed
         uint32 bossesKilled = 0;       // Boss creatures killed
         uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
+        // Per credited participant: tokens paid and the bonus percent in them
+        // (timed grade + personal best), so each result frame shows its own.
+        std::unordered_map<ObjectGuid::LowType, uint32> tokensByPlayer;
+        std::unordered_map<ObjectGuid::LowType, uint32> tokenBonusPctByPlayer;
+        std::unordered_set<ObjectGuid::LowType> personalBestPlayers;
         std::vector<uint64> bossDeathTimes; // Timestamps of boss deaths for statistics
         std::map<uint32, uint32> deathsByPlayer; // Player GUID Low -> Count
         std::map<uint32, uint32> deathsByBoss;   // Boss Entry -> Count (deaths during encounter)
         uint8 upgradeLevel = 0;        // New keystone level after upgrade
+        // Timed grade, decided once at completion (SettleRunGrade) so the
+        // keystone, the token bonus and the CHEST_TIER worldstate agree:
+        // 0 = over par, otherwise 1-3 levels earned by the share of par left.
+        uint8 upgradeSteps = 0;
+        uint32 timeLeftPct = 0;        // Percent of par left at completion (0 over par)
         bool failed = false;
         bool completed = false;
         bool tokensGranted = false;
@@ -103,6 +128,32 @@ public:
         // HUD was purely decorative: nothing ever compared timerEndsAt against
         // the clock, so a run could take any length of time and still upgrade.
         bool timerExpired = false;
+        // Death time penalty (MythicPlus.DeathTimePenaltySeconds), snapshotted
+        // when the timer starts so a config reload cannot change a running
+        // run. timePenaltyTotal is how far timerEndsAt has been pulled in.
+        uint32 deathPenaltySeconds = 0;
+        uint32 timePenaltyTotal = 0;
+        // Enemy forces (MythicPlus.Forces.*). The roster is the spawn ids of
+        // the living hostile trash counted when the timer started; a spawn id
+        // is credited once (forcesCounted), so a respawned copy cannot be
+        // farmed and summons never count. All of it stays empty while forces
+        // do not gate completion (forcesGateCompletion false).
+        bool forcesGateCompletion = false;
+        uint32 forcesTotal = 0;
+        uint32 forcesRequired = 0;
+        uint32 forcesKilled = 0;
+        std::unordered_set<ObjectGuid::LowType> forcesRoster;
+        std::unordered_set<ObjectGuid::LowType> forcesCounted;
+        uint8 forcesAnnouncedSteps = 0;     // 25% steps already announced
+        bool forcesMissingAnnounced = false; // "all bosses down, forces missing" said once
+        // Last boss killed, so a run that completes on a trash kill can still
+        // hand GenerateBossLoot that boss when it is resolvable.
+        ObjectGuid lastBossGuid;
+        uint32 lastBossEntry = 0;
+        // Each non-bot participant's best successful time on this map and key
+        // level from dc_mplus_runs, loaded asynchronously when the timer starts
+        // (WarmPersonalBests). Missing = no record or not loaded yet.
+        std::unordered_map<ObjectGuid::LowType, uint32> personalBestSeconds;
         uint64 lastHudBroadcast = 0;
         uint64 lastAioBroadcast = 0;
         uint32 hudTimerDuration = 0;
@@ -159,7 +210,8 @@ public:
         KeystoneDescriptor& outDescriptor, std::string& outErrorText,
         uint8 forcedKeystoneLevel = 0);
     uint32 GetKeystoneLevel(Map* map) const;
-    bool RespawnPlayerAtEntrance(Player* player, float healthPct = 0.5f);
+    // Resurrects a released player at the last killed boss (DC.CheckpointRelease.MythicPlus) or the entrance.
+    bool RespawnPlayerAtEntrance(Player* player, float healthPct = 0.5f, bool* atCheckpoint = nullptr);
 
     // Participation tracking
     void RegisterPlayerEnter(Player* player);
@@ -310,7 +362,31 @@ private:
     void DespawnCountdownBarrier(InstanceState* state, Map* map) const;
     void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
     bool AreCompletionObjectivesMet(InstanceState const* state) const;
+    bool AreBossObjectivesMet(InstanceState const* state) const;
+    bool AreEnemyForcesMet(InstanceState const* state) const;
     bool IsFinalBossEncounter(InstanceState const* state, Creature const* creature) const;
+
+    // Completion: the single success path, reached from a boss kill or - once
+    // every boss is down - from the trash kill that fills the enemy forces.
+    // lastBoss may be null on the trash path (the boss is no longer resolvable).
+    void CompleteRun(InstanceState* state, Map* map, Creature* lastBoss);
+    // Settles the 0-3 upgrade grade (and the share of par left) against the
+    // penalised end time. timerExpired must already be settled.
+    void SettleRunGrade(InstanceState* state, uint64 completionTime);
+    // Flips timerExpired once the (penalised) par end time has passed. True when
+    // this call did it.
+    bool CheckParTimerExpired(InstanceState* state, Map* map, uint64 now);
+    void ApplyDeathTimePenalty(InstanceState* state, Map* map, Player* victim);
+
+    // Enemy forces
+    bool IsEnemyForcesCandidate(Creature const* creature) const;
+    void BuildEnemyForcesRoster(InstanceState* state, Map* map);
+    bool CreditEnemyForces(InstanceState* state, Creature const* creature);
+    void AnnounceEnemyForcesProgress(InstanceState* state, Map* map);
+    void AnnounceMissingEnemyForces(InstanceState* state, Map* map);
+
+    // Personal best token bonus: async load at timer start, cache-only at payout.
+    void WarmPersonalBests(InstanceState* state);
 
     // Seasonal validation and affix system (NEW)
     bool IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const;

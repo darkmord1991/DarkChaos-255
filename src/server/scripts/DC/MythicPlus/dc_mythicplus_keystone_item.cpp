@@ -151,6 +151,8 @@ public:
             handler.SendSysMessage("|cffffffff   Short countdown before the timer starts|r");
             handler.SendSysMessage("|cffffffff   All players teleported to entrance|r");
             handler.SendSysMessage("|cffffffff   Defeat every boss before the timer runs out|r");
+            if (sConfigMgr->GetOption<bool>("MythicPlus.Forces.Enable", true))
+                handler.SendSysMessage("|cffffffff   ...and slay enough of the enemy forces|r");
             handler.SendSysMessage("|cffffffff   Rewards are handed out at the end of the run|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffaaaaaa[Keystone is consumed when activated at Font of Power]|r");
@@ -209,11 +211,26 @@ public:
             handler.SendSysMessage("|cffffffff  Awarded on completion|r");
             handler.SendSysMessage("|cffffffff  Used for gear upgrades|r");
             handler.SendSysMessage(" ");
-            handler.SendSysMessage("|cffffd700Keystone Upgrade (Auto):|r");
-            handler.SendSysMessage("|cff00ff00  0-5 deaths: +2 levels|r");
-            handler.SendSysMessage("|cffffff00  6-10 deaths: +1 level|r");
-            handler.SendSysMessage("|cffffaa00  11+ deaths: Same level|r");
-            handler.SendSysMessage("|cffff6600  Over the timer: no upgrade|r");
+            // Graded by the share of the par time left (MythicPlus.Upgrade.*),
+            // so quote the configured thresholds rather than restating them.
+            MythicPlusRunManager::UpgradeTuning const tuning = MythicPlusRunManager::GetUpgradeTuning();
+            handler.SendSysMessage("|cffffd700Keystone Upgrade (Auto, by time left):|r");
+            handler.SendSysMessage(Acore::StringFormat("|cff00ff00  {}%+ of the timer left: +3 levels|r",
+                tuning.threeLevelsTimeLeftPct));
+            handler.SendSysMessage(Acore::StringFormat("|cff00ff00  {}%+ of the timer left: +2 levels|r",
+                tuning.twoLevelsTimeLeftPct));
+            handler.SendSysMessage("|cffffff00  Timed: +1 level|r");
+            handler.SendSysMessage(tuning.downgradeWhenOverTime
+                ? "|cffff6600  Over the timer: -1 level|r"
+                : "|cffffaa00  Over the timer: same level|r");
+            uint32 const deathPenalty = sConfigMgr->GetOption<uint32>("MythicPlus.DeathTimePenaltySeconds",
+                MythicPlusConstants::DEFAULT_DEATH_TIME_PENALTY_SECONDS);
+            if (deathPenalty)
+                handler.SendSysMessage(Acore::StringFormat(
+                    "|cffff6600  Each death: -{} sec on the timer|r", deathPenalty));
+            if (tuning.bonusTokensPctPerLevel)
+                handler.SendSysMessage(Acore::StringFormat("|cff00ff00  +{}% tokens per level earned|r",
+                    tuning.bonusTokensPctPerLevel));
             handler.SendSysMessage("|cffff6600  Failed run: -1 level|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Weekly Vault:|r");

@@ -446,9 +446,20 @@ void MythicPlusRunManager::LoadLootTable()
 }
 
 // MythicPlusRunManager is at global scope, not in a namespace
+// boss may be null on exactly one path: the run-end payout of a run that
+// completed on a trash kill (enemy forces) after its last boss's object left
+// the map (MythicPlusRunManager::CompleteRun). The boss is only needed for
+// three things here, and each has a safe stand-in:
+//   - clearing its native loot: nothing to clear, its kill-time loot was
+//     already suppressed (ShouldSuppressLoot is true while the run is active);
+//   - the final-boss flag: completion means every boss is down, which is what
+//     IsFinalBossEncounter reports for the last boss anyway;
+//   - the per-boss dedupe id: 0, and finalBossLootGranted guards the repeat.
+// The item count itself comes from bossKillStamps in run-end mode, not from
+// the boss passed in.
 void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceState* state)
 {
-    if (!boss || !map || !state)
+    if (!map || !state)
         return;
 
     if (state->keystoneLevel == 0)
@@ -462,19 +473,29 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     if (rewardsAtRunEndOnly && !state->completed)
         return;
 
-    bool suppressNativeLoot = ShouldSuppressLoot(boss);
-    boss->SetLootRecipient(nullptr);
-    boss->loot.clear();
-    boss->loot.gold = 0;
-    boss->ResetLootMode();
-    boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+    // Kill-time loot (legacy mode) always names its boss.
+    if (!boss && !rewardsAtRunEndOnly)
+        return;
 
-    if (suppressNativeLoot)
+    std::string const bossName = boss ? boss->GetName() : std::string("run completion");
+
+    if (boss)
     {
-        LOG_DEBUG("mythic.loot", "Suppressed native loot for {} (entry {}) in Mythic+ run {}", boss->GetName(), boss->GetEntry(), state->instanceId);
+        bool suppressNativeLoot = ShouldSuppressLoot(boss);
+        boss->SetLootRecipient(nullptr);
+        boss->loot.clear();
+        boss->loot.gold = 0;
+        boss->ResetLootMode();
+        boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+
+        if (suppressNativeLoot)
+        {
+            LOG_DEBUG("mythic.loot", "Suppressed native loot for {} (entry {}) in Mythic+ run {}",
+                boss->GetName(), boss->GetEntry(), state->instanceId);
+        }
     }
 
-    bool isFinalBoss = IsFinalBossEncounter(state, boss);
+    bool isFinalBoss = boss ? IsFinalBossEncounter(state, boss) : true;
     if (isFinalBoss)
     {
         if (state->finalBossLootGranted)
@@ -484,27 +505,34 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
         }
     }
 
-    uint32 lootTrackingId = boss->GetSpawnId();
-    if (!lootTrackingId)
-        lootTrackingId = boss->GetEntry();
+    uint32 lootTrackingId = 0;
+    if (boss)
+    {
+        lootTrackingId = boss->GetSpawnId();
+        if (!lootTrackingId)
+            lootTrackingId = boss->GetEntry();
+    }
 
     if (!state->lootGrantedBosses.insert(lootTrackingId).second)
     {
         LOG_DEBUG("mythic.loot", "Loot already generated for boss {} (entry {}) in instance {}",
-                  boss->GetName(), boss->GetEntry(), state->instanceId);
+                  bossName, boss ? boss->GetEntry() : 0u, state->instanceId);
         return;
     }
 
     if (isFinalBoss)
         state->finalBossLootGranted = true;
 
+    // Credited participants only (in the run from its start): a character invited before the last boss
+    // must not share the fixed item count. Items are handed to present players, so ghosts outside are skipped.
+    std::unordered_set<ObjectGuid::LowType> const credited = GetCreditedParticipants(state);
     std::vector<Player*> participants;
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
     {
         if (Player* player = ref.GetSource())
         {
-            if (state->participants.find(player->GetGUID().GetCounter()) != state->participants.end())
+            if (credited.count(player->GetGUID().GetCounter()))
                 participants.push_back(player);
         }
     }
@@ -582,7 +610,7 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     uint32 itemsGenerated = 0;
 
     LOG_INFO("mythic.loot", "Boss {} preparing {} spec-tailored item{} (M+{}, final: {}, rewardsAtRunEndOnly: {}). Eligible players: {}",
-             boss->GetName(), itemsRequested, itemsRequested == 1 ? "" : "s",
+             bossName, itemsRequested, itemsRequested == 1 ? "" : "s",
              state->keystoneLevel, isFinalBoss ? "yes" : "no",
              rewardsAtRunEndOnly ? "yes" : "no", participants.size());
 

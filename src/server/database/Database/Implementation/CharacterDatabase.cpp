@@ -681,6 +681,13 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "SELECT COALESCE(MIN(completion_time), 0) FROM dc_mplus_runs WHERE map_id = ? AND keystone_level = ? AND success = 1",
         CONNECTION_SYNCH);
 
+    // One character's best successful time on a map and key level (personal best token bonus).
+    // MIN() stays NULL without a successful run; the caller treats NULL as "no record".
+    PrepareStatement(CHAR_SEL_MPLUS_PERSONAL_BEST,
+        "SELECT MIN(completion_time) FROM dc_mplus_runs "
+        "WHERE character_guid = ? AND map_id = ? AND keystone_level = ? AND success = 1",
+        CONNECTION_ASYNC);
+
     PrepareStatement(CHAR_INS_MPLUS_SCORE,
         "INSERT INTO dc_mplus_scores (character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs) "
         "VALUES (?, ?, ?, ?, ?, UNIX_TIMESTAMP(), 1) "

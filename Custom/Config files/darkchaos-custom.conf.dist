@@ -2726,6 +2726,114 @@ MythicPlus.CancellationTimeout = 180
 MythicPlus.Keystone.Enabled = 1
 
 # -----------------------------------------------------------------------------
+# Keystone Upgrade (time-graded) & Run Rewards
+# -----------------------------------------------------------------------------
+# A completed run is graded by the share of the par timer still left when it
+# ends, measured against the end time the death penalty has pulled in (see
+# MythicPlus.DeathTimePenaltySeconds). Deaths no longer grade the upgrade
+# directly; they cost time, and the death budget still fails the run.
+#
+#     timed, >= ThreeLevelsTimeLeftPct of par left   ->  +3
+#     timed, >= TwoLevelsTimeLeftPct of par left     ->  +2
+#     timed                                          ->  +1
+#     over par                                       ->  same level
+#                                                        (-1 with DowngradeWhenOverTime)
+#
+# The new level is clamped to +2..+20. The grade is also the HUD chest tier
+# and drives the token bonus below; at the +20 cap the key cannot climb, but
+# the run still earns its grade's chest tier and tokens.
+
+#
+#    MythicPlus.Upgrade.ThreeLevelsTimeLeftPct
+#        Description: Percent of the par timer that must still be left for a
+#                     +3 upgrade (0-100).
+#        Default:     55
+#
+MythicPlus.Upgrade.ThreeLevelsTimeLeftPct = 55
+
+#
+#    MythicPlus.Upgrade.TwoLevelsTimeLeftPct
+#        Description: Percent of the par timer that must still be left for a
+#                     +2 upgrade (0-100). Keep it at or below the +3 value.
+#        Default:     40
+#
+MythicPlus.Upgrade.TwoLevelsTimeLeftPct = 40
+
+#
+#    MythicPlus.Upgrade.DowngradeWhenOverTime
+#        Description: A run completed over the par timer depletes the keystone
+#                     by one level instead of keeping it.
+#        Default:     0 (Keep the level)
+#
+MythicPlus.Upgrade.DowngradeWhenOverTime = 0
+
+#
+#    MythicPlus.Upgrade.BonusTokensPctPerLevel
+#        Description: Extra end-of-run tokens per level the timed grade earned:
+#                     tokens x (1 + this x grade / 100). With 25, a +3 run pays
+#                     +75%, a +1 run +25%, an over-par run no bonus. Item drops
+#                     are unchanged (MythicPlus.BossItems / .FinalBossItems).
+#                     The summed bonus (with the personal best below) is capped
+#                     at +500%. 0 disables.
+#        Default:     25
+#
+MythicPlus.Upgrade.BonusTokensPctPerLevel = 25
+
+#
+#    MythicPlus.PersonalBestBonusPct
+#        Description: Extra end-of-run tokens (percent, added to the grade
+#                     bonus) for each participant who beats their own best
+#                     successful time on that dungeon and keystone level, read
+#                     from dc_mplus_runs. The first clear of a map + level has
+#                     no record to beat and pays no bonus. Loaded
+#                     asynchronously when the timer starts; bots and players
+#                     who join after the start are not looked up. 0 disables
+#                     (and skips the lookups).
+#        Default:     20
+#
+MythicPlus.PersonalBestBonusPct = 20
+
+# -----------------------------------------------------------------------------
+# Enemy Forces
+# -----------------------------------------------------------------------------
+# When the timer starts, the living hostile trash in the instance is counted:
+# creatures hostile to players, placed in the world DB (no summons, pets,
+# totems or guardians), not bosses, not critters, triggers, civilians,
+# unselectable or combat-disabled creatures. A run then needs every boss AND
+# ClearShare of that count (rounded up, at least 1) killed. Each spawn counts
+# once, so respawns and summons cannot be farmed. If the last boss dies first,
+# the run completes on the trash kill that fills the forces - still against the
+# par timer. A dungeon with no countable trash completes on bosses alone.
+# The HUD shows "Forces x/y (z%)"; progress is announced at 25/50/75/100%.
+
+#
+#    MythicPlus.Forces.Enable
+#        Description: Require enemy forces for Mythic+ completion.
+#        Default:     1 (Enabled)
+#
+MythicPlus.Forces.Enable = 1
+
+#
+#    MythicPlus.Forces.ClearShare
+#        Description: Share of the start-time hostile trash that must be killed
+#                     (0.0-1.0). Below 1.0 on purpose: the count includes
+#                     packs off the route and event creatures nobody fights.
+#        Default:     0.58
+#
+MythicPlus.Forces.ClearShare = 0.58
+
+#
+#    MythicPlus.Forces.RequiredForBotRuns
+#        Description: Also require enemy forces in bot-only runs (started by
+#                     mod-playerbots / mod-dungeon-clear). Off because
+#                     dungeon-clear may route past trash: with this on and a
+#                     route that skips too much, a bot run never completes.
+#                     Mixed groups (players with bots) always need forces.
+#        Default:     0 (Exempt)
+#
+MythicPlus.Forces.RequiredForBotRuns = 0
+
+# -----------------------------------------------------------------------------
 # Loot Configuration
 # -----------------------------------------------------------------------------
 
@@ -2896,10 +3004,23 @@ MythicPlus.RunSummary.UseAddonUI = 1
 
 #
 #    MythicPlus.DeathBudget.Enabled
-#        Description: Enable death budget tracking (time penalties)
+#        Description: Fail the run once the dungeon's death budget
+#                     (dc_dungeon_mythic_profile) is reached. The per-death
+#                     time penalty is separate: MythicPlus.DeathTimePenaltySeconds.
 #        Default:     1 (Enabled)
 #
 MythicPlus.DeathBudget.Enabled = 1
+
+#
+#    MythicPlus.DeathTimePenaltySeconds
+#        Description: Seconds each counted player death takes off the par
+#                     timer while it runs (announced as "-5s"). The HUD timer,
+#                     the time-up check and the upgrade grade all use the
+#                     shortened end time. Read when the timer starts.
+#                     0 disables.
+#        Default:     5
+#
+MythicPlus.DeathTimePenaltySeconds = 5
 
 #
 #    MythicPlus.WipeBudget.Enabled

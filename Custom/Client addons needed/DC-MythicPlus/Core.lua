@@ -1694,11 +1694,39 @@ local function GetClientNowSeconds()
     return 0
 end
 
+-- The par the HUD counts down to: "duration" is the full par, and each death
+-- takes MythicPlus.DeathTimePenaltySeconds off it ("timePenalty", the total so
+-- far). The server's "remaining" already includes the penalty; an older server
+-- sends no timePenalty, which leaves the plain duration.
+local function GetEffectiveTimerMax(data)
+    local maxSec = tonumber(data and (data.duration or data.timeLimit) or 0) or 0
+    local penalty = tonumber(data and data.timePenalty or 0) or 0
+    if maxSec > 0 and penalty > 0 then
+        maxSec = math.max(0, maxSec - penalty)
+    end
+    return maxSec
+end
+namespace.GetEffectiveTimerMax = GetEffectiveTimerMax
+
+-- Enemy forces line, "Forces 30/58 (51%)", and whether the requirement is met.
+-- Nil when the payload carries no requirement: an older server, forces switched
+-- off, or an exempt bot run - the HUD then keeps the plain enemy count.
+local function FormatForcesLine(data)
+    local required = tonumber(data and data.forcesRequired or 0) or 0
+    if required <= 0 then
+        return nil
+    end
+    local current = math.max(0, tonumber(data.forces or 0) or 0)
+    local pct = math.min(100, math.floor(current * 100 / required))
+    return string.format("Forces %d/%d (%d%%)", current, required, pct), current >= required
+end
+namespace.FormatForcesLine = FormatForcesLine
+
 local function BuildTimerLine(data)
     local elapsedSec = tonumber(data and data.elapsed or 0) or 0
     local remainingSec = tonumber(data and data.remaining or 0) or 0
 
-    local maxSec = tonumber(data and (data.duration or data.timeLimit) or 0) or 0
+    local maxSec = GetEffectiveTimerMax(data)
     if maxSec <= 0 then
         maxSec = elapsedSec + remainingSec
     end
@@ -1741,8 +1769,14 @@ local function BuildTimerLine(data)
         line = line .. string.format("  |cff8fd0ff(%s left)|r", FormatSeconds(remainingSec))
     end
 
+    local penalty = tonumber(data and data.timePenalty or 0) or 0
+    if penalty > 0 then
+        line = line .. string.format("  |cffff5555(-%ds deaths)|r", penalty)
+    end
+
     return line
 end
+namespace.BuildTimerLine = BuildTimerLine
 
 local function BuildFullTimerLine(data)
     local timerLine = BuildTimerLine(data)
@@ -2093,12 +2127,26 @@ local function ShowRunResultPopup(data, success)
     end
 
     resultDungeonText:SetText(string.format("Dungeon: %s  |  Keystone: +%d", mapName or "Unknown", keyLevel))
-    resultDurationText:SetText("Duration: " .. FormatSeconds(elapsed))
-    resultBossesText:SetText(string.format("Bosses: %d / %d  |  Enemies: %d", bossesKilled, bossesTotal, enemiesKilled))
+    local durationLine = "Duration: " .. FormatSeconds(elapsed)
+    local timePenalty = tonumber(data.timePenalty or 0) or 0
+    if timePenalty > 0 then
+        durationLine = durationLine .. string.format("  (-%ds death penalty)", timePenalty)
+    end
+    resultDurationText:SetText(durationLine)
+    -- Forces replace the plain enemy count when the server sends them.
+    local forcesLine = FormatForcesLine(data)
+    resultBossesText:SetText(string.format("Bosses: %d / %d  |  %s", bossesKilled, bossesTotal,
+        forcesLine or string.format("Enemies: %d", enemiesKilled)))
     resultDeathsText:SetText(string.format("Deaths: %d  |  Wipes: %d", deaths, wipes))
 
     if success then
-        resultRewardsText:SetText(string.format("Tokens Awarded: %d", tokensAwarded))
+        local tokenBonusPct = tonumber(data.tokenBonusPct or 0) or 0
+        if tokenBonusPct > 0 then
+            resultRewardsText:SetText(string.format("Tokens Awarded: %d  (+%d%%%s)", tokensAwarded, tokenBonusPct,
+                IsFlagSet(data.personalBest) and ", personal best" or ""))
+        else
+            resultRewardsText:SetText(string.format("Tokens Awarded: %d", tokensAwarded))
+        end
         resultRewardsText:SetTextColor(1.00, 0.85, 0.35, 1)
         resultKeystoneText:SetText(BuildKeystoneResultLine(data, keyLevel))
         resultKeystoneText:SetTextColor(0.75, 0.92, 1.00, 1)
@@ -2784,7 +2832,7 @@ local function NormalizeHudState(data)
         data._timerElapsedBase = tonumber(data.elapsed or 0) or 0
         data._timerRemainingBase = tonumber(data.remaining or 0) or 0
 
-        local maxSec = tonumber(data.duration or data.timeLimit or 0) or 0
+        local maxSec = GetEffectiveTimerMax(data)
         if maxSec <= 0 then
             maxSec = data._timerElapsedBase + data._timerRemainingBase
         end
@@ -2937,7 +2985,12 @@ local function UpdateFrameFromState(data)
     bossText:SetText(BuildBossLine(data.bossesKilled or 0, data.bossesTotal or 0))
 
     if enemyText then
-        enemyText:SetText(string.format("Enemies: %d", data.enemiesKilled or 0))
+        local forcesLine, forcesDone = FormatForcesLine(data)
+        if forcesLine then
+            enemyText:SetText(forcesDone and ("|cff50ff7a" .. forcesLine .. "|r") or forcesLine)
+        else
+            enemyText:SetText(string.format("Enemies: %d", data.enemiesKilled or 0))
+        end
     end
 
     affixText:SetText(BuildAffixLine(data.affixes))

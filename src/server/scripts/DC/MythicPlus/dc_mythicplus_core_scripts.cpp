@@ -779,10 +779,13 @@ public:
         if (!map || !map->IsDungeon())
             return true;
 
-        if (!sMythicRuns->RespawnPlayerAtEntrance(player))
+        bool atCheckpoint = false;
+        if (!sMythicRuns->RespawnPlayerAtEntrance(player, 0.5f, &atCheckpoint))
             return true;
 
-        ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r You have been resurrected at the dungeon entrance.");
+        ChatHandler(player->GetSession()).PSendSysMessage(atCheckpoint
+            ? "|cffff8000[Mythic+]|r You have been resurrected at the last defeated boss."
+            : "|cffff8000[Mythic+]|r You have been resurrected at the dungeon entrance.");
         return false;
     }
 
