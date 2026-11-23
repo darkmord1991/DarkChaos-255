@@ -5819,6 +5819,67 @@ DC.BossKit.TrashSpellCap.Threshold = 0
 DC.BossKit.TrashSpellCap.ExcessDivisor = 20
 
 ###############################################################################
+# GAMEPLAY SCENARIO TEST HARNESS
+#
+#  src/server/scripts/DC/GameplayTest, runner + schema in apps/gameplay-test.
+#  .dca test run|validate|status|abort|list (administrator; console and SOAP;
+#  in game only from the lab account). Never touches other accounts.
+#
+###############################################################################
+
+#
+#    DC.GameplayTest.Enable
+#    DC.GameplayTest.Account
+#        Description: Turn the harness on and name the lab account whose characters it may use or create.
+#        Default:     0, "" (off)
+#
+
+DC.GameplayTest.Enable = 0
+DC.GameplayTest.Account = ""
+
+#
+#    DC.GameplayTest.ScenarioDir
+#    DC.GameplayTest.OutputDir
+#        Description: Where scenario JSON files are read from and JSON reports are written to (relative to
+#                     the worldserver's working directory unless absolute).
+#        Default:     "gameplay-tests/scenarios", "gameplay-tests/reports"
+#
+
+DC.GameplayTest.ScenarioDir = "gameplay-tests/scenarios"
+DC.GameplayTest.OutputDir = "gameplay-tests/reports"
+
+#
+#    DC.GameplayTest.PhaseMask
+#        Description: Phase mask given to the run's characters and spawns, so normal players never see them.
+#        Default:     2147483648
+#
+
+DC.GameplayTest.PhaseMask = 2147483648
+
+#
+#    DC.GameplayTest.MaxRunMs
+#    DC.GameplayTest.MaxActors
+#    DC.GameplayTest.MaxSpawns
+#        Description: Limits per run: wall time, characters and spawned creatures/objects.
+#        Default:     600000, 5, 50
+#
+
+DC.GameplayTest.MaxRunMs = 600000
+DC.GameplayTest.MaxActors = 5
+DC.GameplayTest.MaxSpawns = 50
+
+#
+#    DC.GameplayTest.AllowCreateCharacters
+#    DC.GameplayTest.AllowDestructive
+#        Description: Whether the harness may create characters on the lab account, and whether scenarios
+#                     marked destructive (for example a prestige reset) may run.
+#        Default:     1, 0
+#
+
+DC.GameplayTest.AllowCreateCharacters = 1
+DC.GameplayTest.AllowDestructive = 0
+
+###############################################################################
 # END OF CONFIGURATION FILE
 ###############################################################################
 
