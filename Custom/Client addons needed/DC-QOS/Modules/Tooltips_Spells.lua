@@ -822,6 +822,17 @@ local function GetClientSpellDescription(spellId)
 
     description = description:gsub("\r\n", "\n"):gsub("\r", "\n")
     description = description:gsub("^%s+", ""):gsub("%s+$", "")
+
+    -- The export returns the body before the engine's text pass, so WoW's
+    -- plural codes are still raw: "$d" of one hour comes back as
+    -- "1 |4hour:hrs;". The engine picks the singular after the number 1 and
+    -- the plural otherwise; do the same, or the line shows the raw code (and
+    -- never matches the native line, so both get shown).
+    description = description:gsub("(%d+%.?%d*)(%s*)|4([^:;|]*):([^;|]*);", function(number, space, one, many)
+        return number .. space .. ((tonumber(number) == 1) and one or many)
+    end)
+    description = description:gsub("|4([^:;|]*):([^;|]*);", "%2")
+
     if description == "" then
         TT.TelemetryInc("spell", "clientDescriptionEmptyBody")
         return nil
@@ -1075,9 +1086,11 @@ end
 -- Retail-style white numbers inside gold body text. Lua-rendered tooltip
 -- lines honor inline |c escapes (the engine-side AddLine path does not,
 -- which is why this cannot live in the DLL). Skips text that already
--- carries color codes (server-colored bodies, the mount line).
+-- carries color codes (server-colored bodies, the mount line) or any other
+-- escape: a digit inside one (the 4 of a "|4hour:hrs;" plural code) must not
+-- be wrapped in a color, which breaks the escape.
 local function ColorizeBodyNumbers(text)
-    if type(text) ~= "string" or text == "" or text:find("|c", 1, true) then
+    if type(text) ~= "string" or text == "" or text:find("|", 1, true) then
         return text
     end
     if addon.settings and addon.settings.tooltips
