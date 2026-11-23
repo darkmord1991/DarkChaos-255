@@ -1888,6 +1888,11 @@ void GameEventMgr::SendWorldStateUpdate(Player* player, uint16 eventId)
     }
 }
 
+// A game event hook can take its own object out of the map store while this walk stands on it:
+// a dead dynamic-spawn creature told to Respawn(), or a creature told to despawn, goes through
+// AddObjectToRemoveList -> RemoveFromWorld at once, which frees the store node the loop is on
+// (DarkChaos crash 2026-11-21: Leprithus 572, "On Game Event 89 Start - Respawn" on his dead
+// spawn). So collect the guids first and look each one up again before calling into its AI.
 class GameEventAIHookWorker
 {
 public:
@@ -1895,22 +1900,47 @@ public:
 
     void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
     {
-        for (auto const& p : creatureMap)
-            if (p.second->IsInWorld() && !p.second->IsDuringRemoveFromWorld() && p.second->FindMap() && p.second->IsAIEnabled && p.second->AI())
-                p.second->AI()->sOnGameEvent(_activate, _eventId);
+        for (ObjectGuid const& guid : CollectGuids(creatureMap))
+        {
+            auto const itr = creatureMap.find(guid);
+            if (itr == creatureMap.end())
+                continue;
+
+            Creature* creature = itr->second;
+            if (creature->IsInWorld() && !creature->IsDuringRemoveFromWorld() && creature->FindMap() &&
+                creature->IsAIEnabled && creature->AI())
+                creature->AI()->sOnGameEvent(_activate, _eventId);
+        }
     }
 
     void Visit(std::unordered_map<ObjectGuid, GameObject*>& gameObjectMap)
     {
-        for (auto const& p : gameObjectMap)
-            if (p.second->IsInWorld() && p.second->FindMap() && p.second->AI())
-                p.second->AI()->OnGameEvent(_activate, _eventId);
+        for (ObjectGuid const& guid : CollectGuids(gameObjectMap))
+        {
+            auto const itr = gameObjectMap.find(guid);
+            if (itr == gameObjectMap.end())
+                continue;
+
+            GameObject* gameObject = itr->second;
+            if (gameObject->IsInWorld() && gameObject->FindMap() && gameObject->AI())
+                gameObject->AI()->OnGameEvent(_activate, _eventId);
+        }
     }
 
     template<class T>
     void Visit(std::unordered_map<ObjectGuid, T*>&) { }
 
 private:
+    template<class T>
+    static std::vector<ObjectGuid> CollectGuids(std::unordered_map<ObjectGuid, T*> const& objects)
+    {
+        std::vector<ObjectGuid> guids;
+        guids.reserve(objects.size());
+        for (auto const& p : objects)
+            guids.push_back(p.first);
+        return guids;
+    }
+
     uint16 _eventId;
     bool _activate;
 };
