@@ -173,6 +173,7 @@ void AddSC_dc_gameplay_test();                // GameplayTest/dc_gameplay_test.c
 void AddSC_dc_lab_probe();                    // LabTools/dc_lab_probe.cpp
 void AddSC_dc_bug_report();                   // LabTools/dc_bug_report.cpp
 void AddSC_dc_accountwide_taxi();             // Progression/Accountwide/dc_accountwide_taxi.cpp
+void AddSC_dc_third_profession();             // Progression/dc_third_profession.cpp
 void AddSC_dc_dungeon_qol();                  // DungeonQoL/dc_dungeon_qol.cpp (battle res charges, checkpoint release)
 void AddSC_dc_raid_flex();                    // RaidFlex/dc_raid_flex.cpp
 void AddSC_dc_boss_kit();                     // BossKit/dc_boss_kit.cpp
@@ -617,6 +618,7 @@ void AddDCScripts()
 
     // Account-wide flight paths, third profession slot, personal XP rate (.dc xp).
     DC_LOAD(AddSC_dc_accountwide_taxi);
+    DC_LOAD(AddSC_dc_third_profession);
     // Battle resurrection charges and checkpoint release (DC.BattleRes.*, DC.CheckpointRelease.*); registers its
     // internal scripts itself.
     DC_LOAD(AddSC_dc_dungeon_qol);
