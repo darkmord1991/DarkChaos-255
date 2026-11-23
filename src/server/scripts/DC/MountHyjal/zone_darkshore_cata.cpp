@@ -776,6 +776,8 @@ enum FoolhardyAdventurer
 // Back on the beach, clear of the wreck (HavenCore's point; map 750 keeps the
 // Kalimdor coordinates).
 Position const FoolhardyShorePos = { 7746.35f, -405.84f, 1.5f, 6.088f };
+constexpr uint32 MAP_DC_DARKSHORE = 750;
+constexpr float FOOLHARDY_RETURN_RANGE = 200.0f;  // the rider must still be by the decoy
 
 struct npc_foolhardy_adventurer : public ScriptedAI
 {
@@ -825,12 +827,18 @@ struct npc_foolhardy_adventurer : public ScriptedAI
             return;
         }
 
-        // Off the decoy, by the blast or by choice: back onto the beach.
-        passenger->m_Events.AddEventAtOffset([guid = passenger->GetGUID()]()
+        // Off the decoy, by the blast or by choice: back onto the beach. Only from the decoy's own
+        // waters: not after a map change, from another vehicle or out of a fight (no free escape).
+        Position const decoyPos = me->GetPosition();
+        passenger->m_Events.AddEventAtOffset([guid = passenger->GetGUID(), decoyPos]()
         {
-            if (Player* player = ObjectAccessor::FindPlayer(guid))
-                player->NearTeleportTo(FoolhardyShorePos.GetPositionX(), FoolhardyShorePos.GetPositionY(),
-                    FoolhardyShorePos.GetPositionZ(), FoolhardyShorePos.GetOrientation());
+            Player* player = ObjectAccessor::FindPlayer(guid);
+            if (!player || player->GetMapId() != MAP_DC_DARKSHORE || player->GetVehicle() || player->IsInCombat()
+                || !player->IsWithinDist2d(&decoyPos, FOOLHARDY_RETURN_RANGE))
+                return;
+
+            player->NearTeleportTo(FoolhardyShorePos.GetPositionX(), FoolhardyShorePos.GetPositionY(),
+                FoolhardyShorePos.GetPositionZ(), FoolhardyShorePos.GetOrientation());
         }, 500ms);
 
         if (!_detonated)

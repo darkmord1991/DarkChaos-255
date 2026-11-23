@@ -40,6 +40,8 @@
 #include "TaskScheduler.h"
 
 #include <limits>
+#include <mutex>
+#include <unordered_map>
 
 enum AzsharaCataShared
 {
@@ -307,6 +309,10 @@ Position const kExplosivesPos[4] =
     { 2873.211f, -4028.938f, 179.77f, 0.0f }
 };
 
+// One live Slinky event actor per player (player GUID -> actor GUID); each gossip select used to add another.
+static std::mutex sSlinkyEventsLock;
+static std::unordered_map<ObjectGuid, ObjectGuid> sSlinkyEvents;
+
 uint32 const kSlinkyEscapePathSize = 5;
 G3D::Vector3 const kSlinkyEscapePath[kSlinkyEscapePathSize] =
 {
@@ -335,6 +341,34 @@ struct npc_slinky_sharpshivAI : public ScriptedAI
         me->SetUnitFlag(UnitFlags(UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC));
         player->CastSpell(player, SPELL_DISMOUNT_CANCEL_FORMS, true);
         _scheduler.Schedule(1500ms, [this](TaskContext /*context*/) { ThrowGrapples(); });
+
+        // Fold the scene up if the player leaves the map, logs out or abandons the quest.
+        _scheduler.Schedule(2s, [this](TaskContext context)
+        {
+            Player* owner = ObjectAccessor::GetPlayer(*me, _playerGUID);
+            if (!owner || owner->GetQuestStatus(QUEST_LIGHTNING_STRIKE_ASSASSINATION) == QUEST_STATUS_NONE)
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
+            context.Repeat();
+        });
+    }
+
+    // Every removal path (scene end, pickup timeout, 5-minute expiry, abandon): drop the hooks and the
+    // per-player lock so the player can start the event again.
+    void OnDespawn() override
+    {
+        if (_playerGUID.IsEmpty())
+            return;
+
+        RetractHook(_hookSharpshivGUID);
+        RetractHook(_hookPlayerGUID);
+
+        std::lock_guard<std::mutex> guard(sSlinkyEventsLock);
+        auto it = sSlinkyEvents.find(_playerGUID);
+        if (it != sSlinkyEvents.end() && it->second == me->GetGUID())
+            sSlinkyEvents.erase(it);
     }
 
     void DoAction(int32 action) override
@@ -523,9 +557,33 @@ public:
         if (action == GOSSIP_ACTION_INFO_DEF)
         {
             CloseGossipMenuFor(player);
+
+            // A held menu can be re-selected; only the quest state is re-checked by the menu itself.
+            if (player->GetQuestStatus(QUEST_LIGHTNING_STRIKE_ASSASSINATION) != QUEST_STATUS_INCOMPLETE)
+                return true;
+
+            {
+                std::lock_guard<std::mutex> guard(sSlinkyEventsLock);
+                auto it = sSlinkyEvents.find(player->GetGUID());
+                if (it != sSlinkyEvents.end())
+                {
+                    if (Creature* actor = ObjectAccessor::GetCreature(*player, it->second))
+                        if (actor->IsInWorld())
+                            return true;
+
+                    sSlinkyEvents.erase(it);
+                }
+            }
+
+            // Summon outside the lock: the actor's OnDespawn takes it.
             player->RemoveAura(SPELL_PLAYER_DISGUISE);
-            player->SummonCreature(NPC_SLINKY_SHARPSHIV, creature->GetPositionX(), creature->GetPositionY(),
-                creature->GetPositionZ(), creature->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 300000);
+            if (Creature* actor = player->SummonCreature(NPC_SLINKY_SHARPSHIV, creature->GetPositionX(),
+                creature->GetPositionY(), creature->GetPositionZ(), creature->GetOrientation(),
+                TEMPSUMMON_TIMED_DESPAWN, 300000))
+            {
+                std::lock_guard<std::mutex> guard(sSlinkyEventsLock);
+                sSlinkyEvents[player->GetGUID()] = actor->GetGUID();
+            }
         }
 
         return true;
