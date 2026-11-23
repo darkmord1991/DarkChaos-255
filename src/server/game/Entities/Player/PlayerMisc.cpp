@@ -44,7 +44,9 @@ void Player::UpdateSpeakTime(ChatFloodThrottle::Index index)
          case ChatFloodThrottle::REGULAR:
              limit = sWorld->getIntConfig(CONFIG_CHATFLOOD_MESSAGE_COUNT);
              delay = sWorld->getIntConfig(CONFIG_CHATFLOOD_MESSAGE_DELAY);
-             [[fallthrough]];
+             // DarkChaos: this fell through to the return below, so ChatFlood.MessageCount never muted anyone
+             // (upstream bug; found in the 2026-11-18 audit). DC-QOS paces its meter report to 4 lines a second.
+             break;
          default:
              return;
     }

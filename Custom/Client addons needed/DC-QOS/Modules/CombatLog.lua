@@ -2908,6 +2908,28 @@ local REPORT_CHANNELS = {
     officer = "OFFICER", bg = "BATTLEGROUND", battleground = "BATTLEGROUND", whisper = "WHISPER",
 }
 
+-- The server mutes a player for ChatFlood.MuteTime after ChatFlood.MessageCount (10) chat lines within one
+-- second, and a report is a header plus up to 25 rows. One queue for all reports, drained at four lines a
+-- second, so neither one long report nor several in a row can trip it.
+local REPORT_LINE_INTERVAL = 0.25
+local reportQueue = {}
+local reportPumping = false
+
+local function PumpReportQueue()
+    local entry = table.remove(reportQueue, 1)
+
+    -- Scheduled before the send, so a send that throws cannot stall the queue
+    if #reportQueue > 0 then
+        addon:DelayedCall(REPORT_LINE_INTERVAL, PumpReportQueue)
+    else
+        reportPumping = false
+    end
+
+    if entry then
+        SendChatMessage(entry.text, entry.chatType, nil, entry.target)
+    end
+end
+
 -- Send the displayed ranking to a chat channel.
 function CombatLog.Report(channel, count, target)
     local settings = addon.settings.combatLog
@@ -2939,7 +2961,12 @@ function CombatLog.Report(channel, count, target)
     for _, line in ipairs(lines) do
         -- Chat cannot carry colour codes.
         local plain = line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-        SendChatMessage(plain, chatType, nil, target)
+        reportQueue[#reportQueue + 1] = { text = plain, chatType = chatType, target = target }
+    end
+
+    if not reportPumping then
+        reportPumping = true
+        PumpReportQueue()
     end
     return true
 end
