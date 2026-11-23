@@ -142,7 +142,7 @@ public:
         if (!player || !player->GetGuildId())
             return 1;
 
-        if (player->IsGameMaster())
+        if (IsGuildHouseStaff(player))
             return 255;
 
         return GuildHouseManager::GetGuildHouseLevel(player->GetGuildId());
@@ -486,7 +486,7 @@ public:
             DCUtils::MakeLargeGossipText("Interface\\Icons\\Spell_Nature_StormReach", "Change Weather"),
             GOSSIP_SENDER_MAIN, ACTION_WEATHER_MENU);
 
-        if (player->IsGameMaster())
+        if (IsGuildHouseStaff(player))
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                 DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "GM Menu"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_MENU);

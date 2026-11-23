@@ -2,6 +2,7 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Player.h"
+#include "WorldSession.h"
 #include "Guild.h"
 #include "GuildMgr.h"
 #include "DC/GuildHousing/dc_guildhouse.h"
@@ -20,13 +21,13 @@ public:
     {
         static ChatCommandTable GuildHouseCommandTable =
         {
-            { "teleport", HandleGuildHouseTeleCommand, SEC_PLAYER, Console::Yes },
-            { "butler",   HandleSpawnButlerCommand,    SEC_PLAYER, Console::Yes },
-            { "info",     HandleGuildHouseInfoCommand, SEC_PLAYER, Console::Yes },
-            { "members",  HandleGuildHouseMembersCommand, SEC_PLAYER, Console::Yes },
-            { "rank",     HandleRankCommand,            SEC_PLAYER, Console::Yes },
-            { "undo",     HandleUndoCommand,            SEC_PLAYER, Console::Yes },
-            { "move",     HandleMoveCommand,            SEC_PLAYER, Console::Yes },
+            { "teleport", HandleGuildHouseTeleCommand, SEC_PLAYER, Console::No },
+            { "butler",   HandleSpawnButlerCommand,    SEC_PLAYER, Console::No },
+            { "info",     HandleGuildHouseInfoCommand, SEC_PLAYER, Console::No },
+            { "members",  HandleGuildHouseMembersCommand, SEC_PLAYER, Console::No },
+            { "rank",     HandleRankCommand,            SEC_PLAYER, Console::No },
+            { "undo",     HandleUndoCommand,            SEC_PLAYER, Console::No },
+            { "move",     HandleMoveCommand,            SEC_PLAYER, Console::No },
             { "admin",    GetAdminCommands() },
         };
 
@@ -43,7 +44,7 @@ public:
     {
         static ChatCommandTable AdminCommandTable =
         {
-            { "teleport", HandleAdminTeleportCommand, SEC_GAMEMASTER, Console::Yes },
+            { "teleport", HandleAdminTeleportCommand, SEC_GAMEMASTER, Console::No },
             { "delete",   HandleAdminDeleteCommand,   SEC_GAMEMASTER, Console::Yes },
             { "buy",      HandleAdminBuyCommand,      SEC_GAMEMASTER, Console::Yes },
             { "reset",    HandleAdminResetCommand,    SEC_GAMEMASTER, Console::Yes },
@@ -62,6 +63,18 @@ public:
         if (player->IsInCombat())
         {
             handler->SendSysMessage("You can't use this command while in combat!");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        // Dead (unreleased) players would be revived at the house on release: a free rez out of any instance.
+        // BG/arena, vehicles, taxis, duels and falls get the same refusal as a hearthstone.
+        Map const* map = player->GetMap();
+        if (!player->IsAlive() || player->InBattleground() || player->InArena()
+            || (map && map->IsBattlegroundOrArena()) || player->GetVehicle() || player->IsInFlight()
+            || player->duel || player->IsFalling())
+        {
+            handler->SendSysMessage("You can't use this command right now.");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -648,9 +661,8 @@ public:
 
         uint32 locationId = (uint32)atoi(args);
 
-        // Note: Command bypasses cost check? Or should we enforce it?
-        // Let's enforce it unless they are GM
-        bool free = player->IsGameMaster();
+        // Free + disabled locations for staff only: account security, not the GM flag (M+ spectators get GM mode).
+        bool const free = handler->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
         uint32 moveCost = sConfigMgr->GetOption<uint32>("GuildHouse.MoveCost", 0);
 
         if (!free && moveCost && player->GetMoney() < moveCost)
@@ -659,7 +671,7 @@ public:
             return false;
         }
 
-        if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId, player->IsGameMaster()))
+        if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId, free))
         {
             if (!free && moveCost) player->ModifyMoney(-static_cast<int64>(moveCost));
             handler->SendSysMessage("Guild House has been moved.");

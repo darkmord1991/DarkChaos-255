@@ -3,6 +3,7 @@
 #include "Define.h"
 #include "Guild.h"
 #include "Player.h"
+#include "WorldSession.h"
 
 #include <string>
 #include <vector>
@@ -50,6 +51,12 @@ inline bool IsGuildHouseMap(uint32 mapId)
         if (m == mapId)
             return true;
     return false;
+}
+
+// Staff = GM account, not GM mode: M+ spectators are put in GM mode and must not get the free admin options.
+inline bool IsGuildHouseStaff(Player const* player)
+{
+    return player && player->GetSession() && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
 }
 
 // Legacy GetGuildPhase (guildId % 27 -> phase bit) removed: isolation is

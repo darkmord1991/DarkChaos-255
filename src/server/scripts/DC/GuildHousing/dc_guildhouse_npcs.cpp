@@ -111,7 +111,7 @@ public:
             }
         }
 
-        if (player->IsGameMaster())
+        if (IsGuildHouseStaff(player))
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM/Admin Menu (free)", GOSSIP_SENDER_MAIN, ACTION_ADMIN_MENU);
         }
@@ -229,7 +229,7 @@ public:
             GuildHouseLocation const* location = GuildHouseManager::GetGuildHouseLocation(locationId);
 
             // GMs may buy at a disabled location; everyone else may not.
-            if (!location || (!location->enabled && !player->IsGameMaster()))
+            if (!location || (!location->enabled && !IsGuildHouseStaff(player)))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Error finding Guild House location.");
                 CloseGossipMenuFor(player);
@@ -374,7 +374,7 @@ public:
                 {
                     ClearGossipMenuFor(player);
 
-                    bool const showDisabled = player->IsGameMaster();
+                    bool const showDisabled = IsGuildHouseStaff(player);
                     uint32 moveCost = sConfigMgr->GetOption<uint32>("GuildHouse.MoveCost", 0);
                     uint32 shown = 0;
 
@@ -436,7 +436,7 @@ public:
                 break;
             }
             case ACTION_ADMIN_MENU:
-                if (!player->IsGameMaster())
+                if (!IsGuildHouseStaff(player))
                 {
                     CloseGossipMenuFor(player);
                     return false;
@@ -444,7 +444,7 @@ public:
                 ShowAdminMenu(player, creature);
                 break;
             case ACTION_ADMIN_BUY_MENU:
-                if (!player->IsGameMaster())
+                if (!IsGuildHouseStaff(player))
                 {
                     CloseGossipMenuFor(player);
                     return false;
@@ -473,7 +473,7 @@ public:
                 }
                 break;
             case ACTION_ADMIN_MOVE_MENU:
-                if (!player->IsGameMaster())
+                if (!IsGuildHouseStaff(player))
                 {
                     CloseGossipMenuFor(player);
                     return false;
@@ -502,7 +502,7 @@ public:
                 }
                 break;
             case ACTION_ADMIN_RESET:
-                if (!player->IsGameMaster())
+                if (!IsGuildHouseStaff(player))
                 {
                     CloseGossipMenuFor(player);
                     return false;
@@ -511,7 +511,7 @@ public:
                 ShowAdminMenu(player, creature);
                 break;
             case ACTION_ADMIN_DELETE:
-                if (!player->IsGameMaster())
+                if (!IsGuildHouseStaff(player))
                 {
                     CloseGossipMenuFor(player);
                     return false;
@@ -552,7 +552,7 @@ public:
 
         ClearGossipMenuFor(player);
 
-        bool const showDisabled = player->IsGameMaster();
+        bool const showDisabled = IsGuildHouseStaff(player);
         uint32 shown = 0;
 
         for (GuildHouseLocation const& location : GuildHouseManager::GetGuildHouseLocations())
