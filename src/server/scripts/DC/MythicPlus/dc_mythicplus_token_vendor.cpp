@@ -23,6 +23,7 @@
 #include "ObjectAccessor.h"
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <vector>
 #include <sstream>
 #include <unordered_map>
@@ -480,11 +481,13 @@ namespace
     };
 
     static std::unordered_map<uint32, VendorUiSession> s_vendorUiSessions;
+    // Sessions are opened from gossip hello on map workers of different hub maps: every access takes this lock.
+    static std::mutex s_vendorUiSessionsLock;
 
     // Drop every session that has aged out. Entries were only ever cleaned
     // lazily when the same player came back, so a player who opened the vendor
-    // once and never returned left a permanent entry.
-    static void PruneExpiredVendorSessions()
+    // once and never returned left a permanent entry. Caller holds s_vendorUiSessionsLock.
+    static void PruneExpiredVendorSessionsLocked()
     {
         time_t now = time(nullptr);
         for (auto it = s_vendorUiSessions.begin(); it != s_vendorUiSessions.end(); )
@@ -496,24 +499,41 @@ namespace
         }
     }
 
+    static void StartVendorSession(Player* player, Creature* creature)
+    {
+        VendorUiSession session;
+        session.creatureGuid = creature->GetGUID();
+        session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
+
+        std::lock_guard<std::mutex> lock(s_vendorUiSessionsLock);
+        PruneExpiredVendorSessionsLocked();
+        s_vendorUiSessions[player->GetGUID().GetCounter()] = std::move(session);
+    }
+
     static bool IsVendorSessionValid(Player* player, Creature** outCreature = nullptr)
     {
         if (!player)
             return false;
 
         uint32 key = player->GetGUID().GetCounter();
-        auto it = s_vendorUiSessions.find(key);
-        if (it == s_vendorUiSessions.end())
-            return false;
-
-        time_t now = time(nullptr);
-        if (now > it->second.expiresAt)
+        ObjectGuid creatureGuid;
         {
-            s_vendorUiSessions.erase(it);
-            return false;
+            std::lock_guard<std::mutex> lock(s_vendorUiSessionsLock);
+            auto it = s_vendorUiSessions.find(key);
+            if (it == s_vendorUiSessions.end())
+                return false;
+
+            time_t now = time(nullptr);
+            if (now > it->second.expiresAt)
+            {
+                s_vendorUiSessions.erase(it);
+                return false;
+            }
+
+            creatureGuid = it->second.creatureGuid;
         }
 
-        Creature* creature = ObjectAccessor::GetCreature(*player, it->second.creatureGuid);
+        Creature* creature = ObjectAccessor::GetCreature(*player, creatureGuid);
         if (!creature)
             return false;
 
@@ -832,16 +852,21 @@ namespace
         // Remember what we offered. HandleTokenVendorBuy validates against this
         // instead of re-running the scan, which halves the item_template
         // filesorts a single purchase costs.
-        if (auto sessionItr = s_vendorUiSessions.find(player->GetGUID().GetCounter());
-            sessionItr != s_vendorUiSessions.end())
+        std::vector<uint32> offeredItemIds;
+        offeredItemIds.reserve(choices.size());
+        for (auto const& choice : choices)
+            offeredItemIds.push_back(choice.itemId);
+
         {
-            VendorUiSession& session = sessionItr->second;
-            session.offeredItemLevel = itemLevel;
-            session.offeredSlot = slot;
-            session.offeredItemIds.clear();
-            session.offeredItemIds.reserve(choices.size());
-            for (auto const& choice : choices)
-                session.offeredItemIds.push_back(choice.itemId);
+            std::lock_guard<std::mutex> lock(s_vendorUiSessionsLock);
+            if (auto sessionItr = s_vendorUiSessions.find(player->GetGUID().GetCounter());
+                sessionItr != s_vendorUiSessions.end())
+            {
+                VendorUiSession& session = sessionItr->second;
+                session.offeredItemLevel = itemLevel;
+                session.offeredSlot = slot;
+                session.offeredItemIds = std::move(offeredItemIds);
+            }
         }
 
         DCAddon::JsonMessage resp(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_CHOICES);
@@ -918,15 +943,18 @@ namespace
         // offered this player, for the same slot and tier they asked about.
         // Validated against the cached list rather than a second scan.
         bool allowed = false;
-        if (auto sessionItr = s_vendorUiSessions.find(player->GetGUID().GetCounter());
-            sessionItr != s_vendorUiSessions.end())
         {
-            VendorUiSession const& session = sessionItr->second;
-            if (session.offeredItemLevel == itemLevel && session.offeredSlot == slot)
+            std::lock_guard<std::mutex> lock(s_vendorUiSessionsLock);
+            if (auto sessionItr = s_vendorUiSessions.find(player->GetGUID().GetCounter());
+                sessionItr != s_vendorUiSessions.end())
             {
-                allowed = std::find(session.offeredItemIds.begin(),
-                                    session.offeredItemIds.end(),
-                                    itemId) != session.offeredItemIds.end();
+                VendorUiSession const& session = sessionItr->second;
+                if (session.offeredItemLevel == itemLevel && session.offeredSlot == slot)
+                {
+                    allowed = std::find(session.offeredItemIds.begin(),
+                                        session.offeredItemIds.end(),
+                                        itemId) != session.offeredItemIds.end();
+                }
             }
         }
 
@@ -1113,12 +1141,7 @@ public:
         didLogMissingAutoOpenConfigOnce = true;
         if (protocolEnabled && autoOpenUi)
         {
-            PruneExpiredVendorSessions();
-
-            VendorUiSession session;
-            session.creatureGuid = creature->GetGUID();
-            session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
-            s_vendorUiSessions[player->GetGUID().GetCounter()] = session;
+            StartVendorSession(player, creature);
             SendVendorOpen(player, creature->GetEntry());
             CloseGossipMenuFor(player);
             return true;
@@ -1196,12 +1219,7 @@ public:
         // Open Addon UI
         if (action == GOSSIP_ACTION_OPEN_VENDOR_UI)
         {
-            PruneExpiredVendorSessions();
-
-            VendorUiSession session;
-            session.creatureGuid = creature->GetGUID();
-            session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
-            s_vendorUiSessions[player->GetGUID().GetCounter()] = session;
+            StartVendorSession(player, creature);
             SendVendorOpen(player, creature->GetEntry());
             CloseGossipMenuFor(player);
             return true;

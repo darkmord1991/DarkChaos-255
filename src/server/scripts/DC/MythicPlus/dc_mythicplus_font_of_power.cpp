@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <sstream>
 #include "dc_update_profiler.h"
 
@@ -64,6 +65,9 @@ struct PendingKeystoneActivation
 };
 
 std::map<ObjectGuid, PendingKeystoneActivation> s_pendingActivations; // GroupGuid or PlayerGuid -> Activation
+// Font gossip hello runs on map workers of different dungeons; commands and the sweep on the world thread.
+// Every access takes this lock; player/packet work runs on copies after it is released.
+std::mutex s_pendingActivationsLock;
 
 constexpr int8 STATE_PENDING  = 0;
 constexpr int8 STATE_READY    = 1;
@@ -390,34 +394,30 @@ void NotifyPendingCancellation(PendingKeystoneActivation const& pending,
 
 void CleanupExpiredPendingActivations()
 {
-    if (s_pendingActivations.empty())
-        return;
-
-    uint64 now = GameTime::GetGameTime().count();
-    std::vector<ObjectGuid> expiredGroups;
-    expiredGroups.reserve(s_pendingActivations.size());
-
-    for (auto const& [groupGuid, pending] : s_pendingActivations)
+    std::vector<std::pair<ObjectGuid, PendingKeystoneActivation>> expired;
     {
-        if (!pending.startTime)
-            continue;
+        std::lock_guard<std::mutex> lock(s_pendingActivationsLock);
+        if (s_pendingActivations.empty())
+            return;
 
-        if (pending.countdownStartedMs)
-            continue;
+        uint64 now = GameTime::GetGameTime().count();
+        for (auto it = s_pendingActivations.begin(); it != s_pendingActivations.end();)
+        {
+            PendingKeystoneActivation const& pending = it->second;
+            if (!pending.startTime || pending.countdownStartedMs || now < (pending.startTime + pending.timeout))
+            {
+                ++it;
+                continue;
+            }
 
-        if (now >= (pending.startTime + pending.timeout))
-            expiredGroups.push_back(groupGuid);
+            expired.emplace_back(it->first, std::move(it->second));
+            it = s_pendingActivations.erase(it);
+        }
     }
 
-    for (ObjectGuid const& groupGuid : expiredGroups)
+    for (auto const& [groupGuid, pending] : expired)
     {
-        auto it = s_pendingActivations.find(groupGuid);
-        if (it == s_pendingActivations.end())
-            continue;
-
-        NotifyPendingCancellation(it->second, "Keystone ready check timed out.");
-        s_pendingActivations.erase(it);
-
+        NotifyPendingCancellation(pending, "Keystone ready check timed out.");
         LOG_INFO("mythic.run", "Ready check timed out for group {}", groupGuid.ToString());
     }
 }
@@ -435,24 +435,32 @@ public:
 
     static void ProcessCountdowns()
     {
-        if (s_pendingActivations.empty())
-            return;
-
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
-        std::vector<ObjectGuid> readyToFinalize;
-
-        for (auto const& [groupGuid, pending] : s_pendingActivations)
+        // Taken out of the map under the lock so a concurrent re-open cannot be activated in its place.
+        std::vector<PendingKeystoneActivation> readyToFinalize;
         {
-            if (!pending.countdownStartedMs || pending.countdown == 0)
-                continue;
+            std::lock_guard<std::mutex> lock(s_pendingActivationsLock);
+            if (s_pendingActivations.empty())
+                return;
 
-            uint64 durationMs = static_cast<uint64>(pending.countdown) * 1000;
-            if (nowMs >= pending.countdownStartedMs + durationMs)
-                readyToFinalize.push_back(groupGuid);
+            uint64 nowMs = GameTime::GetGameTimeMS().count();
+            for (auto it = s_pendingActivations.begin(); it != s_pendingActivations.end();)
+            {
+                PendingKeystoneActivation const& pending = it->second;
+                uint64 durationMs = static_cast<uint64>(pending.countdown) * 1000;
+                if (!pending.countdownStartedMs || pending.countdown == 0 ||
+                    nowMs < pending.countdownStartedMs + durationMs)
+                {
+                    ++it;
+                    continue;
+                }
+
+                readyToFinalize.push_back(std::move(it->second));
+                it = s_pendingActivations.erase(it);
+            }
         }
 
-        for (ObjectGuid const& groupGuid : readyToFinalize)
-            FinalizePendingActivation(groupGuid);
+        for (PendingKeystoneActivation const& pending : readyToFinalize)
+            ActivatePending(pending);
     }
 
     static void HandlePlayerCancellation(Player* player)
@@ -722,9 +730,9 @@ private:
         DungeonProfile* profile = go->GetMap() ? sMythicScaling->GetDungeonProfile(go->GetMap()->GetId()) : nullptr;
         std::string dungeonName = profile ? profile->name : "Unknown Dungeon";
 
-        // Create pending activation
+        // Build the pending activation locally, then publish it under the lock.
         ObjectGuid activationKey = GetPendingActivationKey(player);
-        PendingKeystoneActivation& pending = s_pendingActivations[activationKey];
+        PendingKeystoneActivation pending;
         pending.goGuid = go->GetGUID();
         pending.playerGuid = player->GetGUID();
         pending.mapId = go->GetMapId();
@@ -764,8 +772,13 @@ private:
             }
         }
 
+        {
+            std::lock_guard<std::mutex> lock(s_pendingActivationsLock);
+            s_pendingActivations[activationKey] = pending;
+        }
+
         if (HasKeystoneReadyCheckUiTransport())
-            SendKeystoneReadyCheck(player, group, dungeonName, descriptor);
+            SendKeystoneReadyCheck(player, group, dungeonName, descriptor, pending);
         else
             SendKeystoneReadyCheckFallback(player, group, dungeonName,
                 descriptor);
@@ -789,17 +802,11 @@ private:
     }
 
     void SendKeystoneReadyCheck(Player* activator, Group* group,
-        std::string const& dungeonName, KeystoneDescriptor const& descriptor)
+        std::string const& dungeonName, KeystoneDescriptor const& descriptor,
+        PendingKeystoneActivation const& pending)
     {
         if (!activator)
             return;
-
-        auto pendingItr = s_pendingActivations.find(
-            GetPendingActivationKey(activator));
-        if (pendingItr == s_pendingActivations.end())
-            return;
-
-        PendingKeystoneActivation const& pending = pendingItr->second;
 
         std::vector<ReadyMemberInfo> members = BuildReadyMembers(activator,
             group, pending);
@@ -890,81 +897,6 @@ public:
 
         CleanupExpiredPendingActivations();
 
-        ObjectGuid activationKey = GetPendingActivationKey(player);
-        auto it = s_pendingActivations.find(activationKey);
-        if (it == s_pendingActivations.end())
-        {
-            ChatHandler(player->GetSession()).SendSysMessage(
-                "No pending keystone activation was found.");
-            return;
-        }
-
-        PendingKeystoneActivation& pending = it->second;
-
-        // Update player state
-        auto memberIt = pending.memberStates.find(player->GetGUID());
-        if (memberIt == pending.memberStates.end())
-        {
-            ChatHandler(player->GetSession()).SendSysMessage(
-                "You are not part of this ready check.");
-            return;
-        }
-
-        memberIt->second = accepted ? STATE_READY : STATE_DECLINED;
-
-        // Notify group of state change
-        SendReadyStatusUpdate(pending, player, accepted);
-
-        if (!accepted)
-        {
-            // Someone declined - cancel activation
-            CancelPendingActivation(activationKey, Acore::StringFormat(
-                "{} declined the keystone.", player->GetName()));
-            return;
-        }
-
-        // Check if all ready
-        bool allReady = true;
-        for (auto const& [guid, state] : pending.memberStates)
-        {
-            if (state == STATE_PENDING)
-            {
-                allReady = false;
-                break;
-            }
-        }
-
-        if (allReady)
-        {
-            pending.allReady = true;
-            SendReadyStatusUpdate(pending, player, true);
-
-            // Hand off to the countdown rather than activating immediately.
-            // StartCountdown had no callers, so pending.countdown and
-            // countdownStartedMs stayed 0 forever - which meant ProcessCountdowns
-            // never fired and SMSG_KEYSTONE_COUNTDOWN (0x52) was never sent,
-            // leaving the addon's OnCountdownStart handler permanently dead.
-            //
-            // A zero configured duration keeps the old instant behaviour.
-            StartCountdown(activationKey);
-
-            auto startedItr = s_pendingActivations.find(activationKey);
-            if (startedItr == s_pendingActivations.end() ||
-                startedItr->second.countdown == 0)
-            {
-                FinalizePendingActivation(activationKey);
-            }
-        }
-    }
-
-    static void StartCountdown(ObjectGuid const& activationKey)
-    {
-        auto it = s_pendingActivations.find(activationKey);
-        if (it == s_pendingActivations.end())
-            return;
-
-        PendingKeystoneActivation& pending = it->second;
-
         // Deliberately NOT MythicPlus.CountdownDuration. That one is the
         // in-dungeon countdown the run manager runs after activation; reusing it
         // here would make the group sit through two countdowns back to back.
@@ -972,38 +904,138 @@ public:
         // This is a separate, optional pre-activation beat that drives the
         // retail keystone-insertion animation in DC-MythicPlus. Default 0 keeps
         // the existing behaviour (activate the moment everyone is ready).
-        pending.countdown = static_cast<uint8>(std::min<uint32>(
+        uint8 countdown = static_cast<uint8>(std::min<uint32>(
             sConfigMgr->GetOption<uint32>("MythicPlus.ReadyCheckCountdown", 0), 255));
 
-        if (pending.countdown == 0)
+        ObjectGuid activationKey = GetPendingActivationKey(player);
+        PendingKeystoneActivation snapshot;
+        PendingKeystoneActivation after;
+        ResponseResult result = ApplyResponse(activationKey, player->GetGUID(), accepted, countdown,
+            snapshot, after);
+
+        if (result == ResponseResult::NotFound)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "No pending keystone activation was found.");
+            return;
+        }
+
+        if (result == ResponseResult::NotMember)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "You are not part of this ready check.");
+            return;
+        }
+
+        // Notify group of state change
+        SendReadyStatusUpdate(snapshot, player, accepted);
+
+        if (result == ResponseResult::Declined)
+        {
+            // Someone declined - the activation was already removed under the lock.
+            NotifyPendingCancellation(after, Acore::StringFormat(
+                "{} declined the keystone.", player->GetName()));
+            return;
+        }
+
+        if (result == ResponseResult::Recorded)
             return;
 
-        pending.countdownStartedMs = GameTime::GetGameTimeMS().count();
-        pending.startTime = 0;
+        snapshot.allReady = true;
+        SendReadyStatusUpdate(snapshot, player, true);
 
-        SendCountdownStarted(pending, pending.countdown);
+        // Hand off to the countdown rather than activating immediately.
+        // The countdown start once had no callers, so pending.countdown and
+        // countdownStartedMs stayed 0 forever - which meant ProcessCountdowns
+        // never fired and SMSG_KEYSTONE_COUNTDOWN (0x52) was never sent,
+        // leaving the addon's OnCountdownStart handler permanently dead.
+        //
+        // A zero configured duration keeps the old instant behaviour.
+        if (result == ResponseResult::CountdownStarted)
+        {
+            SendCountdownStarted(after, after.countdown);
+            return;
+        }
+
+        ActivatePending(after);
     }
 
     static void CancelPendingActivation(ObjectGuid const& activationKey,
         std::string const& reason)
     {
-        auto it = s_pendingActivations.find(activationKey);
-        if (it == s_pendingActivations.end())
-            return;
+        PendingKeystoneActivation removed;
+        {
+            std::lock_guard<std::mutex> lock(s_pendingActivationsLock);
+            auto it = s_pendingActivations.find(activationKey);
+            if (it == s_pendingActivations.end())
+                return;
 
-        NotifyPendingCancellation(it->second, reason);
+            removed = std::move(it->second);
+            s_pendingActivations.erase(it);
+        }
 
-        s_pendingActivations.erase(it);
+        NotifyPendingCancellation(removed, reason);
     }
 
-    static void FinalizePendingActivation(ObjectGuid const& groupGuid)
+private:
+    enum class ResponseResult
     {
-        auto it = s_pendingActivations.find(groupGuid);
+        NotFound,
+        NotMember,
+        Recorded,
+        Declined,
+        CountdownStarted,
+        Finalize
+    };
+
+    // Records one answer under the lock. `snapshot` is the state right after the answer; `after` is the
+    // removed entry (Declined/Finalize) or the entry once its countdown started (CountdownStarted).
+    static ResponseResult ApplyResponse(ObjectGuid const& activationKey, ObjectGuid const& playerGuid,
+        bool accepted, uint8 countdown, PendingKeystoneActivation& snapshot, PendingKeystoneActivation& after)
+    {
+        std::lock_guard<std::mutex> lock(s_pendingActivationsLock);
+        auto it = s_pendingActivations.find(activationKey);
         if (it == s_pendingActivations.end())
-            return;
+            return ResponseResult::NotFound;
 
         PendingKeystoneActivation& pending = it->second;
+        auto memberIt = pending.memberStates.find(playerGuid);
+        if (memberIt == pending.memberStates.end())
+            return ResponseResult::NotMember;
 
+        memberIt->second = accepted ? STATE_READY : STATE_DECLINED;
+        snapshot = pending;
+
+        if (!accepted)
+        {
+            after = std::move(pending);
+            s_pendingActivations.erase(it);
+            return ResponseResult::Declined;
+        }
+
+        bool allReady = std::none_of(pending.memberStates.begin(), pending.memberStates.end(),
+            [](auto const& entry) { return entry.second == STATE_PENDING; });
+        if (!allReady)
+            return ResponseResult::Recorded;
+
+        pending.allReady = true;
+        pending.countdown = countdown;
+        if (countdown == 0)
+        {
+            after = std::move(pending);
+            s_pendingActivations.erase(it);
+            return ResponseResult::Finalize;
+        }
+
+        pending.countdownStartedMs = GameTime::GetGameTimeMS().count();
+        pending.startTime = 0;
+        after = pending;
+        return ResponseResult::CountdownStarted;
+    }
+
+    // Runs on an entry already removed from s_pendingActivations, so no lock is held here.
+    static void ActivatePending(PendingKeystoneActivation const& pending)
+    {
         // Find the player and GO to activate
         Map* map = pending.mapId ? sMapMgr->FindMap(pending.mapId, pending.instanceId) : nullptr;
         Player* player = map ? ObjectAccessor::GetPlayer(map, pending.playerGuid) : nullptr;
@@ -1020,8 +1052,6 @@ public:
             else
                 sMythicRuns->TryActivateKeystone(player, go);
         }
-
-        s_pendingActivations.erase(it);
     }
 };
 

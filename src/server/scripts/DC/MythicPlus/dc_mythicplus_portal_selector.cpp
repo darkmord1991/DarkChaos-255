@@ -23,6 +23,7 @@
 #include "ObjectAccessor.h"
 #include <algorithm>
 #include <array>
+#include <mutex>
 #include <unordered_map>
 
 namespace
@@ -100,11 +101,13 @@ struct PortalUiSession
 };
 
 static std::unordered_map<uint32, PortalUiSession> s_portalUiSessions;
+// Sessions are opened from gossip hello on map workers of different hub maps: every access takes this lock.
+static std::mutex s_portalUiSessionsLock;
 
 // Drop every session that has aged out. Entries were only ever cleaned lazily
 // when the same player came back, so a player who opened the portal UI once and
-// never returned left a permanent entry.
-static void PruneExpiredPortalSessions()
+// never returned left a permanent entry. Caller holds s_portalUiSessionsLock.
+static void PruneExpiredPortalSessionsLocked()
 {
     time_t now = time(nullptr);
     for (auto it = s_portalUiSessions.begin(); it != s_portalUiSessions.end(); )
@@ -116,24 +119,41 @@ static void PruneExpiredPortalSessions()
     }
 }
 
+static void StartPortalSession(Player* player, Creature* creature)
+{
+    PortalUiSession session;
+    session.creatureGuid = creature->GetGUID();
+    session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;
+
+    std::lock_guard<std::mutex> lock(s_portalUiSessionsLock);
+    PruneExpiredPortalSessionsLocked();
+    s_portalUiSessions[player->GetGUID().GetCounter()] = session;
+}
+
 static bool IsPortalSessionValid(Player* player, Creature** outCreature = nullptr)
 {
     if (!player)
         return false;
 
     uint32 key = player->GetGUID().GetCounter();
-    auto it = s_portalUiSessions.find(key);
-    if (it == s_portalUiSessions.end())
-        return false;
-
-    time_t now = time(nullptr);
-    if (now > it->second.expiresAt)
+    ObjectGuid creatureGuid;
     {
-        s_portalUiSessions.erase(it);
-        return false;
+        std::lock_guard<std::mutex> lock(s_portalUiSessionsLock);
+        auto it = s_portalUiSessions.find(key);
+        if (it == s_portalUiSessions.end())
+            return false;
+
+        time_t now = time(nullptr);
+        if (now > it->second.expiresAt)
+        {
+            s_portalUiSessions.erase(it);
+            return false;
+        }
+
+        creatureGuid = it->second.creatureGuid;
     }
 
-    Creature* creature = ObjectAccessor::GetCreature(*player, it->second.creatureGuid);
+    Creature* creature = ObjectAccessor::GetCreature(*player, creatureGuid);
     if (!creature)
         return false;
 
@@ -460,12 +480,7 @@ public:
         didLogMissingAutoOpenConfigOnce = true;
         if (protocolEnabled && autoOpenUi)
         {
-            PruneExpiredPortalSessions();
-
-            PortalUiSession session;
-            session.creatureGuid = creature->GetGUID();
-            session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;
-            s_portalUiSessions[player->GetGUID().GetCounter()] = session;
+            StartPortalSession(player, creature);
             SendSeasonalPortalOpen(player);
             CloseGossipMenuFor(player);
             return true;
@@ -502,12 +517,7 @@ public:
 
         if (action == GOSSIP_ACTION_OPEN_SEASONAL_UI)
         {
-            PruneExpiredPortalSessions();
-
-            PortalUiSession session;
-            session.creatureGuid = creature->GetGUID();
-            session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;
-            s_portalUiSessions[player->GetGUID().GetCounter()] = session;
+            StartPortalSession(player, creature);
             SendSeasonalPortalOpen(player);
             CloseGossipMenuFor(player);
             return true;
