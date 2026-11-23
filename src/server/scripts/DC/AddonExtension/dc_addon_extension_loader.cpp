@@ -41,6 +41,7 @@ void AddSC_dc_addon_questnav();
 void AddSC_dc_addon_encounters();
 void AddSC_dc_addon_talents();
 void AddSC_dc_addon_path();
+void AddSC_dc_addon_spellcharges();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -119,4 +120,8 @@ void AddDCAddonExtensionScripts()
 
     // Path of Chaos (DC-Path): the task book, its progress and reward claims
     AddSC_dc_addon_path();
+
+    // Spell charges (dc_spell_charges); the native client shows the count from
+    // SMSG_DC_SPELL_CHARGES
+    AddSC_dc_addon_spellcharges();
 }

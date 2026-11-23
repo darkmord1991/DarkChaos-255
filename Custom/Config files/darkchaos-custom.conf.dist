@@ -5937,6 +5937,24 @@ DC.GameplayTest.AllowCreateCharacters = 1
 DC.GameplayTest.AllowDestructive = 0
 
 ###############################################################################
+# SPELL CHARGES
+#
+#  src/server/scripts/DC/AddonExtension/dc_addon_spellcharges.cpp. Spells listed
+#  in world table dc_spell_charges (empty by default) get charges; the native
+#  client shows the count (capability SPELL_CHARGES_NATIVE), the old client sees
+#  a spell that stays castable while charges remain.
+#
+###############################################################################
+
+#
+#    DC.SpellCharges.Enable
+#        Description: Spell charges for the spells in world table dc_spell_charges.
+#        Default:     1 (Enabled)
+#
+
+DC.SpellCharges.Enable = 1
+
+###############################################################################
 # END OF CONFIGURATION FILE
 ###############################################################################
 

@@ -807,7 +807,10 @@ namespace DCAddon
             constexpr uint32 BINARY_PROTO   = 0x00000008;  // Binary protocol option
             constexpr uint32 ASYNC_QUERIES  = 0x00000010;  // Async DB query responses
             constexpr uint32 DELTA_SYNC     = 0x00000020;  // Delta sync for collections
-            constexpr uint32 HOT_RELOAD     = 0x00000040;  // Module hot-reload support
+            // The native x64 client shows spell charges from SMSG_DC_SPELL_CHARGES
+            // (dc_addon_spellcharges.cpp). Advertised by the DLL through
+            // GetDCClientCapabilities; it was the never-used HOT_RELOAD placeholder.
+            constexpr uint32 SPELL_CHARGES_NATIVE = 0x00000040;
             // Generic-bridge modules added 2026-09-23 (WRLD pushes, MPOI, DECO,
             // DENC, QNAV, GRVY, BEAST; TLNT joined 2026-09-30). Advertised by the
             // Lua library (no DLL bit), so both sides only route these natively
@@ -877,7 +880,8 @@ namespace DCAddon
                 LARGE_NATIVE_PAYLOAD |
                 NATIVE_PUSH_EVENTS |
                 ITEM_PREFETCH |
-                EXTENDED_QUEST_LOG;
+                EXTENDED_QUEST_LOG |
+                SPELL_CHARGES_NATIVE;
         }
 
         // Version info structure for handshake

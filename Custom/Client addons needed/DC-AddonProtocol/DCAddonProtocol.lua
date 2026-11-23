@@ -39,6 +39,9 @@ DCAddonProtocol = {
     Capability = {
         JSON_MESSAGES = 0x00000001,
         BATCH_MESSAGES = 0x00000002,
+        -- DLL-advertised (GetDCClientCapabilities): the native x64 client shows
+        -- spell charges from SMSG_DC_SPELL_CHARGES. Not in BASE_CAPABILITIES.
+        SPELL_CHARGES_NATIVE = 0x00000040,
         -- Lua-advertised (no DLL bit): this client routes the later generic-
         -- bridge modules (MPOI/DECO/DENC/QNAV/GRVY/BEAST/TLNT, WRLD pushes) natively.
         -- Negotiated only against a server that also knows them.
@@ -825,6 +828,10 @@ function DC:DescribeCapabilities(mask)
     if HasCapabilityBit(capabilities,
             self.Capability.ITEM_PREFETCH) then
         table.insert(parts, "ItemPrefetch")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.SPELL_CHARGES_NATIVE) then
+        table.insert(parts, "NativeSpellCharges")
     end
 
     if #parts == 0 then
