@@ -183,8 +183,9 @@ void ChatHandler::SendSysMessage(std::string_view str, bool escapeCharacters)
         msg = stream.str();
     }
 
+    // Send the escaped copy: tokenizing `str` here meant escapeCharacters never had any effect
     WorldPacket data;
-    for (std::string_view line : Acore::Tokenize(str, '\n', true))
+    for (std::string_view line : Acore::Tokenize(msg, '\n', true))
     {
         BuildChatPacket(data, CHAT_MSG_SYSTEM, LANG_UNIVERSAL, nullptr, nullptr, line);
         m_session->SendPacket(&data);
