@@ -37,7 +37,6 @@
 #include "DC/CrossSystem/CrossSystemRewards.h"
 #include "DC/CrossSystem/EventBus.h"
 #include "DC/Progression/FirstStart/dc_firststart_learnspells.h"
-#include "DC/Worldforged/dc_worldforged_pickups.h"
 #include "dc_prestige_api.h"
 #include "DC/AddonExtension/dc_addon_matchmaking.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
@@ -515,13 +514,12 @@ public:
             RestoreRememberedButtons(player, 0);
             player->SendInitialActionButtons();
             StripTemporaryAuras(player);
-            // Like the zone quests, the climb's worldforged pickups can be looted again. The claims save
-            // with the character below, and the teleport at the end brings the pickups back into view.
-            uint32 released = DCWorldforged::ResetClaims(player);
+            // Worldforged pickup claims are per account and stay claimed: the fresh start does not hand them
+            // back (decided 2026-11-21).
 
             if (debug)
-                LOG_DEBUG("scripts.dc", "Prestige: {} unlearned {} class spell(s) above level {}, released {} "
-                    "worldforged pickup(s)", playerName, forgotten, newLevel, released);
+                LOG_DEBUG("scripts.dc", "Prestige: {} unlearned {} class spell(s) above level {}", playerName,
+                    forgotten, newLevel);
         }
 
         // What the prestige writes commits together with the character save below, so a crash can
