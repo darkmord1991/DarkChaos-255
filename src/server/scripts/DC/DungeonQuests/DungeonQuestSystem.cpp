@@ -289,9 +289,9 @@ public:
             return;
 
         std::string sql = Acore::StringFormat(
-            "INSERT INTO dc_character_dungeon_progress (guid, dungeon_id, quest_id, completion_count, last_update) "
+            "INSERT INTO dc_character_dungeon_progress (guid, dungeon_id, quest_id, completion_count, last_completed) "
             "VALUES ({}, {}, {}, 1, NOW()) "
-            "ON DUPLICATE KEY UPDATE completion_count = completion_count + 1, last_update = NOW()",
+            "ON DUPLICATE KEY UPDATE completion_count = completion_count + 1, last_completed = NOW()",
             player->GetGUID().GetCounter(), dungeonId, questId);
         CharacterDatabase.Execute(sql.c_str());
     }
@@ -303,9 +303,9 @@ public:
             return;
 
         std::string sql = Acore::StringFormat(
-            "INSERT INTO dc_character_dungeon_quests_completed (guid, quest_id, completion_time) "
-            "VALUES ({}, {}, NOW())",
-            player->GetGUID().GetCounter(), questId);
+            "INSERT INTO dc_character_dungeon_quests_completed (guid, dungeon_id, quest_id, completion_time) "
+            "VALUES ({}, {}, {}, NOW())",
+            player->GetGUID().GetCounter(), GetDungeonIdFromQuest(questId), questId);
         CharacterDatabase.Execute(sql.c_str());
     }
 

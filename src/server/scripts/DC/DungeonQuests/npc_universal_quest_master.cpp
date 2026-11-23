@@ -213,26 +213,52 @@ private:
     }
 
 public:
-    static std::vector<uint32> const& GetQuestsForDungeon(uint32 dungeonId)
+    // Readers run on map threads (gossip, AI Reset) while `.reload dc_dungeon_quests` clears the
+    // containers, so every read takes the mutex and returns a copy.
+    static std::vector<uint32> GetQuestsForDungeon(uint32 dungeonId)
     {
-        // Note: Read access should be safe after initial load
-        static std::vector<uint32> empty;
+        std::lock_guard<std::mutex> lock(_cacheMutex);
         auto it = _dungeonQuests.find(dungeonId);
-        return (it != _dungeonQuests.end()) ? it->second : empty;
+        return (it != _dungeonQuests.end()) ? it->second : std::vector<uint32>();
     }
 
     static uint32 GetDisplayIdForDungeon(uint32 dungeonId)
     {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
         auto it = _dungeonDisplayIds.find(dungeonId);
         // Default display: Human Male Quest Giver (like standard NPCs)
         return (it != _dungeonDisplayIds.end()) ? it->second : 16466;
     }
 
-    static std::vector<uint32> const& GetDailyQuests() { return _dailyQuests; }
-    static std::vector<uint32> const& GetWeeklyQuests() { return _weeklyQuests; }
-    static bool IsCacheLoaded() { return _cacheLoaded; }
-    static uint32 GetTotalQuestMappings() { return static_cast<uint32>(_dungeonQuests.size()); }
-    static uint32 GetTotalDisplayMappings() { return static_cast<uint32>(_dungeonDisplayIds.size()); }
+    static std::vector<uint32> GetDailyQuests()
+    {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        return _dailyQuests;
+    }
+
+    static std::vector<uint32> GetWeeklyQuests()
+    {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        return _weeklyQuests;
+    }
+
+    static bool IsCacheLoaded()
+    {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        return _cacheLoaded;
+    }
+
+    static uint32 GetTotalQuestMappings()
+    {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        return static_cast<uint32>(_dungeonQuests.size());
+    }
+
+    static uint32 GetTotalDisplayMappings()
+    {
+        std::lock_guard<std::mutex> lock(_cacheMutex);
+        return static_cast<uint32>(_dungeonDisplayIds.size());
+    }
 };
 
 // Static member definitions

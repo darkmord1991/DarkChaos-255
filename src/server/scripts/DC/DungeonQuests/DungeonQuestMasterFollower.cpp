@@ -28,6 +28,7 @@
 #include "ObjectMgr.h"
 #include "ChatCommand.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
 #include "DC/Spectator/dc_spectator_core.h"
@@ -56,24 +57,35 @@ static std::mutex sQuestMasterFollowersMutex;
 static std::unordered_map<ObjectGuid, QuestMasterFollowerInfo> sQuestMasterFollowers;
 static std::mutex sDungeonDisplayIdCacheMutex;
 static std::unordered_map<uint32, uint32> sDungeonDisplayIdCache;
+// Guarded by sDungeonDisplayIdCacheMutex as well; cleared together on `.reload dc_dungeon_quests`.
+static std::unordered_map<uint32, uint32> sQuestMasterEntryCache;
 
 // Helper: Get the appropriate quest master entry for a map.
 // Returns 0 (no follower) when the map has no enabled dc_dungeon_npc_mapping row — maps like
 // Blackwing Descent (669) opt out of the dungeon-quest system and run their own questgiver.
 static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 {
+    {
+        std::lock_guard<std::mutex> lock(sDungeonDisplayIdCacheMutex);
+        auto it = sQuestMasterEntryCache.find(mapId);
+        if (it != sQuestMasterEntryCache.end())
+            return it->second;
+    }
+
     QueryResult result = WorldDatabase.Query(
         "SELECT 1 FROM dc_dungeon_npc_mapping WHERE map_id = {} AND enabled = 1 LIMIT 1",
         mapId
     );
 
-    if (!result)
-    {
+    uint32 const entry = result ? NPC_UNIVERSAL_QUEST_MASTER : 0;
+    if (!entry)
         LOG_DEBUG("scripts.dc", "DungeonQuestMaster: No mapping for map ID {} - no follower", mapId);
-        return 0;
-    }
 
-    return NPC_UNIVERSAL_QUEST_MASTER;
+    {
+        std::lock_guard<std::mutex> lock(sDungeonDisplayIdCacheMutex);
+        sQuestMasterEntryCache[mapId] = entry;
+    }
+    return entry;
 }
 
 // Helper: Get display ID for a map (cached)
@@ -110,6 +122,7 @@ namespace DungeonQuestHelpers
     {
         std::lock_guard<std::mutex> lock(sDungeonDisplayIdCacheMutex);
         sDungeonDisplayIdCache.clear();
+        sQuestMasterEntryCache.clear();
     }
 }
 
@@ -445,6 +458,40 @@ public:
     }
 };
 
+// Per-player `.dcquest summon` cooldown: a summon/dismiss loop would otherwise spawn and despawn a creature
+// on every command.
+static constexpr uint32 QUEST_MASTER_SUMMON_COOLDOWN_SEC = 10;
+static constexpr std::size_t QUEST_MASTER_SUMMON_PRUNE_SIZE = 1024;
+static std::mutex sQuestMasterSummonCooldownMutex;
+static std::unordered_map<ObjectGuid, uint32> sQuestMasterLastSummonSec;
+
+// Returns the seconds left on the cooldown, or 0 and starts a new cooldown.
+static uint32 ConsumeQuestMasterSummonCooldown(ObjectGuid const& guid)
+{
+    uint32 const now = static_cast<uint32>(GameTime::GetGameTime().count());
+
+    std::lock_guard<std::mutex> lock(sQuestMasterSummonCooldownMutex);
+    if (sQuestMasterLastSummonSec.size() >= QUEST_MASTER_SUMMON_PRUNE_SIZE)
+    {
+        std::erase_if(sQuestMasterLastSummonSec, [now](auto const& entry)
+        {
+            return now - entry.second >= QUEST_MASTER_SUMMON_COOLDOWN_SEC;
+        });
+    }
+
+    auto [itr, inserted] = sQuestMasterLastSummonSec.try_emplace(guid, now);
+    if (!inserted)
+    {
+        uint32 const elapsed = now - itr->second;
+        if (elapsed < QUEST_MASTER_SUMMON_COOLDOWN_SEC)
+            return QUEST_MASTER_SUMMON_COOLDOWN_SEC - elapsed;
+
+        itr->second = now;
+    }
+
+    return 0;
+}
+
 // Command script to manually summon/dismiss quest master
 class DungeonQuestMasterFollowerCommandScript : public CommandScript
 {
@@ -506,6 +553,12 @@ public:
         if (GetQuestMasterFollower(player))
         {
             handler->PSendSysMessage("Quest Master is already with you!");
+            return true;
+        }
+
+        if (uint32 const wait = ConsumeQuestMasterSummonCooldown(player->GetGUID()))
+        {
+            handler->PSendSysMessage("You can summon the Quest Master again in {} seconds.", wait);
             return true;
         }
 
