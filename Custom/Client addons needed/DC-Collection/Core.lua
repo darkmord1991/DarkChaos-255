@@ -2655,6 +2655,28 @@ end
 -- LINK HANDLING
 -- ============================================================================
 
+function DC:ConfirmAddWishlistFromLink(itemID)
+    if not StaticPopupDialogs["DC_COLLECTION_ADD_WISHLIST_LINK"] then
+        StaticPopupDialogs["DC_COLLECTION_ADD_WISHLIST_LINK"] = {
+            text = "Add %s to your transmog wishlist?",
+            button1 = ACCEPT or "Accept",
+            button2 = CANCEL or "Cancel",
+            OnAccept = function(_, data)
+                if data and DC.RequestAddWishlist then
+                    DC:RequestAddWishlist(6, data)
+                end
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+        }
+    end
+
+    local name = type(GetItemInfo) == "function" and GetItemInfo(itemID) or nil
+    local label = name and (name:gsub("|", "||")) or ("item " .. tostring(itemID))
+    StaticPopup_Show("DC_COLLECTION_ADD_WISHLIST_LINK", label, nil, itemID)
+end
+
 local orig_SetItemRef = SetItemRef
 function SetItemRef(link, text, button, chatFrame)
     if type(link) == "string" then
@@ -2681,12 +2703,11 @@ function SetItemRef(link, text, button, chatFrame)
             end
             return
         elseif string.sub(link, 1, 11) == "dc:wishlist" then
-            if DC.RequestAddWishlist then
-                local _, _, itemID = string.find(link, "dc:wishlist:(%d+)")
-                if itemID then
-                    -- Assume Transmog (Type 6) for now, or encode type in link
-                    DC:RequestAddWishlist(6, tonumber(itemID))
-                end
+            -- Any player can post this link, so a click only asks; nothing is sent until the user accepts
+            -- (security audit 2026-11-18). Transmog (type 6) as before.
+            local itemID = tonumber(string.match(link, "^dc:wishlist:(%d+)"))
+            if itemID and DC.RequestAddWishlist then
+                DC:ConfirmAddWishlistFromLink(itemID)
             end
             return
         end
