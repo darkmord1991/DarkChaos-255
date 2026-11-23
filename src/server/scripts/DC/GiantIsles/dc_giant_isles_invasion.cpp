@@ -3,7 +3,7 @@
  * ==========================================================================
  * An island-wide assault staged on the real MoP layout:
  *   Omens      The storm rolls in, the sky turns, Warden's Landing musters.
- *   Landfall   Longboats beach on Seeping Shores and plant war standards.
+ *   Landfall   Longboats beach below Beeble's Wreck and plant war standards.
  *   Onslaught  The first war plan, fought close to the line.
  *   Siege      The second war plan, on the Zandalari ground further out.
  *   Warlord    Zul'mar comes ashore. Elder Zul'jin leads the counter-charge.
@@ -941,11 +941,11 @@ namespace
 
             SendMapAnnouncement(
                 map,
-                "|cFFFF8000[THE BLOOD TIDE]|r The sky turns red over the Isles of Giants. "
-                "Zandalari sails on the horizon - to Seeping Shores!");
+                "|cFFFF8000[THE BLOOD TIDE]|r The sky turns red over the Isle of Giants. "
+                "Zandalari sails on the horizon - to Beeble's Wreck!");
 
             sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING,
-                "|cFFFF8000[Giant Isles]|r The Blood Tide rises! Zandalari warships close on Seeping Shores. "
+                "|cFFFF8000[Giant Isles]|r The Blood Tide rises! Zandalari warships close on Beeble's Wreck. "
                 "Defenders of Warden's Landing, to arms!");
 
             if (foothold > 0)
@@ -1099,7 +1099,7 @@ namespace
                 if (_phaseTimerMs <= diff)
                 {
                     if (_phase == INVASION_WAVE_4_BOSS)
-                        FailInvasion(map, "|cFFFF3030[INVASION]|r The invaders secured Seeping Shores.");
+                        FailInvasion(map, "|cFFFF3030[INVASION]|r The invaders secured Beeble's Wreck.");
                     else
                         EnterVictory(map);
 
@@ -2235,7 +2235,7 @@ namespace
             SendMapAnnouncement(
                 map,
                 "|cFFFF0000[IRON RAIN]|r War engines open fire from the Zandalari bunkers! "
-                "Fly to Slimer Bay and the eastern heights and silence them!");
+                "Fly to the Misty Shores and the eastern heights and silence them!");
         }
 
         void StartBinding(Map* map, PlanRuntime& plan)
@@ -2936,7 +2936,7 @@ namespace
                 uint32 entry = PickWaveEntry();
 
                 // From the Onslaught on, part of every wave arrives overland: the
-                // Warpath column from Slimer Bay, or the shorter east flank.
+                // Warpath column from the Misty Shores canoes, or the shorter east flank.
                 if (_phase != INVASION_WAVE_1 && urand(0u, 99u) < 25)
                 {
                     bool const warpath = _phase == INVASION_WAVE_3 && urand(0u, 1u) == 1u;
@@ -3390,8 +3390,8 @@ namespace
             SendMapAnnouncement(
                 map,
                 _generalSlain
-                    ? "|cFF40FF40[TOTAL VICTORY]|r General Rak'zor is dead! The Blood Tide breaks on Seeping Shores!"
-                    : "|cFF40FF40[VICTORY]|r Warlord Zul'mar is defeated. Seeping Shores holds!");
+                    ? "|cFF40FF40[TOTAL VICTORY]|r General Rak'zor is dead! The Blood Tide breaks on Beeble's Wreck!"
+                    : "|cFF40FF40[VICTORY]|r Warlord Zul'mar is defeated. Beeble's Wreck holds!");
 
             if (!_generalSlain)
                 LeaderAnnounce(LEADER_SAY_RETREAT, map);
@@ -3658,7 +3658,7 @@ namespace
 
                 case GOSSIP_ACTION_INFO_DEF + 3:
                     player->GetSession()->SendAreaTriggerMessage(
-                        "Zandalari raiders are unloading weapons and beasts at Seeping Shores. "
+                        "Zandalari raiders are unloading weapons and beasts at Beeble's Wreck. "
                         "Break their war plans, cut down their standards and slay Warlord Zul'mar.");
                     break;
 

@@ -26,8 +26,8 @@ end
 -- IMPORTANT: Must be defined before HotspotMatchesMap function
 local CUSTOM_ZONE_MAPPING = {
     [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
-    [1405] = 5006, -- Slippy Quagmire (custom): client MapAreaID 1405, server zoneId 5006
-    -- Slippy Quagmire / Isles of Giants (custom): clients may report any of these map IDs depending on UI / floors
+    [1405] = 5006, -- Isle of Giants (custom): client MapAreaID 1405, server zoneId 5006
+    -- Isle of Giants (custom): clients may report any of these map IDs depending on UI / floors
     [1100] = 5006,
     [1101] = 5006,
     [1102] = 5006,
@@ -245,7 +245,7 @@ local function IsContinentMapView(activeMapId)
 end
 
 -- A floor plan drawn over a terrain map. A WorldMapArea with DefaultDungeonFloor = -1
--- (the Isles of Giants map, which carries the Sunken Temple floors) keeps its own
+-- (the Isle of Giants map, which carries the Sunken Temple floors) keeps its own
 -- terrain art as level 1 and shows dungeon floors as levels 2+. Those floors use their
 -- own DungeonMap bounds, so pins normalized to the terrain map would land on the wrong
 -- spots -- while the map id stays the same.

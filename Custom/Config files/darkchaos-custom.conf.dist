@@ -1616,7 +1616,7 @@ Hotspots.AnnounceRadius = 1000.0
 #                     (80-130), 850 = Stratholme Valley (130-160),
 #                     750 = DC Hyjal (Mount Hyjal downport),
 #                     751 = DC Plaguelands (Eastern Plaguelands downport).
-#                     Other options: 1405 = Isles of Giants, 0/1/530/571 =
+#                     Other options: 1405 = Isle of Giants, 0/1/530/571 =
 #                     vanilla continents. Maps must exist in the deployed
 #                     Map.dbc and be non-instanced; invalid entries are
 #                     skipped with a startup warning.
@@ -1649,7 +1649,7 @@ Hotspots.EnabledMaps = "37,850,1410,750,751"
 #                       4938 = Arathi Highlands    (map 751,  142-147)
 #                       4939 = Ruins of Gilneas    (map 751,  130-136)
 #                     Not listed (add if you want hotspots there):
-#                       5006 = Isles of Giants     (map 1405)
+#                       5006 = Isle of Giants     (map 1405)
 #                     Never get hotspots, listed or not (no level band):
 #                       4928 = Moonglade           (map 750,  sanctuary)
 #                       4940 = Undercity           (map 751,  capital)

@@ -1,7 +1,7 @@
 /*
  * Giant Isles - Primal Cook Exchange NPC
  * ============================================================================
- * Grak'zar (NPC 401119) stands near Angler Rolo on Nice's Nice Beach.
+ * Grak'zar (NPC 401119) stands near Angler Rolo on the Misty Shores.
  * Players trade primal fish caught in the zone for unique buff food.
  *
  * Exchange table:

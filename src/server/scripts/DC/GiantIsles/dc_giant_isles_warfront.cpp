@@ -5,7 +5,7 @@
  *   - Foothold camps: every level of the campaign foothold that the Zandalari
  *     hold is a set of spawns (game events 251-253), so a lost invasion is
  *     visible on the island, and a won one clears it again.
- *   - The captives in the cages around Slimer Bay and the bunkers.
+ *   - The captives in the cages along the Misty Shores and the bunkers.
  *   - The powder charges at the war engines.
  *   - The scouting markers for Elder Zul'jin's opening quest.
  *   - War-God Dokah on his flagship: killing him is the way to push the

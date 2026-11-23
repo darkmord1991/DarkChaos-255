@@ -97,13 +97,13 @@ constexpr char const* ZONE_ENTER_MESSAGE = "|cFFFF8000[Giant Isles]|r Welcome to
 
 // These messages are for future world boss spawn announcements
 [[maybe_unused]] constexpr char const* BOSS_OONDASTA_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Oondasta, King of Dinosaurs|r "
-    "has awakened in |cFF00FF00Slippy Quagmire|r! Rally your forces!";
+    "has awakened in |cFF00FF00the heart of the Isle of Giants|r! Rally your forces!";
 
 [[maybe_unused]] constexpr char const* BOSS_THOK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Thok the Bloodthirsty|r "
-    "stalks the hunt in |cFF00FF00Oozing Overgrowth|r! Prepare for battle!";
+    "stalks the hunt in |cFF00FF00the western Isle of Giants|r! Prepare for battle!";
 
 [[maybe_unused]] constexpr char const* BOSS_NALAK_SPAWN = "|cFFFF0000[World Boss]|r |cFFFFFF00Nalak the Storm Lord|r "
-    "descends upon |cFF00FF00Moist Ridge|r! The storm is coming!";
+    "descends upon |cFF00FF00the north-eastern Isle of Giants|r! The storm is coming!";
 
 [[maybe_unused]] constexpr char const* BOSS_KILLED_MESSAGE = "|cFFFF8000[Giant Isles]|r |cFF00FF00%s|r has been defeated! "
     "A new world boss will appear tomorrow.";
@@ -126,14 +126,14 @@ struct RareSpawnLocation
 // Potential spawn locations for random rares, on MoP's own dinosaur grounds and
 // clear of the camps, the tar pits and the invasion's beach.
 static const std::vector<RareSpawnLocation> RareSpawnPoints = {
-    { 6147.5f, 1073.3f, 61.2f, 3.13f },  // Slippy Quagmire, east bank
-    { 6155.8f, 1142.7f, 61.3f, 6.05f },  // Slippy Quagmire, north bank
-    { 6102.3f, 1243.7f, 64.1f, 1.16f },  // Oozing Overgrowth, south slope
-    { 5979.1f, 1397.9f, 86.3f, 4.65f },  // Oozing Overgrowth, plateau
-    { 6118.2f, 1550.2f, 31.9f, 0.44f },  // Sticky Puddles, lower shelf
-    { 5967.4f,  852.1f, 44.5f, 2.19f },  // Weeping Swallow
-    { 6119.0f, 1517.4f, 43.7f, 0.40f },  // Sticky Puddles, upper shelf
-    { 5924.0f,  709.9f, 24.4f, 1.60f },  // Slimer Bay heights
+    { 6147.5f, 1073.3f, 61.2f, 3.13f },  // central basin, east bank
+    { 6155.8f, 1142.7f, 61.3f, 6.05f },  // central basin, north bank
+    { 6102.3f, 1243.7f, 64.1f, 1.16f },  // west of the basin, south slope
+    { 5979.1f, 1397.9f, 86.3f, 4.65f },  // west of the basin, plateau
+    { 6118.2f, 1550.2f, 31.9f, 0.44f },  // far west, lower shelf
+    { 5967.4f,  852.1f, 44.5f, 2.19f },  // east slope
+    { 6119.0f, 1517.4f, 43.7f, 0.40f },  // far west, upper shelf
+    { 5924.0f,  709.9f, 24.4f, 1.60f },  // south-east heights
 };
 
 // Random rare NPC entries that can spawn dynamically
@@ -477,15 +477,15 @@ public:
             {
                 case NPC_OONDASTA:
                     bossName = "Oondasta, King of Dinosaurs";
-                    location = "Slippy Quagmire";
+                    location = "the heart of the Isle of Giants";
                     break;
                 case NPC_THOK:
                     bossName = "Thok the Bloodthirsty";
-                    location = "Oozing Overgrowth";
+                    location = "the western Isle of Giants";
                     break;
                 case NPC_NALAK:
                     bossName = "Nalak the Storm Lord";
-                    location = "Moist Ridge";
+                    location = "the north-eastern Isle of Giants";
                     break;
                 default:
                     continue;

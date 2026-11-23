@@ -3,8 +3,8 @@
  * ==========================================================================
  * Every position the invasion uses, in one place. They follow the real map:
  *
- *   West  Warden's Landing -- Seeping Shores -- the south plain -- Slimer Bay
- *         (defender line)     (landing lanes)    (the Warpath)     (canoes)
+ *   West  Beeble's Wreck -- landing beach -- the south plain -- Misty Shores
+ *         (defender line)   (landing lanes)  (the Warpath)      (canoes)
  *                                                                      |
  *   East  Ritual Grounds -- Bunker -- Bunker -- Zandalari War Camp ----+
  *
@@ -34,7 +34,7 @@ namespace DCGiantIsles
         float o;
     };
 
-    // ----- Seeping Shores: the landing lanes and the defender line ------------
+    // ----- Beeble's Wreck: the landing lanes and the defender line ------------
 
     // User-provided invader landing positions.
     inline constexpr std::array<InvasionPoint, 4> InvaderSpawnPoints =
@@ -104,7 +104,7 @@ namespace DCGiantIsles
         ROUTE_LANE_1        = 1,
         ROUTE_LANE_2        = 2,
         ROUTE_LANE_3        = 3,
-        ROUTE_WARPATH       = 4,    // Slimer Bay canoes, 600 yards along the plain
+        ROUTE_WARPATH       = 4,    // Misty Shores canoes, 600 yards along the plain
         ROUTE_EAST_FLANK    = 5,    // the last stretch of the Warpath
         ROUTE_TERRACE       = 6,    // down from the terrace above the line
         ROUTE_STAMPEDE_A    = 7,
@@ -267,7 +267,7 @@ namespace DCGiantIsles
     inline constexpr InvasionPoint EastFlankLanding =
         { 5834.7f, 1098.7f, 6.4f, 1.57f };
 
-    // Slimer Bay: where the Warpath column leaves the canoes.
+    // Misty Shores canoes: where the Warpath column leaves them.
     inline constexpr InvasionPoint WarpathLanding =
         { 5790.4f, 822.2f, 3.7f, 1.20f };
 

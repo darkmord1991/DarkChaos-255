@@ -2,7 +2,7 @@
  * Giant Isles - Invasion war economy: the War Quartermaster
  * ==========================================================================
  * A gossip-driven token vendor for the Zandalari invasion (Phase 3). Players
- * earn Zandalari War-Tokens (item 400456) by defending Seeping Shores; this
+ * earn Zandalari War-Tokens (item 400456) by defending Beeble's Wreck; this
  * NPC exchanges them for goods entirely through gossip, so it needs no custom
  * ItemExtendedCost / currency DBC entries.
  *
@@ -82,7 +82,7 @@ namespace
             if (action == GOSSIP_ACTION_INFO)
             {
                 player->GetSession()->SendAreaTriggerMessage(
-                    "War-Tokens are earned by defending Seeping Shores against the Zandalari invasion. "
+                    "War-Tokens are earned by defending Beeble's Wreck against the Zandalari invasion. "
                     "The harder the fight, the greater the reward.");
                 SendQuartermasterMenu(player, creature);
                 return true;

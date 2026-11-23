@@ -21,13 +21,13 @@ local function RefreshProtocolMode()
     Core.protocolMode = DC and "DCAddonProtocol" or "None"
 end
 
--- World-map level dropdown names. The Isles of Giants map (WorldMapArea 1100) carries the
+-- World-map level dropdown names. The Isle of Giants map (WorldMapArea 1100) carries the
 -- Sunken Temple floors as extra levels (DefaultDungeonFloor = -1); FrameXML reads
 -- DUNGEON_FLOOR_<MAPFILE><n>, n = 0 for the island terrain itself, 1-4 for the island temple
 -- and 5-7 for the Temple of Atal'Hakkar dungeon copy underneath it.
 -- Without these the dropdown falls back to "Level 1".."Level 8".
 local DUNGEON_FLOOR_NAMES = {
-    DUNGEON_FLOOR_ISLESOFGIANTS0 = "Isles of Giants",
+    DUNGEON_FLOOR_ISLESOFGIANTS0 = "Isle of Giants",
     DUNGEON_FLOOR_ISLESOFGIANTS1 = "Temple Entrance",
     DUNGEON_FLOOR_ISLESOFGIANTS2 = "The Broken Hall",
     DUNGEON_FLOOR_ISLESOFGIANTS3 = "Hall of Ritual",
@@ -931,7 +931,7 @@ function Core:ADDON_LOADED(name)
     else
         -- Always enforce the Jade Forest server map id
         state.db.bossBlacklistMaps[745] = true
-        -- Clear client map ids so Isles of Giants isn't hidden
+        -- Clear client map ids so Isle of Giants isn't hidden
         state.db.bossBlacklistMaps[1100] = nil
         state.db.bossBlacklistMaps[1101] = nil
         state.db.bossBlacklistMaps[1102] = nil

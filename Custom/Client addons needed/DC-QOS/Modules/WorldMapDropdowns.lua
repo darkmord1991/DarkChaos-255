@@ -9,7 +9,7 @@
 --    Naxxramas 2921, both Hinterland BG maps, the empty "Level Zones" test map
 --    1451), so they turn up as continents.
 --  * A zone whose game map has no AreaID-0 row of its own -- Azshara Crater (map
---    37), The Molten Front (861), Isles of Giants (1405) -- reports continent 0,
+--    37), The Molten Front (861), Isle of Giants (1405) -- reports continent 0,
 --    and stock WorldMapContinentsDropDown_Update / WorldMapZoneDropDown_Update
 --    then CLEAR both dropdowns. A continent cannot span several game maps, so
 --    no WorldMapArea row can fix that.
@@ -82,7 +82,7 @@ local CONTINENTS = {
 local DARK_CHAOS_ZONES = {
     { map = 37,   wma = 613,  name = "Azshara Crater (1-80)", alsoMaps = { 1451 } },
     { map = 646,  wma = 1215, name = "Deepholm", continentName = "Deepholm" },
-    { map = 1405, wma = 1100, name = "Isles of Giants" },
+    { map = 1405, wma = 1100, name = "Isle of Giants" },
     { map = 745,  wma = 1101, name = "The Jade Forest", continentName = "Jade Forest" },
     { map = 861,  wma = 1255, name = "The Molten Front" },
     { map = 2706, wma = 1204, name = "Undermine", continentName = "Undermine" },
