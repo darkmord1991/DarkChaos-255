@@ -5528,6 +5528,60 @@ DC.UpdateProfiler.ThresholdMs = 25
 
 
 ###############################################################################
+# DUNGEON QOL: BATTLE RESURRECTION CHARGES AND CHECKPOINT RELEASE
+#
+#  src/server/scripts/DC/DungeonQoL. Ported in idea from Ascension CoA.
+#
+###############################################################################
+
+#
+#    DC.BattleRes.Enable
+#        Description: Limit combat resurrections (Rebirth, soulstone, Reincarnation/Ankh and other
+#                     resurrect effects) with shared charges in active Mythic+ runs and in the raids
+#                     listed in DC.BattleRes.RaidMaps. Out-of-combat resurrections stay free. Raise Ally
+#                     is not counted: in 3.3.5 it brings nobody back.
+#        Default:     1 (Enabled)
+#
+
+DC.BattleRes.Enable = 1
+
+#
+#    DC.BattleRes.MythicPlusRechargeMinutes
+#        Description: A Mythic+ run starts with 1 charge and gains 1 more every N minutes of run time.
+#        Default:     10 (0 = never recharge)
+#
+
+DC.BattleRes.MythicPlusRechargeMinutes = 10
+
+#
+#    DC.BattleRes.RaidMaps
+#        Description: Comma-separated raid map ids. Each boss pull gets 2 charges (15 or fewer players)
+#                     or 3 (16+). The limit only applies while an encounter is in progress; trash is free.
+#        Default:     "669,819,824,2296,2921" (BWD, Timbermaw Hold, Emerald Sanctum, Castle Nathria, Naxx40)
+#
+
+DC.BattleRes.RaidMaps = "669,819,824,2296,2921"
+
+#
+#    DC.CheckpointRelease.Maps
+#        Description: Comma-separated instance map ids. Releasing spirit there out of combat revives
+#                     you at 50% health and mana at the last killed boss (the entrance if none died).
+#                     While the group fights, the normal release applies.
+#        Default:     "" (none)
+#
+
+DC.CheckpointRelease.Maps = ""
+
+#
+#    DC.CheckpointRelease.MythicPlus
+#        Description: In an active Mythic+ run, a release revives you at the last killed boss instead of
+#                     the entrance, unless someone in the instance is still fighting.
+#        Default:     1 (Enabled)
+#
+
+DC.CheckpointRelease.MythicPlus = 1
+
+###############################################################################
 # END OF CONFIGURATION FILE
 ###############################################################################
 

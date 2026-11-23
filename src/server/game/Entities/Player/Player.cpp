@@ -13466,6 +13466,9 @@ uint32 Player::GetResurrectionSpellId()
                 case 47883:
                     spell_id = 47882;
                     break;        // rank 7
+                case 920011:
+                    spell_id = 920012;
+                    break;        // DarkChaos rank 8 (level 81): percent of maximum health and mana
                 default:
                     LOG_ERROR("entities.player", "Unhandled spell {}: S.Resurrection", (*itr)->GetId());
                     continue;
