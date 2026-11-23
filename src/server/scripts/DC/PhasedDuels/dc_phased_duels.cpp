@@ -839,12 +839,23 @@ namespace DCPhasedDuels
 
         if (sConfig.resetCooldownsOnEnd)
         {
+            // Arena rule (Player::RemoveArenaSpellCooldowns): only combat cooldowns under 10 minutes, never item
+            // or tradeskill ones, or a duel + /yield repeats transmutes, cloth crafts and item cooldowns.
+            uint32 constexpr maxResetMs = 10 * MINUTE * IN_MILLISECONDS;
+            uint32 const infTime = GameTime::GetGameTimeMS().count() + infinityCooldownDelayCheck;
             std::vector<uint32> startedDuringDuel;
             for (auto const& [spellId, cooldown] : player->GetSpellCooldownMap())
             {
-                (void)cooldown;
-                if (!snapshot->cooldownsAtStart.count(spellId))
-                    startedDuringDuel.push_back(spellId);
+                if (snapshot->cooldownsAtStart.count(spellId) || cooldown.itemid || cooldown.maxduration >= maxResetMs
+                    || cooldown.end >= infTime)
+                    continue;
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (!spellInfo || spellInfo->HasAttribute(SPELL_ATTR0_IS_TRADESKILL) || spellInfo->IsProfession()
+                    || spellInfo->RecoveryTime >= maxResetMs || spellInfo->CategoryRecoveryTime >= maxResetMs)
+                    continue;
+
+                startedDuringDuel.push_back(spellId);
             }
 
             for (uint32 spellId : startedDuringDuel)
