@@ -155,6 +155,19 @@ namespace DarkChaos
             uint8 GetProgressPercentage() const;
             bool IsFullyUpgraded() const;
 
+            // The refund ledger only holds what the player named on the row paid. An item that
+            // changed hands keeps its level but starts an empty ledger under its new upgrader.
+            void TakeOwnershipForUpgrade(uint32 upgrader_guid)
+            {
+                if (player_guid != 0 && player_guid != upgrader_guid)
+                {
+                    tokens_invested = 0;
+                    essence_invested = 0;
+                }
+
+                player_guid = upgrader_guid;
+            }
+
             bool IsMaxUpgraded() const { return upgrade_level >= MAX_UPGRADE_LEVEL; }
             bool CanUpgrade() const { return upgrade_level < MAX_UPGRADE_LEVEL; }
         };
@@ -284,6 +297,9 @@ namespace DarkChaos
             // Database functions
             virtual void LoadUpgradeData(uint32 season = 1) = 0;
             virtual void SaveItemUpgrade(uint32 item_guid) = 0;
+            // Blocking write for a player-paid upgrade: the respec reads the row on the sync
+            // connection, so a queued async write would let it refund the old investment.
+            virtual void SaveItemUpgradeSync(uint32 item_guid) = 0;
             virtual void SavePlayerCurrency(uint32 player_guid, uint32 season = 1) = 0;
 
             // Maintenance and Metrics

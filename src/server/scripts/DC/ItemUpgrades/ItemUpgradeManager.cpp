@@ -251,7 +251,7 @@ namespace DarkChaos
 
             UpgradeStatistics stats;
 
-            bool PersistItemUpgradeState(ItemUpgradeState& state)
+            bool PersistItemUpgradeState(ItemUpgradeState& state, bool synchronous = false)
             {
                 if (state.item_guid == 0)
                     return false;
@@ -260,7 +260,7 @@ namespace DarkChaos
                 CharacterDatabase.EscapeString(baseName);
                 baseName = DCUtils::EscapeFmtBraces(baseName);
 
-                CharacterDatabase.Execute(
+                std::string const sql = Acore::StringFormat(
                     "INSERT INTO {} (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
                     "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
                     "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
@@ -288,6 +288,11 @@ namespace DarkChaos
                     static_cast<uint32>(state.first_upgraded_at),
                     static_cast<uint32>(state.last_upgraded_at),
                     state.season);
+
+                if (synchronous)
+                    CharacterDatabase.DirectExecute(sql);
+                else
+                    CharacterDatabase.Execute(sql);
 
                 state.has_persisted_state = true;
                 ++stats.db_writes;
@@ -626,6 +631,7 @@ namespace DarkChaos
                     // has exactly one tier, so the refund path recovers WHICH item
                     // to hand back from tier_id -- see RespecItem. Do not read it
                     // as "DC Item Upgrade Tokens" without consulting the tier.
+                    state->TakeOwnershipForUpgrade(player_guid);
                     if (currency == CURRENCY_ARTIFACT_ESSENCE)
                         state->essence_invested += cost;
                     else
@@ -1638,6 +1644,16 @@ namespace DarkChaos
 
             void SaveItemUpgrade(uint32 item_guid) override
             {
+                SaveItemUpgradeState(item_guid, false);
+            }
+
+            void SaveItemUpgradeSync(uint32 item_guid) override
+            {
+                SaveItemUpgradeState(item_guid, true);
+            }
+
+            void SaveItemUpgradeState(uint32 item_guid, bool synchronous)
+            {
                 ItemUpgradeState* state = GetItemUpgradeState(item_guid);
                 if (!state)
                     return;
@@ -1645,7 +1661,7 @@ namespace DarkChaos
                 if (state->base_item_name.empty())
                     EnsureStateMetadata(*state, state->player_guid);
 
-                if (PersistItemUpgradeState(*state))
+                if (PersistItemUpgradeState(*state, synchronous))
                     InvalidateTooltipSnapshot(item_guid);
             }
 

@@ -976,6 +976,9 @@ namespace Upgrade
             }
         };
 
+        // A previous owner's spend must not become this player's refund.
+        upgradeState->TakeOwnershipForUpgrade(player->GetGUID().GetCounter());
+
         uint32 investedTokens = upgradeState->tokens_invested;
         uint32 investedEssence = upgradeState->essence_invested;
         if (!upgradeState->has_persisted_state && currentLevel > 0 &&
@@ -986,7 +989,6 @@ namespace Upgrade
         }
 
         time_t const now = time(nullptr);
-        upgradeState->player_guid = player->GetGUID().GetCounter();
         upgradeState->item_guid = itemGUID;
         upgradeState->item_entry = baseEntry;
         upgradeState->base_item_name = !baseTemplate->Name1.empty()
@@ -1011,7 +1013,8 @@ namespace Upgrade
             upgradeState->first_upgraded_at = now;
         upgradeState->last_upgraded_at = now;
 
-        mgr->SaveItemUpgrade(itemGUID);
+        // Synchronous: a respec in the same packet burst reads this row on the sync connection.
+        mgr->SaveItemUpgradeSync(itemGUID);
         DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
 
         SendUpgradeResult(player, msg.GetRequestId(), true, itemGUID,
