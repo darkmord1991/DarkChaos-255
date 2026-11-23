@@ -5703,6 +5703,86 @@ DC.CheckpointRelease.Maps = ""
 DC.CheckpointRelease.MythicPlus = 1
 
 ###############################################################################
+# RAID FLEX: BOSS HEALTH AND BONUS LOOT BY HEADCOUNT
+#
+#  src/server/scripts/DC/RaidFlex. Bots count as players. Only the DC custom
+#  raids listed in DC.RaidFlex.Maps are touched; stock raids never are.
+#
+###############################################################################
+
+#
+#    DC.RaidFlex.Enable
+#        Description: Scale raid boss health at the pull by the players in the instance.
+#        Default:     1 (Enabled)
+#
+
+DC.RaidFlex.Enable = 1
+
+#
+#    DC.RaidFlex.Maps
+#        Description: Space-separated map:difficulty:min:max[:nominal] entries. Health becomes
+#                     health x (clamp(players, min, max) / nominal) ^ HealthExponent at the pull and is
+#                     restored on evade and death. nominal defaults to the instance's player cap, so with
+#                     max = nominal small groups get less health and full groups the normal amount.
+#        Default:     the five DC custom raids (Castle Nathria 2296, BWD 669, Naxx40 2921,
+#                     Timbermaw Hold 819, Emerald Sanctum 824)
+#
+
+DC.RaidFlex.Maps = "2296:0:5:10 2296:1:10:25 2296:2:5:10 2296:3:10:25 669:0:5:10 669:1:10:25 669:2:5:10 669:3:10:25 2921:2:15:40 819:0:10:20 819:1:10:20 819:2:10:20 824:0:10:20 824:1:10:20 824:2:10:20"
+
+#
+#    DC.RaidFlex.HealthExponent
+#        Description: Softens the scaling. 1.0 is linear, 0.5 softer, 0 leaves health unchanged.
+#        Default:     1.0
+#
+
+DC.RaidFlex.HealthExponent = 1.0
+
+#
+#    DC.RaidFlex.ExtraBossEntries
+#    DC.RaidFlex.ExcludeEntries
+#        Description: Space-separated creature entries to treat as bosses in addition to the automatic
+#                     detection (dungeon boss flag, world boss, rank 3, BossAI), or to never scale.
+#        Default:     "" (none)
+#
+
+DC.RaidFlex.ExtraBossEntries = ""
+DC.RaidFlex.ExcludeEntries = ""
+
+#
+#    DC.RaidFlex.BonusLoot.Enable
+#        Description: Add extra items from the boss's own loot table into its group loot when enough
+#                     players took part. Nothing is granted directly.
+#        Default:     1 (Enabled)
+#
+
+DC.RaidFlex.BonusLoot.Enable = 1
+
+#
+#    DC.RaidFlex.BonusLoot.Tiers
+#        Description: Space-separated players:extraItems steps; the highest step reached applies.
+#        Default:     "15:1 20:2 30:3"
+#
+
+DC.RaidFlex.BonusLoot.Tiers = "15:1 20:2 30:3"
+
+#
+#    DC.RaidFlex.BonusLoot.MinQuality
+#        Description: Lowest item quality picked for bonus loot (3 = rare).
+#        Default:     3
+#
+
+DC.RaidFlex.BonusLoot.MinQuality = 3
+
+#
+#    DC.RaidFlex.BonusLoot.ChestEntries
+#        Description: Space-separated boss chest gameobject entries that get the same bonus loot.
+#        Default:     "357752 361000" (Cache of the Sun King, Naxx40 Four Horsemen chest)
+#
+
+DC.RaidFlex.BonusLoot.ChestEntries = "357752 361000"
+
+###############################################################################
 # BOSS KIT: EXTRA BOSS ABILITIES FROM THE dc_boss_kit WORLD TABLE
 #
 #  src/server/scripts/DC/BossKit. Abilities are cast next to a boss's own
