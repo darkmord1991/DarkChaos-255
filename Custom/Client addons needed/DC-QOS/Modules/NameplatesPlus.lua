@@ -1099,7 +1099,7 @@ local function MarkMatchedUnitDebuffsDirty(unit)
     end
 
     for frame in pairs(hookedPlates) do
-        if frame.lastUnitMatch == unit then
+        if frame.lastUnitMatch == unit or frame.dcResolvedUnit == unit then
             frame.dcDebuffDirty = true
         end
     end
@@ -1278,6 +1278,14 @@ end
 local function GetPlateUnit(frame)
     if not frame then
         return nil
+    end
+
+    -- The native client names every shown plate's unit ("nameplateN"); the matching below is the
+    -- old client's way, and the fallback when the tokens are off (CVar nameplateUnitTokens 0).
+    local token = frame.namePlateUnitToken
+    if token and UnitExists(token) then
+        frame.dcUnitMatchDirty = nil
+        return token
     end
 
     if frame.unit and UnitExists(frame.unit) then
@@ -3293,6 +3301,17 @@ end
 -- WorldFrame Scanner
 local lastWorldFrameChildren = 0
 
+-- The stock plate's shape: two or more child frames, the first the health bar, and its regions
+local function IsNameplateFrame(frame)
+    local childFrames = { frame:GetChildren() }
+    if #childFrames < 2 or select("#", frame:GetRegions()) < 7 then
+        return false
+    end
+
+    local healthBar = childFrames[1]
+    return healthBar and healthBar.GetStatusBarTexture and true or false
+end
+
 local function ScanWorldFrame()
     local settings = addon.settings.nameplatesPlus
     if not settings or not settings.enabled then return end
@@ -3306,18 +3325,70 @@ local function ScanWorldFrame()
     local children = { WorldFrame:GetChildren() }
 
     for _, child in ipairs(children) do
-        local regions = { child:GetRegions() }
-        local childFrames = { child:GetChildren() }
-
-        if #childFrames >= 2 and #regions >= 7 then
-            local healthBar = childFrames[1]
-            if healthBar and healthBar.GetStatusBarTexture then
-                HookNameplate(child)
-            end
+        if IsNameplateFrame(child) then
+            HookNameplate(child)
         end
     end
 
     RefreshAllTrackedUnitMatches()
+end
+
+-- ============================================================
+-- Native nameplate API (the native x64 client)
+-- ============================================================
+-- C_NamePlate hands over the stock plate frames as the client creates and fills them, and every
+-- shown plate carries its unit token (see GetPlateUnit), so each plate gets its unit's debuffs, cast
+-- bar and threat, not only the target's or the mouseover's. The old client has none of it: the
+-- events are registered only where C_NamePlate exists, and the WorldFrame scanner stays as the
+-- fallback.
+local function HasNativeNamePlates()
+    return type(C_NamePlate) == "table" and type(C_NamePlate.GetNamePlateForUnit) == "function"
+end
+
+local function HookNativeNameplate(frame)
+    if type(frame) == "table" and not hookedPlates[frame] and IsNameplateFrame(frame) then
+        HookNameplate(frame)
+    end
+end
+
+-- During NAME_PLATE_UNIT_REMOVED the token still resolves; the loop is for a client where it does not
+local function FindPlateForToken(token)
+    local frame = C_NamePlate.GetNamePlateForUnit(token)
+    if frame then
+        return frame
+    end
+
+    for plate in pairs(hookedPlates) do
+        if plate.dcResolvedUnit == token or plate.namePlateUnitToken == token then
+            return plate
+        end
+    end
+end
+
+local function OnNamePlateEvent(event, arg1)
+    local settings = addon.settings.nameplatesPlus
+    if not settings or not settings.enabled then
+        return
+    end
+
+    if event == "NAME_PLATE_CREATED" then
+        HookNativeNameplate(arg1)
+        return
+    end
+
+    local frame = type(arg1) == "string" and FindPlateForToken(arg1)
+    if not frame then
+        return
+    end
+
+    if event == "NAME_PLATE_UNIT_ADDED" then
+        HookNativeNameplate(frame)
+    else
+        -- The frame comes back for another unit, possibly under the same token
+        ClearFrameUnitMatch(frame)
+    end
+    frame.dcResolvedUnit = nil
+    MarkFrameDirty(frame)
 end
 
 local function OnUpdate(self, elapsed)
@@ -3465,8 +3536,16 @@ function NameplatesPlus.OnEnable()
         updateFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
         updateFrame:RegisterEvent("UNIT_TARGET")
         updateFrame:RegisterEvent("UNIT_AURA")
+        -- The old client does not know these events and would throw on them
+        if HasNativeNamePlates() then
+            updateFrame:RegisterEvent("NAME_PLATE_CREATED")
+            updateFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+            updateFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+        end
         updateFrame:SetScript("OnEvent", function(self, event, arg1)
-            if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+            if event == "NAME_PLATE_CREATED" or event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+                OnNamePlateEvent(event, arg1)
+            elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
                 ApplyNameplateCVars(settings)
                 UpdateGroupGUIDs()
                 RefreshAllTrackedUnitMatches()
@@ -3503,7 +3582,13 @@ function NameplatesPlus.OnEnable()
     
     -- Initial group GUID cache
     UpdateGroupGUIDs()
-    
+
+    -- Plates already shown (a /reload, or the module switched on later)
+    if HasNativeNamePlates() and type(C_NamePlate.GetNamePlates) == "function" then
+        for _, frame in ipairs(C_NamePlate.GetNamePlates() or {}) do
+            HookNativeNameplate(frame)
+        end
+    end
     ScanWorldFrame()
     RefreshAllTrackedUnitMatches()
     
