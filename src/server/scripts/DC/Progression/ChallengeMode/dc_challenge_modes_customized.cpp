@@ -779,7 +779,7 @@ public:
             ChallengeModeSettings picked = eligible[urand(0, eligible.size() - 1)];
 
             // Activate the picked mode.
-            player->UpdatePlayerSetting("mod-challenge-modes", picked, 1);
+            DCChallengeModes::SetModeActive(player, picked);
             sChallengeModes->RefreshChallengeAuras(player);
 
             if (picked == SETTING_IRON_MAN || picked == SETTING_IRON_MAN_PLUS)
@@ -1153,7 +1153,7 @@ public:
             }
 
             // Activate challenge mode
-            player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
+            DCChallengeModes::SetModeActive(player, setting);
             sChallengeModes->RefreshChallengeAuras(player);
 
             // Apply immediate restrictions for Iron Man / Iron Man+ (so the player can't keep talents/glyphs/groups).
@@ -1227,7 +1227,7 @@ namespace DCChallengeModes
         if (disableLevel > 0 && player->GetLevel() >= disableLevel)
             return false;
 
-        player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
+        DCChallengeModes::SetModeActive(player, setting);
         sChallengeModes->RefreshChallengeAuras(player);
 
         if (setting == SETTING_IRON_MAN || setting == SETTING_IRON_MAN_PLUS)

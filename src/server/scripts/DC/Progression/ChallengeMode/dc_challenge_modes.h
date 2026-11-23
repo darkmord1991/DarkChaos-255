@@ -117,6 +117,38 @@ namespace DCChallengeModes
     bool ActivateMode(Player* player, uint8 mode);
 }
 
+// ---------------------------------------------------------------------------
+// Activation level (header-only, not part of the mirrored cross-library API).
+//
+// The challenge achievements mean "levelled with the mode on", but modes can be
+// switched on at any level, so every enable path records the character level at
+// which each mode went from off to on. Stored as a separate player-settings
+// source, indexed by ChallengeModeSettings; 0 = no record.
+// ---------------------------------------------------------------------------
+namespace DCChallengeModes
+{
+    inline constexpr char const* SETTINGS_SOURCE = "mod-challenge-modes";
+    inline constexpr char const* ACTIVATION_LEVEL_SOURCE = "dc-challenge-activation-level";
+
+    // Highest activation level that still counts for the challenge-mode achievements.
+    inline constexpr uint32 ACHIEVEMENT_MAX_ACTIVATION_LEVEL = 10;
+
+    // Turns the mode setting on and records the activation level on the off -> on transition.
+    inline void SetModeActive(Player* player, ChallengeModeSettings setting)
+    {
+        if (player->GetPlayerSetting(SETTINGS_SOURCE, setting).value != 1)
+            player->UpdatePlayerSetting(ACTIVATION_LEVEL_SOURCE, setting, player->GetLevel());
+
+        player->UpdatePlayerSetting(SETTINGS_SOURCE, setting, 1);
+    }
+
+    // Level at which the mode was switched on, 0 when not recorded.
+    inline uint32 GetActivationLevel(Player* player, ChallengeModeSettings setting)
+    {
+        return player->GetPlayerSetting(ACTIVATION_LEVEL_SOURCE, setting).value;
+    }
+}
+
 // Script registration
 void AddSC_dc_challenge_modes();
 

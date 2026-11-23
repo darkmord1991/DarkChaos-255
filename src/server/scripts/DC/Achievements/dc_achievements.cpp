@@ -20,6 +20,7 @@
 #include "Config.h"
 #include "Chat.h"
 #include "DC/Progression/Prestige/dc_prestige_api.h"
+#include "DC/Progression/ChallengeMode/dc_challenge_modes.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "AchievementMgr.h"
 #include "Map.h"
@@ -122,6 +123,25 @@ public:
         return sConfigMgr->GetOption<uint32>("DC.Achievements.Debug", 0);
     }
 
+    // A challenge mode counts only if it was switched on at a low level ("levelled with the mode on"),
+    // otherwise enabling it at 59 or 254 would hand out the achievement for one level.
+    static bool IsChallengeModeEligible(Player* player, ChallengeModeSettings setting, uint8 oldLevel)
+    {
+        if (player->GetPlayerSetting(DCChallengeModes::SETTINGS_SOURCE, setting).value != 1)
+            return false;
+
+        uint32 activationLevel = DCChallengeModes::GetActivationLevel(player, setting);
+
+        // Modes enabled before the level was recorded: the mode was on at oldLevel, so that is a valid record.
+        if (!activationLevel && oldLevel && oldLevel <= DCChallengeModes::ACHIEVEMENT_MAX_ACTIVATION_LEVEL)
+        {
+            player->UpdatePlayerSetting(DCChallengeModes::ACTIVATION_LEVEL_SOURCE, setting, oldLevel);
+            activationLevel = oldLevel;
+        }
+
+        return activationLevel && activationLevel <= DCChallengeModes::ACHIEVEMENT_MAX_ACTIVATION_LEVEL;
+    }
+
     // Level achievements
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
@@ -166,8 +186,8 @@ public:
             TryClaimServerFirst(player, "first_255", ACHIEVEMENT_FIRST_255, "First to Level 255");
         }
 
-        // Challenge mode achievements
-        if (player->GetPlayerSetting("mod-challenge-modes", 0).value) // Hardcore
+        // Challenge mode achievements: only for modes switched on at a low level
+        if (IsChallengeModeEligible(player, SETTING_HARDCORE, oldLevel))
         {
             if (newLevel >= 60)
                 CompleteAchievement(player, ACHIEVEMENT_HARDCORE_SURVIVOR);
@@ -175,7 +195,7 @@ public:
                 CompleteAchievement(player, ACHIEVEMENT_HARDCORE_LEGEND);
         }
 
-        if (player->GetPlayerSetting("mod-challenge-modes", 7).value) // Iron Man
+        if (IsChallengeModeEligible(player, SETTING_IRON_MAN, oldLevel))
         {
             if (newLevel >= 60)
                 CompleteAchievement(player, ACHIEVEMENT_IRON_MAN);
@@ -183,7 +203,7 @@ public:
                 CompleteAchievement(player, ACHIEVEMENT_IRON_LEGEND);
         }
 
-        if (player->GetPlayerSetting("mod-challenge-modes", 2).value) // Self-Crafted
+        if (IsChallengeModeEligible(player, SETTING_SELF_CRAFTED, oldLevel))
         {
             if (newLevel >= 60)
                 CompleteAchievement(player, ACHIEVEMENT_SELF_SUFFICIENT);
