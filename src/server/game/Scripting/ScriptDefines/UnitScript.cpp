@@ -69,6 +69,11 @@ uint32 ScriptMgr::DealDamage(Unit* AttackerUnit, Unit* pVictim, uint32 damage, D
     return damage;
 }
 
+void ScriptMgr::OnDealDamageDetail(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType damagetype, SpellInfo const* spellProto)
+{
+    CALL_ENABLED_HOOKS(UnitScript, UNITHOOK_ON_DEAL_DAMAGE_DETAIL, script->OnDealDamageDetail(attacker, victim, damage, damagetype, spellProto));
+}
+
 void ScriptMgr::OnBeforeRollMeleeOutcomeAgainst(Unit const* attacker, Unit const* victim, WeaponAttackType attType, int32& attackerMaxSkillValueForLevel, int32& victimMaxSkillValueForLevel, int32& attackerWeaponSkill, int32& victimDefenseSkill, int32& crit_chance, int32& miss_chance, int32& dodge_chance, int32& parry_chance, int32& block_chance)
 {
     CALL_ENABLED_HOOKS(UnitScript, UNITHOOK_ON_BEFORE_ROLL_MELEE_OUTCOME_AGAINST, script->OnBeforeRollMeleeOutcomeAgainst(attacker, victim, attType, attackerMaxSkillValueForLevel, victimMaxSkillValueForLevel, attackerWeaponSkill, victimDefenseSkill, crit_chance, miss_chance, dodge_chance, parry_chance, block_chance));

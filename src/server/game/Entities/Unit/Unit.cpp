@@ -993,6 +993,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
     bool /*allowGM*/, Spell const* damageSpell /*= nullptr*/, bool skipCombat /*= false*/)
 {
     damage = sScriptMgr->DealDamage(attacker, victim, damage, damagetype);
+    sScriptMgr->OnDealDamageDetail(attacker, victim, damage, damagetype, spellProto);
     // Xinef: initialize damage done for rage calculations
     // Xinef: its rare to modify damage in hooks, however training dummy's sets damage to 0
     uint32 rage_damage = damage + ((cleanDamage != nullptr) ? cleanDamage->absorbed_damage : 0);

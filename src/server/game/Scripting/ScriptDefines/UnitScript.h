@@ -45,6 +45,7 @@ enum UnitHook
     UNITHOOK_ON_UNIT_EXIT_COMBAT,
     UNITHOOK_ON_UNIT_DEATH,
     UNITHOOK_ON_UNIT_SET_SHAPESHIFT_FORM,
+    UNITHOOK_ON_DEAL_DAMAGE_DETAIL,
     UNITHOOK_END
 };
 
@@ -82,6 +83,10 @@ public:
 
     //Called when Damage is Dealt
     virtual uint32 DealDamage(Unit* /*AttackerUnit*/, Unit* /*pVictim*/, uint32 damage, DamageEffectType /*damagetype*/) { return damage; }
+
+    // DarkChaos: called right after DealDamage with the final amount and the spell that dealt it (nullptr for a
+    // melee swing). Read-only: for meters that need to know where damage came from.
+    virtual void OnDealDamageDetail(Unit* /*attacker*/, Unit* /*victim*/, uint32 /*damage*/, DamageEffectType /*damagetype*/, SpellInfo const* /*spellProto*/) { }
 
     virtual void OnBeforeRollMeleeOutcomeAgainst(Unit const* /*attacker*/, Unit const* /*victim*/, WeaponAttackType /*attType*/, int32& /*attackerMaxSkillValueForLevel*/, int32& /*victimMaxSkillValueForLevel*/, int32& /*attackerWeaponSkill*/, int32& /*victimDefenseSkill*/, int32& /*crit_chance*/, int32& /*miss_chance*/, int32& /*dodge_chance*/, int32& /*parry_chance*/, int32& /*block_chance*/ ) {   };
 
