@@ -18,6 +18,14 @@
  * memory per logged-in character so the hot display-resolution path never
  * touches the DB.
  *
+ * Pseudo-forms (ride the same catalog/picks/opcodes/UI as real forms):
+ *   240-243 ... shaman totem element slots, applied by Totem.cpp.
+ *   250-254 ... warlock demons (Imp, Voidwalker, Succubus, Felhunter,
+ *               Felguard), applied to the summoned pet by the display hooks
+ *               at the bottom of this file. Only the native look is replaced;
+ *               transform auras still win, and the pet row keeps saving the
+ *               native display, so clearing a pick restores it.
+ *
  * Opcodes (Module::COLLECTION):
  *   CMSG_GET_FORMS  -> SMSG_FORMS_DATA
  *   CMSG_SET_FORM   -> SMSG_FORM_RESULT (+ SMSG_FORMS_DATA)
@@ -30,8 +38,10 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
+#include "Pet.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
@@ -60,6 +70,34 @@ namespace Forms
     constexpr uint8 FORM_TOTEM_EARTH = 241;
     constexpr uint8 FORM_TOTEM_WATER = 242;
     constexpr uint8 FORM_TOTEM_AIR   = 243;
+
+    // Warlock demons exposed as pseudo-form ids. The pick is applied to the
+    // summoned pet (see FormsDemonUnitScript / FormsDemonPetScript), keyed by
+    // the pet's creature entry.
+    constexpr uint8 FORM_DEMON_IMP        = 250;
+    constexpr uint8 FORM_DEMON_VOIDWALKER = 251;
+    constexpr uint8 FORM_DEMON_SUCCUBUS   = 252;
+    constexpr uint8 FORM_DEMON_FELHUNTER  = 253;
+    constexpr uint8 FORM_DEMON_FELGUARD   = 254;
+
+    // Creature entries from PetDefines.h (NPCEntries).
+    static uint8 DemonFormForEntry(uint32 entry)
+    {
+        switch (entry)
+        {
+            case NPC_IMP:        return FORM_DEMON_IMP;
+            case NPC_VOIDWALKER: return FORM_DEMON_VOIDWALKER;
+            case NPC_SUCCUBUS:   return FORM_DEMON_SUCCUBUS;
+            case NPC_FELHUNTER:  return FORM_DEMON_FELHUNTER;
+            case NPC_FELGUARD:   return FORM_DEMON_FELGUARD;
+            default:             return 0;
+        }
+    }
+
+    static bool IsDemonForm(uint8 form)
+    {
+        return form >= FORM_DEMON_IMP && form <= FORM_DEMON_FELGUARD;
+    }
 
     // --- Catalog (world, read-only after load) ------------------------------
     struct SkinRow
@@ -103,6 +141,11 @@ namespace Forms
             case FORM_TOTEM_AIR:
                 return CLASS_SHAMAN;
             case FORM_METAMORPHOSIS:
+            case FORM_DEMON_IMP:
+            case FORM_DEMON_VOIDWALKER:
+            case FORM_DEMON_SUCCUBUS:
+            case FORM_DEMON_FELHUNTER:
+            case FORM_DEMON_FELGUARD:
                 return CLASS_WARLOCK;
             default:
                 return 0;
@@ -128,6 +171,11 @@ namespace Forms
             case FORM_TOTEM_EARTH: return "Earth Totem";
             case FORM_TOTEM_WATER: return "Water Totem";
             case FORM_TOTEM_AIR:   return "Air Totem";
+            case FORM_DEMON_IMP:        return "Imp";
+            case FORM_DEMON_VOIDWALKER: return "Voidwalker";
+            case FORM_DEMON_SUCCUBUS:   return "Succubus";
+            case FORM_DEMON_FELHUNTER:  return "Felhunter";
+            case FORM_DEMON_FELGUARD:   return "Felguard";
             default:               return "Form";
         }
     }
@@ -231,6 +279,56 @@ namespace Forms
         }
     }
 
+    // ------------------------------------------------------------------------
+    // Warlock demon skins
+    // ------------------------------------------------------------------------
+    // The pick for a summoned warlock demon, or 0 when the pet is not one of
+    // the five demons, its owner is not a warlock, or no pick is stored.
+    static uint32 GetDemonSkin(Pet const* pet)
+    {
+        if (!pet || pet->getPetType() != SUMMON_PET)
+            return 0;
+
+        uint8 form = DemonFormForEntry(pet->GetEntry());
+        if (!form)
+            return 0;
+
+        Player const* owner = pet->GetOwner();
+        if (!owner || owner->getClass() != CLASS_WARLOCK)
+            return 0;
+
+        return GetPick(owner->GetGUID().GetCounter(), form);
+    }
+
+    // Re-resolve the player's current demon display. RestoreDisplayId keeps
+    // transform auras on top and otherwise falls back to SetDisplayId(native),
+    // which FormsDemonUnitScript turns into the pick (or leaves native when
+    // the pick was cleared).
+    static void RefreshDemon(Player* player)
+    {
+        Pet* pet = player ? player->GetPet() : nullptr;
+        if (!pet || !pet->IsInWorld() || !DemonFormForEntry(pet->GetEntry()))
+            return;
+
+        pet->RestoreDisplayId();
+    }
+
+    // Picks load asynchronously at login, so a pet resummoned at login (or a
+    // shapeshift saved through logout) can already show the stock look. Runs
+    // from the DC query-callback tick on the world thread, outside map updates.
+    static void RefreshAfterPicksLoaded(ObjectGuidLow guid)
+    {
+        Player* player = ObjectAccessor::FindPlayerByLowGUID(guid);
+        if (!player || !player->IsInWorld())
+            return;
+
+        ShapeshiftForm form = player->GetShapeshiftForm();
+        if (form != FORM_NONE && GetPick(guid, uint8(form)))
+            player->RestoreDisplayId();
+
+        RefreshDemon(player);
+    }
+
     static void LoadPicksFor(ObjectGuidLow guid)
     {
         // Async load so the login handler never blocks the world thread; the
@@ -249,11 +347,17 @@ namespace Forms
                 } while (result->NextRow());
             }
 
-            std::unique_lock<std::shared_mutex> lock(s_picksMutex);
-            if (picks.empty())
-                s_picks.erase(guid);
-            else
-                s_picks[guid] = std::move(picks);
+            bool const hasPicks = !picks.empty();
+            {
+                std::unique_lock<std::shared_mutex> lock(s_picksMutex);
+                if (hasPicks)
+                    s_picks[guid] = std::move(picks);
+                else
+                    s_picks.erase(guid);
+            }
+
+            if (hasPicks)
+                RefreshAfterPicksLoaded(guid);
         }));
     }
 
@@ -425,9 +529,16 @@ namespace Forms
     }
 
     // Re-apply the active form display if the player is currently shifted into
-    // the form whose appearance just changed.
+    // the form whose appearance just changed (or, for a demon pseudo-form, if
+    // that demon is out).
     static void RefreshActiveForm(Player* player, uint8 form)
     {
+        if (IsDemonForm(form))
+        {
+            RefreshDemon(player);
+            return;
+        }
+
         if (player->GetShapeshiftForm() == ShapeshiftForm(form))
             player->RestoreDisplayId();
     }
@@ -629,6 +740,56 @@ namespace Forms
         }
     };
 
+    // ------------------------------------------------------------------------
+    // Warlock demon display hooks.
+    //
+    // Every path that shows a pet's own look ends in SetDisplayId(native):
+    // Pet::LoadPetFromDB, Creature::UpdateEntry, and Unit::RestoreDisplayId
+    // once a polymorph/transform wears off. Swapping the native display for
+    // the pick right there covers them all without touching core code, and
+    // leaves the native display (what Pet::SavePetToDB stores) untouched.
+    // ------------------------------------------------------------------------
+    class FormsDemonUnitScript : public UnitScript
+    {
+    public:
+        FormsDemonUnitScript() : UnitScript("dc_forms_demon_unit", true, { UNITHOOK_ON_DISPLAYID_CHANGE }) {}
+
+        void OnDisplayIdChange(Unit* unit, uint32 displayId) override
+        {
+            // Hot path for every unit: bail out on the cheap mask test first.
+            if (!unit || !unit->IsPet())
+                return;
+
+            Pet* pet = unit->ToPet();
+            if (displayId != pet->GetNativeDisplayId())
+                return;
+
+            // The nested SetDisplayId re-enters this hook with the skin id,
+            // which no longer equals the native display, so it stops there.
+            uint32 skin = GetDemonSkin(pet);
+            if (skin && skin != displayId)
+                pet->SetDisplayId(skin);
+        }
+    };
+
+    // A freshly created demon sets its display before its native display, so
+    // the hook above misses it; apply the pick once the pet is in the world.
+    class FormsDemonPetScript : public PetScript
+    {
+    public:
+        FormsDemonPetScript() : PetScript("dc_forms_demon_pet", { PETHOOK_ON_PET_ADD_TO_WORLD }) {}
+
+        void OnPetAddToWorld(Pet* pet) override
+        {
+            if (!pet || pet->GetDisplayId() != pet->GetNativeDisplayId())
+                return;
+
+            uint32 skin = GetDemonSkin(pet);
+            if (skin && skin != pet->GetDisplayId())
+                pet->SetDisplayId(skin);
+        }
+    };
+
     // Load the catalog once at world startup (DB is up by OnStartup), matching
     // the wardrobe's WorldScript pattern. EnsureLoaded stays idempotent, so the
     // handlers/login still cover the case where startup load found no rows yet.
@@ -670,6 +831,8 @@ namespace Forms
 
         new FormsWorldScript();
         new FormsPlayerScript();
+        new FormsDemonUnitScript();
+        new FormsDemonPetScript();
     }
 }
 }

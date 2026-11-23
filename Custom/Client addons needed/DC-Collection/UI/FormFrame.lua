@@ -496,7 +496,11 @@ function Forms:RefreshSkins()
     for i = 1, maxRows do
         local row = frame.skinRows[i]
         if not row then
-            row = CreateFrame("Button", nil, scroll)
+            -- Parented to the Forms frame, only anchored to the scroll frame: FauxScrollFrame_Update hides the
+            -- scroll frame itself whenever every row fits (Voidwalker 6, Succubus 5 skins), and children of it
+            -- would vanish with it.
+            row = CreateFrame("Button", nil, frame)
+            row:SetFrameLevel(scroll:GetFrameLevel() + 2)
             row:SetHeight(ROW_HEIGHT)
             if i == 1 then
                 row:SetPoint("TOPLEFT", scroll, "TOPLEFT", 2, -2)

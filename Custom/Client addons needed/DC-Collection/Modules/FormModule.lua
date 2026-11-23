@@ -66,6 +66,14 @@ local FORM_META = {
     [241] = { name = "Earth Totem",   icon = "Interface\\Icons\\Spell_Nature_StoneClawTotem" },
     [242] = { name = "Water Totem",   icon = "Interface\\Icons\\Spell_Nature_ManaRegenTotem" },
     [243] = { name = "Air Totem",     icon = "Interface\\Icons\\Spell_Nature_GroundingTotem" },
+    -- Warlock demons (pseudo-forms 250-254): the pick is worn by the summoned
+    -- pet. Servers without demon support never send these ids, so they simply
+    -- do not appear.
+    [250] = { name = "Imp",           icon = "Interface\\Icons\\Spell_Shadow_SummonImp" },
+    [251] = { name = "Voidwalker",    icon = "Interface\\Icons\\Spell_Shadow_SummonVoidWalker" },
+    [252] = { name = "Succubus",      icon = "Interface\\Icons\\Spell_Shadow_SummonSuccubus" },
+    [253] = { name = "Felhunter",     icon = "Interface\\Icons\\Spell_Shadow_SummonFelHunter" },
+    [254] = { name = "Felguard",      icon = "Interface\\Icons\\Spell_Shadow_SummonFelGuard" },
 }
 
 -- Names that must override whatever the server sends, to disambiguate the two
@@ -98,7 +106,7 @@ end
 local FORM_CLASSES = {
     DRUID = true,
     SHAMAN = true,   -- ghost wolf + totem element slots
-    WARLOCK = true,  -- metamorphosis
+    WARLOCK = true,  -- metamorphosis + demon pets (250-254)
 }
 
 function FormModule:PlayerHasForms()
