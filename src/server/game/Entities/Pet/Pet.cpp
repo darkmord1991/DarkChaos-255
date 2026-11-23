@@ -20,6 +20,7 @@
 #include "ArenaSpectator.h"
 #include "CharmInfo.h"
 #include "Common.h"
+#include "DCBalanceReference.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "Group.h"
@@ -1178,8 +1179,19 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
     {
         case HUNTER_PET:
             {
-                SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel - (petlevel / 4)));
-                SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel + (petlevel / 4)));
+                // DarkChaos: `pet_levelstats` carries hunter pet damage for levels above 80, where the stock formula
+                // falls far behind the hunter's own weapon. The columns are 0 for levels 1-80, which keeps the
+                // formula there.
+                if (pInfo && pInfo->max_dmg > 0)
+                {
+                    SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(pInfo->min_dmg));
+                    SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(pInfo->max_dmg));
+                }
+                else
+                {
+                    SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel - (petlevel / 4)));
+                    SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel + (petlevel / 4)));
+                }
                 SetUInt32Value(UNIT_FIELD_PETNEXTLEVELEXP, uint32(sObjectMgr->GetXPForLevel(petlevel)* sWorld->getRate(RATE_XP_PET_NEXT_LEVEL)));
                 break;
             }
@@ -1213,12 +1225,21 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
             }
         default:
             {
+                // DarkChaos: the weapon damage formulas below read the level alone. That is WotLK up to 80, but
+                // above it a guardian would only double its swing by 160 while its owner's white hit grows
+                // ninefold. There each formula is evaluated at level 80 (hitLevel) and grown like a white hit
+                // (hitGrowth); up to 80 hitLevel is the level and hitGrowth is 1. See DCBalanceReference.h.
+                DarkChaos::BalanceReference::GuardianMelee const guardianMelee =
+                    DarkChaos::BalanceReference::GuardianMeleeGrowth(petlevel);
+                uint8 const hitLevel = guardianMelee.formulaLevel;
+                float const hitGrowth = guardianMelee.growth;
+
                 switch (GetEntry())
                 {
                     case NPC_FIRE_ELEMENTAL:
                         {
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel * 3.5f - petlevel));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel * 3.5f + petlevel));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel * 3.5f - hitLevel) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel * 3.5f + hitLevel) * hitGrowth);
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             AddAura(SPELL_HUNTER_PET_SCALING_04, this);
                             AddAura(SPELL_FIRE_ELEMENTAL_SCALING_01, this);
@@ -1229,8 +1250,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                         }
                     case NPC_EARTH_ELEMENTAL:
                         {
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel * 2.0f - petlevel));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel * 2.0f + petlevel));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel * 2.0f - hitLevel) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel * 2.0f + hitLevel) * hitGrowth);
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             AddAura(SPELL_HUNTER_PET_SCALING_04, this);
                             AddAura(SPELL_EARTH_ELEMENTAL_SCALING_01, this);
@@ -1256,10 +1277,10 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                         }
                     case NPC_DOOMGUARD:
                         {
-                            float highAmt = petlevel / 11.0f;
-                            float lowAmt = petlevel / 12.0f;
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, lowAmt * lowAmt * lowAmt);
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, highAmt * highAmt * highAmt);
+                            float highAmt = hitLevel / 11.0f;
+                            float lowAmt = hitLevel / 12.0f;
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, lowAmt * lowAmt * lowAmt * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, highAmt * highAmt * highAmt * hitGrowth);
 
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             AddAura(SPELL_WARLOCK_PET_SCALING_01, this);
@@ -1284,8 +1305,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                             if (!pInfo)
                                 SetCreateHealth(30 + 30 * petlevel);
 
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel * 2.5f - petlevel));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel * 2.5f + petlevel));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel * 2.5f - hitLevel) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel * 2.5f + hitLevel) * hitGrowth);
 
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             AddAura(SPELL_HUNTER_PET_SCALING_04, this);
@@ -1297,8 +1318,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                         }
                     case NPC_SHADOWFIEND:
                         {
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel * 2.5f - petlevel));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel * 2.5f + petlevel));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel * 2.5f - hitLevel) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel * 2.5f + hitLevel) * hitGrowth);
 
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             AddAura(SPELL_HUNTER_PET_SCALING_04, this);
@@ -1310,8 +1331,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                         }
                     case NPC_FERAL_SPIRIT:
                         {
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel * 4.0f - petlevel));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel * 4.0f + petlevel));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel * 4.0f - hitLevel) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel * 4.0f + hitLevel) * hitGrowth);
 
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             AddAura(SPELL_FERAL_SPIRIT_SPIRIT_HUNT, this);
@@ -1367,8 +1388,12 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                             AddAura(SPELL_HUNTER_PET_SCALING_04, this);
                             AddAura(SPELL_PET_AVOIDANCE, this);
                             SetCreateHealth(4 * petlevel);
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel - 30 - (petlevel / 4) + owner->GetTotalAttackPowerValue(BASE_ATTACK) * 0.006f));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel - 30 + (petlevel / 4) + owner->GetTotalAttackPowerValue(BASE_ATTACK) * 0.006f));
+                            // DarkChaos: only the level part grows; the attack power part follows the owner.
+                            float const ownerPart = owner->GetTotalAttackPowerValue(BASE_ATTACK) * 0.006f;
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE,
+                                float(hitLevel - 30 - (hitLevel / 4)) * hitGrowth + ownerPart);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE,
+                                float(hitLevel - 30 + (hitLevel / 4)) * hitGrowth + ownerPart);
                             SetReactState(REACT_DEFENSIVE);
                             break;
                         }
@@ -1380,23 +1405,23 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                             AddAura(SPELL_DK_AVOIDANCE, this);
                             AddAura(SPELL_PET_SCALING_MASTER_06, this);
 
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel - (petlevel / 4)));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel + (petlevel / 4)));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel - (hitLevel / 4)) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel + (hitLevel / 4)) * hitGrowth);
                             break;
                         }
                     case NPC_VENOMOUS_SNAKE:
-                        SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel * 0.7 - 38));
-                        SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel * 0.8 - 40));
+                        SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel * 0.7 - 38) * hitGrowth);
+                        SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel * 0.8 - 40) * hitGrowth);
                         break;
                     case NPC_VIPER:
-                        SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(1.3 * petlevel - 64));
-                        SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(1.5 * petlevel - 68));
+                        SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(1.3 * hitLevel - 64) * hitGrowth);
+                        SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(1.5 * hitLevel - 68) * hitGrowth);
                         break;
                     case NPC_GENERIC_IMP:
                     case NPC_GENERIC_VOIDWALKER:
                         {
-                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(petlevel - (petlevel / 4)));
-                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(petlevel + (petlevel / 4)));
+                            SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, float(hitLevel - (hitLevel / 4)) * hitGrowth);
+                            SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, float(hitLevel + (hitLevel / 4)) * hitGrowth);
                             break;
                         }
                 }

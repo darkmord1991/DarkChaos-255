@@ -22,6 +22,7 @@
 #include "CellImpl.h"
 #include "CharmInfo.h"
 #include "Common.h"
+#include "DCBalanceReference.h"
 #include "GameTime.h"
 #include "GridNotifiers.h"
 #include "Log.h"
@@ -6361,6 +6362,10 @@ void AuraEffect::HandlePeriodicDamageAurasTick(Unit* target, Unit* caster) const
 
     // Script Hook For HandlePeriodicDamageAurasTick -- Allow scripts to change the Damage pre class mitigation calculations
     sScriptMgr->ModifyPeriodicDamageAurasTick(target, caster, damage, GetSpellInfo());
+
+    // DarkChaos: the death knight diseases are a share of attack power alone, see DCBalanceReference.h.
+    if (caster && caster->IsPlayer() && caster->GetLevel() > 80 && DarkChaos::BalanceReference::IsPowerAbility(GetId()))
+        damage = uint32(damage * DarkChaos::BalanceReference::PowerAbilityGrowth(caster->GetLevel()));
 
     if (target->GetAI())
     {

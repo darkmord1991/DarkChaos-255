@@ -17,6 +17,7 @@
 
 #include "Config.h"
 #include "Creature.h"
+#include "DCBalanceReference.h"
 #include "Pet.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -1327,7 +1328,11 @@ void Guardian::UpdateAttackPowerAndDamage(bool ranged)
     if (GetEntry() == NPC_IMP)                                     // imp's attack power
         val = GetStat(STAT_STRENGTH) - 10.0f;
     else if (IsPetGhoul())                                         // DK's ghoul attack power
+    {
+        // DarkChaos: the ghoul has no weapon damage, its swing and Claw are attack power alone.
         val = 589 /*xinef: base ap!*/ + GetStat(STAT_STRENGTH) + GetStat(STAT_AGILITY);
+        val *= DarkChaos::BalanceReference::PowerAbilityGrowth(GetLevel());
+    }
     else
         val = 2 * GetStat(STAT_STRENGTH) - 20.0f;
 

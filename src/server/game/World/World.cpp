@@ -42,6 +42,7 @@
 #include "CreatureGroups.h"
 #include "CreatureTextMgr.h"
 #include "DBCStores.h"
+#include "DCBalanceReference.h"
 #include "DBUpdater.h"
 #include "DatabaseEnv.h"
 #include "DisableMgr.h"
@@ -297,6 +298,8 @@ void World::LoadConfigSettings(bool reload)
     VMAP::VMapFactory::createOrGetVMapMgr()->setEnableLineOfSightCalc(enableLOS);
     VMAP::VMapFactory::createOrGetVMapMgr()->setEnableHeightCalc(enableHeight);
     LOG_INFO("server.loading", "WORLD: VMap support included. LineOfSight:{}, getHeight:{}, indoorCheck:{} PetLOS:{}", enableLOS, enableHeight, enableIndoor, enablePetLOS);
+
+    DarkChaos::BalanceReference::LoadConfig();
 
     // call ScriptMgr if we're reloading the configuration
     sScriptMgr->OnAfterConfigLoad(reload);
@@ -714,6 +717,9 @@ void World::SetInitialWorldSettings()
 
     LOG_INFO("server.loading", "Loading Pet Level Stats...");
     sObjectMgr->LoadPetLevelInfo();
+
+    LOG_INFO("server.loading", "Loading DarkChaos Balance Reference...");
+    DarkChaos::BalanceReference::Load();
 
     LOG_INFO("server.loading", "Loading Player Level Dependent Mail Rewards...");
     sObjectMgr->LoadMailLevelRewards();

@@ -33,6 +33,7 @@
 #include "ConditionMgr.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
+#include "DCBalanceReference.h"
 #include "CreatureGroups.h"
 #include "../../../scripts/DC/AddonExtension/dc_addon_death_markers.h"
 #include "DisableMgr.h"
@@ -1519,6 +1520,10 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage* damageInfo, int32 dama
 
      // Script Hook For CalculateSpellDamageTaken -- Allow scripts to change the Damage post class mitigation calculations
     sScriptMgr->ModifySpellDamageTaken(damageInfo->target, damageInfo->attacker, damage, spellInfo);
+
+    // DarkChaos: an attack that is a share of attack power alone has no rank to grow into above level 80.
+    if (IsPlayer() && GetLevel() > 80 && DarkChaos::BalanceReference::IsPowerAbility(spellInfo->Id))
+        damage = int32(damage * DarkChaos::BalanceReference::PowerAbilityGrowth(GetLevel()));
 
     if (victim->GetAI())
     {
@@ -15825,6 +15830,18 @@ void Unit::RewardRage(uint32 damage, uint32 weaponSpeedHitFactor, bool attacker)
     // Unknown if correct, but lineary adjust rage conversion above level 70
     if (GetLevel() > 70)
         rageconversion += 13.27f * (GetLevel() - 70);
+
+    // DarkChaos: above 80 the stock constant grows far slower than the hits players deal and take, so rage per hit
+    // climbs with level while rage costs stay flat. Hold the level-80 ratio instead: the constant at 80, times how
+    // much a reference hit has grown since 80. Dealing damage, that is a player's own white hit; taking it, it is
+    // reference player health, because creature damage is tuned as a share of player health. Without a reference
+    // row (table not applied yet) the stock formula above stands.
+    if (IsPlayer() && GetLevel() > 80)
+        if (DarkChaos::BalanceReference::Growth const* growth = DarkChaos::BalanceReference::Find(GetLevel()))
+        {
+            float const rageConversionAt80 = ((0.0091107836f * 80 * 80) + 3.225598133f * 80) + 4.2652911f + 13.27f * 10;
+            rageconversion = rageConversionAt80 * (attacker ? growth->melee : growth->health);
+        }
 
     if (attacker)
     {

@@ -179,6 +179,83 @@ DC.Bench.Meter.Bots = 1
 DC.Bench.Meter.Players = 1
 
 #
+#    DC.Balance.CreatureSpellScale
+#        Description: Limit on creature spells that scale with creature level,
+#                     for creatures above level 80. Those spells are scaled by
+#                     the creature damage table, which grows far faster than
+#                     player health above 80, so classic spells cast by
+#                     high-level creatures hit several times harder than the
+#                     same creature's melee. With this key the scaling above
+#                     80 follows reference player health (the table
+#                     dc_balance_reference) times this factor, and never
+#                     exceeds the stock result. Creatures of level 80 and
+#                     below are not affected. Reloadable with .reload config.
+#        Default:     1.5 - (Spells grow with player health, half as much again)
+#                     1   - (Spells grow exactly with player health)
+#                     0   - (Disabled, stock scaling)
+#
+DC.Balance.CreatureSpellScale = 1.5
+
+#
+#    DC.Balance.GuardianSpells
+#        Description: Damage and heal spells of a player's pets, guardians and
+#                     totems that have no rank above level 80 (Water
+#                     Elemental's Waterbolt, Mirror Image, the Snake Trap
+#                     poisons, Gargoyle Strike) keep their level-80 amount
+#                     there. With this key such an amount is held at its
+#                     level-80 value and grown like a whole class spell hit
+#                     grows: like a white hit for damage, like reference player
+#                     health for heals and absorbs (the table
+#                     dc_balance_reference). Ranked spells get their new ranks
+#                     instead, and an amount a script passes in is left alone.
+#                     Reloadable with .reload config.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, stock amounts)
+#
+
+DC.Balance.GuardianSpells = 1
+
+#
+#    DC.Balance.GuardianMelee
+#        Description: Weapon damage of a player's named guardians (Army of the
+#                     Dead ghouls, Shadowfiend, Treants, Spirit Wolves, the
+#                     shaman elementals, Snake Trap snakes, Bloodworms,
+#                     Doomguard) comes from a formula of the guardian's level
+#                     alone, which only doubles between 80 and 160. With this
+#                     key the formula stops at level 80 and its result grows
+#                     like a player's white hit above that (the table
+#                     dc_balance_reference), so a guardian keeps its share of
+#                     its owner's damage. Levels 1-80 are not affected.
+#                     Applies to guardians summoned after a .reload config.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, stock formulas)
+#
+
+DC.Balance.GuardianMelee = 1
+
+#
+#    DC.Balance.PowerAbilities
+#        Description: Attacks that are a share of the attacker's attack power
+#                     and nothing else (Bloodthirst, Victory Rush, Heroic
+#                     Throw, Intercept, Shockwave, Concussion Blow, Frost
+#                     Fever, Blood Plague, the paladin judgements of
+#                     Righteousness, Vengeance, Corruption, Light, Wisdom and
+#                     Justice, and the swing of the death knight's ghoul) have
+#                     no rank above 80, and attack power grows about half as
+#                     fast as a white hit there. With this key their damage is
+#                     multiplied above level 80 by a white hit's growth divided
+#                     by the reference attack power's growth (the table
+#                     dc_balance_reference): 1.35 at 90, 1.72 at 130, 2.11 at
+#                     150. Levels 1-80 are not affected. The tooltips of these
+#                     attacks carry the same growth to within 2%
+#                     (tools/balance/gen_power_ability_tooltips.py).
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, stock formulas)
+#
+
+DC.Balance.PowerAbilities = 1
+
+#
 #    Rate.Health.RestArea
 #    Rate.Mana.RestArea
 #        Description: Regeneration multiplier applied while the player is in a

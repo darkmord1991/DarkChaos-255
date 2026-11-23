@@ -20,6 +20,7 @@
 #include "ConditionMgr.h"
 #include "Corpse.h"
 #include "DBCStores.h"
+#include "DCBalanceReference.h"
 #include "LootMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
@@ -414,11 +415,35 @@ int32 SpellEffectInfo::CalcValue(WorldObject const* caster, int32 const* bp, Uni
 
     Unit const* casterUnit = caster ? caster->ToUnit() : nullptr;
 
+    // DarkChaos: a damage or heal amount of a player-owned creature's spell (pet, guardian, totem) that has no rank
+    // to grow into above level 80 -- Waterbolt, Mirror Image, Gargoyle Strike, the Snake Trap poisons -- is held at
+    // its level-80 value and grown like class spell ranks grow (DCBalanceReference.h). Ranked spells get their new
+    // ranks instead. An amount a script passes in is final; every ordinary cast also passes base points (the
+    // spell value's copy, Spell::CalculateSpellDamage / AuraEffect::CalculateAmount), so only a value that differs
+    // from the spell's own counts as passed in. A spell that scales with creature level grows by that rule only
+    // when the caster is not player-controlled (see below), which a player-owned creature is.
+    float dcGuardianGrowth = 0.0f;
+    if ((!bp || *bp == BasePoints) && casterUnit && casterUnit->GetLevel() > 80 && _spellInfo->SpellLevel <= 80 &&
+        casterUnit->IsCreature() && casterUnit->GetOwnerGUID().IsPlayer() &&
+        (!_spellInfo->HasAttribute(SPELL_ATTR0_SCALES_WITH_CREATURE_LEVEL) || casterUnit->IsControlledByPlayer()) &&
+        !_spellInfo->IsRanked())
+    {
+        bool const damage = Effect == SPELL_EFFECT_SCHOOL_DAMAGE || Effect == SPELL_EFFECT_HEALTH_LEECH ||
+            (IsAura() && (ApplyAuraName == SPELL_AURA_PERIODIC_DAMAGE || ApplyAuraName == SPELL_AURA_PERIODIC_LEECH ||
+                          ApplyAuraName == SPELL_AURA_DAMAGE_SHIELD));
+        bool const heal = Effect == SPELL_EFFECT_HEAL ||
+            (IsAura() && (ApplyAuraName == SPELL_AURA_PERIODIC_HEAL || ApplyAuraName == SPELL_AURA_SCHOOL_ABSORB));
+        if (damage || heal)
+            dcGuardianGrowth = DarkChaos::BalanceReference::GuardianSpellGrowth(uint8(casterUnit->GetLevel()), heal);
+    }
+
     // base amount modification based on spell lvl vs caster lvl
     // xinef: added basePointsPerLevel check
     if (casterUnit && basePointsPerLevel != 0.0f)
     {
         int32 level = int32(casterUnit->GetLevel());
+        if (dcGuardianGrowth > 0.0f)
+            level = std::min(level, 80);
         if (level > int32(_spellInfo->MaxLevel) && _spellInfo->MaxLevel > 0)
             level = int32(_spellInfo->MaxLevel);
         else if (level < int32(_spellInfo->BaseLevel))
@@ -448,6 +473,8 @@ int32 SpellEffectInfo::CalcValue(WorldObject const* caster, int32 const* bp, Uni
     }
 
     float value = float(basePoints);
+    if (dcGuardianGrowth > 0.0f)
+        value *= dcGuardianGrowth;
 
     // random damage
     if (casterUnit)
@@ -514,6 +541,22 @@ int32 SpellEffectInfo::CalcValue(WorldObject const* caster, int32 const* bp, Uni
                 float CBSPowerCreature = pCBS->BaseDamage[cInfo->expansion];
                 CreatureBaseStats const* spellCBS = sObjectMgr->GetCreatureBaseStats(_spellInfo->SpellLevel, casterUnit->getClass());
                 float CBSPowerSpell = spellCBS->BaseDamage[cInfo->expansion];
+
+                // DarkChaos: above level 80 the damage table grows far faster than player health, and unlike melee
+                // these spells have no per-creature modifier that takes the excess back out. Limit both ends of
+                // the ratio to what player health grew by since 80 (DC.Balance.CreatureSpellScale tunes it).
+                // Casts where both levels are 80 or lower are not touched.
+                if (casterUnit->GetLevel() > 80 || _spellInfo->SpellLevel > 80)
+                {
+                    float const powerAt80 =
+                        sObjectMgr->GetCreatureBaseStats(80, casterUnit->getClass())->BaseDamage[cInfo->expansion];
+                    uint8 spellLevel = uint8(std::min<uint32>(_spellInfo->SpellLevel, 255));
+                    CBSPowerCreature = DarkChaos::BalanceReference::CapCreatureSpellPower(CBSPowerCreature, powerAt80,
+                        casterUnit->GetLevel());
+                    CBSPowerSpell = DarkChaos::BalanceReference::CapCreatureSpellPower(CBSPowerSpell, powerAt80,
+                        spellLevel);
+                }
+
                 value *= CBSPowerCreature / CBSPowerSpell;
             }
         }
