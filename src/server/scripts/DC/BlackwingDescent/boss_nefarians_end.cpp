@@ -2034,6 +2034,10 @@ struct go_nefarians_end_orb_of_culmination : public GameObjectAI
 
     bool GossipSelect(Player* player, uint32 /*menuId*/, uint32 /*gossipListId*/) override
     {
+        // Plain RegisterGameObjectAI: a copy spawned outside map 669 has no instance script.
+        if (!_instance)
+            return false;
+
         if (Creature* stalker = _instance->GetCreature(DATA_INVISIBLE_STALKER))
             stalker->RemoveAllAuras();
 

@@ -20,35 +20,10 @@
 #include "MiscPackets.h"
 
 #include "GameGraveyard.h"
-#include <unordered_map>
 
-// Helper to (add/remove) graveyard links for this battleground.
-// The original mod used a PopulateGraveyard helper; here we implement
-// an explicit helper that maps node indices to safe-loc ids and updates
-// the graveyard links for zone 5449 (Battle for Gilneas area id used by this BG).
-static void UpdateGraveyardForNodeIndex(uint8 graveyardIndex, TeamId teamId, bool add)
-{
-    if (graveyardIndex >= GILNEAS_BG_ALL_NODES_COUNT)
-        return;
-
-    uint32 safeLocId = GILNEAS_BG_GraveyardIds[graveyardIndex];
-    uint32 zoneId = 5449; // Battle for Gilneas
-
-    if (add)
-    {
-        // Ensure opposing team link removed first to avoid duplicates/conflicts
-        if (teamId == TEAM_ALLIANCE)
-            sGraveyard->RemoveGraveyardLink(safeLocId, zoneId, TEAM_HORDE, false);
-        else if (teamId == TEAM_HORDE)
-            sGraveyard->RemoveGraveyardLink(safeLocId, zoneId, TEAM_ALLIANCE, false);
-
-        sGraveyard->AddGraveyardLink(safeLocId, zoneId, teamId, false);
-    }
-    else
-    {
-        sGraveyard->RemoveGraveyardLink(safeLocId, zoneId, teamId, false);
-    }
-}
+// No global graveyard links: Player::RepopAtGraveyard and RelocateDeadPlayers resolve BFG graveyards through
+// BattlegroundBFG::GetClosestGraveyard (from _capturePointInfo), like stock AB. Writing the shared,
+// unlocked link store from this map's thread raced every other map and let BFG instances overwrite each other.
 
 #include "ScriptMgr.h"
 #include "Config.h"
@@ -331,9 +306,6 @@ void BattlegroundBFG::NodeOccupied(uint8 node)
         trigger->SetFaction(_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE ? FACTION_ALLIANCE_GENERIC : FACTION_HORDE_GENERIC);
         trigger->CastSpell(trigger, SPELL_HONORABLE_DEFENDER_25Y, false);
     }
-    // Ensure graveyard links reflect ownership of this node
-    if (_capturePointInfo[node]._ownerTeamId == TEAM_ALLIANCE || _capturePointInfo[node]._ownerTeamId == TEAM_HORDE)
-        UpdateGraveyardForNodeIndex(node, _capturePointInfo[node]._ownerTeamId, true);
 }
 
 void BattlegroundBFG::NodeDeoccupied(uint8 node)
@@ -343,9 +315,9 @@ void BattlegroundBFG::NodeDeoccupied(uint8 node)
         TeamId prevOwner = _capturePointInfo[node]._ownerTeamId;
         --_controlledPoints[prevOwner];
 
-        // If any of the node-related creatures were removed, remove the graveyard link
-        if (DelCreature(GILNEAS_BG_ALL_NODES_COUNT + node) || DelCreature(node))
-            UpdateGraveyardForNodeIndex(node, prevOwner, false);
+        // Remove the node's defender trigger and spirit guide (graveyards follow _capturePointInfo).
+        DelCreature(GILNEAS_BG_ALL_NODES_COUNT + node);
+        DelCreature(node);
 
         // Mark node neutral
         _capturePointInfo[node]._ownerTeamId = TEAM_NEUTRAL;

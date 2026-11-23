@@ -3149,8 +3149,12 @@ namespace DCCollection
         // title scan below runs, so switching characters no longer stalls the
         // world thread on MySQL round-trips.
         static std::unordered_set<ObjectGuid::LowType> fullImportDoneThisSession;
-        bool const fullImport =
-            fullImportDoneThisSession.insert(player->GetGUID().GetCounter()).second;
+        static std::mutex fullImportDoneThisSessionLock;
+        bool fullImport = false;
+        {
+            std::lock_guard<std::mutex> lock(fullImportDoneThisSessionLock);
+            fullImport = fullImportDoneThisSession.insert(player->GetGUID().GetCounter()).second;
+        }
 
         auto trans = CharacterDatabase.BeginTransaction();
 
@@ -3241,21 +3245,21 @@ namespace DCCollection
         if (fullImport && WorldTableExists("dc_heirloom_definitions"))
         {
             // World data is static at runtime, so the definition list is loaded
-            // once per world session instead of once per login.
-            static std::unordered_set<uint32> heirloomDefs;
-            static bool heirloomDefsLoaded = false;
-            if (!heirloomDefsLoaded)
+            // once per world session instead of once per login. Built by a function-local static initialiser
+            // (thread-safe) and read-only afterwards.
+            static std::unordered_set<uint32> const heirloomDefs = []()
             {
-                heirloomDefsLoaded = true;
-                QueryResult defRes = WorldDatabase.Query("SELECT item_id FROM dc_heirloom_definitions");
-                if (defRes)
+                std::unordered_set<uint32> defs;
+                if (QueryResult defRes = WorldDatabase.Query("SELECT item_id FROM dc_heirloom_definitions"))
                 {
                     do
                     {
-                        heirloomDefs.insert(defRes->Fetch()[0].Get<uint32>());
+                        defs.insert(defRes->Fetch()[0].Get<uint32>());
                     } while (defRes->NextRow());
                 }
-            }
+
+                return defs;
+            }();
 
             if (!heirloomDefs.empty())
             {
@@ -10951,6 +10955,8 @@ namespace DCCollection
             // The mount gate (GetMountRefusal) reads this map from grants that quest and loot hooks issue on map
             // threads; fill it here, single-threaded, instead of on whichever thread looks first.
             FindMountItemIdForSpell(0);
+            // Same for the companion map: OnPlayerLearnSpell reads it on map threads.
+            FindCompanionItemIdForSpell(0);
         }
     };
 

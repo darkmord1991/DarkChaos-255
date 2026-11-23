@@ -239,13 +239,20 @@ enum Misc
     TITLE_ADVENTURER_AWARD              = 188
 };
 
-std::unordered_map<uint8, VialData> vialData =
+std::unordered_map<uint8, VialData> const vialData =
 {
     { VIAL_RED,    { SAY_RED_VIAL,      SAY_ANNOUNCE_RED_VIAL,      SPELL_THROW_RED_BOTTLE,     SPELL_DRINK_RED_BOTTLE,    SPELL_FIRE_IMBUED   }},
     { VIAL_BLUE,   { SAY_BLUE_VIAL,     SAY_ANNOUNCE_BLUE_VIAL,     SPELL_THROW_BLUE_BOTTLE,    SPELL_DRINK_BLUE_BOTTLE,   SPELL_FROST_IMBUED  }},
     { VIAL_GREEN,  { SAY_GREEN_VIAL,    SAY_ANNOUNCE_GREEN_VIAL,    SPELL_THROW_GREEN_BOTTLE,   0,                         SPELL_SLIME_IMBUED  }},
     { VIAL_BLACK,  { 0,                 0,                          0,                          SPELL_DRINK_BLACK_BOTTLE,  SPELL_SHADOW_IMBUED  }},
 };
+
+// Shared by every BWD instance on several map threads: read with find() so a missing key can never insert.
+VialData const* GetVialData(uint8 vial)
+{
+    auto itr = vialData.find(vial);
+    return itr != vialData.end() ? &itr->second : nullptr;
+}
 
 struct boss_maloriak : public BossAI
 {
@@ -491,7 +498,10 @@ struct boss_maloriak : public BossAI
                         }
 
                         if (_currentVial != VIAL_BLACK)
-                            Talk(vialData[_currentVial].SayTextId);
+                        {
+                            if (VialData const* vial = GetVialData(_currentVial))
+                                Talk(vial->SayTextId);
+                        }
                         else if (Creature * nefarius = instance->GetCreature(DATA_LORD_VICTOR_NEFARIUS_MALORIAK))
                             if (nefarius->IsAIEnabled)
                                 nefarius->AI()->DoAction(ACTION_THROW_BLACK_BOTTLE);
@@ -503,8 +513,11 @@ struct boss_maloriak : public BossAI
                 case EVENT_THROW_VIAL:
                     if (_currentVial != VIAL_BLACK)
                     {
-                        DoCastSelf(vialData[_currentVial].ThrowSpellId);
-                        Talk(vialData[_currentVial].AnnounceTextId);
+                        if (VialData const* vial = GetVialData(_currentVial))
+                        {
+                            DoCastSelf(vial->ThrowSpellId);
+                            Talk(vial->AnnounceTextId);
+                        }
                     }
                     events.ScheduleEvent(EVENT_MOVE_TO_CAULDRON, 1s);
                     break;
@@ -512,14 +525,16 @@ struct boss_maloriak : public BossAI
                     me->GetMotionMaster()->MovePoint(POINT_CAULDRON, CauldronMovePosition);
                     break;
                 case EVENT_DRINK_BOTTLE:
-                    DoCastSelf(vialData[_currentVial].DrinkSpellId);
+                    if (VialData const* vial = GetVialData(_currentVial))
+                        DoCastSelf(vial->DrinkSpellId);
                     events.ScheduleEvent(EVENT_IMBUED_BUFF, 2s + 500ms);
 
                     if (_currentVial == VIAL_GREEN)
                         events.ScheduleEvent(EVENT_EXPLODE_CAULDRON, 1s);
                     break;
                 case EVENT_IMBUED_BUFF:
-                    DoCastSelf(vialData[_currentVial].ImbuedSpellId);
+                    if (VialData const* vial = GetVialData(_currentVial))
+                        DoCastSelf(vial->ImbuedSpellId);
                     DoAction(ACTION_SCHEDULE_EVENTS_FOR_PHASE);
                     break;
                 case EVENT_EXPLODE_CAULDRON:
@@ -559,7 +574,8 @@ struct boss_maloriak : public BossAI
                     break;
                 case EVENT_DRINK_ALL_BOTTLES:
                     for (uint8 i = 0; i < VIAL_BLACK; i++)
-                        me->RemoveAurasDueToSpell(vialData[i].ImbuedSpellId);
+                        if (VialData const* vial = GetVialData(i))
+                            me->RemoveAurasDueToSpell(vial->ImbuedSpellId);
 
                     DoCastSelf(SPELL_DRINK_ALL_BOTTLES);
                     events.ScheduleEvent(EVENT_UNSTABLE_MIX, 2s + 300ms, 0, PHASE_TWO);

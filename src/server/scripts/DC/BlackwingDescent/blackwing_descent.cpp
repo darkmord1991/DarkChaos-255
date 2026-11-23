@@ -524,6 +524,10 @@ struct go_bwd_ancient_bell : public GameObjectAI
 
     bool GossipHello(Player* /*player*/, bool /*reportUse*/) override
     {
+        // Plain RegisterGameObjectAI: a copy spawned outside map 669 has no instance script.
+        if (!_instance)
+            return true;
+
         _instance->SetData(DATA_ATRAMEDES_INTRO, DONE);
         me->SendCustomAnim(0);
         me->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE);

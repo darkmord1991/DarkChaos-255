@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <mutex>
 #include <unordered_map>
 
 namespace DCGuildHouseDecorations
@@ -1096,7 +1097,9 @@ namespace
         uint32 page = 0;
     };
 
+    // OnGossipHello runs on the map workers (1409 and 1413 in parallel), OnGossipSelect on the world thread.
     std::unordered_map<ObjectGuid, BrowseState> sBrowseStates;
+    std::mutex sBrowseStatesLock;
 
     std::string FormatGold(uint32 copper)
     {
@@ -1127,7 +1130,10 @@ namespace
                 return true;
             }
 
-            sBrowseStates.erase(player->GetGUID());
+            {
+                std::lock_guard<std::mutex> guard(sBrowseStatesLock);
+                sBrowseStates.erase(player->GetGUID());
+            }
             ShowCategories(player, creature);
             return true;
         }
@@ -1147,6 +1153,7 @@ namespace
                     auto const& categories = GetCategories();
                     if (action < categories.size())
                     {
+                        std::lock_guard<std::mutex> guard(sBrowseStatesLock);
                         BrowseState& state = sBrowseStates[player->GetGUID()];
                         state.category = categories[action];
                         state.page = 0;
@@ -1156,7 +1163,10 @@ namespace
                 }
                 case SENDER_ITEM_PAGE:
                 {
-                    sBrowseStates[player->GetGUID()].page = action;
+                    {
+                        std::lock_guard<std::mutex> guard(sBrowseStatesLock);
+                        sBrowseStates[player->GetGUID()].page = action;
+                    }
                     ShowItems(player, creature);
                     return true;
                 }
@@ -1202,7 +1212,11 @@ namespace
 
         static void ShowItems(Player* player, Creature* creature)
         {
-            BrowseState const& state = sBrowseStates[player->GetGUID()];
+            BrowseState state;
+            {
+                std::lock_guard<std::mutex> guard(sBrowseStatesLock);
+                state = sBrowseStates[player->GetGUID()];
+            }
             uint32 const total = GetCatalogSize(state.category);
             uint32 const pages =
                 (total + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;

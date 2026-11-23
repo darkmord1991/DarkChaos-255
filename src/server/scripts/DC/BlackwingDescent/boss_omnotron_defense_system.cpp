@@ -212,13 +212,20 @@ struct GolemInfo
     uint8 ShieldTextId;
 };
 
-std::unordered_map<uint32, GolemInfo> _golemInfoMap =
+std::unordered_map<uint32, GolemInfo> const _golemInfoMap =
 {
     { NPC_ELECTRON,     { SAY_ACTIVATE_ELECTRON,    SAY_SHIELD_ELECTRON     } },
     { NPC_MAGMATRON,    { SAY_ACTIVATE_MAGMATRON,   SAY_SHIELD_MAGMATRON    } },
     { NPC_ARCANOTRON,   { SAY_ACTIVATE_ARCANOTRON,  SAY_SHIELD_ARCANOTRON   } },
     { NPC_TOXITRON,     { SAY_ACTIVATE_TOXITRON,    SAY_SHIELD_TOXITRON     } }
 };
+
+// Shared by every BWD instance on several map threads: read with find() so a missing key can never insert.
+GolemInfo const* GetGolemInfo(uint32 entry)
+{
+    auto itr = _golemInfoMap.find(entry);
+    return itr != _golemInfoMap.end() ? &itr->second : nullptr;
+}
 
 struct boss_omnotron_defense_system : public BossAI
 {
@@ -288,7 +295,8 @@ struct boss_omnotron_defense_system : public BossAI
     {
         if (type == DATA_SAY_GOLEM_SHIELD)
             if (Creature* golem = ObjectAccessor::GetCreature(*me, guid))
-                Talk(_golemInfoMap[golem->GetEntry()].ShieldTextId);
+                if (GolemInfo const* info = GetGolemInfo(golem->GetEntry()))
+                    Talk(info->ShieldTextId);
     }
 
     void DoAction(int32 action) override
@@ -384,7 +392,8 @@ struct boss_omnotron_defense_system : public BossAI
                     DoCastSelf(SPELL_CONTROLLER_RECHARGE);
                     break;
                 case EVENT_TALK_ACTIVATED_GOLEM:
-                    Talk(_golemInfoMap[_activatedGolemEntry].ActivateTextId);
+                    if (GolemInfo const* info = GetGolemInfo(_activatedGolemEntry))
+                        Talk(info->ActivateTextId);
                     break;
                 default:
                     break;
