@@ -5854,6 +5854,25 @@ DC.BossKit.TrashSpellCap.Threshold = 0
 DC.BossKit.TrashSpellCap.ExcessDivisor = 20
 
 ###############################################################################
+# ACCOUNT-WIDE FLIGHT PATHS, THIRD PROFESSION, PERSONAL XP RATE
+#
+#  src/server/scripts/DC/Progression (dc_accountwide_taxi, dc_third_profession,
+#  dc_xp_rate). Bots are excluded from all three.
+#
+###############################################################################
+
+#
+#    DC.AccountWide.TaxiNodes
+#        Description: Flight paths found by any character are known by all characters of the same
+#                     account and team from their next login. Free nodes (racial capitals, the Death
+#                     Knight network) are not shared; Death Knight nodes go to Death Knights only.
+#                     Needs table dc_account_taxi_nodes (pending characters SQL).
+#        Default:     1 (Enabled)
+#
+
+DC.AccountWide.TaxiNodes = 1
+
+###############################################################################
 # LAB TOOLS: CLIENT PROBE RELAY AND IN-GAME BUG REPORTS
 #
 #  src/server/scripts/DC/LabTools. Both are off by default.
