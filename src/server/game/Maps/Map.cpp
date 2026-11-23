@@ -2994,10 +2994,15 @@ void Map::UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Uni
         // 0 and 1 for non-raid dungeons. Without a fallback nothing is credited on Mythic -
         // no completedEncounters bit, no lockout progress, no LFG completion and no push to
         // the DENC boss tracker. ScriptedAI already clamps EPIC to HEROIC for the same reason.
-        if (!encounters && !IsRaid() && difficulty_fixed == DUNGEON_DIFFICULTY_EPIC)
+        // The classic dungeons DC opens at Heroic have no difficulty-1 rows either, so Heroic
+        // borrows the normal list the same way.
+        if (!encounters && !IsRaid() && difficulty_fixed != DUNGEON_DIFFICULTY_NORMAL)
         {
-            difficulty_fixed = DUNGEON_DIFFICULTY_HEROIC;
-            encounters = sObjectMgr->GetDungeonEncounterList(GetId(), difficulty_fixed);
+            if (difficulty_fixed == DUNGEON_DIFFICULTY_EPIC)
+            {
+                difficulty_fixed = DUNGEON_DIFFICULTY_HEROIC;
+                encounters = sObjectMgr->GetDungeonEncounterList(GetId(), difficulty_fixed);
+            }
 
             if (!encounters)
             {
