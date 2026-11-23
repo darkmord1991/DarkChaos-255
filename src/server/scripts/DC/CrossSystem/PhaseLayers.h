@@ -15,6 +15,7 @@
 //   Phased Duels      bits 1-29, per map instance, never a bit spawned content uses there
 //   Training grounds  bits 20-30, map 745 (Jade Forest), one per training session
 //   World bosses      bit 30, map 1405 (Giant Isles), anti-grief fights (off by default)
+//   Quest phasing     per map, the bits world.dc_quest_phase lists (QuestPhaseLayer.h); map 750 uses 2-32
 namespace DarkChaos::PhaseLayers
 {
     enum : uint32
@@ -23,6 +24,7 @@ namespace DarkChaos::PhaseLayers
         PhasedDuelSpectator = 2,   // exclusive: the watched duel's bit
         TrainingGrounds     = 3,   // additive: the session's personal bit
         WorldBossFight      = 4,   // exclusive: the fight's bit
+        QuestPhase          = 5,   // additive: the dc_quest_phase bits the player's quest log earns on this map
     };
 
     constexpr uint32 TRAINING_GROUNDS_MAP = 745;

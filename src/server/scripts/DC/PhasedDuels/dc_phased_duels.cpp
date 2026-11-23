@@ -28,6 +28,7 @@
 #include "DC/Spectator/dc_spectator_core.h"
 #include "DC/CrossSystem/CrossSystemCommon.h"
 #include "DC/CrossSystem/PhaseLayers.h"
+#include "DC/CrossSystem/QuestPhaseLayer.h"
 #include "ObjectGuid.h"
 
 #include <algorithm>
@@ -219,9 +220,10 @@ namespace DCPhasedDuels
             return 0;
 
         // Bits a duel phase must not take here: the normal world, content hidden from phase 1 on
-        // this map, phases other systems put on players around the flag, and duels already
-        // running on this map instance.
-        uint32 blockedPhases = PHASEMASK_NORMAL | DarkChaos::PhaseLayers::ReservedBitsOnMap(map->GetId());
+        // this map, phases other systems put on players around the flag (or anywhere on the map, for
+        // quest phasing), and duels already running on this map instance.
+        uint32 blockedPhases = PHASEMASK_NORMAL | DarkChaos::PhaseLayers::ReservedBitsOnMap(map->GetId())
+            | DarkChaos::QuestPhase::BitsOnMap(map->GetId());
 
         std::list<Player*> nearbyPlayers;
         Acore::AnyPlayerInObjectRangeCheck checker(duelFlag, sConfig.phaseRadius);

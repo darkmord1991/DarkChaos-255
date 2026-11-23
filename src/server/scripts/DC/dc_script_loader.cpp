@@ -243,6 +243,7 @@ void AddSC_dc_collection_rewards();           // CollectionSystem/CollectionRewa
 
 // --- Cross-system integration framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem/CrossSystemScripts.cpp
+void AddSC_dc_quest_phase_layer();            // CrossSystem/QuestPhaseLayer.cpp
 void AddSC_dc_teleporter();                   // Teleporters/dc_teleporter.cpp
 void AddSC_dc_fake_players();                 // FakePlayers/dc_fake_players.cpp
 
@@ -570,6 +571,7 @@ void AddDCScripts()
 
     LogSection("Cross-System Integration Framework");
     DC_LOAD(AddSC_dc_cross_system_scripts);
+    DC_LOAD(AddSC_dc_quest_phase_layer);
 
     LogSection("Guild Housing System");
     // AddGuildHouseScripts also loads AddGuildHouseNpcScripts internally.
