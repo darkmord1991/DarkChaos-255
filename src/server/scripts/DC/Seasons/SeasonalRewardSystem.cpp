@@ -11,6 +11,7 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "Timer.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "Creature.h"
@@ -947,11 +948,11 @@ namespace DarkChaos
         void SeasonalRewardManager::CheckWeeklyReset()
         {
             time_t now = time(nullptr);
-            tm* timeInfo = localtime(&now);
+            tm const timeInfo = Acore::Time::TimeBreakdown(now);
 
             // Check if we're at reset time (Tuesday 3 PM by default)
-            if (timeInfo->tm_wday == config_.resetDay &&
-                timeInfo->tm_hour == config_.resetHour &&
+            if (timeInfo.tm_wday == config_.resetDay &&
+                timeInfo.tm_hour == config_.resetHour &&
                 now - lastWeeklyCheck_ > 3600) // Don't check more than once per hour
             {
                 LOG_INFO("module.dc", "[SeasonalRewards] Weekly reset triggered!");

@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "Timer.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "ScriptMgr.h"
 #include "dc_update_profiler.h"
@@ -34,11 +35,8 @@ namespace
         // This is intentionally aligned with SeasonalRewards.WeeklyResetDay/Hour and
         // the schema intent for dc_weekly_vault.week_start ("Unix Tuesday reset").
         time_t now = time(nullptr);
-        tm const* localInfo = localtime(&now);
-        if (!localInfo)
-            return static_cast<uint32>(now);
-
-        tm resetTm = *localInfo;
+        // Thread-safe breakdown: this runs from map-thread hooks, and glibc localtime() shares one buffer.
+        tm resetTm = Acore::Time::TimeBreakdown(now);
 
         uint8 resetDay = sConfigMgr->GetOption<uint8>("SeasonalRewards.WeeklyResetDay", DEFAULT_WEEKLY_RESET_DAY);
         uint8 resetHour = sConfigMgr->GetOption<uint8>("SeasonalRewards.WeeklyResetHour", DEFAULT_WEEKLY_RESET_HOUR);

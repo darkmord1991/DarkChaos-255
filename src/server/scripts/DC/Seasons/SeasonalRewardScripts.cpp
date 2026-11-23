@@ -146,8 +146,18 @@ class SeasonalRewardWorldScript : public WorldScript
 public:
     SeasonalRewardWorldScript() : WorldScript("SeasonalRewardWorldScript") {}
 
-    void OnAfterConfigLoad(bool /*reload*/) override
+    void OnAfterConfigLoad(bool reload) override
     {
+        // `.reload config` re-reads the settings and the reward tables, nothing more.
+        // The startup registration below is still in place (registering again is
+        // refused as a duplicate name), and the stats in memory are at least as new
+        // as the table, since every save is an async Execute a fresh read can beat.
+        if (reload)
+        {
+            sSeasonalRewards->ReloadConfiguration();
+            return;
+        }
+
         sSeasonalRewards->LoadConfiguration();
         sSeasonalRewards->LoadPlayerStats();
         sSeasonalRewards->Initialize();
