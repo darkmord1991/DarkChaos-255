@@ -201,6 +201,13 @@ local CONTINENT_ZONES = {
     ["Felwood (96-106)"]         = { x = 0.4908, y = 0.3015, w = 1257 },
     ["Winterspring (104-115)"]   = { x = 0.5782, y = 0.2478, w = 1256 },
     ["Darkshore (80-90)"]        = { x = 0.4710, y = 0.2644, w = 1259 },
+    -- Split out of Azshara/Ashenvale on 2026-11-22 (their own zones and Cata maps since). Only
+    -- their northern edges exist on map 750, so x/y is the centroid of the land map 750 really
+    -- has, projected through 1262, nudged a few px apart so the three names do not overlap.
+    ["Orgrimmar (80-90)"]            = { x = 0.5850, y = 0.4400, w = 1281 },
+    ["Durotar (80-90)"]              = { x = 0.6120, y = 0.4680, w = 1280 },
+    ["Northern Barrens (88-98)"]     = { x = 0.5300, y = 0.5000, w = 1282 },
+    ["Stonetalon Mountains (88-98)"] = { x = 0.4417, y = 0.4332, w = 1283 },
     -- Single-zone custom continents. Their overview is nearly redundant, but you
     -- can still land on it via Zoom Out and then be unable to get back in, which
     -- is the same trap. One zone, so the name sits dead centre.
@@ -222,14 +229,34 @@ local CONTINENT_ZONES = {
     -- bake used to place the painted text, so box and paint cannot drift.
     -- cw/ch are the painted name's measured extent + padding, as canvas fractions.
     -- REGENERATE ALL OF THESE if rect 1267 changes or the art is rebaked.
-    ["Eastern Plaguelands (152-158)"] = { x = 0.7882, y = 0.2282, w = 1217, cw = 0.3438, ch = 0.0427, rx = 0.5846, ry = 0.0246, rw = 0.4072, rh = 0.4071, hl = "EasternPlaguelands", },
-    ["Western Plaguelands (148-153)"] = { x = 0.5286, y = 0.2929, w = 1268, cw = 0.3533, ch = 0.0427, rx = 0.3114, ry = 0.0757, rw = 0.4343, rh = 0.4344, hl = "WesternPlaguelands", },
-    ["Tirisfal Glades (130-136)"]     = { x = 0.2754, y = 0.2326, w = 1269, cw = 0.2510, ch = 0.0427, rx = 0.0472, ry = 0.0043, rw = 0.4564, rh = 0.4565, hl = "Tirisfal", },
-    ["Silverpine Forest (134-140)"]   = { x = 0.2172, y = 0.5454, w = 1270, cw = 0.2879, ch = 0.0427, rx = 0.0051, ry = 0.3333, rw = 0.4242, rh = 0.4242, hl = "Silverpine", },
-    ["Hillsbrad Foothills (138-144)"] = { x = 0.4074, y = 0.6868, w = 1271, cw = 0.3298, ch = 0.0427, rx = 0.2458, ry = 0.5253, rw = 0.3232, rh = 0.3232, hl = "Hilsbrad", },
-    ["The Hinterlands (145-150)"]     = { x = 0.7071, y = 0.5581, w = 1272, cw = 0.2730, ch = 0.0427, rx = 0.5126, ry = 0.3636, rw = 0.3889, rh = 0.3889, hl = "Hinterlands", },
-    ["Arathi Highlands (142-147)"]    = { x = 0.6229, y = 0.7878, w = 1273, cw = 0.2904, ch = 0.0427, rx = 0.4411, ry = 0.6060, rw = 0.3636, rh = 0.3636, hl = "Arathi", },
+    --
+    -- hl + rx/ry/rw/rh = the hover glow: the zone's <hl>Highlight.blp over its WMA rect
+    -- projected through 1267 (rx = (3500 - L) / 9900, ry = (3866.667 - T) / 6600,
+    -- rw = (L - R) / 9900, rh = (T - B) / 6600). Since 2026-11-22 the 751 zones use the
+    -- Cataclysm zone maps (new art folders <Zone>Cata / HillsbradFoothills, and Cata rects
+    -- for Hillsbrad and Arathi). `old` is the pre-Cata glow, used when the new Highlight
+    -- does not load -- a client that never got the Cata maps still has the WotLK art and
+    -- rects. x/y/cw/ch stay: they follow the baked continent text, not the zone rects.
+    ["Eastern Plaguelands (152-158)"] = { x = 0.7882, y = 0.2282, w = 1217, cw = 0.3438, ch = 0.0427, rx = 0.5846, ry = 0.0246, rw = 0.4072, rh = 0.4071, hl = "EasternPlaguelandsCata",
+                                          old = { hl = "EasternPlaguelands", rx = 0.5846, ry = 0.0246, rw = 0.4072, rh = 0.4071 }, },
+    ["Western Plaguelands (148-153)"] = { x = 0.5286, y = 0.2929, w = 1268, cw = 0.3533, ch = 0.0427, rx = 0.3114, ry = 0.0757, rw = 0.4343, rh = 0.4344, hl = "WesternPlaguelandsCata",
+                                          old = { hl = "WesternPlaguelands", rx = 0.3114, ry = 0.0757, rw = 0.4343, rh = 0.4344 }, },
+    ["Tirisfal Glades (130-136)"]     = { x = 0.2754, y = 0.2326, w = 1269, cw = 0.2510, ch = 0.0427, rx = 0.0472, ry = 0.0043, rw = 0.4564, rh = 0.4565, hl = "TirisfalCata",
+                                          old = { hl = "Tirisfal", rx = 0.0472, ry = 0.0043, rw = 0.4564, rh = 0.4565 }, },
+    ["Silverpine Forest (134-140)"]   = { x = 0.2172, y = 0.5454, w = 1270, cw = 0.2879, ch = 0.0427, rx = 0.0051, ry = 0.3333, rw = 0.4242, rh = 0.4242, hl = "SilverpineCata",
+                                          old = { hl = "Silverpine", rx = 0.0051, ry = 0.3333, rw = 0.4242, rh = 0.4242 }, },
+    ["Hillsbrad Foothills (138-144)"] = { x = 0.4074, y = 0.6868, w = 1271, cw = 0.3298, ch = 0.0427, rx = 0.1667, ry = 0.3614, rw = 0.4912, rh = 0.4912, hl = "HillsbradFoothills",
+                                          old = { hl = "Hilsbrad", rx = 0.2458, ry = 0.5253, rw = 0.3232, rh = 0.3232 }, },
+    ["The Hinterlands (145-150)"]     = { x = 0.7071, y = 0.5581, w = 1272, cw = 0.2730, ch = 0.0427, rx = 0.5126, ry = 0.3636, rw = 0.3889, rh = 0.3889, hl = "HinterlandsCata",
+                                          old = { hl = "Hinterlands", rx = 0.5126, ry = 0.3636, rw = 0.3889, rh = 0.3889 }, },
+    ["Arathi Highlands (142-147)"]    = { x = 0.6229, y = 0.7878, w = 1273, cw = 0.2904, ch = 0.0427, rx = 0.4674, ry = 0.6073, rw = 0.3512, rh = 0.3513, hl = "ArathiCata",
+                                          old = { hl = "Arathi", rx = 0.4411, ry = 0.6060, rw = 0.3636, rh = 0.3636 }, },
     ["Ruins of Gilneas (130-136)"]    = { x = 0.1649, y = 0.8256, w = 1274, cw = 0.2655, ch = 0.0427, rx = 0.0061, ry = 0.6666, rw = 0.3178, rh = 0.3179, },
+    -- Split out of Arathi on 2026-11-22. The baked art has no name for them, so these are DRAWN
+    -- labels (no cw/ch), at the centroid of their land on map 751. No hover glow: their rects run
+    -- far past the bottom of this canvas.
+    ["Wetlands (142-147)"]            = { x = 0.5678, y = 0.9674, w = 1284 },
+    ["Twilight Highlands (142-147)"]  = { x = 0.8046, y = 0.9637, w = 1285 },
 }
 
 -- Returns the label list for the current continent overview, or nil when this is
@@ -261,7 +288,7 @@ local function BuildContinentZoneList()
             -- Dropping them here silently re-enabled the drawn text on map 751 and
             -- doubled every zone name against the baked art.
             list[#list + 1] = { n = zones[i], x = z.x, y = z.y, w = z.w, cw = z.cw, ch = z.ch,
-                                hl = z.hl, rx = z.rx, ry = z.ry, rw = z.rw, rh = z.rh }
+                                hl = z.hl, rx = z.rx, ry = z.ry, rw = z.rw, rh = z.rh, old = z.old }
         end
     end
     return list
@@ -314,11 +341,22 @@ local function ShowGlowFor(btn)
     if not w or w <= 0 then
         return
     end
-    g.tex:SetTexture("Interface\\WorldMap\\" .. btn.hlArt .. "\\" .. btn.hlArt .. "Highlight")
+    local rx, ry, rw, rh = btn.rx, btn.ry, btn.rw, btn.rh
+    -- SetTexture returns nil when the file is not in the client's archives.
+    local ok = g.tex:SetTexture("Interface\\WorldMap\\" .. btn.hlArt .. "\\" .. btn.hlArt .. "Highlight")
+    local old = btn.hlOld
+    if not ok and old and old.hl then
+        ok = g.tex:SetTexture("Interface\\WorldMap\\" .. old.hl .. "\\" .. old.hl .. "Highlight")
+        rx, ry, rw, rh = old.rx, old.ry, old.rw, old.rh
+    end
+    if not ok then
+        g:Hide()
+        return
+    end
     g:ClearAllPoints()
-    g:SetPoint("TOPLEFT", overlay, "TOPLEFT", btn.rx * w, -(btn.ry * h))
-    g:SetWidth(btn.rw * w)
-    g:SetHeight(btn.rh * h)
+    g:SetPoint("TOPLEFT", overlay, "TOPLEFT", rx * w, -(ry * h))
+    g:SetWidth(rw * w)
+    g:SetHeight(rh * h)
     g:Show()
 end
 
@@ -442,6 +480,7 @@ function ZoneLabels:Refresh()
                 -- fractions, and only the hover wash marks it.
                 -- zone-shape hover glow (continent overviews only; nil elsewhere)
                 btn.hlArt = entry.hl
+                btn.hlOld = entry.old
                 btn.rx, btn.ry, btn.rw, btn.rh = entry.rx, entry.ry, entry.rw, entry.rh
                 btn.silent = (entry.cw and entry.ch) and true or false
                 if btn.silent then
