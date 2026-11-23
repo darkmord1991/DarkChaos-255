@@ -195,6 +195,57 @@ local function CallNative(func, ...)
     end
 end
 
+-- The settings whose CVar the native client's raid graphics profile can swap
+local RAID_PROFILE_CVARS = {
+    farclip = "farclip",
+    horizonScale = "horizonFarclipScale",
+    environmentDetail = "environmentDetail",
+    grassDistance = "groundEffectDist",
+}
+
+-- While the raid profile is applied (inside a raid or battleground with raidGraphics on), the client adopts a write
+-- to one of its CVars into the profile. An automatic apply must leave those alone, or logging in or changing zone
+-- there would replace the raid profile with the normal settings. Returns the settings to hold back, or nil. A
+-- setting whose <cvar>Raid is empty is not swapped and is applied as usual.
+local function GetRaidHeldSettings()
+    if type(IsRaidGraphicsActive) ~= "function" or not IsRaidGraphicsActive() then
+        return nil
+    end
+
+    local swapped
+    if type(GetRaidGraphicsSettings) == "function" then
+        swapped = {}
+        for _, base in ipairs(GetRaidGraphicsSettings() or {}) do
+            local value = GetCVar(base .. "Raid")
+            if value ~= nil and value ~= "" then
+                swapped[base] = true
+            end
+        end
+    end
+
+    local held = {}
+    for key, cvar in pairs(RAID_PROFILE_CVARS) do
+        if not swapped or swapped[cvar] then
+            held[key] = true
+        end
+    end
+    return held
+end
+
+-- A user's Okay or Defaults still writes a held setting it changed (the client adopts that into the raid profile),
+-- but not the ones it left as they were.
+local function HeldUnlessChanged(before, after)
+    local held = GetRaidHeldSettings()
+    if held then
+        for key in pairs(held) do
+            if before[key] ~= after[key] then
+                held[key] = nil
+            end
+        end
+    end
+    return held
+end
+
 -- Raise gxTextureCacheSize to a floor and never lower it, so a player who chose a bigger cache keeps it.
 -- 0 is left alone: its meaning is engine-defined, not "too small".
 local TEXTURE_CACHE_FLOOR_MB = 1024
@@ -209,17 +260,25 @@ local function EnsureTextureCacheFloor()
     end
 end
 
-local function ApplyGraphicsSettings(reason)
+-- held: settings not to write (see GetRaidHeldSettings)
+local function ApplyGraphicsSettings(reason, held)
     local settings = GetSettings()
     if not settings or not settings.enabled or not HasNativeGraphicsApi() then
         return
     end
 
-    CallNative(SetExtendedFarclip, settings.farclip)
+    held = held or {}
+    local function Apply(key, func)
+        if not held[key] then
+            CallNative(func, settings[key])
+        end
+    end
+
+    Apply("farclip", SetExtendedFarclip)
     CallNative(SetExtendedCameraDistance, settings.cameraDistance)
-    CallNative(SetHorizonScale, settings.horizonScale)
-    CallNative(SetEnvironmentDetail, settings.environmentDetail)
-    CallNative(SetGrassDistance, settings.grassDistance)
+    Apply("horizonScale", SetHorizonScale)
+    Apply("environmentDetail", SetEnvironmentDetail)
+    Apply("grassDistance", SetGrassDistance)
 
     if HasDoodadFadeCategoryApi() then
         local categories = GetDoodadCategoryValues(settings)
@@ -253,7 +312,7 @@ local function ScheduleApply(reason)
 
     addon:DelayedCall(0, function()
         if generation == applyGeneration then
-            ApplyGraphicsSettings(reason)
+            ApplyGraphicsSettings(reason, GetRaidHeldSettings())
         end
     end)
 end
@@ -449,12 +508,12 @@ function GraphicsPlus.VideoOptionsRefresh()
     end
 end
 
-local function SaveAndApply(settings, wasEnabled, reason)
+local function SaveAndApply(settings, wasEnabled, reason, held)
     addon:SaveSettings()
     if settings.enabled and not wasEnabled then
         addon:EnableModule("GraphicsPlus")
     end
-    ApplyGraphicsSettings(reason)
+    ApplyGraphicsSettings(reason, held)
 end
 
 function GraphicsPlus.VideoOptionsOkay()
@@ -473,12 +532,13 @@ function GraphicsPlus.VideoOptionsOkay()
     end
 
     local wasEnabled = settings.enabled
+    local held = HeldUnlessChanged(settings, pending)
     for key, value in pairs(pending) do
         settings[key] = value
     end
     pending = addon:DeepCopy(settings)
 
-    SaveAndApply(settings, wasEnabled, "video options")
+    SaveAndApply(settings, wasEnabled, "video options", held)
     RefreshControls()
 end
 
@@ -489,11 +549,12 @@ end
 function GraphicsPlus.VideoOptionsDefault()
     local settings = GetSettings()
     local wasEnabled = settings.enabled
+    local before = addon:DeepCopy(settings)
     for key, value in pairs(GraphicsPlus.defaults.graphicsPlus) do
         settings[key] = addon:DeepCopy(value)
     end
 
-    SaveAndApply(settings, wasEnabled, "defaults")
+    SaveAndApply(settings, wasEnabled, "defaults", HeldUnlessChanged(before, settings))
 end
 
 addon:RegisterModule("GraphicsPlus", GraphicsPlus)

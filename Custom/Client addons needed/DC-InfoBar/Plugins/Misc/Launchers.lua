@@ -849,6 +849,18 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
         })
     end
 
+    -- Beside Graphics+; only the native client builds the Fog & Water page
+    local qos = rawget(_G, "DCQOS")
+    if qos and qos.videoOptionsPages and qos.videoOptionsPages.FogAndWater then
+        table.insert(entries, 3, {
+            name = "Fog & Water",
+            icon = "Interface\\Icons\\Spell_Frost_SummonWaterElemental_2",
+            onClick = function()
+                OpenQoSVideoPage("FogAndWater")
+            end,
+        })
+    end
+
     local iconSize = tonumber(DCInfoBar:GetPluginSetting(self.id, "iconSize")) or 16
     ShowMenu(self._qosMenu, anchorButton, entries, iconSize)
 end

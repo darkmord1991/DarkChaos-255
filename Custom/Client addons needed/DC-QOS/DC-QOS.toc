@@ -207,6 +207,8 @@ Modules\Interface.lua
 Modules\WorldMapWindow.lua
 Modules\GraphicsPlus.lua
 Modules\PostProcessing.lua
+Modules\FogAndWater.lua
+Modules\RaidGraphics.lua
 Modules\QuestRecurringLookup.lua
 Modules\MapZoneLabels.lua
 Modules\ZoneLabels.lua

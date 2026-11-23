@@ -205,6 +205,10 @@ local LAMPS = {
 
 local LAMP_OBJECTS_CVAR = "dcLampLightsObjects"
 
+-- The volumetric fog and the water have their own page (Modules/FogAndWater.lua); these CVars tell
+-- whether this client has it, for the pointer under the title
+local FOG_AND_WATER_CVARS = { "dcVolumetricFog", "dcWater" }
+
 local EFFECTS = { SUN_RAYS, CONTACT_SHADOWS, BLOOM, GRADE, SKY, SUN_PATH, DAY_NIGHT, SHADOW_CACHE, LAMPS }
 
 local GTAO_DEBUG_CVAR = "dcGtaoDebug"
@@ -358,10 +362,17 @@ function PostProcessing.IsAvailable()
 end
 
 function PostProcessing.CreateSettings(parent)
-    addon:CreateVideoPageTitle(parent, "Post-Processing",
-        "Effects on the rendered world, not on the interface. They apply as you move the controls, and Cancel puts the old values back.")
-
+    local intro = "Effects on the rendered world, not on the interface. They apply as you move the controls, and Cancel puts the old values back."
     local y = -74
+    for _, cvar in ipairs(FOG_AND_WATER_CVARS) do
+        if Exists(cvar) then
+            intro = intro .. "\n|cffffd100Volumetric fog and water have their own page: Fog & Water.|r"
+            y = -86
+            break
+        end
+    end
+    addon:CreateVideoPageTitle(parent, "Post-Processing", intro)
+
     addon:CreateVideoHeader(parent, y, "Anti-aliasing (SMAA)")
     y = y - 34
     CreateCVarSlider(parent, 1, y, SMAA_SLIDER)

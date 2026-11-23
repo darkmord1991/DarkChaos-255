@@ -8,7 +8,7 @@
 
 local addon = DCQOS
 
-local PAGES = { "GraphicsPlus", "PostProcessing" }
+local PAGES = { "GraphicsPlus", "PostProcessing", "FogAndWater", "RaidGraphics" }
 
 -- What VideoOptionsFramePanelContainer's 413 leaves beside the insets and the scroll bar
 local CONTENT_WIDTH = 378
@@ -60,10 +60,11 @@ function addon:CreateVideoSlider(parent, column, y, info, onChanged)
     return slider
 end
 
-function addon:CreateVideoCheckbox(parent, y, key, label, onClick)
+-- column: 1 (the default) or 2
+function addon:CreateVideoCheckbox(parent, y, key, label, onClick, column)
     local name = "DCQoSVideo_" .. key
     local box = CreateFrame("CheckButton", name, parent, "OptionsSmallCheckButtonTemplate")
-    box:SetPoint("TOPLEFT", COLUMNS[1], y)
+    box:SetPoint("TOPLEFT", COLUMNS[column or 1], y)
     _G[name .. "Text"]:SetText(label)
     box:SetScript("OnClick", function(self)
         PlaySound(self:GetChecked() and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
