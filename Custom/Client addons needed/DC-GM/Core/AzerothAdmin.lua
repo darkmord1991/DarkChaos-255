@@ -780,12 +780,15 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
     return
   end
 
-  local tooLongToParse = id == 1 and type(text) == "string" and #text > AA_MAX_PARSED_LINE
+  -- World chat (mod-world-chat) relays player text as SYSTEM lines, all carrying the "[World][" prefix the server
+  -- adds. They are player speech: never parse or linkify them as server replies (security audit 2026-11-18).
+  local fromServer = id == 1 and not (type(text) == "string" and text:find("[World][", 1, true))
+  local tooLongToParse = fromServer and type(text) == "string" and #text > AA_MAX_PARSED_LINE
 
   -- Logout can still produce chat output while AceDB state is already being
   -- torn down. In that case bypass AzerothAdmin parsing and forward the text.
   if not (charDb and style) then
-    if id == 1 and not tooLongToParse then
+    if fromServer and not tooLongToParse then
       text = MangLinkifier_ProcessServerLine(text)
     end
     originalAddMessage(frame, text, r, g, b, id)
@@ -801,7 +804,7 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
     end
     return
   end
-  if id == 1 then --make sure that the message comes from the server, message id = 1
+  if fromServer then --make sure that the message comes from the server (message id 1, not world chat)
     --Catches if Toggle is still on for some reason, but search frame is not up, and disables it so messages arent caught
     if charDb.requests.toggle and not ma_popupframe:IsVisible() then
       charDb.requests.toggle = false

@@ -1280,8 +1280,11 @@ end
 local function _ShouldFilterHLBGChatMessage(msg)
     if type(msg) ~= 'string' then return false end
 
-    -- Tagged payloads
-    if msg:find('[HLBG_', 1, true) then
+    -- World chat relays player text as SYSTEM lines; those stay visible and are never protocol
+    if msg:find('[World][', 1, true) then return false end
+
+    -- Tagged payloads: the server always puts the tag at the start of the line
+    if msg:find('^%[HLBG_') then
         return true
     end
 
@@ -1317,7 +1320,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     if ev ~= 'CHAT_MSG_SYSTEM' or type(msg) ~= 'string' then return end
     CaptureLog('CHAT_IN', { event = ev, msg = msg })
     -- STATUS (chat fallback)
-    local b = msg:match('%[HLBG_STATUS%]%s*(.*)')
+    local b = msg:match('^%[HLBG_STATUS%]%s*(.*)')
     if b then
     CaptureLog('CHAT_STATUS', b)
         RES = RES or {}
@@ -1341,11 +1344,11 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         return
     end
     -- Warmup
-    local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
+    local warm = msg:match('^%[HLBG_WARMUP%]%s*(.*)')
     if warm then if type(HLBG.Warmup) == 'function' then CallIfPresent(HLBG.Warmup, warm) end return end
     CaptureLog('CHAT_WARMUP', warm)
     -- Results JSON
-    local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
+    local rj = msg:match('^%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
         local ok, decoded = pcall(function()
             return (HLBG.json_decode and HLBG.json_decode(rj)) or (type(json_decode) == 'function' and json_decode(rj)) or nil
@@ -1354,7 +1357,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         return
     end
     -- History TSV
-    local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
+    local htsv = msg:match('^%[HLBG_HISTORY_TSV%]%s*(.*)')
     if htsv then
     CaptureLog('CHAT_HISTORY_TSV_RAW', htsv)
         local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or 0)) or 0
@@ -1439,7 +1442,7 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         return
     end
     -- Stats JSON - FIXED to properly handle incoming JSON and display stats
-    local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
+    local sj = msg:match('^%[HLBG_STATS_JSON%]%s*(.*)')
     if sj then
         pcall(function()
             DebugPrint('|cFF33FF99HLBG Debug:|r Processing STATS_JSON, length: ' .. #sj)

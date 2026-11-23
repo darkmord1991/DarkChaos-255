@@ -1501,6 +1501,9 @@ end
 
 function DCInfoBar:HandleSystemMessage(msg)
     if not msg or msg == "" then return end
+    -- World chat relays player text as SYSTEM lines ("[World][...]"): a player must not be able to start
+    -- or cancel the restart countdown (security audit 2026-11-18)
+    if msg:find("[World][", 1, true) then return end
 
     self:BuildServerMessagePatterns()
     local patterns = self._serverMsgPatterns or {}

@@ -1036,6 +1036,8 @@ end
 
 function AzerothAdmin:GPS_OnSystemMessage(msg)
     if not gps_pending then return end
+    -- World chat lines are player text carried as SYSTEM lines: they must not supply coordinates
+    if type(msg) ~= "string" or msg:find("[World][", 1, true) then return end
     
     local map = string.match(msg, "Map: (%d+)")
     if map then

@@ -435,6 +435,11 @@ local function HandleQueueSystemChat(msg)
         return
     end
 
+    -- World chat relays player text as SYSTEM lines ("[World][...]"); it is never queue state
+    if msg:find("[World][", 1, true) then
+        return
+    end
+
     -- Reject non-queue lines before allocating. StripQueueChatMarkup and
     -- string.lower each build a new string, and this runs for every system
     -- message the client receives.
