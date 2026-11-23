@@ -1,0 +1,15 @@
+--
+-- DC 2026-11-21: the level-90 Spitelash naga clones on map 750 (Myrmidon 3606196, Battlemaster 3607885, Enchantress
+-- 3607886) and the Horde Invader 3633334 get DamageModifier 1.0, the stock Azshara value, instead of the 1.543 the
+-- 11-15 zone retune left them with (level-90 bucket: original 2.521 x 0.612). Their health stays as it is (1.275,
+-- stock 1.3).
+--
+-- Measured 11-20 23:27 to 11-21 (meter run 14, minipc, 3,000-4,000 bots): bots die in 23-34% of their fights against
+-- these four (level band 81-100: 3.9%), fights last 23-26 s and bots lose 2.7-3.1% health per second (band: 0.88).
+-- The stock originals 6196 / 7885 / 7886 kill 0% of the level 52-56 bots that fight them. The clones stand packed
+-- (165 spawns around 3300,-5250), the Battlemaster charges in from 30 yd, and bots meet them 3 levels under.
+-- The Siren clone 3606195 has the same modifiers but stands spread out (5.6% deaths) and keeps them.
+--
+-- tools/balance/gen_zone_tuning.py carries the same values in DAMAGE_OVERRIDES, so regenerating the zone retune keeps
+-- them. Apply to acore_world, then restart the worldserver (spawned creatures keep the old value until then).
+UPDATE `creature_template` SET `DamageModifier` = 1 WHERE `entry` IN (3606196, 3607885, 3607886, 3633334);

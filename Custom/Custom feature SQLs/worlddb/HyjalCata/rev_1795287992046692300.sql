@@ -1,0 +1,11 @@
+--
+-- DC 2026-11-21: Fiery Behemoth 7352289 (12 stationary rank-1 spawns in Hyjal Frontier, zone 4923 on map 750) from
+-- level 129 to 117, the level of the elites of the layer it stands in. Its spawns sit among 48 level-116 normals
+-- (Twilight Dragonkin, Twilight Juggernaut, Sethria's Hatchling) next to Sethria (117 elite), not in the level-128
+-- Molten Front layer it was imported from. Bots grinding there get pulled by its aggro radius (grind targeting skips
+-- elites) and die in 77% of the fights (meter run 14: 518 solo fights, bots level 112-130, mostly 121-125; 784k
+-- health at 129). The layer's elites with the same modifiers kill far fewer: Blazebound Elemental (114, health 4.19 /
+-- damage 2.07, 245k health) 16.7%, Magma Giant and Forgemaster Pyrendius (117) 9-10%. Modifiers stay as they are.
+--
+-- Apply to acore_world, then restart the worldserver (spawned Behemoths keep level 129 until they respawn).
+UPDATE `creature_template` SET `minlevel` = 117, `maxlevel` = 117 WHERE `entry` = 7352289;
