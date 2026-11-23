@@ -1280,6 +1280,12 @@ enum SoulWellData
     SPELL_CREATE_FEL_HEALTH_STONE_R0    = 58890,
     SPELL_CREATE_FEL_HEALTH_STONE_R1    = 58896,
     SPELL_CREATE_FEL_HEALTH_STONE_R2    = 58898,
+
+    // DarkChaos: Ritual of Souls rank 3 (level 81) and its Dread Healthstones (tools/balance/gen_class_items.py)
+    GO_SOUL_WELL_R3                     = 920022,
+    SPELL_CREATE_DREAD_HEALTH_STONE_R0  = 920023,
+    SPELL_CREATE_DREAD_HEALTH_STONE_R1  = 920024,
+    SPELL_CREATE_DREAD_HEALTH_STONE_R2  = 920025,
 };
 
 class go_soulwell : public GameObjectScript
@@ -1337,6 +1343,13 @@ public:
                             stoneSpell = SPELL_CREATE_FEL_HEALTH_STONE_R2;
                         }
                     }
+                    break;
+                case GO_SOUL_WELL_R3:
+                    stoneSpell = SPELL_CREATE_DREAD_HEALTH_STONE_R0;
+                    if (owner->HasAura(SPELL_IMPROVED_HEALTH_STONE_R1))
+                        stoneSpell = SPELL_CREATE_DREAD_HEALTH_STONE_R1;
+                    else if (owner->HasAura(SPELL_IMPROVED_HEALTH_STONE_R2))
+                        stoneSpell = SPELL_CREATE_DREAD_HEALTH_STONE_R2;
                     break;
             }
 

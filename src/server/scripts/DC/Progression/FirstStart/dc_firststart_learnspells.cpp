@@ -25,6 +25,10 @@ namespace DCFirstStart::LearnSpells
         constexpr char const* CONFIG_MAX_LEVEL = "DCFirstStart.LearnSpells.MaxLevel";
         constexpr char const* CONFIG_SHAMAN_TOTEMS = "DCFirstStart.LearnSpells.ShamanTotems";
 
+        // Class spells have ranks above level 80 (tools/balance/gen_class_ranks.py), so the default
+        // covers the whole level range. A lower DCFirstStart.LearnSpells.MaxLevel stops at that level.
+        constexpr uint8 LEARN_MAX_LEVEL_DEFAULT = 255;
+
         struct AddSpell
         {
             uint32 spellId;
@@ -398,9 +402,28 @@ namespace DCFirstStart::LearnSpells
             }},
         };
 
+        // The Ignite damage effect: Blizzard parked it at level 99 so it is never learned, which only
+        // held while the learn cap was 80.
+        constexpr uint32 SPELL_IGNITE_DAMAGE = 12654;
+
         bool IsIgnoredSpell(uint32 spellId)
         {
-            return kIgnoredSpells.find(spellId) != kIgnoredSpells.end();
+            if (spellId == SPELL_IGNITE_DAMAGE || kIgnoredSpells.find(spellId) != kIgnoredSpells.end())
+                return true;
+
+            // A rank of an ignored chain is ignored too: the list names the stock ranks of spells such as
+            // the Arcane Missiles missile or the Living Bomb explosion, and their ranks above level 80 are
+            // the same kind of spell.
+            uint32 firstRank = sSpellMgr->GetFirstSpellInChain(spellId);
+            return firstRank != spellId && kIgnoredSpells.find(firstRank) != kIgnoredSpells.end();
+        }
+
+        // A talent spell's higher ranks are trainer spells, but only for a character with the talent.
+        bool IsTalentChainWithoutTalent(Player* player, uint32 spellId)
+        {
+            uint32 firstRank = sSpellMgr->GetFirstSpellInChain(spellId);
+            bool const talentChain = GetTalentSpellCost(firstRank) > 0 || sSpellMgr->IsAdditionalTalentSpell(firstRank);
+            return talentChain && !player->HasSpell(firstRank);
         }
 
         uint32 GetSpellFamily(uint8 classId)
@@ -549,6 +572,13 @@ namespace DCFirstStart::LearnSpells
                     } while (result->NextRow());
                 }
 
+                // Lowest level first, so the ranks of a spell are learned in order in one pass.
+                for (auto& [classId, spells] : g_trainerSpellCache)
+                    std::stable_sort(spells.begin(), spells.end(), [](CachedSpell const& a, CachedSpell const& b)
+                    {
+                        return a.reqLevel < b.reqLevel;
+                    });
+
                 if (debug)
                     LOG_INFO("module.dc", "[DCFirstStart] Built class spell caches (DBC + trainer tables)");
             });
@@ -663,11 +693,21 @@ namespace DCFirstStart::LearnSpells
                 if (DisableMgr::IsDisabledFor(DISABLE_TYPE_SPELL, cached.spellId, player))
                     continue;
 
-                if (!player->HasSpell(cached.spellId))
-                {
-                    player->learnSpell(cached.spellId, false);
-                    ++learnedCount;
-                }
+                if (player->HasSpell(cached.spellId))
+                    continue;
+
+                // The trainer's own rules: the previous rank first, and talent ranks only with the talent.
+                // Without these checks every mage was taught Arcane Barrage, Living Bomb, Ice Barrier and the
+                // other talent spells' trained ranks.
+                if (IsTalentChainWithoutTalent(player, cached.spellId))
+                    continue;
+
+                SpellInfo const* prevSpell = spellInfo->GetPrevRankSpell();
+                if (prevSpell && !player->HasSpell(prevSpell->Id))
+                    continue;
+
+                player->learnSpell(cached.spellId, false);
+                ++learnedCount;
             }
 
             if (debug)
@@ -731,7 +771,7 @@ namespace DCFirstStart::LearnSpells
         if (!sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true))
             return;
 
-        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, 80);
+        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, LEARN_MAX_LEVEL_DEFAULT);
         uint8 playerLevel = player->GetLevel();
         uint32 learnToLevel = std::min<uint8>(playerLevel, maxLevel);
 
@@ -760,7 +800,7 @@ namespace DCFirstStart::LearnSpells
         if (!sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true))
             return;
 
-        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, 80);
+        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, LEARN_MAX_LEVEL_DEFAULT);
         uint8 newLevel = player->GetLevel();
 
         if (newLevel <= oldLevel || newLevel == 0)
@@ -780,6 +820,21 @@ namespace DCFirstStart::LearnSpells
         EnsureCoreWeaponPassives(player, debug);
     }
 
+    void CatchUpClassSpells(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true))
+            return;
+
+        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, LEARN_MAX_LEVEL_DEFAULT);
+        uint32 toLevel = std::min<uint8>(player->GetLevel(), maxLevel);
+        if (toLevel < 1)
+            return;
+
+        // Only the trainer pass: it follows the trainer's rules and teaches everything up to the
+        // character's level, so ranks added after a character passed their level arrive at the next login.
+        LearnTrainerSpells(player, toLevel, debug);
+    }
+
     uint32 ForgetClassSpellsAbove(Player* player, uint8 level, bool debug)
     {
         uint8 classId = player->getClass();
@@ -792,7 +847,7 @@ namespace DCFirstStart::LearnSpells
         // Only what comes back on the way up: a class trainer always teaches its spells again, the
         // DBC scan and the additional spells only return through GrantClassSpellsOnLevelUp.
         bool const relearnOnLevelUp = sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true);
-        uint8 const relearnMaxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, 80);
+        uint8 const relearnMaxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, LEARN_MAX_LEVEL_DEFAULT);
 
         std::vector<uint32> spells;
         for (CachedSpell const& cached : g_trainerSpellCache[classId])

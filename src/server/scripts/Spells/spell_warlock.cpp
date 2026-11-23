@@ -603,7 +603,8 @@ class spell_warl_create_healthstone : public SpellScript
 {
     PrepareSpellScript(spell_warl_create_healthstone);
 
-    static uint32 const iTypes[8][3];
+    static constexpr uint8 MAX_HEALTHSTONE_RANK = 9;
+    static uint32 const iTypes[MAX_HEALTHSTONE_RANK][3];
 
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
@@ -615,6 +616,9 @@ class spell_warl_create_healthstone : public SpellScript
         if (Player* caster = GetCaster()->ToPlayer())
         {
             uint8 spellRank = GetSpellInfo()->GetRank();
+            if (spellRank < 1 || spellRank > MAX_HEALTHSTONE_RANK)
+                return SPELL_FAILED_ERROR;
+
             ItemPosCountVec dest;
             InventoryResult msg = caster->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, iTypes[spellRank - 1][0], 1, nullptr);
             if (msg != EQUIP_ERR_OK)
@@ -645,7 +649,7 @@ class spell_warl_create_healthstone : public SpellScript
                 }
             }
             uint8 spellRank = GetSpellInfo()->GetRank();
-            if (spellRank > 0 && spellRank <= 8)
+            if (spellRank > 0 && spellRank <= MAX_HEALTHSTONE_RANK)
                 CreateItem(effIndex, iTypes[spellRank - 1][rank]);
         }
     }
@@ -657,7 +661,7 @@ class spell_warl_create_healthstone : public SpellScript
     }
 };
 
-uint32 const spell_warl_create_healthstone::spell_warl_create_healthstone::iTypes[8][3] =
+uint32 const spell_warl_create_healthstone::spell_warl_create_healthstone::iTypes[MAX_HEALTHSTONE_RANK][3] =
 {
     { 5512, 19004, 19005},              // Minor Healthstone
     { 5511, 19006, 19007},              // Lesser Healthstone
@@ -666,7 +670,9 @@ uint32 const spell_warl_create_healthstone::spell_warl_create_healthstone::iType
     { 9421, 19012, 19013},              // Major Healthstone
     {22103, 22104, 22105},              // Master Healthstone
     {36889, 36890, 36891},              // Demonic Healthstone
-    {36892, 36893, 36894}               // Fel Healthstone
+    {36892, 36893, 36894},              // Fel Healthstone
+    // DarkChaos: Create Healthstone rank 9 (level 81), percent of maximum health (tools/balance/gen_class_items.py)
+    {423005, 423006, 423007}            // Dread Healthstone
 };
 
 // 47422 - Everlasting Affliction

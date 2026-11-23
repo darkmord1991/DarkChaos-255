@@ -38,6 +38,8 @@ enum PriestSpells
     SPELL_PRIEST_GUARDIAN_SPIRIT_HEAL               = 48153,
     SPELL_PRIEST_ITEM_EFFICIENCY                    = 37595,
     SPELL_PRIEST_LIGHTWELL_CHARGES                  = 59907,
+    SPELL_PRIEST_LIGHTWELL_R1                       = 724,
+    SPELL_PRIEST_LIGHTWELL_RENEW_R1                 = 7001,
     SPELL_PRIEST_MANA_LEECH_PROC                    = 34650,
     SPELL_PRIEST_PENANCE_R1                         = 47540,
     SPELL_PRIEST_PENANCE_R1_DAMAGE                  = 47758,
@@ -401,6 +403,12 @@ class spell_pri_lightwell : public SpellScript
             case PRIEST_LIGHTWELL_NPC_5: lightwellRenew = 48084; break;
             case PRIEST_LIGHTWELL_NPC_6: lightwellRenew = 48085; break;
         }
+
+        // DarkChaos: the Lightwell ranks above level 80 (tools/balance/gen_class_ranks.py) summon the rank-6 well;
+        // heal with the Lightwell Renew of the summoning spell's rank instead.
+        if (SpellInfo const* summonSpell = sSpellMgr->GetSpellInfo(caster->GetUInt32Value(UNIT_CREATED_BY_SPELL)))
+            if (summonSpell->GetRank() > 6 && summonSpell->GetFirstRankSpell()->Id == SPELL_PRIEST_LIGHTWELL_R1)
+                lightwellRenew = sSpellMgr->GetSpellWithRank(SPELL_PRIEST_LIGHTWELL_RENEW_R1, summonSpell->GetRank());
 
         // proc a spellcast
         if (Aura* chargesAura = caster->GetAura(SPELL_PRIEST_LIGHTWELL_CHARGES))

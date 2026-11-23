@@ -1128,6 +1128,10 @@ public:
         // level 80 when the feature shipped.
         DCFirstStart::GrantSystemsPrimer(player, debug);
 
+        // Class spell ranks. Same rationale again: ranks added later (levels 81-255)
+        // reach characters that are already past their level at the next login.
+        DCFirstStart::LearnSpells::CatchUpClassSpells(player, debug);
+
         // Announce module if enabled
         bool announce = sConfigMgr->GetOption<bool>(
             DCFirstStart::Config::ANNOUNCE, false);

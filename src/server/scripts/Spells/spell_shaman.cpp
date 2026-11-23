@@ -23,6 +23,7 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "Unit.h"
+#include <unordered_map>
 /*
  * Scripts for spells with SPELLFAMILY_SHAMAN and SPELLFAMILY_GENERIC spells used by shaman players.
  * Ordered alphabetically using scriptname.
@@ -2106,14 +2107,33 @@ class spell_sha_windfury_weapon : public AuraScript
 {
     PrepareAuraScript(spell_sha_windfury_weapon);
 
+    // DarkChaos: every Windfury Weapon rank applies the same passive aura (33757), so the rank (and its attack
+    // power bonus, the second effect's base points) is told apart by the temporary enchantment on the weapon.
+    // Filled once at script load from the rank chain, read-only afterwards.
+    static std::unordered_map<uint32, uint32>& RankByEnchant()
+    {
+        static std::unordered_map<uint32, uint32> ranks;
+        return ranks;
+    }
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo(
+        if (!ValidateSpellInfo(
         {
             SPELL_SHAMAN_WINDFURY_WEAPON_R1,
             SPELL_SHAMAN_WINDFURY_ATTACK_MH,
             SPELL_SHAMAN_WINDFURY_ATTACK_OH
-        });
+        }))
+            return false;
+
+        std::unordered_map<uint32, uint32>& ranks = RankByEnchant();
+        if (ranks.empty())
+            for (SpellInfo const* rank = sSpellMgr->GetSpellInfo(SPELL_SHAMAN_WINDFURY_WEAPON_R1); rank;
+                 rank = rank->GetNextRankSpell())
+                if (rank->Effects[EFFECT_0].Effect == SPELL_EFFECT_ENCHANT_ITEM_TEMPORARY)
+                    ranks[uint32(rank->Effects[EFFECT_0].MiscValue)] = rank->Id;
+
+        return true;
     }
 
     bool CheckProc(ProcEventInfo& eventInfo)
@@ -2154,9 +2174,18 @@ class spell_sha_windfury_weapon : public AuraScript
         bool mainHand = slot == EQUIPMENT_SLOT_MAINHAND;
         uint32 spellId = mainHand ? SPELL_SHAMAN_WINDFURY_ATTACK_MH : SPELL_SHAMAN_WINDFURY_ATTACK_OH;
 
-        SpellInfo const* windfurySpellInfo = sSpellMgr->GetSpellInfo(SPELL_SHAMAN_WINDFURY_WEAPON_R1);
-        int32 bonus = windfurySpellInfo ? windfurySpellInfo->Effects[EFFECT_1].CalcValue(player) : 0;
-        bonus = int32(bonus * player->GetAttackTime(mainHand ? BASE_ATTACK : OFF_ATTACK) / 1000.f);
+        // DarkChaos: the bonus of the rank on this weapon (it was always rank 1's 46 attack power), turned into
+        // weapon damage the way attack power always is: 1 damage per second of swing time per 14 attack power.
+        // Without the division rank 8's 1250 would add about 3250 damage per extra attack instead of 232.
+        uint32 rankSpell = SPELL_SHAMAN_WINDFURY_WEAPON_R1;
+        std::unordered_map<uint32, uint32> const& ranks = RankByEnchant();
+        auto itr = ranks.find(item->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT));
+        if (itr != ranks.end())
+            rankSpell = itr->second;
+
+        SpellInfo const* windfurySpellInfo = sSpellMgr->GetSpellInfo(rankSpell);
+        int32 attackPower = windfurySpellInfo ? windfurySpellInfo->Effects[EFFECT_1].CalcValue(player) : 0;
+        int32 bonus = int32(attackPower / 14.0f * player->GetAttackTime(mainHand ? BASE_ATTACK : OFF_ATTACK) / 1000.f);
 
         player->CastCustomSpell(spellId, SPELLVALUE_BASE_POINT0, bonus, target, true, item, aurEff);
         player->CastCustomSpell(spellId, SPELLVALUE_BASE_POINT0, bonus, target, true, item, aurEff);

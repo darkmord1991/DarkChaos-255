@@ -4344,7 +4344,7 @@ DCFirstStart.Skills.List = ""
 # -----------------------------------------------------------------------------
 
 DCFirstStart.LearnSpells.Enable = 1
-DCFirstStart.LearnSpells.MaxLevel = 80
+DCFirstStart.LearnSpells.MaxLevel = 255
 DCFirstStart.LearnSpells.ShamanTotems = 1
 
 # -----------------------------------------------------------------------------
