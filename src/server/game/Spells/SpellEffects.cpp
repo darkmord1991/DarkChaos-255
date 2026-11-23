@@ -6382,7 +6382,12 @@ void Spell::SummonGuardian(uint32 i, uint32 entry, SummonPropertiesEntry const* 
             }
         }
 
-    summonLevel = std::min<uint8>(sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL) + sWorld->getIntConfig(CONFIG_WORLD_BOSS_LEVEL_DIFF), std::max<uint8>(1U, summonLevel));
+    // DarkChaos: the cap is computed in 32 bits. std::min<uint8> converted MaxPlayerLevel + WorldBossLevelDiff
+    // (255 + 3 = 258) to uint8, which is 2, so every guardian summoned here was level 2 at any caster level:
+    // Army of the Dead ghouls hit for 2, Treants and Feral Spirits for a few dozen.
+    uint32 const summonLevelCap = std::min<uint32>(STRONG_MAX_LEVEL,
+        sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL) + sWorld->getIntConfig(CONFIG_WORLD_BOSS_LEVEL_DIFF));
+    summonLevel = uint8(std::min<uint32>(summonLevelCap, std::max<uint32>(1U, summonLevel)));
 
     float radius = 5.0f;
     int32 duration = m_spellInfo->GetDuration();
