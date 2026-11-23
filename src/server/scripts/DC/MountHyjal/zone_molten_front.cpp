@@ -532,6 +532,10 @@ public:
                 controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
         }
 
+        // The route is 12 points (script_waypoint, the same rows for all three druids): no source DB
+        // has the 22-point Cata path -- nelt holds only Taldros' first 4 -- so the rest was authored
+        // on known ground (the script's own summon spots and the post-assault spawns on the spire top)
+        // and the event points renumbered: igniters 13 -> 6, second line 20 -> 10, the channel 22 -> 12.
         void WaypointReached(uint32 waypointId) override
         {
             switch (waypointId)
@@ -543,7 +547,7 @@ public:
                 _running = true; // SetRun() removed from escort base; tracked locally (no-op behaviourally).
             }
             break;
-            case 13:
+            case 6:
             {
                 SetEscortPaused(true);
 
@@ -565,10 +569,10 @@ public:
                         }
             }
             break;
-            case 20:
+            case 10:
                 me->AI()->Talk(2);
                 break;
-            case 22:
+            case 12:
                 me->AI()->Talk(3);
                 me->CastSpell(me, SPELL_NATURE_CHANNELING, true);
 
