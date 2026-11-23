@@ -17,6 +17,7 @@
 
 #include "ACSoap.h"
 #include "AccountMgr.h"
+#include "CommandAudit.h"
 #include "Log.h"
 #include "World.h"
 #include "soapStub.h"
@@ -110,6 +111,9 @@ int ns1__executeCommand(soap* soap, char* command, char** result)
         return soap_sender_fault(soap, "Command can not be empty", "The supplied command was an empty string");
 
     LOG_DEBUG("network.soap", "ACSoap: got command '{}'", command);
+    // Audit trail: in-game GM commands are logged per account (ChatCommand.cpp), SOAP commands were not.
+    LOG_GM(accountId, "SOAP command: {} [Account: {} ({}) IP: {}.{}.{}.{}]", Acore::ChatCommands::AuditCommandText(command),
+        soap->userid, accountId, (soap->ip >> 24) & 0xFF, (soap->ip >> 16) & 0xFF, (soap->ip >> 8) & 0xFF, soap->ip & 0xFF);
 
     // Shared so the object survives if we stop waiting below: the queued command keeps a raw
     // pointer to it and the world thread may still run it after that. The extra reference is

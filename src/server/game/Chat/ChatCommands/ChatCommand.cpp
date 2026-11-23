@@ -16,6 +16,7 @@
  */
 
 #include "ChatCommand.h"
+#include "CommandAudit.h"
 #include "AccountMgr.h"
 #include "Chat.h"
 #include "DBCStores.h"
@@ -192,7 +193,7 @@ static void LogCommandUsage(WorldSession const& session, std::string_view cmdStr
     }
 
     std::string logMessage = Acore::StringFormat("Command: {} [Player: {} ({}) (Account: {}) X: {} Y: {} Z: {} Map: {} ({}) Area: {} ({}) Zone: {} ({}) Selected: {} ({})]",
-        cmdStr, player->GetName(), player->GetGUID().ToString(),
+        Acore::ChatCommands::AuditCommandText(cmdStr), player->GetName(), player->GetGUID().ToString(),
         session.GetAccountId(),
         player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(),
         player->FindMap() ? player->FindMap()->GetMapName() : "Unknown",

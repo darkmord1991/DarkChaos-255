@@ -690,7 +690,8 @@ Appender.Server=2,5,19,Server.log,w,0,20
 Appender.Playerbots=2,5,17,Playerbots.log,w,0,5
 # HLBG bot monitoring - kept out of Playerbots.log, which would bury a one-line-per-minute report.
 Appender.HLBGBots=2,5,17,hlbg_bots.log,w,0,10
-# Appender.GM=2,5,15,gm_%s.log
+# One file per account (%s = account id), timestamped lines: in-game GM, SOAP and console (account 0) commands.
+Appender.GM=2,5,15,gm_%s.log
 # Every ERROR and FATAL of the run (the loggers below list it), so one small file answers "did anything fail".
 Appender.Errors=2,2,23,Errors.log,w,0,20
 # DarkChaos custom systems (DC scripts/modules)
@@ -717,7 +718,7 @@ Appender.DCConsole=1,4,0,"1 9 3 8 5 8"
 
 Logger.root=2,Console Server Errors
 # Logger.metric=2,Console Server
-# Logger.commands.gm=4,Console GM
+Logger.commands.gm=4,GM
 Logger.diff=3,Console Server
 Logger.mmaps=4,Server
 Logger.scripts.hotswap=4,Console Server

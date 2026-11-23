@@ -20,6 +20,7 @@
 /// \file
 
 #include "CliRunnable.h"
+#include "CommandAudit.h"
 #include "Config.h"
 #include "ObjectMgr.h"
 #include "World.h"
@@ -228,6 +229,7 @@ void CliThread()
             }
 
             fflush(stdout);
+            LOG_GM(0, "Console command: {}", Acore::ChatCommands::AuditCommandText(command));
             sWorld->QueueCliCommand(new CliCommandHolder(nullptr, command.c_str(), &utf8print, &commandFinished));
 #if AC_PLATFORM != AC_PLATFORM_WINDOWS
             add_history(command.c_str());
