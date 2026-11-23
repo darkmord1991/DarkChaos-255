@@ -1622,7 +1622,7 @@ namespace DCAddon
 {
     namespace World
     {
-        void SendWorldContentSnapshot(Player* player);
+        bool SendWorldContentSnapshotFloored(Player* player);
     }
 }
 
@@ -3315,6 +3315,55 @@ static void BroadcastServerConfig()
         s_ServerConfigRevision, recipients);
 }
 
+// Handshake floor, per character session (world thread only). A client handshakes on login and on /reload; a
+// repeat inside the window gets its ACK and the in-memory caps, but no DB write, config resend or world snapshot.
+// The caps upsert and history row are written only when the handshake differs from what this session stored, and
+// the history takes a few rows per session at most, so alternating version strings cannot grow it.
+constexpr uint64 HANDSHAKE_COOLDOWN_MS = 3 * IN_MILLISECONDS;
+constexpr uint32 HANDSHAKE_HISTORY_ROWS_PER_SESSION = 4;
+
+struct HandshakeSessionState : public DataMap::Base
+{
+    uint64 lastFullMs = 0;
+    std::string lastStoredSignature;
+    uint32 historyRows = 0;
+};
+
+static HandshakeSessionState* GetHandshakeSessionState(Player* player)
+{
+    return player->CustomData.GetDefault<HandshakeSessionState>("DCAddonHandshakeState");
+}
+
+static bool TryConsumeHandshakeFloor(Player* player)
+{
+    HandshakeSessionState* state = GetHandshakeSessionState(player);
+    uint64 const nowMs = GameTime::GetGameTimeMS().count();
+    if (state->lastFullMs && nowMs - state->lastFullMs < HANDSHAKE_COOLDOWN_MS)
+        return false;
+
+    state->lastFullMs = nowMs;
+    return true;
+}
+
+static void PersistHandshakeCaps(Player* player, std::string const& clientVersionStr, uint32 clientCaps,
+    uint32 negotiatedCaps, bool compatible, char const* source, DCAddon::ClientHandshakeMetadata const& metadata)
+{
+    HandshakeSessionState* state = GetHandshakeSessionState(player);
+    std::string signature = Acore::StringFormat("{}|{}|{}|{}|{}|{}", clientVersionStr, clientCaps, negotiatedCaps,
+        compatible ? 1 : 0, metadata.nativeBuildFingerprint, EncodeDataRevisionsJson(metadata.dataRevisions));
+    if (signature == state->lastStoredSignature)
+        return;
+
+    state->lastStoredSignature = std::move(signature);
+    StoreClientCaps(player, clientVersionStr, clientCaps, negotiatedCaps, metadata);
+
+    if (state->historyRows >= HANDSHAKE_HISTORY_ROWS_PER_SESSION)
+        return;
+
+    ++state->historyRows;
+    StoreCapabilityHistory(player, clientVersionStr, clientCaps, negotiatedCaps, compatible, source, metadata);
+}
+
 static void HandleCoreHandshake(Player* player, DCAddon::ParsedMessage const& msg)
 {
     // Client says hello with version string: "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|capabilities"
@@ -3351,14 +3400,19 @@ static void HandleCoreHandshake(Player* player, DCAddon::ParsedMessage const& ms
         ackMsg.Add(handshakeAckMetadata);
     ackMsg.Send(player);
 
-    // Store client addon caps/version per account
-    StoreClientCaps(player, clientVersionStr, clientVersion.capabilities,
-        negotiatedCaps, metadata);
     DCAddon::SetSessionCapabilityState(player, clientVersionStr,
         clientVersion.capabilities, negotiatedCaps, compatible, metadata);
-    StoreCapabilityHistory(player, clientVersionStr,
-        clientVersion.capabilities, negotiatedCaps, compatible,
-        "core-handshake", metadata);
+
+    if (!TryConsumeHandshakeFloor(player))
+    {
+        LOG_DEBUG("dc.addon", "CORE: repeated handshake from {} inside the floor, sent the ACK only",
+            player->GetName());
+        return;
+    }
+
+    // Store client addon caps/version per account
+    PersistHandshakeCaps(player, clientVersionStr, clientVersion.capabilities,
+        negotiatedCaps, compatible, "core-handshake", metadata);
     LogCapabilityState(player, "core-handshake", clientVersionStr,
         clientVersion.capabilities, negotiatedCaps, compatible);
 
@@ -3372,11 +3426,9 @@ static void HandleCoreHandshake(Player* player, DCAddon::ParsedMessage const& ms
 
     SendServerConfig(player);
 
-    // Proactively send WRLD content snapshot after handshake
+    // Proactively send WRLD content snapshot after handshake, under the GET_CONTENT floor
     if (s_AddonConfig.EnableWorld)
-    {
-        DCAddon::World::SendWorldContentSnapshot(player);
-    }
+        DCAddon::World::SendWorldContentSnapshotFloored(player);
 }
 
 static void HandleCoreVersionCheck(Player* player, DCAddon::ParsedMessage const& msg)
@@ -4113,17 +4165,18 @@ public:
             DCAddon::ClientHandshakeMetadata metadata =
                 ParseHandshakeMetadata(parsed);
 
-            StoreClientCaps(player, clientVersionStr,
-                clientVersion.capabilities, negotiatedCaps, metadata);
             DCAddon::SetSessionCapabilityState(player, clientVersionStr,
                 clientVersion.capabilities, negotiatedCaps, compatible,
                 metadata);
-            StoreCapabilityHistory(player, clientVersionStr,
-                clientVersion.capabilities, negotiatedCaps, compatible,
-                "pre-router-fallback", metadata);
-            LogCapabilityState(player, "pre-router-fallback",
-                clientVersionStr, clientVersion.capabilities,
-                negotiatedCaps, compatible);
+            if (TryConsumeHandshakeFloor(player))
+            {
+                PersistHandshakeCaps(player, clientVersionStr,
+                    clientVersion.capabilities, negotiatedCaps, compatible,
+                    "pre-router-fallback", metadata);
+                LogCapabilityState(player, "pre-router-fallback",
+                    clientVersionStr, clientVersion.capabilities,
+                    negotiatedCaps, compatible);
+            }
         }
 
         // Route the message

@@ -315,22 +315,30 @@ namespace World
         uint64 lastMs = 0;
     };
 
+    // Every client-triggered snapshot (GET_CONTENT and the CORE handshake) goes through this one floor.
+    bool SendWorldContentSnapshotFloored(Player* player)
+    {
+        if (!player)
+            return false;
+
+        GetContentFloor* requestFloor = player->CustomData.GetDefault<GetContentFloor>("DCWorldGetContentFloor");
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (requestFloor->lastMs && nowMs - requestFloor->lastMs < GET_CONTENT_COOLDOWN_MS)
+            return false;
+
+        requestFloor->lastMs = nowMs;
+        SendWorldContentSnapshot(player);
+        return true;
+    }
+
     // Handler: Client requests world content
     static void HandleGetContent(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
 
-        GetContentFloor* requestFloor = player->CustomData.GetDefault<GetContentFloor>("DCWorldGetContentFloor");
-        uint64 const nowMs = GameTime::GetGameTimeMS().count();
-        if (requestFloor->lastMs && nowMs - requestFloor->lastMs < GET_CONTENT_COOLDOWN_MS)
-        {
+        if (!SendWorldContentSnapshotFloored(player))
             LOG_DEBUG("dc.addon", "WRLD: dropped repeated GET_CONTENT from {}", player->GetName());
-            return;
-        }
-
-        requestFloor->lastMs = nowMs;
-        SendWorldContentSnapshot(player);
     }
 
     // RESOLVE_SPAWN request floors, world thread only. The client sends it
