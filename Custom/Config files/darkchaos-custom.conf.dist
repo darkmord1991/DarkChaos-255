@@ -5819,6 +5819,63 @@ DC.BossKit.TrashSpellCap.Threshold = 0
 DC.BossKit.TrashSpellCap.ExcessDivisor = 20
 
 ###############################################################################
+# LAB TOOLS: CLIENT PROBE RELAY AND IN-GAME BUG REPORTS
+#
+#  src/server/scripts/DC/LabTools. Both are off by default.
+#
+###############################################################################
+
+#
+#    DC.LabProbe.Enable
+#    DC.LabProbe.Accounts
+#        Description: .dca probe send <char> <json> / .dca probe result <id> / .dca probe list (administrator,
+#                     console and SOAP) ask a lab character's DC-LabProbe addon for read-only client state
+#                     (ping, state, frame, tooltip, auras, target, cvars, addons, errors). Only characters on
+#                     the accounts listed here (comma-separated account names) are ever asked.
+#        Default:     0, "" (off, no accounts)
+#
+
+DC.LabProbe.Enable = 0
+DC.LabProbe.Accounts = ""
+
+#
+#    DC.LabProbe.ResultTtlSeconds
+#    DC.LabProbe.MaxResultBytes
+#        Description: How long a probe result is kept, and the largest answer accepted.
+#        Default:     300, 16384
+#
+
+DC.LabProbe.ResultTtlSeconds = 300
+DC.LabProbe.MaxResultBytes = 16384
+
+#
+#    DC.BugReport.Enable
+#    DC.BugReport.SpoolFile
+#        Description: /dcbug in DC-QOS sends a bug report; the server validates it and appends one JSON line
+#                     to SpoolFile (no account names, IPs or character names). apps/bugreport_relay posts the
+#                     spool to GitHub issues (dry run by default; token from the environment only).
+#        Default:     0, "" (off)
+#
+
+DC.BugReport.Enable = 0
+DC.BugReport.SpoolFile = ""
+
+#
+#    DC.BugReport.CooldownSeconds
+#    DC.BugReport.MaxPerAccountPerDay
+#    DC.BugReport.MaxBytes
+#    DC.BugReport.SpoolMaxBytes
+#        Description: Per-account cooldown and daily cap, the largest accepted report, and the spool size at
+#                     which new reports are refused until the relay has drained it.
+#        Default:     120, 10, 8192, 52428800
+#
+
+DC.BugReport.CooldownSeconds = 120
+DC.BugReport.MaxPerAccountPerDay = 10
+DC.BugReport.MaxBytes = 8192
+DC.BugReport.SpoolMaxBytes = 52428800
+
+###############################################################################
 # GAMEPLAY SCENARIO TEST HARNESS
 #
 #  src/server/scripts/DC/GameplayTest, runner + schema in apps/gameplay-test.

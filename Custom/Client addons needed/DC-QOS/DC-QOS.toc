@@ -248,3 +248,6 @@ Modules\TalentManager.lua
 
 # Return to Graveyard (retail-style ghost button)
 Modules\Graveyard.lua
+
+# In-game bug report dialog (/dcbug; server module BUGR)
+# Modules\BugReport.lua  (disabled 2026-11-22: GitHub bug reports not in use; server DC.BugReport.Enable = 0)

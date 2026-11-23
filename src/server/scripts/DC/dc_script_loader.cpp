@@ -169,6 +169,8 @@ void AddSC_dc_prestige_challenges();          // Progression/Prestige/dc_prestig
 void AddSC_spell_prestige_alt_bonus_aura();   // Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
 void AddSC_dc_prestige_talents();             // Progression/Prestige/dc_prestige_talents.cpp
 void AddSC_dc_gameplay_test();                // GameplayTest/dc_gameplay_test.cpp
+void AddSC_dc_lab_probe();                    // LabTools/dc_lab_probe.cpp
+void AddSC_dc_bug_report();                   // LabTools/dc_bug_report.cpp
 void AddSC_dc_dungeon_qol();                  // DungeonQoL/dc_dungeon_qol.cpp (battle res charges, checkpoint release)
 void AddSC_dc_raid_flex();                    // RaidFlex/dc_raid_flex.cpp
 void AddSC_dc_boss_kit();                     // BossKit/dc_boss_kit.cpp
@@ -603,6 +605,10 @@ void AddDCScripts()
 
     // Gameplay scenario test harness (.dca test run <file.json>); off unless DC.GameplayTest.Enable = 1.
     DC_LOAD(AddSC_dc_gameplay_test);
+
+    // Lab tools: client probe relay (.dca probe) and in-game bug reports to a spool file; both off by default.
+    DC_LOAD(AddSC_dc_lab_probe);
+    DC_LOAD(AddSC_dc_bug_report);
 
     // Battle resurrection charges and checkpoint release (DC.BattleRes.*, DC.CheckpointRelease.*); registers its
     // internal scripts itself.

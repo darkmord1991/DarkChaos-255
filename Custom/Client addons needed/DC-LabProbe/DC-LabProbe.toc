@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: |cffFFCC00DC|r Lab Probe
+## Notes: Answers read-only UI probes the server sends to GM lab accounts (DC.LabProbe.*). Does nothing unless the server asks.
+## Author: DarkChaos Team
+## Version: 1.0.0
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: !BugGrabber
+## SavedVariablesPerCharacter: DCLabProbeDB
+
+LabProbe.lua
