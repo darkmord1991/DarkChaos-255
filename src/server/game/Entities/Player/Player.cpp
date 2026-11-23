@@ -2183,6 +2183,10 @@ Creature* Player::GetNPCIfCanInteractWith(ObjectGuid const& guid, uint32 npcflag
     if (IsInFlight())
         return nullptr;
 
+    // DarkChaos: a spectator only watches (audit 2026-11-18)
+    if (IsSpectator())
+        return nullptr;
+
     // exist (we need look pets also for some interaction (quest/etc)
     Creature* creature = ObjectAccessor::GetCreatureOrPetOrVehicle(*this, guid);
     if (!creature)

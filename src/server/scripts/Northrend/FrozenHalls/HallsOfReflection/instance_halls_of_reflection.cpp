@@ -478,7 +478,8 @@ public:
                 uint8 reflectionIdx = 0;
                 instance->DoForAllPlayers([&](Player* player)
                 {
-                    if (reflectionIdx >= MAX_SPIRITUAL_REFLECTIONS || !player->IsAlive() || player->IsGameMaster())
+                    if (reflectionIdx >= MAX_SPIRITUAL_REFLECTIONS || !player->IsAlive() || player->IsGameMaster()
+                        || player->IsSpectator())
                         return;
                     Creature* reflection = instance->GetCreature(_spiritualReflectionGUID[reflectionIdx++]);
                     if (!reflection)
@@ -901,7 +902,7 @@ public:
                     for (auto itr = pl.begin(); itr != pl.end(); ++itr)
                     {
                         Player* player = itr->GetSource();
-                        if (!player || player->IsGameMaster())
+                        if (!player || player->IsGameMaster() || player->IsSpectator())
                             continue;
                         if (player->IsAlive())
                             allDead = false;
@@ -920,7 +921,7 @@ public:
                     for (auto itr = pl.begin(); itr != pl.end(); ++itr)
                     {
                         Player* player = itr->GetSource();
-                        if (!player || player->IsGameMaster())
+                        if (!player || player->IsGameMaster() || player->IsSpectator())
                             continue;
                         if (player->GetExactDist2d(&CenterPos) > MAX_DIST_FROM_CENTER_TO_START || !player->IsAlive())
                         {

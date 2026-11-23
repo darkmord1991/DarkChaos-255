@@ -1850,9 +1850,10 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
     }
 
     // pussywizard: arena spectator
-    if (obj->IsPlayer())
-        if (((Player const*)obj)->IsSpectator() && ((Player const*)obj)->FindMap() && ((Player const*)obj)->FindMap()->IsBattleArena())
-            return false;
+    // DarkChaos: on every map. The Mythic+ and HLBG spectators used GM mode to hide, which a normal account never
+    // got (its GM visibility level is SEC_PLAYER) while it did get the GM exemptions (audit 2026-11-18).
+    if (obj->IsPlayer() && obj->ToPlayer()->IsSpectator())
+        return false;
 
     bool corpseVisibility = false;
     if (distanceCheck)

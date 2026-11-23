@@ -798,9 +798,8 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
     _spectators[player->GetGUID()] = state;
     run.spectators.insert(player->GetGUID());
 
-    // Set spectator flags (GM mode for invisibility)
-    player->SetGameMaster(true);
-    player->SetGMVisible(false);
+    // No GM mode: it hid nobody on a normal account (its GM visibility level is SEC_PLAYER) and handed out the GM
+    // exemptions. The core spectator flag, held below, makes the spectator invisible on any map (audit 2026-11-18).
 
     // A dungeon teleport normally picks its instance from the player's own binds,
     // which know nothing about this run - and a lockout on another copy of the
@@ -819,8 +818,6 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
         // guarantees no other system holds it, so nothing here may survive.
         DCSpectator::ReleaseSpectatorFlag(player);
         player->SetPendingSpectatorForBG(0);
-        player->SetGameMaster(false);
-        player->SetGMVisible(true);
         run.spectators.erase(player->GetGUID());
         _spectators.erase(player->GetGUID());
         ChatHandler(player->GetSession()).SendSysMessage("|cffff0000[M+ Spectator]|r Could not teleport you to the run.");
@@ -933,8 +930,6 @@ void MythicSpectatorManager::StopSpectating(Player* player)
     // clear it here too in case the session ends before the spectator landed.
     DCSpectator::ReleaseSpectatorFlag(player);
     player->SetPendingSpectatorForBG(0);
-    player->SetGameMaster(false);
-    player->SetGMVisible(true);
     RestoreSpectatorPosition(player, state);
 
     _spectators.erase(it);
@@ -1728,6 +1723,10 @@ std::vector<std::pair<uint32, std::string>> MythicSpectatorManager::GetRecentRep
 {
     std::vector<std::pair<uint32, std::string>> result;
 
+    // Player-supplied (.spectate replays <n>): one chat line per row, so keep it small.
+    constexpr uint32 MAX_REPLAY_LIST = 50;
+    limit = std::clamp<uint32>(limit, 1, MAX_REPLAY_LIST);
+
     QueryResult qr = CharacterDatabase.Query(
         "SELECT id, map_id, keystone_level, leader_name, start_time, completed "
         "FROM dc_mplus_spec_replays ORDER BY start_time DESC LIMIT {}",
@@ -2029,10 +2028,16 @@ public:
             return true;
         }
 
-        uint32 newMode = mode.value_or((state->streamMode + 1) % 3);
-        state->streamMode = newMode;
+        constexpr uint32 MODE_COUNT = 3;
+        char const* modeNames[MODE_COUNT] = { "Normal", "Names Hidden", "Full Anonymous" };
+        uint32 newMode = mode.value_or((state->streamMode + 1) % MODE_COUNT);
+        if (newMode >= MODE_COUNT)
+        {
+            handler->PSendSysMessage("|cffff0000[M+ Spectator]|r Stream mode must be 0-{}.", MODE_COUNT - 1);
+            return true;
+        }
 
-        char const* modeNames[] = { "Normal", "Names Hidden", "Full Anonymous" };
+        state->streamMode = newMode;
         handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Stream mode: {}", modeNames[newMode]);
         return true;
     }

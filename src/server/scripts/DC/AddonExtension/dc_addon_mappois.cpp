@@ -67,6 +67,7 @@
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
 #include "UnitDefines.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <array>
@@ -624,9 +625,16 @@ namespace MapPOIs
     // nothing is filtered. It follows GM mode rather than account level on
     // purpose: `.gm off` puts you back on the player's view, so a GM can check
     // what each faction actually sees without logging a second character.
+    // M+ spectating also sets GM mode for normal players, hence the account-level check.
+    static bool IsStaffInGmMode(Player const* player)
+    {
+        return player->IsGameMaster() && player->GetSession() &&
+            player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
+    }
+
     static uint32 TeamMaskFor(Player const* player)
     {
-        if (player->IsGameMaster())
+        if (IsStaffInGmMode(player))
             return 0;
 
         return (player->GetTeamId(true) == TEAM_ALLIANCE)
@@ -748,7 +756,7 @@ namespace MapPOIs
         // character's when isTaxiCheater() is set. This only drives pin
         // visibility; whether the flight is actually allowed is still decided
         // by the real taximask when ActivateTaxiPathTo runs.
-        bool const seeAllNodes = player->IsGameMaster() || player->isTaxiCheater();
+        bool const seeAllNodes = IsStaffInGmMode(player) || player->isTaxiCheater();
 
         for (MapPOI const& poi : GetPOIs())
         {

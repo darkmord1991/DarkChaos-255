@@ -1641,7 +1641,7 @@ struct npc_hor_lich_king : public NullCreatureAI
                                 Map::PlayerList const& pl = instance->instance->GetPlayers();
                                 for (Map::PlayerList::const_iterator itr = pl.begin(); itr != pl.end(); ++itr)
                                     if (Player* p = itr->GetSource())
-                                        if (!p->IsGameMaster() && p->IsAlive() && (p->GetPositionX() - me->GetPositionX() + p->GetPositionY() - me->GetPositionY()) > 20.0f)
+                                        if (!p->IsGameMaster() && !p->IsSpectator() && p->IsAlive() && (p->GetPositionX() - me->GetPositionX() + p->GetPositionY() - me->GetPositionY()) > 20.0f)
                                             me->CastSpell(p, SPELL_LICH_KING_ZAP_PLAYER, true);
                             }
                         }

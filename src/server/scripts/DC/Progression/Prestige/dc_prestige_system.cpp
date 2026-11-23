@@ -983,13 +983,13 @@ public:
         // Grant prestige achievement (IDs 10300-10309 from dc_achievements.sql)
         uint32 achievementId = 10300 + (prestigeLevel - 1); // 10300 = Prestige Level 1, etc.
 
-        if (debug && player->IsGameMaster())
+        if (debug && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
             ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant achievement ID: {}", achievementId);
         AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(achievementId);
         if (achievementEntry)
         {
             player->CompletedAchievement(achievementEntry);
-            if (debug && player->IsGameMaster())
+            if (debug && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Prestige achievement granted!|r");
         }
         else
@@ -1138,13 +1138,13 @@ private:
         uint32 titleId = GetPrestigeTitle(prestigeLevel);
         if (titleId)
         {
-            if (debug && player->IsGameMaster())
+            if (debug && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
                 ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Attempting to grant title ID: {}", titleId);
             CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
             if (titleEntry)
             {
                 player->SetTitle(titleEntry);
-                if (debug && player->IsGameMaster())
+                if (debug && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
                     ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00Title granted!|r");
             }
             else

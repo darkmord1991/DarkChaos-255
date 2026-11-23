@@ -33,6 +33,7 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "ObjectAccessor.h"
+#include "WorldSession.h"
 
 #include <mutex>
 #include <unordered_map>
@@ -82,7 +83,8 @@ namespace DarkChaos
 
             bool IsBlockedByCombat(Player* player)
             {
-                if (!player || player->IsGameMaster())
+                // Account security, not IsGameMaster(): M+ spectators are put in GM mode.
+                if (!player || player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
                     return false;
 
                 if (!sConfigMgr->GetOption<bool>("ItemUpgrade.BlockInCombat", true))

@@ -164,7 +164,7 @@ std::vector<Player*> CollectEligiblePlayers(Map* map)
     for (auto const& ref : map->GetPlayers())
     {
         Player* player = ref.GetSource();
-        if (!player || !player->IsInWorld() || player->IsGameMaster())
+        if (!player || !player->IsInWorld() || player->IsGameMaster() || player->IsSpectator())
             continue;
 
         players.push_back(player);

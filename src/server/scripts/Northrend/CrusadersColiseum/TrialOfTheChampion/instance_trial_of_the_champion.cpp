@@ -318,7 +318,7 @@ public:
             {
                 if (Player* plr = itr.GetSource())
                 {
-                    if (plr != ignoredPlayer && plr->IsAlive() && !plr->IsGameMaster())
+                    if (plr != ignoredPlayer && plr->IsAlive() && !plr->IsGameMaster() && !plr->IsSpectator())
                     {
                         ++aliveCount;
                     }

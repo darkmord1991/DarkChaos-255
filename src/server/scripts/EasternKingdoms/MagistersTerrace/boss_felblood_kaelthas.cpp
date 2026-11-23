@@ -228,7 +228,7 @@ struct boss_felblood_kaelthas : public BossAI
         _gravityLapseCounter = 0;
         me->GetMap()->DoForAllPlayers([&](Player* player)
         {
-            if (player->IsGameMaster())
+            if (player->IsGameMaster() || player->IsSpectator())
                 return;
 
             if (action == ACTION_TELEPORT_PLAYERS)

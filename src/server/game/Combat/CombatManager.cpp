@@ -64,8 +64,9 @@
         return false;
     Player const* playerA = a->GetCharmerOrOwnerPlayerOrPlayerItself();
     Player const* playerB = b->GetCharmerOrOwnerPlayerOrPlayerItself();
-    // ...neither of the two units must be (owned by) a player with .gm on
-    if ((playerA && playerA->IsGameMaster()) || (playerB && playerB->IsGameMaster()))
+    // ...neither of the two units must be (owned by) a player with .gm on, or a spectator
+    if ((playerA && (playerA->IsGameMaster() || playerA->IsSpectator()))
+        || (playerB && (playerB->IsGameMaster() || playerB->IsSpectator())))
         return false;
     return true;
 }

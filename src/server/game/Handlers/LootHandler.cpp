@@ -323,7 +323,8 @@ void WorldSession::HandleLootOpcode(WorldPacket& recvData)
     Player* player = GetPlayer();
 
     // Check possible cheat
-    if (!player->IsAlive() || !guid.IsCreatureOrVehicle())
+    // DarkChaos: a spectator only watches (audit 2026-11-18)
+    if (!player->IsAlive() || !guid.IsCreatureOrVehicle() || player->IsSpectator())
         return;
 
     if (player->HasPlayerFlag(PLAYER_FLAGS_NO_PLAY_TIME))

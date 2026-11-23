@@ -333,6 +333,10 @@ void WorldSession::HandleGameObjectUseOpcode(WorldPacket& recvData)
 
     LOG_DEBUG("network", "WORLD: Recvd CMSG_GAMEOBJ_USE Message [{}]", guid.ToString());
 
+    // DarkChaos: a spectator only watches (audit 2026-11-18)
+    if (GetPlayer()->IsSpectator())
+        return;
+
     if (GameObject* obj = GetPlayer()->GetMap()->GetGameObject(guid))
     {
         // despawned objects cannot be used (they are still visible and clickable for gamemasters)
@@ -360,6 +364,10 @@ void WorldSession::HandleGameobjectReportUse(WorldPacket& recvPacket)
 
     // ignore for remote control state
     if (_player->m_mover != _player)
+        return;
+
+    // DarkChaos: a spectator only watches (audit 2026-11-18)
+    if (_player->IsSpectator())
         return;
 
     GameObject* go = GetPlayer()->GetMap()->GetGameObject(guid);

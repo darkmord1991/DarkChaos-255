@@ -1882,7 +1882,8 @@ uint32 Map::GetPlayersCountExceptGMs(bool aliveOnly /*= false*/) const
     uint32 count = 0;
     for (auto const& ref : m_mapRefMgr)
         if (Player* player = ref.GetSource())
-            if (!player->IsGameMaster() && (!aliveOnly || (player->IsAlive() && !player->HasSpiritOfRedemptionAura())))
+            if (!player->IsGameMaster() && !player->IsSpectator()
+                && (!aliveOnly || (player->IsAlive() && !player->HasSpiritOfRedemptionAura())))
                 ++count;
     return count;
 }
@@ -2022,7 +2023,9 @@ Map::EnterState InstanceMap::CannotEnter(Player* player, bool loginCheck)
     }
 
     // allow GM's to enter
-    if (player->IsGameMaster())
+    // DarkChaos: and a Mythic+ spectator sent to this instance (MapInstanced::CreateInstanceForPlayer); it is not a member
+    // of the run's group and takes no slot
+    if (player->IsGameMaster() || player->HasPendingSpectatorForBG(GetInstanceId()))
         return Map::CannotEnter(player, loginCheck);
 
     // cannot enter if the instance is full (player cap), GMs don't count
@@ -2059,7 +2062,7 @@ Map::EnterState InstanceMap::CannotEnter(Player* player, bool loginCheck)
             {
                 if (iPlayer == player) // login case, player already added to map
                     continue;
-                if (iPlayer->IsGameMaster()) // bypass GMs
+                if (iPlayer->IsGameMaster() || iPlayer->IsSpectator()) // bypass GMs and spectators
                     continue;
                 if (!player->GetGroup()) // player has not group and there is someone inside, deny entry
                 {

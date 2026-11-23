@@ -96,7 +96,7 @@ WorldObject* CreatureAI::GetSummoner() const
 
 inline bool IsValidCombatTarget(Creature* source, Player* target)
 {
-    if (target->IsGameMaster())
+    if (target->IsGameMaster() || target->IsSpectator())
         return false;
 
     if (!source->IsInWorld() || !target->IsInWorld())

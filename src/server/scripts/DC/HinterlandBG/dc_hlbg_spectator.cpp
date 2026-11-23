@@ -218,9 +218,6 @@ namespace
             player->SetBattlegroundId(0, BATTLEGROUND_TYPE_NONE,
                 PLAYER_MAX_BATTLEGROUND_QUEUES, false, false, TEAM_NEUTRAL);
         }
-
-        player->SetGameMaster(false);
-        player->SetGMVisible(true);
     }
 
     bool EndSession(Player* player, std::string const& reason)
@@ -323,8 +320,7 @@ bool StartSpectating(Player* player, uint32 instanceId, std::string& error)
         player->GetOrientation());
     session.startedAt = static_cast<uint64>(GameTime::GetGameTime().count());
 
-    player->SetGameMaster(true);
-    player->SetGMVisible(false);
+    // No GM mode: the core spectator flag, held after the teleport, hides the spectator (audit 2026-11-18).
     // No team and not invited: the worldport ack adds only invited players to
     // the match, so this admits the spectator to the map and nothing else.
     player->SetBattlegroundId(bg->GetInstanceID(), bg->GetBgTypeID(),

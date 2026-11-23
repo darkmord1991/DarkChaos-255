@@ -105,7 +105,13 @@ void HoldSpectatorFlag(Player* spectator)
     }
 
     if (!spectator->IsSpectator())
+    {
         spectator->SetIsSpectator(true);
+        // The flag is what hides a spectator now (WorldObject::CanSeeOrDetect); players who already see this one
+        // drop it at the next visibility update
+        if (spectator->IsInWorld())
+            spectator->UpdateObjectVisibility(false);
+    }
 }
 
 void ReleaseSpectatorFlag(Player* spectator)
@@ -116,7 +122,11 @@ void ReleaseSpectatorFlag(Player* spectator)
     ForgetFlagHolder(spectator->GetGUID());
 
     if (spectator->IsSpectator())
+    {
         spectator->SetIsSpectator(false);
+        if (spectator->IsInWorld())
+            spectator->UpdateObjectVisibility(false);
+    }
 }
 
 bool IsHoldingSpectatorFlag(Player const* player)

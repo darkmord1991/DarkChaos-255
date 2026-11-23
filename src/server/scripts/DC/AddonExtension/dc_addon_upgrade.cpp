@@ -25,6 +25,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
+#include "WorldSession.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
 #include "DC/ItemUpgrades/ItemUpgradeProcScaling.h"
@@ -57,10 +58,11 @@ namespace Upgrade
         // the server never sent it -- this handler is reachable straight from the addon UI
         // with no NPC and no combat check, so a spare token doubled as a mid-fight stat
         // reset (ForcePlayerStatUpdate tears the whole stat block down and rebuilds it).
-        // GM mode bypasses the gate so upgrades stay testable in combat.
+        // GM accounts bypass the gate so upgrades stay testable in combat. Account security, not
+        // IsGameMaster(): M+ spectators are put in GM mode.
         inline bool IsUpgradeBlockedByCombat(Player* player)
         {
-            if (!player || player->IsGameMaster())
+            if (!player || player->GetSession()->GetSecurity() >= SEC_GAMEMASTER)
                 return false;
 
             if (!sConfigMgr->GetOption<bool>("ItemUpgrade.BlockInCombat", true))
