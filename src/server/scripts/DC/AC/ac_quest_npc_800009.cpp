@@ -41,11 +41,18 @@
 #include "TaskScheduler.h"
 #include "ObjectAccessor.h"
 
+#include <mutex>
+#include <unordered_map>
+
 namespace
 {
     static constexpr uint32 NPC_ID   = 800009;
     static constexpr uint32 Q_WELCOME = 820056;
     static constexpr uint32 Q_LEVELAREA = 820057;
+
+    // One tour clone per player (player GUID -> clone GUID); accept/abandon loops used to stack clones.
+    std::mutex sTourClonesLock;
+    std::unordered_map<ObjectGuid, ObjectGuid> sTourClones;
 }
 
 class AC_Quest_NPC_800009 : public CreatureScript
@@ -211,6 +218,17 @@ public:
             });
         }
 
+        void OnDespawn() override
+        {
+            if (!isTour || targetPlayerGuid.IsEmpty())
+                return;
+
+            std::lock_guard<std::mutex> guard(sTourClonesLock);
+            auto it = sTourClones.find(targetPlayerGuid);
+            if (it != sTourClones.end() && it->second == me->GetGUID())
+                sTourClones.erase(it);
+        }
+
         void UpdateAI(uint32 diff) override
         {
             scheduler.Update(diff);
@@ -238,9 +256,32 @@ public:
             // === Quest 820057: LevelArea Show AC — OnQuestAccept ===
             case Q_LEVELAREA:
             {
+                // Re-accepting restarts the tour: retire the player's previous clone first (outside the lock,
+                // its OnDespawn takes it).
+                ObjectGuid previous;
+                {
+                    std::lock_guard<std::mutex> guard(sTourClonesLock);
+                    auto it = sTourClones.find(player->GetGUID());
+                    if (it != sTourClones.end())
+                    {
+                        previous = it->second;
+                        sTourClones.erase(it);
+                    }
+                }
+                if (!previous.IsEmpty())
+                    if (Creature* oldMover = ObjectAccessor::GetCreature(*creature, previous))
+                        oldMover->DespawnOrUnsummon();
+
                 // Spawn a temporary duplicate that performs the guidance so the original stays as quest giver
                 if (Creature* mover = creature->SummonCreature(NPC_ID, creature->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 60000))
                 {
+                    // The clone is a guide only; as a quest giver it could start more clones itself.
+                    mover->ReplaceAllNpcFlags(UNIT_NPC_FLAG_NONE);
+                    {
+                        std::lock_guard<std::mutex> guard(sTourClonesLock);
+                        sTourClones[player->GetGUID()] = mover->GetGUID();
+                    }
+
                     if (mover->AI())
                     {
                         mover->AI()->SetGUID(player->GetGUID());
