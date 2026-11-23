@@ -414,37 +414,37 @@ end
 -- ============================================================
 -- Repair Cost Preview
 -- ============================================================
+-- One or two text lines in the stone band under the merchant title bar: x 76..338 and
+-- 35..71 px below MerchantFrame's TOPLEFT, between the portrait ring and the right border.
+-- Stock 3.3.5 anchors nothing there (the item grid starts 80 px down), so the preview stays
+-- inside the vendor window on both tabs. It used to hang off the frame's right edge.
+local REPAIR_BAND_LEFT = 76
+local REPAIR_BAND_TOP = -35
+local REPAIR_BAND_WIDTH = 262
+local REPAIR_BAND_HEIGHT = 36
+local LABEL_COLOR = "|cffffd100"
+
 local repairCostFrame = nil
 
 local function CreateRepairCostFrame()
     if repairCostFrame then return end
-    
+
     repairCostFrame = CreateFrame("Frame", "DCQoS_RepairCostFrame", MerchantFrame)
-    repairCostFrame:SetSize(200, 50)
-    repairCostFrame:SetPoint("TOPLEFT", MerchantFrame, "TOPRIGHT", 5, -30)
-    
-    repairCostFrame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    repairCostFrame:SetBackdropColor(0, 0, 0, 0.8)
-    repairCostFrame:SetBackdropBorderColor(0.5, 0.5, 0.5)
-    
-    local title = repairCostFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    title:SetPoint("TOP", 0, -8)
-    title:SetText("Repair Cost")
-    repairCostFrame.title = title
-    
-    local costText = repairCostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    costText:SetPoint("TOP", title, "BOTTOM", 0, -5)
+    repairCostFrame:SetWidth(REPAIR_BAND_WIDTH)
+    repairCostFrame:SetHeight(REPAIR_BAND_HEIGHT)
+    repairCostFrame:SetPoint("TOPLEFT", MerchantFrame, "TOPLEFT", REPAIR_BAND_LEFT, REPAIR_BAND_TOP)
+
+    -- A fixed width makes a long line truncate instead of running past the border.
+    local costText = repairCostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    costText:SetWidth(REPAIR_BAND_WIDTH)
+    costText:SetJustifyH("LEFT")
     repairCostFrame.costText = costText
-    
+
     local junkText = repairCostFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    junkText:SetPoint("TOP", costText, "BOTTOM", 0, -5)
+    junkText:SetWidth(REPAIR_BAND_WIDTH)
+    junkText:SetJustifyH("LEFT")
     repairCostFrame.junkText = junkText
-    
+
     repairCostFrame:Hide()
 end
 
@@ -454,31 +454,44 @@ local function UpdateRepairCostFrame()
         if repairCostFrame then repairCostFrame:Hide() end
         return
     end
-    
+
     if not repairCostFrame then CreateRepairCostFrame() end
-    
-    local repairCost, canRepair = GetRepairAllCost()
+
+    local repairCost = GetRepairAllCost() or 0
     local junkValue, junkCount = CalculateJunkValue()
-    
-    if (repairCost and repairCost > 0) or (junkValue and junkValue > 0) then
-        if repairCost and repairCost > 0 then
-            repairCostFrame.costText:SetText(GetCoinTextureString(repairCost))
-        else
-            repairCostFrame.costText:SetText("|cff00ff00Fully Repaired|r")
-        end
-        
-        if settings.showTotalJunkValue and junkValue > 0 then
-            repairCostFrame.junkText:SetText("|cff888888Junk: " .. GetCoinTextureString(junkValue) .. " (" .. junkCount .. " items)|r")
-            repairCostFrame:SetHeight(65)
-        else
-            repairCostFrame.junkText:SetText("")
-            repairCostFrame:SetHeight(50)
-        end
-        
-        repairCostFrame:Show()
-    else
+    local showJunk = settings.showTotalJunkValue and junkValue > 0
+
+    if repairCost <= 0 and not showJunk then
         repairCostFrame:Hide()
+        return
     end
+
+    local costText, junkText = repairCostFrame.costText, repairCostFrame.junkText
+    if repairCost > 0 then
+        local coins = GetCoinTextureString(repairCost)
+        if GetMoney() < repairCost then
+            coins = "|cffff2020" .. coins .. "|r"
+        end
+        costText:SetText(LABEL_COLOR .. "Repair cost:|r " .. coins)
+    else
+        costText:SetText(LABEL_COLOR .. "Repair cost:|r |cff00ff00Fully repaired|r")
+    end
+
+    costText:ClearAllPoints()
+    junkText:ClearAllPoints()
+    if showJunk then
+        junkText:SetText(LABEL_COLOR .. "Junk:|r " .. GetCoinTextureString(junkValue)
+            .. " |cff9d9d9d(" .. junkCount .. " items)|r")
+        costText:SetPoint("LEFT", repairCostFrame, "TOPLEFT", 0, -11)
+        junkText:SetPoint("LEFT", repairCostFrame, "TOPLEFT", 0, -25)
+        junkText:Show()
+    else
+        junkText:SetText("")
+        junkText:Hide()
+        costText:SetPoint("LEFT", repairCostFrame, "LEFT", 0, 0)
+    end
+
+    repairCostFrame:Show()
 end
 
 -- ============================================================
@@ -623,8 +636,22 @@ end
 -- ============================================================
 -- Sell Junk Button
 -- ============================================================
+-- Placed the way retail places MerchantSellAllJunkButton: an icon button in the repair
+-- box at the bottom of the merchant page, right of the repair buttons, or on its own
+-- when the vendor cannot repair. It is hidden on the Buyback tab.
+--
+-- The 3.3.5 repair box is x 20..174, y 86..134 from MerchantFrame's BOTTOMLEFT (the
+-- buyback box starts right of the divider at x 175). That is too narrow for the stock
+-- 36 px repair row plus one more button, so while the junk button shows, the row uses
+-- the compact 32 px layout that stock 3.3.5 already uses for the guild bank repair
+-- button, with the "Repair Items" label centred above it. Each row is centred in the box.
+local SELL_JUNK_TEXTURE = "Interface\\AddOns\\DC-QOS\\Textures\\Merchant\\merchant"
+-- "SpellIcon-256x256-SellJunk" in the retail Interface/MerchantFrame/Merchant atlas.
+local SELL_JUNK_TEXCOORD = { 0.00195312, 0.142578, 0.25, 0.53125 }
+
 local sellJunkButton = nil
-local sellJunkPreviewText = nil
+local sellJunkLayoutActive = false
+local merchantLayoutHooksInstalled = false
 
 local function IsAutomationAutoSellActive()
     local automation = addon.settings and addon.settings.automation
@@ -635,82 +662,122 @@ local function IsAutomationAutoSellActive()
     return automation.enabled ~= false and automation.autoSellJunk == true
 end
 
+local function LayoutMerchantBottomRow()
+    if not sellJunkButton or not sellJunkLayoutActive then return end
+
+    if MerchantFrame.selectedTab ~= 1 then
+        sellJunkButton:Hide()
+        return
+    end
+
+    sellJunkButton:ClearAllPoints()
+    if CanMerchantRepair() then
+        local guildRepair = CanGuildBankRepair()
+        -- Same anchor points MerchantFrame_UpdateRepairButtons sets, so its next call
+        -- replaces these offsets instead of stacking a second anchor on the buttons.
+        MerchantRepairAllButton:SetWidth(32)
+        MerchantRepairAllButton:SetHeight(32)
+        MerchantRepairItemButton:SetWidth(32)
+        MerchantRepairItemButton:SetHeight(32)
+        MerchantRepairAllButton:SetPoint("BOTTOMRIGHT", MerchantFrame, "BOTTOMLEFT", guildRepair and 94 or 112, 89)
+        MerchantRepairItemButton:SetPoint("RIGHT", MerchantRepairAllButton, "LEFT", -4, 0)
+        MerchantRepairText:ClearAllPoints()
+        MerchantRepairText:SetPoint("CENTER", MerchantFrame, "BOTTOMLEFT", 78, 129)
+
+        -- The guild bank button keeps its stock anchor, 4 px right of Repair All.
+        local lastRepairButton = guildRepair and MerchantGuildBankRepairButton or MerchantRepairAllButton
+        sellJunkButton:SetWidth(32)
+        sellJunkButton:SetHeight(32)
+        sellJunkButton:SetPoint("LEFT", lastRepairButton, "RIGHT", 6, 0)
+    else
+        sellJunkButton:SetWidth(36)
+        sellJunkButton:SetHeight(36)
+        sellJunkButton:SetPoint("CENTER", MerchantFrame, "BOTTOMLEFT", 97, 110)
+    end
+    sellJunkButton:Show()
+end
+
+local function InstallMerchantLayoutHooks()
+    if merchantLayoutHooksInstalled then return end
+    merchantLayoutHooksInstalled = true
+
+    -- Runs on every merchant page refresh and on the money/guild-bank events that
+    -- re-anchor the stock repair buttons.
+    hooksecurefunc("MerchantFrame_UpdateRepairButtons", LayoutMerchantBottomRow)
+    hooksecurefunc("MerchantFrame_UpdateBuybackInfo", function()
+        if sellJunkButton then
+            sellJunkButton:Hide()
+        end
+    end)
+end
+
 local function UpdateSellJunkPreview()
     if not sellJunkButton then return end
 
     local settings = addon.settings.vendorPlus
     if not settings or settings.enabled == false then
         sellJunkButton:Disable()
-        if sellJunkPreviewText then
-            sellJunkPreviewText:SetText("|cff888888Disabled|r")
-        end
+        SetDesaturation(sellJunkButton.icon, 1)
         return
     end
 
-    local junkValue, junkCount = CalculateJunkValue()
-
-    if junkCount > 0 then
-        sellJunkButton:Enable()
-        if sellJunkPreviewText then
-            sellJunkPreviewText:SetText("|cff888888" .. junkCount .. " items - " .. GetCoinTextureString(junkValue) .. "|r")
-        end
-    else
-        -- Keep the button active so it can provide feedback instead of feeling broken.
-        sellJunkButton:Enable()
-        if sellJunkPreviewText then
-            if IsAutomationAutoSellActive() then
-                sellJunkPreviewText:SetText("|cff888888No junk (auto-sold on open)|r")
-            else
-                sellJunkPreviewText:SetText("|cff888888No junk (Ctrl+Right-click to mark)|r")
-            end
-        end
-    end
+    local _, junkCount = CalculateJunkValue()
+    -- Grey icon when there is nothing to sell, as on retail. The button stays clickable
+    -- so a click without junk still explains how to mark items.
+    sellJunkButton:Enable()
+    SetDesaturation(sellJunkButton.icon, junkCount == 0 and 1 or nil)
 end
 
 local function CreateSellJunkButton()
     if sellJunkButton then
-        sellJunkButton:Show()
-        if sellJunkPreviewText then
-            sellJunkPreviewText:Show()
-        end
+        LayoutMerchantBottomRow()
         UpdateSellJunkPreview()
         return
     end
-    
-    sellJunkButton = CreateFrame("Button", "DCQoS_SellJunkButton", MerchantFrame, "UIPanelButtonTemplate")
-    sellJunkButton:SetSize(80, 22)
-    sellJunkButton:SetPoint("BOTTOMLEFT", MerchantFrame, "BOTTOMLEFT", 85, 4)
-    sellJunkButton:SetText("Sell Junk")
-    
+
+    sellJunkButton = CreateFrame("Button", "DCQoS_SellJunkButton", MerchantFrame)
+    sellJunkButton:SetWidth(32)
+    sellJunkButton:SetHeight(32)
+    sellJunkButton:Hide()
+
+    local icon = sellJunkButton:CreateTexture(nil, "BORDER")
+    icon:SetAllPoints(sellJunkButton)
+    icon:SetTexture(SELL_JUNK_TEXTURE)
+    icon:SetTexCoord(unpack(SELL_JUNK_TEXCOORD))
+    sellJunkButton.icon = icon
+
+    -- Same press and hover art as the stock repair buttons next to it.
+    sellJunkButton:SetPushedTexture("Interface\\Buttons\\UI-Quickslot-Depress")
+    sellJunkButton:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+
     sellJunkButton:SetScript("OnClick", function()
+        GameTooltip:Hide()
         SellAllJunk()
         addon:DelayedCall(0.2, UpdateSellJunkPreview)
     end)
 
-    sellJunkPreviewText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    sellJunkPreviewText:SetPoint("LEFT", sellJunkButton, "RIGHT", 8, 0)
-    sellJunkPreviewText:SetText("|cff888888No junk items|r")
-    
     sellJunkButton:SetScript("OnEnter", function(self)
         local junkValue, junkCount = CalculateJunkValue()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Sell All Junk Items")
+        GameTooltip:SetText("Sell All Junk Items")
         if junkCount > 0 then
-            GameTooltip:AddLine(" ")
             GameTooltip:AddDoubleLine("Items:", junkCount, 1, 1, 1, 1, 1, 1)
             GameTooltip:AddDoubleLine("Value:", GetCoinTextureString(junkValue), 1, 1, 1, 1, 1, 1)
+        elseif IsAutomationAutoSellActive() then
+            GameTooltip:AddLine("No junk left (auto-sold on open)", 0.5, 0.5, 0.5)
         else
             GameTooltip:AddLine("No junk items to sell", 0.5, 0.5, 0.5)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("|cff888888Ctrl+Right-click items to mark as junk|r", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine("Ctrl+Right-click items in your bags to mark them as junk", 0.5, 0.5, 0.5, true)
         GameTooltip:Show()
     end)
-    
+
     sellJunkButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
 
+    LayoutMerchantBottomRow()
     UpdateSellJunkPreview()
 end
 
@@ -733,20 +800,29 @@ function VendorPlus.OnEnable()
         merchantEventFrame = CreateFrame("Frame")
     end
 
+    sellJunkLayoutActive = true
+    InstallMerchantLayoutHooks()
+
     merchantEventFrame:UnregisterAllEvents()
     local merchantFrame = merchantEventFrame
     merchantFrame:RegisterEvent("MERCHANT_SHOW")
     merchantFrame:RegisterEvent("MERCHANT_CLOSED")
     merchantFrame:RegisterEvent("BAG_UPDATE")
+    merchantFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+    merchantFrame:RegisterEvent("PLAYER_MONEY")
     merchantFrame:SetScript("OnEvent", function(self, event)
         if event == "MERCHANT_SHOW" then
             OnMerchantShow()
             CreateSellJunkButton()
-            UpdateSellJunkPreview()
         elseif event == "BAG_UPDATE" then
             if MerchantFrame and MerchantFrame:IsShown() then
                 UpdateRepairCostFrame()
                 UpdateSellJunkPreview()
+            end
+        elseif event == "UPDATE_INVENTORY_DURABILITY" or event == "PLAYER_MONEY" then
+            -- After a repair, or when money changes whether the repair is affordable.
+            if MerchantFrame and MerchantFrame:IsShown() then
+                UpdateRepairCostFrame()
             end
         elseif event == "MERCHANT_CLOSED" then
             OnMerchantClose()
@@ -764,8 +840,14 @@ function VendorPlus.OnDisable()
         merchantEventFrame:SetScript("OnEvent", nil)
     end
     if repairCostFrame then repairCostFrame:Hide() end
-    if sellJunkButton then sellJunkButton:Hide() end
-    if sellJunkPreviewText then sellJunkPreviewText:Hide() end
+    sellJunkLayoutActive = false
+    if sellJunkButton then
+        sellJunkButton:Hide()
+        -- Hand the repair row back to its stock layout if the vendor is open right now.
+        if MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1 then
+            MerchantFrame_UpdateRepairButtons()
+        end
+    end
 end
 
 -- ============================================================
