@@ -59,6 +59,7 @@
 #include "SpellAuraDefines.h"
 #include "TemporarySummon.h"
 #include "silverpine_dc.h"
+#include <unordered_map>
 
 namespace
 {
@@ -97,6 +98,10 @@ namespace
     constexpr uint32 HILLSBRAD_WORGEN_COUNT = 7;
     constexpr uint32 HILLSBRAD_WORGEN_PATH_SIZE = 4;
     constexpr uint32 HILLSBRAD_WORGEN_DESPAWN_MS = 300000;
+    // An idle rider must not keep active worgen streaming: live cap per cannon, and the rider is
+    // ejected after this many volleys in a row without a kill (two full cycles).
+    constexpr uint32 HILLSBRAD_WORGEN_MAX_LIVE = 21;
+    constexpr uint32 HORDE_CANNON_IDLE_VOLLEYS = 14;
     constexpr uint32 TELESCOPE_CAMERA_DESPAWN_MS = 120000;
 
     Position const HillsbradWorgenSpawns[HILLSBRAD_WORGEN_COUNT] =
@@ -182,6 +187,7 @@ struct npc_horde_cannon_45263 : public VehicleAI
         {
             _onUse = true;
             _checkTimer = 1000;
+            _volleysWithoutKill = 0;
             _playerGUID = passenger->GetGUID();
             me->SetControlled(true, UNIT_STATE_ROOT);
             _events.ScheduleEvent(EVENT_HORDE_CANNON_1, 3s);
@@ -193,6 +199,11 @@ struct npc_horde_cannon_45263 : public VehicleAI
     void SummonedCreatureDespawn(Creature* summon) override
     {
         _summons.Despawn(summon);
+    }
+
+    void SummonedCreatureDies(Creature* /*summon*/, Unit* /*killer*/) override
+    {
+        _volleysWithoutKill = 0;
     }
 
     void UpdateAI(uint32 diff) override
@@ -225,7 +236,15 @@ struct npc_horde_cannon_45263 : public VehicleAI
             if (eventId < EVENT_HORDE_CANNON_1 || eventId > EVENT_HORDE_CANNON_7)
                 continue;
 
-            SummonWorgens();
+            if (++_volleysWithoutKill > HORDE_CANNON_IDLE_VOLLEYS)
+            {
+                me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS, true);
+                StopWaves();
+                return;
+            }
+
+            if (CountLiveWorgen() + HILLSBRAD_WORGEN_COUNT <= HILLSBRAD_WORGEN_MAX_LIVE)
+                SummonWorgens();
 
             if (eventId == EVENT_HORDE_CANNON_7)
                 _events.ScheduleEvent(EVENT_HORDE_CANNON_1, 10s, 15s);
@@ -235,6 +254,17 @@ struct npc_horde_cannon_45263 : public VehicleAI
     }
 
 private:
+    uint32 CountLiveWorgen() const
+    {
+        uint32 count = 0;
+        for (ObjectGuid const& guid : _summons)
+            if (Creature* worgen = ObjectAccessor::GetCreature(*me, guid))
+                if (worgen->IsAlive())
+                    ++count;
+
+        return count;
+    }
+
     void SummonWorgens()
     {
         for (uint32 i = 0; i < HILLSBRAD_WORGEN_COUNT; ++i)
@@ -262,6 +292,7 @@ private:
 
     bool _onUse = false;
     uint32 _checkTimer = 1000;
+    uint32 _volleysWithoutKill = 0;
     ObjectGuid _playerGUID;
     SummonList _summons;
     EventMap _events;
@@ -310,13 +341,22 @@ struct go_7th_legion_telescope : public GameObjectAI
         if (player->GetQuestStatus(QUEST_WHAT_TOMORROW_BRINGS) != QUEST_STATUS_INCOMPLETE)
             return true;
 
-        // Already looking through a camera.
-        if (player->HasAura(SPELL_TELESCOPE_BIND_SIGHT))
+        // Already looking through a camera. Bind Sight's aura sits on the camera, not the player,
+        // so each player's camera is tracked by GUID.
+        auto const itr = _cameras.find(player->GetGUID());
+        if (itr != _cameras.end() && ObjectAccessor::GetCreature(*me, itr->second))
             return true;
 
-        if (player->SummonCreature(NPC_GILNEAS_CAMERA_TARGET, TelescopeCameraSpawn, TEMPSUMMON_TIMED_DESPAWN,
-            TELESCOPE_CAMERA_DESPAWN_MS))
+        std::erase_if(_cameras, [this](auto const& entry)
         {
+            return !ObjectAccessor::GetCreature(*me, entry.second);
+        });
+
+        if (Creature* camera = player->SummonCreature(NPC_GILNEAS_CAMERA_TARGET, TelescopeCameraSpawn,
+            TEMPSUMMON_TIMED_DESPAWN, TELESCOPE_CAMERA_DESPAWN_MS))
+        {
+            _cameras[player->GetGUID()] = camera->GetGUID();
+
             // The source's 151235 "Dismount and Cancel Shapeshifts" is a script effect with no script here.
             player->RemoveAurasByType(SPELL_AURA_MOUNTED);
             player->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
@@ -324,6 +364,9 @@ struct go_7th_legion_telescope : public GameObjectAI
 
         return true;
     }
+
+private:
+    std::unordered_map<ObjectGuid, ObjectGuid> _cameras; // player -> live camera (45430)
 };
 
 // Gilneas Camera 01 (Target) (45430), summoned by the telescope. The summoner looks through it

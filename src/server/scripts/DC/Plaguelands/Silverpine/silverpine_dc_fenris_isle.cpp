@@ -89,7 +89,6 @@ namespace
     constexpr uint32 QUEST_NO_ESCAPE                = 27099;
 
     // Spells this file casts; each one is in Spell.dbc or the spell_dbc overlay.
-    constexpr uint32 SPELL_RIDE_VEHICLE             = 46598;
     constexpr uint32 SPELL_DUMMY_PING               = 98914;
     constexpr uint32 SPELL_DUMMY_PING_2             = 98915;
     constexpr uint32 SPELL_SANCTUARY_NO_COMBAT      = 88467;
@@ -104,6 +103,7 @@ namespace
     // Spells that exist in no DBC here; their ids name the code that stands in for them.
     constexpr int32 DATA_NOTIFY_AGATHA              = 83990;   // SetGUID id: refugee corpse
     constexpr int32 ACTION_OWNER_PING_AGATHA        = 151316;  // DoAction on the owner's Agatha
+    constexpr int32 ACTION_END_LORDAERON_TRIP       = 1;       // DoAction on a stale 45057 trip
 
     // Plain ids: summoned, never spawned (see the pending SQL).
     constexpr uint32 NPC_AGATHA_GUARDIAN            = 44951;   // spell 83982 summons it
@@ -1118,6 +1118,17 @@ struct npc_forsaken_sylv_horse : public ScriptedAI
             FinishRide();
     }
 
+    void DoAction(int32 action) override
+    {
+        if (action != ACTION_END_LORDAERON_TRIP)
+            return;
+
+        _tripInProgress = false;
+        _scheduler.CancelAll();
+        _events.Reset();
+        _summons.DespawnAll();
+    }
+
     void UpdateAI(uint32 diff) override
     {
         _scheduler.Update(diff);
@@ -1154,14 +1165,21 @@ private:
         return ObjectAccessor::GetPlayer(*me, _playerGUID);
     }
 
-    // The trip ends when the player leaves the horse (or the world).
+    bool IsRiderAboard() const
+    {
+        Player* player = GetPlayer();
+        return player && _playerHorseGUID && player->GetVehicleBase()
+            && player->GetVehicleBase()->GetGUID() == _playerHorseGUID
+            && player->GetQuestStatus(QUEST_LORDAERON) == QUEST_STATUS_INCOMPLETE;
+    }
+
+    // The trip ends when the player leaves THIS trip's horse (or the world) or drops the quest.
     bool CheckRider()
     {
         if (!_tripInProgress)
             return false;
 
-        Player* player = GetPlayer();
-        if (player && player->HasAura(SPELL_RIDE_VEHICLE))
+        if (IsRiderAboard())
             return true;
 
         _tripInProgress = false;
@@ -1283,10 +1301,13 @@ private:
         Player* player = GetPlayer();
         Creature* playerHorse = ObjectAccessor::GetCreature(*me, _playerHorseGUID);
 
+        // Credit and the jump only for a rider still on this trip's horse.
+        bool const aboard = IsRiderAboard();
+
         _tripInProgress = false;
         _scheduler.CancelAll();
 
-        if (player && playerHorse)
+        if (aboard && player && playerHorse)
         {
             player->KilledMonsterCredit(CREDIT_LORDAERON);
             if (Vehicle* kit = playerHorse->GetVehicleKit())
@@ -1342,6 +1363,16 @@ public:
         if (player->GetMapId() != SilverpineDC::MAP_LORDAERON_751
             || !player->IsWithinDist2d(&SylvHorseSummonPos, 100.0f))
             return;
+
+        // One trip per player: an accept/abandon loop would otherwise stack parallel trips.
+        std::list<Creature*> previousTrips;
+        player->GetCreatureListWithEntryInGrid(previousTrips, NPC_LADY_SYLV_HORSE, 250.0f);
+        for (Creature* horse : previousTrips)
+        {
+            TempSummon const* summon = horse->ToTempSummon();
+            if (summon && summon->GetSummonerGUID() == player->GetGUID() && horse->IsAIEnabled)
+                horse->AI()->DoAction(ACTION_END_LORDAERON_TRIP);
+        }
 
         DismountAndCancelShapeshifts(player);
         player->SummonCreature(NPC_LADY_SYLV_HORSE, SylvHorseSummonPos, TEMPSUMMON_MANUAL_DESPAWN);

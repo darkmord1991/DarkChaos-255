@@ -66,6 +66,8 @@
 #include <array>
 #include <initializer_list>
 #include <list>
+#include <mutex>
+#include <unordered_map>
 
 using namespace SilverpineDC;
 
@@ -202,6 +204,7 @@ namespace SilverpineRuins
     };
 
     constexpr uint32 SCENE_DESPAWN_MS = 300000;  // TEMPSUMMON_TIMED_DESPAWN of every scene actor (source value)
+    constexpr int32 ACTION_END_RISE_GODFREY_SCENE = 1;  // DoAction on a superseded 45605
 
     // Arthura's escape flight (source lines 2993-3025).
     uint32 const Arthura2PathSize = 2;
@@ -330,6 +333,32 @@ namespace SilverpineRuins
 
         return false;
     }
+
+    // One "Rise, Godfrey" scene per player (player GUID -> that scene's Sylvanas 45605): an
+    // accept/abandon loop would otherwise stack a new 8-creature scene on every accept.
+    static std::mutex RiseGodfreySceneLock;
+    static std::unordered_map<ObjectGuid, ObjectGuid> RiseGodfreyScenes;
+
+    static ObjectGuid GetRiseGodfreyScene(ObjectGuid const& playerGuid)
+    {
+        std::lock_guard<std::mutex> guard(RiseGodfreySceneLock);
+        auto const itr = RiseGodfreyScenes.find(playerGuid);
+        return itr != RiseGodfreyScenes.end() ? itr->second : ObjectGuid::Empty;
+    }
+
+    static void SetRiseGodfreyScene(ObjectGuid const& playerGuid, ObjectGuid const& sceneGuid)
+    {
+        std::lock_guard<std::mutex> guard(RiseGodfreySceneLock);
+        RiseGodfreyScenes[playerGuid] = sceneGuid;
+    }
+
+    static void ClearRiseGodfreyScene(ObjectGuid const& playerGuid, ObjectGuid const& sceneGuid)
+    {
+        std::lock_guard<std::mutex> guard(RiseGodfreySceneLock);
+        auto const itr = RiseGodfreyScenes.find(playerGuid);
+        if (itr != RiseGodfreyScenes.end() && itr->second == sceneGuid)
+            RiseGodfreyScenes.erase(itr);
+    }
 }
 
 using namespace SilverpineRuins;
@@ -413,12 +442,18 @@ private:
 
     void CheckOwner()
     {
+        // Owner off this map: despawn; the stale aura is dropped on the next summon.
         Player* player = GetSummoner();
         if (!player)
+        {
+            if (_playerGUID)
+                me->DespawnOrUnsummon();
             return;
+        }
 
+        // Summoned for zone 4939 only; like the battlefront guardians, they do not follow out of it.
         Unit* owner = me->GetOwner();
-        if (!owner || !owner->IsAlive())
+        if (!owner || !owner->IsAlive() || player->GetZoneId() != ZONE_RUINS_OF_GILNEAS_751)
         {
             DespawnAndDropAura(player);
             return;
@@ -600,8 +635,7 @@ public:
                 SummonEscapeFlight(player);
                 break;
             case QUEST_RISE_GODFREY:
-                player->SummonCreature(NPC_LADY_SYLVANAS_3, RiseGodfreyScenePos, TEMPSUMMON_TIMED_DESPAWN,
-                    SCENE_DESPAWN_MS);
+                StartRiseGodfreyScene(player);
                 break;
             default:
                 break;
@@ -671,6 +705,18 @@ private:
 
         player->SummonCreature(NPC_ARTHURA_VEHICLE, *player, TEMPSUMMON_MANUAL_DESPAWN);
     }
+
+    // Stands in for 85150. A previous scene of this player (abandon + re-accept) ends first.
+    static void StartRiseGodfreyScene(Player* player)
+    {
+        if (Creature* previous = ObjectAccessor::GetCreature(*player, GetRiseGodfreyScene(player->GetGUID())))
+            if (previous->IsAIEnabled)
+                previous->AI()->DoAction(ACTION_END_RISE_GODFREY_SCENE);
+
+        if (Creature* sylvanas = player->SummonCreature(NPC_LADY_SYLVANAS_3, RiseGodfreyScenePos,
+            TEMPSUMMON_TIMED_DESPAWN, SCENE_DESPAWN_MS))
+            SetRiseGodfreyScene(player->GetGUID(), sylvanas->GetGUID());
+    }
 };
 
 // ######################### THE GREAT ESCAPE #########################
@@ -692,7 +738,6 @@ struct npc_arthura_flight_escape : public VehicleAI
             player->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
 
             me->SetControlled(true, UNIT_STATE_ROOT);
-            player->AreaExploredOrEventHappens(QUEST_GREAT_ESCAPE);
 
             Creature* godfrey = me->SummonCreature(NPC_GODFREY_1, GodfreyEscapePos, TEMPSUMMON_TIMED_DESPAWN,
                 SCENE_DESPAWN_MS);
@@ -735,6 +780,10 @@ struct npc_arthura_flight_escape : public VehicleAI
 
         if (apply && passenger->IsPlayer())
         {
+            // Credit on boarding, not on summon: a failed boarding ejects and despawns at once.
+            if (passenger->GetGUID() == _playerGUID)
+                passenger->ToPlayer()->AreaExploredOrEventHappens(QUEST_GREAT_ESCAPE);
+
             if (Creature* belmont = ObjectAccessor::GetCreature(*me, _belmontGUID))
             {
                 Talk(0, 1s);
@@ -891,8 +940,33 @@ struct npc_sylvanas_rise_godfrey_scene : public ScriptedAI
         _events.ScheduleEvent(EVENT_RISE_GODFREY_5, 2s);
     }
 
+    void DoAction(int32 action) override
+    {
+        if (action == ACTION_END_RISE_GODFREY_SCENE)
+            EndScene();
+    }
+
     void UpdateAI(uint32 diff) override
     {
+        if (_ending)
+            return;
+
+        // The scene belongs to one player: it ends when they leave the map, drop the quest or
+        // start a newer scene.
+        if (_checkTimer <= diff)
+        {
+            _checkTimer = 1000;
+            Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID);
+            if (!player || player->GetQuestStatus(QUEST_RISE_GODFREY) != QUEST_STATUS_INCOMPLETE
+                || GetRiseGodfreyScene(_playerGUID) != me->GetGUID())
+            {
+                EndScene();
+                return;
+            }
+        }
+        else
+            _checkTimer -= diff;
+
         _events.Update(diff);
 
         while (uint32 eventId = _events.ExecuteEvent())
@@ -955,8 +1029,7 @@ struct npc_sylvanas_rise_godfrey_scene : public ScriptedAI
                         if (player->GetQuestStatus(QUEST_RISE_GODFREY) == QUEST_STATUS_INCOMPLETE)
                             CreditPlainAnd751(player, NPC_CREDIT_RISE_GODFREY);
 
-                    _sceneSummons.DespawnAll();
-                    me->DespawnOrUnsummon();
+                    EndScene();
                     break;
                 default:
                     break;
@@ -973,8 +1046,22 @@ private:
         lord->CastSpell(lord, SPELL_FORSAKEN_EXPLODE, true);
     }
 
+    void EndScene()
+    {
+        if (_ending)
+            return;
+
+        _ending = true;
+        _events.Reset();
+        ClearRiseGodfreyScene(_playerGUID, me->GetGUID());
+        _sceneSummons.DespawnAll();
+        me->DespawnOrUnsummon();
+    }
+
     EventMap _events;
     SummonList _sceneSummons;
+    uint32 _checkTimer = 1000;
+    bool _ending = false;
     ObjectGuid _playerGUID;
     ObjectGuid _cromushGUID;
     ObjectGuid _godfreyGUID;
