@@ -1,24 +1,14 @@
+#include "GameTime.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "Player.h"
 #include "naxx40_instance.h"
+#include <unordered_map>
 
 class npc_naxx40_area_trigger : public CreatureScript
 {
-private:
-    static bool isAttuned(Player* player)
-    {
-        if (player->GetQuestStatus(NAXX40_ATTUNEMENT_1) == QUEST_STATUS_REWARDED)
-            return true;
-        if (player->GetQuestStatus(NAXX40_ATTUNEMENT_2) == QUEST_STATUS_REWARDED)
-            return true;
-        if (player->GetQuestStatus(NAXX40_ATTUNEMENT_3) == QUEST_STATUS_REWARDED)
-            return true;
-        return false;
-    }
-
 public:
     npc_naxx40_area_trigger() : CreatureScript("npc_naxx40_area_trigger") {}
 
@@ -29,22 +19,26 @@ public:
             me->SetDisplayId(11686); // Invisible
         }
 
+        // MoveInLineOfSight fires on every move in range; refusal messages go out once per 10 s per player.
+        bool ShouldNotify(Player const* player)
+        {
+            Seconds const now = GameTime::GetGameTime();
+            auto itr = _lastNotice.find(player->GetGUID());
+            if (itr != _lastNotice.end() && now - itr->second < 10s)
+                return false;
+
+            _lastNotice[player->GetGUID()] = now;
+            return true;
+        }
+
         void MoveInLineOfSight(Unit* who) override
         {
             if (who && me->GetDistance2d(who) < 5.0f)
             {
                 if (Player* player = who->ToPlayer())
                 {
-                    if (isAttuned(player))
-                    {
-                        Group* group = player->GetGroup();
-                        if (group)
-                            group->SetRaidDifficulty(RAID_DIFFICULTY_10MAN_HEROIC);
-                        else
-                            player->SetRaidDifficulty(RAID_DIFFICULTY_10MAN_HEROIC);
-
+                    if (Naxx40MeetsAttunement(player) && Naxx40PrepareRaidDifficulty(player, ShouldNotify(player)))
                         player->TeleportTo(NaxxramasMapId, 3005.51f, -3434.64f, 304.195f, 6.2831f);
-                    }
                 }
 
             }
@@ -52,7 +46,7 @@ public:
             {
                 if (Player* player = who->ToPlayer())
                 {
-                    if (isAttuned(player))
+                    if (Naxx40MeetsAttunement(player))
                     {
                         GameObject* door = me->FindNearestGameObject(GO_STRATH_GATE_40, 100.0f);
                         if (door)
@@ -63,6 +57,9 @@ public:
                 }
             }
         }
+
+    private:
+        std::unordered_map<ObjectGuid, Seconds> _lastNotice;
     };
 
     CreatureAI* GetAI(Creature* creature) const override

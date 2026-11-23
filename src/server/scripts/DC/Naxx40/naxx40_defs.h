@@ -150,4 +150,16 @@ enum NX40AttunementQuests
     NAXX40_ENTRANCE_FLAG = 9378
 };
 
+class Group;
+class Player;
+
+// Naxx40 entry rules, defined in custom_gameobjects_40.cpp.
+bool IsAttuned(Player const* player);
+// IsAttuned(), or true when DC.Naxx40.RequireAttunement is off.
+bool Naxx40MeetsAttunement(Player const* player);
+// Leader only, no difficulty-change cooldown, no member in a raid map or zoning.
+bool Naxx40CanChangeGroupRaidDifficulty(Player* player, Group* group, bool notify);
+// Puts the raid on the 40-man difficulty before an entrance teleport; false means do not teleport.
+bool Naxx40PrepareRaidDifficulty(Player* player, bool notify);
+
 #endif

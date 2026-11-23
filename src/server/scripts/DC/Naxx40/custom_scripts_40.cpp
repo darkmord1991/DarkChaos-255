@@ -1,14 +1,20 @@
+#include "Chat.h"
+#include "DBCStructure.h"
+#include "Group.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+#include "WorldSession.h"
+#include "naxx40_config.h"
 #include "naxx40_instance.h"
 
 class NaxxPlayerScript : public PlayerScript
 {
 public:
-    NaxxPlayerScript() : PlayerScript("NaxxPlayerScript", { PLAYERHOOK_ON_BEFORE_CHOOSE_GRAVEYARD }) { }
+    NaxxPlayerScript() : PlayerScript("NaxxPlayerScript",
+        { PLAYERHOOK_ON_BEFORE_CHOOSE_GRAVEYARD, PLAYERHOOK_CAN_ENTER_MAP }) { }
 
     void OnPlayerBeforeChooseGraveyard(Player* player, TeamId /*teamId*/, bool /*nearCorpse*/, uint32& graveyardOverride) override
     {
@@ -16,6 +22,36 @@ public:
         {
             graveyardOverride = NAXX40_GRAVEYARD;
         }
+    }
+
+    // The entrance teleporters check these too, but summons and every other TeleportTo only pass through here.
+    // GM mode is let through by MapMgr::PlayerCannotEnter before this hook runs.
+    bool OnPlayerCanEnterMap(Player* player, MapEntry const* entry, InstanceTemplate const* /*instance*/,
+        MapDifficulty const* /*mapDiff*/, bool loginCheck) override
+    {
+        if (!player || !entry || entry->MapID != MAP_NAXX)
+            return true;
+
+        // Playerbots follow their master in and never do the attunement quests.
+        if (player->GetSession() && player->GetSession()->IsBot())
+            return true;
+
+        if (!Naxx40MeetsAttunement(player))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("You must be attuned to Naxxramas to enter.");
+            return false;
+        }
+
+        // The first entry must come from the Stratholme entrance, which is what grants the entrance flag.
+        if (!loginCheck && sVanillaNaxxramas->requireNaxxStrath && player->GetMapId() != MAP_STRATHOLME
+            && player->GetQuestStatus(NAXX40_ENTRANCE_FLAG) != QUEST_STATUS_REWARDED)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "You must enter Naxxramas through Stratholme once before you can be brought in another way.");
+            return false;
+        }
+
+        return true;
     }
 };
 
@@ -29,13 +65,14 @@ public:
         // Do not allow entrance to Naxx 40 from Northrend
         // Change 10 man heroic to regular 10 man, as when 10 man heroic is not available
         Difficulty diff = player->GetGroup() ? player->GetGroup()->GetDifficulty(true) : player->GetDifficulty(true);
+        // Without a guarded change map 533 still downscales 10H to 10N on entry, so skipping it is safe.
         if (diff == RAID_DIFFICULTY_10MAN_HEROIC)
         {
             Group* group = player->GetGroup();
-            if (group)
-                group->SetRaidDifficulty(RAID_DIFFICULTY_10MAN_NORMAL);
-            else
+            if (!group)
                 player->SetRaidDifficulty(RAID_DIFFICULTY_10MAN_NORMAL);
+            else if (Naxx40CanChangeGroupRaidDifficulty(player, group, false))
+                group->SetRaidDifficulty(RAID_DIFFICULTY_10MAN_NORMAL);
         }
         switch (areaTrigger->entry)
         {
@@ -104,8 +141,8 @@ public:
         if (map->GetId() != NaxxramasMapId)
             return;
 
-        // Cast on player Naxxramas Entry Flag Trigger DND - Classic (spellID: 29296)
-        if (player->GetQuestStatus(NAXX40_ENTRANCE_FLAG) != QUEST_STATUS_REWARDED)
+        // Only an attuned player earns the flag; it unlocks the skip teleporter on later visits.
+        if (Naxx40MeetsAttunement(player) && player->GetQuestStatus(NAXX40_ENTRANCE_FLAG) != QUEST_STATUS_REWARDED)
         {
             // Mark player as having entered
             Quest const* quest = sObjectMgr->GetQuestTemplate(NAXX40_ENTRANCE_FLAG);
