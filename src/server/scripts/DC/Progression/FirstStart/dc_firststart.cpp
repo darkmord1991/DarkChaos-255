@@ -823,6 +823,10 @@ namespace DCFirstStart
         if (!sConfigMgr->GetOption<bool>(Config::HYJAL_CALL_ENABLE, true))
             return;
 
+        // Bots reach Hyjal by their level brackets; granted on every login, the breadcrumb sat in 900+ bot logs.
+        if (player->GetSession()->IsBot())
+            return;
+
         if (player->GetLevel() < sConfigMgr->GetOption<uint32>(Config::HYJAL_CALL_LEVEL, 78))
             return;
 
@@ -873,6 +877,11 @@ namespace DCFirstStart
     void GrantSystemsPrimer(Player* player, bool debug)
     {
         if (!sConfigMgr->GetOption<bool>(Config::SYSTEMS_PRIMER_ENABLE, true))
+            return;
+
+        // Not for bots: its turn-in is on map 745, which bots never visit, and a bot that drops it got it back at
+        // the next login (1,771 bots held it finished on 11-20).
+        if (player->GetSession()->IsBot())
             return;
 
         if (player->GetLevel() < sConfigMgr->GetOption<uint32>(Config::SYSTEMS_PRIMER_LEVEL, 80))
