@@ -17,6 +17,7 @@
 #include "DBCStructure.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/CrossSystem/EventBus.h"
+#include "DC/Progression/dc_xp_rate.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 #include "DBCEnums.h"
@@ -1452,19 +1453,25 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
     if (!bonusPct)
         return;
 
-    // 64-bit intermediate: a misconfigured ExperienceBonus (or a very large
-    // base award) overflows uint32 in the multiply and can *reduce* the XP.
-    uint64 bonus64 = (static_cast<uint64>(amount) * bonusPct) / 100;
-    uint64 headroom = std::numeric_limits<uint32>::max() - amount;
-    uint32 bonus = static_cast<uint32>(std::min<uint64>(bonus64, headroom));
-    amount += bonus;
-
     ObjectGuid const guid = player->GetGUID();
+
+    // `.dc xp bonus off` (dc_xp_rate.cpp) drops the XP but not the kill
+    // objectives below.
+    if (!DCXPRate::IsBonusXPOptedOut(player))
     {
-        std::lock_guard<std::mutex> lock(_playerDataLock);
-        _playerXpReport[guid].pendingBonus += bonus;
+        // 64-bit intermediate: a misconfigured ExperienceBonus (or a very large
+        // base award) overflows uint32 in the multiply and can *reduce* the XP.
+        uint64 bonus64 = (static_cast<uint64>(amount) * bonusPct) / 100;
+        uint64 headroom = std::numeric_limits<uint32>::max() - amount;
+        uint32 bonus = static_cast<uint32>(std::min<uint64>(bonus64, headroom));
+        amount += bonus;
+
+        {
+            std::lock_guard<std::mutex> lock(_playerDataLock);
+            _playerXpReport[guid].pendingBonus += bonus;
+        }
+        FlushPendingXpReport(player, guid, false);
     }
-    FlushPendingXpReport(player, guid, false);
 
     if (!sHotspotsConfig.objectivesEnabled || !victim)
         return;

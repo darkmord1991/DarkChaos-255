@@ -17,6 +17,7 @@
 #include "Chat.h"
 #include "StringFormat.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/Progression/dc_xp_rate.h"
 #include <algorithm>
 #include <functional>
 #include <mutex>
@@ -287,6 +288,10 @@ namespace
         void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
+                return;
+
+            // `.dc xp bonus off` (dc_xp_rate.cpp)
+            if (DCXPRate::IsBonusXPOptedOut(player))
                 return;
 
             uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);

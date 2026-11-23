@@ -5886,6 +5886,21 @@ DC.ThirdProfession.Enable = 1
 DC.ThirdProfession.UnlockLevel = 80
 DC.ThirdProfession.UnlockPrestige = 0
 
+#
+#    DC.XPRate.Enable
+#    DC.XPRate.Min
+#    DC.XPRate.Max
+#        Description: Personal XP rate (.dc xp <rate>, .dc xp bonus on|off), a multiplier of the realm
+#                     rate. Min 0 allows "XP off"; Max 1.0 means nobody goes above the realm rate. The
+#                     bonus opt-out removes the prestige alt bonus, the hotspot buff and prestige talent
+#                     XP; rested XP, Recruit-a-Friend and racial bonuses stay.
+#        Default:     1, 0.0, 1.0
+#
+
+DC.XPRate.Enable = 1
+DC.XPRate.Min = 0.0
+DC.XPRate.Max = 1.0
+
 ###############################################################################
 # LAB TOOLS: CLIENT PROBE RELAY AND IN-GAME BUG REPORTS
 #

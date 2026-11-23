@@ -47,6 +47,7 @@
 #include "dc_prestige_api.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_prestige_notify.h"
+#include "DC/Progression/dc_xp_rate.h"
 #include <array>
 #include <memory>
 #include <unordered_map>
@@ -634,6 +635,10 @@ public:
 
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 xpSource) override
     {
+        // `.dc xp bonus off` (dc_xp_rate.cpp)
+        if (DCXPRate::IsBonusXPOptedOut(player))
+            return;
+
         float pct = Effect(player, PRESTIGE_EFFECT_XP_ALL_PCT);
         if (xpSource == XPSOURCE_KILL)
             pct += Effect(player, PRESTIGE_EFFECT_XP_KILL_PCT);
