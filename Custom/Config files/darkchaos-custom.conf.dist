@@ -5902,6 +5902,45 @@ DC.XPRate.Min = 0.0
 DC.XPRate.Max = 1.0
 
 ###############################################################################
+# MAP FLIGHT LICENSES (MAPS 750 / 751)
+#
+#  src/server/scripts/DC/Progression/dc_flight_license.cpp. Flying on map 750 needs the Kalimdor
+#  Flight License (spell 300610, level 120), flying on map 751 the Lordaeron Flight License
+#  (spell 300611, level 150), like Cold Weather Flying in Northrend. Every riding trainer teaches
+#  them; each also adds 50% mount and flight-form speed on its own map.
+#
+###############################################################################
+
+#
+#    DC.FlightLicense.Enable
+#        Description: Turns the fly gate and the +50% speed bonus on maps 750/751 on or off.
+#                     0 = everyone may fly there again and the licenses do nothing.
+#        Default:     1 (Enabled)
+#
+
+DC.FlightLicense.Enable = 1
+
+#
+#    DC.FlightLicense.AccountWide
+#        Description: A license learned by one character is learned by every other character of the
+#                     same account the first time it enters that map. Needs table
+#                     dc_account_flight_license (pending characters SQL). Playerbots are excluded.
+#        Default:     1 (Enabled)
+#
+
+DC.FlightLicense.AccountWide = 1
+
+#
+#    DC.FlightLicense.AutoQuest
+#        Description: At level 120 / 150 a quest (81330 / 81331) is added to the quest log that sends
+#                     the character to the Flying Instructor in the Jade Forest. Skipped once the
+#                     character knows the license. Checked again at every login.
+#        Default:     1 (Enabled)
+#
+
+DC.FlightLicense.AutoQuest = 1
+
+###############################################################################
 # LAB TOOLS: CLIENT PROBE RELAY AND IN-GAME BUG REPORTS
 #
 #  src/server/scripts/DC/LabTools. Both are off by default.

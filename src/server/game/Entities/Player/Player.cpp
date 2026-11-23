@@ -14511,8 +14511,9 @@ bool Player::canFlyInZone(uint32 mapid, uint32 zone, SpellInfo const* bySpell)
     }
 
     // continent checked in SpellInfo::CheckLocation at cast and area update
+    // bySpell is null when a caller asks "may this player fly here at all" (smart mount, playerbots)
     uint32 v_map = GetVirtualMapForMapAndZone(mapid, zone);
-    if (v_map == MAP_NORTHREND && !bySpell->HasAttribute(SPELL_ATTR7_IGNORES_COLD_WEATHER_FLYING_REQUIREMENT))
+    if (v_map == MAP_NORTHREND && (!bySpell || !bySpell->HasAttribute(SPELL_ATTR7_IGNORES_COLD_WEATHER_FLYING_REQUIREMENT)))
     {
         if (!HasSpell(54197)) // 54197 = Cold Weather Flying
         {

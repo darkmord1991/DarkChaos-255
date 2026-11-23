@@ -4185,15 +4185,19 @@ public:
             target->RemoveAurasByType(SPELL_AURA_MOUNTED, ObjectGuid::Empty, GetHitAura());
 
             // Triggered spell id dependent on riding skill and zone
-            bool canFly = false;
-            uint32 map = GetVirtualMapForMapAndZone(target->GetMapId(), target->GetZoneId());
-            if (map == MAP_OUTLAND || (map == MAP_NORTHREND && target->HasSpell(SPELL_COLD_WEATHER_FLYING)))
-                canFly = true;
-
+            // DarkChaos: fly wherever flying is allowed instead of only in Outland/Northrend. Same rule as
+            // SpellInfo::CheckLocation for the flying variant: flyable area (area row first, zone row as
+            // fallback), no no-fly flag, and Player::canFlyInZone (Cold Weather Flying, map flight licenses).
             AreaTableEntry const* area = sAreaTableStore.LookupEntry(target->GetAreaId());
+            if (!area)
+                area = sAreaTableStore.LookupEntry(target->GetZoneId());
+
+            bool canFly = area && area->IsFlyable() && !(area->flags & AREA_FLAG_NO_FLY_ZONE) &&
+                target->canFlyInZone(target->GetMapId(), target->GetZoneId(), nullptr);
+
             // Xinef: add battlefield check
             Battlefield* Bf = sBattlefieldMgr->GetBattlefieldToZoneId(target->GetZoneId());
-            if ((area && canFly && (area->flags & AREA_FLAG_NO_FLY_ZONE)) || (Bf && !Bf->CanFlyIn()))
+            if (Bf && !Bf->CanFlyIn())
                 canFly = false;
 
             uint32 mount = 0;
