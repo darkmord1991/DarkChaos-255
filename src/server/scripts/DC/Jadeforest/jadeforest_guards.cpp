@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "ObjectAccessor.h"
 #include "ScriptedGossip.h"
+#include "Chat.h"
 #include "DC/CrossSystem/CrossSystemCommon.h"
 
 // Jadeforest teleport points
@@ -59,6 +60,27 @@ static const JadeforestTeleportData teleportPoints[] =
     { TELEPORT_PROFESSIONS,      844.8203f,  -2461.8f,    174.9611f, 4.4291763f, 745, "Interface\\Icons\\Trade_Engineering",        "Professions" }
 };
 
+// Same state rules as AC_Guard_NPC: a held menu must not become a combat/death/duel escape.
+// Returns the refusal text, or nullptr when the player may teleport.
+static char const* GetJadeforestTeleportRefusal(Player const* player)
+{
+    if (player->IsInCombat())
+        return "You cannot teleport while in combat.";
+    if (!player->IsAlive())
+        return "You cannot teleport while dead.";
+    if (player->GetVehicle())
+        return "You cannot teleport while in a vehicle.";
+    if (player->IsInFlight())
+        return "You cannot teleport while in flight.";
+    if (player->IsFalling())
+        return "You cannot teleport while falling.";
+    if (player->duel)
+        return "You cannot teleport while dueling.";
+    if (player->InBattleground() || player->InArena() || player->GetMap()->IsBattlegroundOrArena())
+        return "You cannot teleport from a battleground or arena.";
+    return nullptr;
+}
+
 // Jadeforest Guard - Template
 class jadeforest_guard : public CreatureScript
 {
@@ -93,6 +115,11 @@ public:
         {
             if (tp.id == action)
             {
+                if (char const* refusal = GetJadeforestTeleportRefusal(player))
+                {
+                    ChatHandler(player->GetSession()).SendSysMessage(refusal);
+                    return true;
+                }
                 player->TeleportTo(tp.map, tp.x, tp.y, tp.z, tp.o);
                 return true;
             }

@@ -148,6 +148,27 @@ void LoadTeleporterOptions()
     LOG_INFO("server.loading", "Loaded {} teleporter options.", sTeleporterOptions.size());
 }
 
+// Same state rules as AC_Guard_NPC: a held menu must not become a combat/death/duel escape.
+// Returns the refusal text, or nullptr when the player may teleport.
+static char const* GetTeleportRefusal(Player const* player)
+{
+    if (player->IsInCombat())
+        return "You cannot teleport while in combat.";
+    if (!player->IsAlive())
+        return "You cannot teleport while dead.";
+    if (player->GetVehicle())
+        return "You cannot teleport while in a vehicle.";
+    if (player->IsInFlight())
+        return "You cannot teleport while in flight.";
+    if (player->IsFalling())
+        return "You cannot teleport while falling.";
+    if (player->duel)
+        return "You cannot teleport while dueling.";
+    if (player->InBattleground() || player->InArena() || player->GetMap()->IsBattlegroundOrArena())
+        return "You cannot teleport from a battleground or arena.";
+    return nullptr;
+}
+
 class dc_teleporter_creature_script : public CreatureScript
 {
 public:
@@ -187,6 +208,11 @@ public:
         else if (option.Type == TELEPORTER_TYPE_TELEPORT)
         {
             CloseGossipMenuFor(player);
+            if (char const* refusal = GetTeleportRefusal(player))
+            {
+                ChatHandler(player->GetSession()).SendSysMessage(refusal);
+                return true;
+            }
             player->TeleportTo(option.MapId, option.X, option.Y, option.Z, option.O);
         }
         else if (option.Type == TELEPORTER_TYPE_GUILDHOUSE)
