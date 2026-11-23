@@ -169,6 +169,7 @@ void AddSC_dc_prestige_challenges();          // Progression/Prestige/dc_prestig
 void AddSC_spell_prestige_alt_bonus_aura();   // Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
 void AddSC_dc_prestige_talents();             // Progression/Prestige/dc_prestige_talents.cpp
 void AddSC_dc_dungeon_qol();                  // DungeonQoL/dc_dungeon_qol.cpp (battle res charges, checkpoint release)
+void AddSC_dc_boss_kit();                     // BossKit/dc_boss_kit.cpp
 void AddSC_dc_combat_meter();                 // Benchmark/dc_combat_meter.cpp
 
 // --- Challenge mode system ---
@@ -601,6 +602,9 @@ void AddDCScripts()
     // Battle resurrection charges and checkpoint release (DC.BattleRes.*, DC.CheckpointRelease.*); registers its
     // internal scripts itself.
     DC_LOAD(AddSC_dc_dungeon_qol);
+
+    // Boss kit (dc_boss_kit table) and the Mythic+ trash spell cap; the cap changes damage, so before the meter.
+    DC_LOAD(AddSC_dc_boss_kit);
 
     // Keep this last: its damage hook must run after every script that changes damage (Mythic+ scaling).
     DC_LOAD(AddSC_dc_combat_meter);

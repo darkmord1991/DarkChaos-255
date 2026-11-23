@@ -5703,6 +5703,42 @@ DC.CheckpointRelease.Maps = ""
 DC.CheckpointRelease.MythicPlus = 1
 
 ###############################################################################
+# BOSS KIT: EXTRA BOSS ABILITIES FROM THE dc_boss_kit WORLD TABLE
+#
+#  src/server/scripts/DC/BossKit. Abilities are cast next to a boss's own
+#  script, so stock instance scripts stay untouched. The table ships empty.
+#  GM: .dca bosskit reload
+#
+###############################################################################
+
+#
+#    DC.BossKit.Enable
+#        Description: Cast the extra boss abilities from world table dc_boss_kit.
+#        Default:     1 (Enabled)
+#
+
+DC.BossKit.Enable = 1
+
+#
+#    DC.BossKit.TrashSpellCap.Threshold
+#        Description: In a running Mythic+ run, the part of a non-boss creature's direct spell hit above
+#                     this value deals only 1/ExcessDivisor of itself. Compared with the raw spell amount
+#                     (before armor, resists, absorbs and the keystone multiplier). One value covers
+#                     levels 80-255, so tune it for the level band you run.
+#        Default:     0 (Disabled)
+#
+
+DC.BossKit.TrashSpellCap.Threshold = 0
+
+#
+#    DC.BossKit.TrashSpellCap.ExcessDivisor
+#        Description: Divisor applied to the damage above the threshold (minimum 1).
+#        Default:     20
+#
+
+DC.BossKit.TrashSpellCap.ExcessDivisor = 20
+
+###############################################################################
 # END OF CONFIGURATION FILE
 ###############################################################################
 
