@@ -2025,6 +2025,13 @@ void GameObject::Use(Unit* user)
                 if (!info)
                     return;
 
+                // DarkChaos: the despawn after the last charge happens in the next Update(), so two uses in one
+                // session update each cast the spell (a 1-charge quest crate gave two credits; audit 2026-11-18).
+                // Update() zeroes the count when it marks the object for despawn, hence the loot state as well.
+                if (info->spellcaster.charges
+                    && (GetUseCount() >= info->spellcaster.charges || getLootState() == GO_JUST_DEACTIVATED))
+                    return;
+
                 if (info->spellcaster.partyOnly)
                 {
                     if (!user->IsPlayer())
