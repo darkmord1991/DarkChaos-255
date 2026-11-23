@@ -1140,7 +1140,7 @@ void BattlegroundHLBG::AddPlayerContributionScore(ObjectGuid const& guid, uint32
 
 // Two accounts on opposite teams could trade kills for Emblems, honor and quest credit, since
 // only the killer was checked. No payout when the victim is AFK-flagged, is on the killer's own
-// account (an alt bot), or was already killed by this killer within HLBGRepeatKillWindowSec.
+// account (an alt bot) or IP, or was already killed by this killer within HLBGRepeatKillWindowSec.
 bool BattlegroundHLBG::IsUnrewardedPlayerKill(Player* killer, Player* victim)
 {
     uint32 const now = NowSec();
@@ -1162,9 +1162,18 @@ bool BattlegroundHLBG::IsUnrewardedPlayerKill(Player* killer, Player* victim)
     if (repeatKill || IsPlayerAfkFlagged(victim))
         return true;
 
-    WorldSession const* killerSession = killer->GetSession();
-    WorldSession const* victimSession = victim->GetSession();
-    return killerSession && victimSession && killerSession->GetAccountId() == victimSession->GetAccountId();
+    WorldSession* killerSession = killer->GetSession();
+    WorldSession* victimSession = victim->GetSession();
+    if (!killerSession || !victimSession)
+        return false;
+
+    if (killerSession->GetAccountId() == victimSession->GetAccountId())
+        return true;
+
+    // Same rule as the PvP token hook. Bot and headless sessions carry a placeholder address
+    // ("bot", "headless"), which would match every other bot.
+    return !killerSession->IsBot() && !victimSession->IsBot()
+        && killerSession->GetRemoteAddress() == victimSession->GetRemoteAddress();
 }
 
 void BattlegroundHLBG::RewardPlayerKill(Player* killer, Player* victim, uint32 scorePoints)
@@ -1174,6 +1183,9 @@ void BattlegroundHLBG::RewardPlayerKill(Player* killer, Player* victim, uint32 s
 
     if (IsUnrewardedPlayerKill(killer, victim))
         return;
+
+    // Persistent kill/death stats feed the leaderboards, so traded kills must not count either.
+    HLBGPlayerStats::OnPlayerKill(killer, victim);
 
     auto rewardMember = [this, scorePoints](Player* player)
     {
@@ -1308,8 +1320,6 @@ void BattlegroundHLBG::HandleKillPlayer(Player* victim, Player* killer)
 
     if (!killer || killer == victim)
         return;
-
-    HLBGPlayerStats::OnPlayerKill(killer, victim);
 
     TeamId victimTeam = victim->GetBgTeamId();
     if (victimTeam != TEAM_ALLIANCE && victimTeam != TEAM_HORDE)
