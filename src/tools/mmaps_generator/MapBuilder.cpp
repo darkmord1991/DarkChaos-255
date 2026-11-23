@@ -165,6 +165,11 @@ namespace MMAP
             {
                 fsize = file.size();
 
+                // The "229*" filter also matches map 2296's files; take only names whose map id is exactly ours,
+                // or a WDT-only map (229) never reaches the tiles->empty() fallback below and gets no tiles.
+                if (fsize < 16 || uint32(atoi(file.substr(0, fsize - 13).c_str())) != mapID)
+                    continue;
+
                 tileY = uint32(atoi(file.substr(fsize - 12, 2).c_str()));
                 tileX = uint32(atoi(file.substr(fsize - 9, 2).c_str()));
                 tileID = StaticMapTree::packTileID(tileY, tileX);
@@ -179,6 +184,9 @@ namespace MMAP
             for (auto & file : files)
             {
                 fsize = file.size();
+
+                if (fsize < 11 || uint32(atoi(file.substr(0, fsize - 8).c_str())) != mapID)
+                    continue;
 
                 tileY = uint32(atoi(file.substr(fsize - 8, 2).c_str()));
                 tileX = uint32(atoi(file.substr(fsize - 6, 2).c_str()));
