@@ -456,7 +456,7 @@ public:
         CharacterDatabase.Execute(
             "REPLACE INTO dc_leaderboard_cache "
             "(season_id, player_guid, upgrade_rank, prestige_rank, efficiency_rank, last_updated) "
-            "SELECT {}, player_guid, "
+            "SELECT {}, d1.player_guid, "
             "  (SELECT COUNT(*) + 1 FROM dc_player_season_data d2 "
             "   WHERE d2.season_id = d1.season_id AND d2.upgrades_applied > d1.upgrades_applied), "
             "  (SELECT COUNT(*) + 1 FROM dc_player_artifact_mastery p2 "
