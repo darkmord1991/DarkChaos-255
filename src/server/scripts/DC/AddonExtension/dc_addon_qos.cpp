@@ -664,6 +664,51 @@ namespace DCQoS
             classification ? classification : "" });
     }
 
+    // The revision the client caches a snapshot under. The upgrade manager's
+    // revision only moves with the upgrade state, but the rows also read live
+    // state: durability, enchants and gems, the viewer's level, skills and
+    // reputation (requirement colours) and the set pieces they wear. With that
+    // revision alone, a repair (.rep or a vendor), a death, a new gem or enchant
+    // was answered NOT_MODIFIED and the client kept drawing the rows it had
+    // cached before. Hashing the rows in makes the revision version what is
+    // actually sent. The client reads the field as int32 and treats <= 0 as "no
+    // revision", so the result stays in 1..INT32_MAX.
+    static uint32 BuildItemTooltipSnapshotWireRevision(uint32 upgradeRevision,
+        std::vector<ItemTooltipSnapshotRow> const& rows)
+    {
+        uint32 hash = 2166136261u; // FNV-1a
+        auto const mixByte = [&hash](uint8 byte)
+        {
+            hash ^= byte;
+            hash *= 16777619u;
+        };
+        auto const mixU32 = [&mixByte](uint32 value)
+        {
+            for (uint32 shift = 0; shift < 32; shift += 8)
+                mixByte(static_cast<uint8>(value >> shift));
+        };
+        // Length-prefixed, so moving text between fields changes the hash.
+        auto const mixString = [&](std::string const& text)
+        {
+            mixU32(static_cast<uint32>(text.size()));
+            for (char c : text)
+                mixByte(static_cast<uint8>(c));
+        };
+
+        mixU32(upgradeRevision);
+        mixU32(static_cast<uint32>(rows.size()));
+        for (ItemTooltipSnapshotRow const& row : rows)
+        {
+            mixString(row.left);
+            mixString(row.right);
+            mixString(row.kind);
+            mixString(row.classification);
+        }
+
+        hash &= 0x7FFFFFFFu;
+        return hash != 0 ? hash : 1u;
+    }
+
     static std::string FormatItemSellPrice(uint32 copper)
     {
         uint32 gold = copper / 10000;
@@ -5883,6 +5928,13 @@ namespace DCQoS
                 return;
             }
 
+            // Built before the NOT_MODIFIED check: the revision has to cover the
+            // live state the rows read, not only the upgrade state.
+            std::vector<ItemTooltipSnapshotRow> const rows =
+                BuildItemTooltipSnapshotRows(player, item, snapshot);
+            snapshot.revision =
+                BuildItemTooltipSnapshotWireRevision(snapshot.revision, rows);
+
             if (snapshotRequest.knownRevision != 0
                 && snapshotRequest.knownRevision == snapshot.revision)
             {
@@ -5906,8 +5958,7 @@ namespace DCQoS
             }
 
             SendItemTooltipSnapshotNative(player, snapshotRequest, &snapshot,
-                BuildItemTooltipSnapshotRows(player, item, snapshot),
-                ItemTooltipSnapshotStatus::OK, "");
+                rows, ItemTooltipSnapshotStatus::OK, "");
             return;
         }
 
