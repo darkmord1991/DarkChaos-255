@@ -779,7 +779,13 @@ void PathGenerator::CreateFilter()
         if (player && player->GetSession() && player->GetSession()->IsBot())
         {
             includeFlags |= (NAV_GROUND | NAV_WATER);
-            excludeFlags |= (NAV_MAGMA | NAV_SLIME | NAV_GROUND_STEEP);
+            excludeFlags |= (NAV_MAGMA | NAV_SLIME);
+            // DarkChaos: inside an instance a steep ramp is often the only way between floors (Azjol-Nerub's
+            // pit, Botanica's last room), and a bot that cannot follow its party there is left behind.
+            if (_source->GetMap() && _source->GetMap()->IsDungeon())
+                includeFlags |= NAV_GROUND_STEEP;
+            else
+                excludeFlags |= NAV_GROUND_STEEP;
             isBot = true;
         }
         else
