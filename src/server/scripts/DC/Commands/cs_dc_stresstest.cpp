@@ -7461,9 +7461,14 @@ namespace DCPerfTest
             // 4. Query loot table for 3-9 items (World DB heavy query)
             // 5. Save results
 
+            // Reads use real-looking guids for a realistic load; writes go to guids no character can have
+            // (well above any characters.guid) and are deleted again inside the same transaction.
+            constexpr uint32 VAULT_WRITE_FAKE_GUID_BASE = 0x7F000000;
+
             for (uint32 i = 0; i < playerCount; ++i)
             {
                 uint32 fakeGuid = 10000 + (i * 13) % 1000;
+                uint32 writeGuid = VAULT_WRITE_FAKE_GUID_BASE + (i * 13) % 1000;
                 uint32 seasonId = 1;
                 uint32 weekStart = 1700000000; // Fake timestamp
 
@@ -7524,7 +7529,7 @@ namespace DCPerfTest
 
                         // Cleanup old
                         std::ostringstream del;
-                        del << "DELETE FROM dc_vault_reward_pool WHERE character_guid = " << fakeGuid;
+                        del << "DELETE FROM dc_vault_reward_pool WHERE character_guid = " << writeGuid;
                         if (vaultHasSeason)
                             del << " AND season_id = " << seasonId;
                         del << " AND week_start = " << weekStart;
@@ -7545,7 +7550,7 @@ namespace DCPerfTest
                                 ins << ", slot_index";
                             else if (vaultHasSlotId)
                                 ins << ", slot_id";
-                            ins << ") VALUES (" << fakeGuid;
+                            ins << ") VALUES (" << writeGuid;
                             if (vaultHasSeason)
                                 ins << ", " << seasonId;
                             ins << ", " << weekStart << ", " << itemId;
@@ -7556,6 +7561,9 @@ namespace DCPerfTest
                             ins << ")";
                             trans->Append(ins.str().c_str());
                         }
+
+                        // Remove what this pass wrote, so the test leaves no rows behind
+                        trans->Append(del.str().c_str());
                         CharacterDatabase.CommitTransaction(trans);
                     }
                 }
@@ -7877,12 +7885,21 @@ public:
 
         static void AddStressSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
         {
+            // Every test below scales with baseCount (up to x10) and runs synchronously on the world thread
+            constexpr uint32 STRESS_BASE_COUNT_MAX = 100;
             uint32 baseCount = 50;
             if (args && *args)
             {
                 uint32 val = atoi(args);
                 if (val > 0)
                     baseCount = val;
+            }
+
+            if (baseCount > STRESS_BASE_COUNT_MAX)
+            {
+                handler->SendSysMessage(Acore::StringFormat("|cffffff00Stress count {} clamped to {}.|r",
+                    baseCount, STRESS_BASE_COUNT_MAX));
+                baseCount = STRESS_BASE_COUNT_MAX;
             }
 
             uint32 limitSafe = (baseCount > 500) ? 500 : baseCount;
@@ -8181,6 +8198,31 @@ public:
         return true;
     }
 
+    // Both loop commands block the world thread for their whole run, so their total wall time is capped.
+    static constexpr uint64 LOOP_MAX_WALL_MS = 60000;
+
+    // An explicit loop count whose sleeps alone exceed the cap is refused; loops=0 runs until the cap.
+    static bool RefuseLoopOverWallCap(ChatHandler* handler, uint32 loops, uint32 sleepMs)
+    {
+        if (static_cast<uint64>(loops) * sleepMs <= LOOP_MAX_WALL_MS)
+            return false;
+
+        handler->SendSysMessage(Acore::StringFormat(
+            "|cffff0000Refused: {} loops x {} ms sleep exceeds the {} s wall-time cap.|r",
+            loops, sleepMs, LOOP_MAX_WALL_MS / 1000));
+        return true;
+    }
+
+    static bool LoopWallCapReached(ChatHandler* handler, DCPerfTest::Clock::time_point const& deadline)
+    {
+        if (DCPerfTest::Clock::now() < deadline)
+            return false;
+
+        handler->SendSysMessage(Acore::StringFormat("|cffffff00Stopped at the {} s wall-time cap.|r",
+            LOOP_MAX_WALL_MS / 1000));
+        return true;
+    }
+
     static bool HandlePerfTestLoop(ChatHandler* handler, char const* args)
     {
         // Usage:
@@ -8235,13 +8277,17 @@ public:
         // GM safety: this is a synchronous world-thread command - never allow an unbounded
         // per-iteration sleep, and never allow loops=0 to mean "run forever".
         sleepMs = std::min<uint32>(sleepMs, 5000);
+        if (loops != 0 && RefuseLoopOverWallCap(handler, loops, sleepMs))
+            return true;
+
         bool infinite = false;
         if (loops == 0 || loops > 10000)
             loops = 10000;
 
         std::vector<uint64> timesUs;
-        timesUs.reserve(infinite ? 1024 : loops);
+        timesUs.reserve(std::min<uint32>(loops, 1024));
 
+        auto const deadline = DCPerfTest::Clock::now() + std::chrono::milliseconds(LOOP_MAX_WALL_MS);
         uint32 i = 0;
         while (infinite || i < loops)
         {
@@ -8269,6 +8315,9 @@ public:
 
             ++i;
             if (!infinite && i >= loops)
+                break;
+
+            if (LoopWallCapReached(handler, deadline))
                 break;
 
             if (sleepMs > 0)
@@ -8335,7 +8384,7 @@ public:
     {
         // Usage:
         // .stresstest loopreport <suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]
-        // loops=0 clamps to a bounded maximum (10000) - it no longer runs forever.
+        // loops=0 runs until the 60 s wall-time cap; explicit loops x sleepMs above it is refused.
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOPREPORT ===|r");
 
         std::string suite;
@@ -8385,7 +8434,7 @@ public:
 
         if (suite.empty())
         {
-            handler->SendSysMessage("Usage: .stresstest loopreport <suite> [loops] [sleepMs] [topN] [details] [format=json|csv] [suiteArgs...] (loops=0 clamps to 10000)");
+            handler->SendSysMessage("Usage: .stresstest loopreport <suite> [loops] [sleepMs] [topN] [details] [format=json|csv] [suiteArgs...] (loops=0 runs until the 60 s cap)");
             return true;
         }
 
@@ -8394,6 +8443,9 @@ public:
         // GM safety: this is a synchronous world-thread command - never allow an unbounded
         // per-iteration sleep, and never allow loops=0 to mean "run forever".
         sleepMs = std::min<uint32>(sleepMs, 5000);
+        if (loops != 0 && RefuseLoopOverWallCap(handler, loops, sleepMs))
+            return true;
+
         bool infinite = false;
         if (loops == 0 || loops > 10000)
             loops = 10000;
@@ -8432,6 +8484,7 @@ public:
         else
             DCPerfTest::WriteLoopReportJsonHeader(out, suite, loops, infinite, sleepMs, topN, printDetails, format, suiteArgs);
 
+        auto const deadline = DCPerfTest::Clock::now() + std::chrono::milliseconds(LOOP_MAX_WALL_MS);
         uint32 iter = 0;
         bool firstJsonRun = true;
         while (infinite || iter < loops)
@@ -8464,6 +8517,9 @@ public:
                 handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: wall {} | appended", iter, loops, DCPerfTest::FormatTime(wallUs)));
 
             if (!infinite && iter >= loops)
+                break;
+
+            if (LoopWallCapReached(handler, deadline))
                 break;
 
             if (sleepMs > 0)

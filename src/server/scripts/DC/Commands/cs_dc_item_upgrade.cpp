@@ -1331,6 +1331,12 @@ public:
         if (*args)
             limit = static_cast<uint32>(std::strtoul(args, nullptr, 10));
 
+        // Reaches SQL LIMIT and one chat line per row.
+        if (limit < 1)
+            limit = 1;
+        else if (limit > 50)
+            limit = 50;
+
         auto historyMgr = GetHistoryManager();
         if (!historyMgr) return false;
 

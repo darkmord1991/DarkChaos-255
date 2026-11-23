@@ -540,8 +540,33 @@ public:
                 return false;
             }
 
+            if (newDiff == player->GetDungeonDifficulty())
+            {
+                handler->PSendSysMessage("Difficulty is already {}.", diffName);
+                return true;
+            }
+
+            // Same refusals and reset as WorldSession::HandleSetDungeonDifficultyOpcode
             if (group)
             {
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                {
+                    Player* member = itr->GetSource();
+                    if (!member)
+                        continue;
+
+                    bool const blocked = !member->IsInWorld()
+                        || (member == player ? member->GetMap()->IsDungeon() : member->GetMap()->IsNonRaidDungeon());
+                    if (blocked)
+                    {
+                        handler->PSendSysMessage("Cannot change difficulty while {} is loading or inside a dungeon.",
+                            member->GetName());
+                        handler->SetSentErrorMessage(true);
+                        return false;
+                    }
+                }
+
+                group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, false, player);
                 group->SetDungeonDifficulty(newDiff);
                 group->SendUpdate();
                 std::string msg = "|cff00ff00[Group]|r Difficulty set to " + diffName + " by " + player->GetName();
@@ -549,6 +574,7 @@ public:
             }
             else
             {
+                Player::ResetInstances(player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, false);
                 player->SetDungeonDifficulty(newDiff);
                 player->SendDungeonDifficulty(false);
                 std::string msg = "|cff00ff00Difficulty set to " + diffName;
