@@ -168,6 +168,7 @@ void AddSC_dc_prestige_alt_bonus();           // Progression/Prestige/dc_prestig
 void AddSC_dc_prestige_challenges();          // Progression/Prestige/dc_prestige_challenges.cpp
 void AddSC_spell_prestige_alt_bonus_aura();   // Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
 void AddSC_dc_prestige_talents();             // Progression/Prestige/dc_prestige_talents.cpp
+void AddSC_dc_combat_meter();                 // Benchmark/dc_combat_meter.cpp
 
 // --- Challenge mode system ---
 void AddSC_dc_challenge_modes();              // Progression/ChallengeMode/dc_challenge_modes_customized.cpp
@@ -595,6 +596,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_worldboss_commandscript);
     DC_LOAD(AddSC_dc_collection_commands);
     DC_LOAD(AddSC_dc_path_commandscript);
+
+    // Keep this last: its damage hook must run after every script that changes damage (Mythic+ scaling).
+    DC_LOAD(AddSC_dc_combat_meter);
 
 #undef DC_LOAD
 

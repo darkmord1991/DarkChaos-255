@@ -123,6 +123,62 @@ Rate.Health.Above80 = 1
 Rate.Mana.Above80 = 1
 
 #
+#    DC.Bench.Meter.Enable
+#        Description: Server-side combat meter for balance benchmarks. Writes
+#                     one row per finished fight of a player or playerbot to
+#                     the characters table dc_bench_fight: duration, damage of
+#                     the character, its pet and its other minions, healing,
+#                     damage taken, the main target. Apply the SQL file that
+#                     creates the table before switching this on. All keys
+#                     below are reloadable with .reload config.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+DC.Bench.Meter.Enable = 0
+
+#
+#    DC.Bench.Meter.RunId
+#        Description: Number stored with every row. Raise it before a test
+#                     run so results from before and after a balance change
+#                     can be compared.
+#        Default:     0
+#
+DC.Bench.Meter.RunId = 0
+
+#
+#    DC.Bench.Meter.SamplePct
+#        Description: Percentage of finished fights that are written. Lower
+#                     it when thousands of bots are online.
+#        Default:     100
+#
+DC.Bench.Meter.SamplePct = 100
+
+#
+#    DC.Bench.Meter.MinDurationMs
+#        Description: Fights shorter than this (first to last hit) are not
+#                     written.
+#        Default:     3000
+#
+DC.Bench.Meter.MinDurationMs = 3000
+
+#
+#    DC.Bench.Meter.MinLevel
+#        Description: Characters below this level are not metered.
+#        Default:     1
+#
+DC.Bench.Meter.MinLevel = 1
+
+#
+#    DC.Bench.Meter.Bots
+#    DC.Bench.Meter.Players
+#        Description: Whether playerbots / real players are metered.
+#        Default:     1 - (DC.Bench.Meter.Bots)
+#                     1 - (DC.Bench.Meter.Players)
+#
+DC.Bench.Meter.Bots = 1
+DC.Bench.Meter.Players = 1
+
+#
 #    Rate.Health.RestArea
 #    Rate.Mana.RestArea
 #        Description: Regeneration multiplier applied while the player is in a
