@@ -111,6 +111,16 @@ namespace
             accountId, DCCollection::CollectionType::HEIRLOOM, itemId);
 
         std::lock_guard<std::mutex> guard(s_ownedCacheLock);
+
+        // Entries are only valid for 60s; sweep the stale ones every 5 minutes so the map does not grow
+        // by one key per account x cache forever.
+        static time_t s_lastOwnedCacheSweep = 0;
+        if (now - s_lastOwnedCacheSweep >= 300)
+        {
+            s_lastOwnedCacheSweep = now;
+            std::erase_if(s_ownedCache, [now](auto const& entry) { return now - entry.second.first >= 60; });
+        }
+
         s_ownedCache[key] = { now, owned };
         return owned;
     }
