@@ -1,0 +1,182 @@
+-- DarkChaos: deaths inside WMOs on maps 750/751 that still carry an old-world zone id (Felwood caves,
+-- Hinterlands towers, Plaguewood tunnel, ...) found only old-world graveyards for that zone, so the ghost
+-- went to map 0/1 and the corpse stayed on 750/751. Each such zone now also lists the graveyards of the
+-- DC zone its WMOs stand in; the core takes a same-map graveyard first, so deaths on maps 0/1 do not change.
+-- HLBG (maps 1411/1412) is Hinterlands/Arathi terrain: its own graveyards are added to zones 47 and 45 too,
+-- otherwise the new 751 rows would become its fallback outside area 6738 (until now that was map 0).
+-- Left out: zones 6012, 6013, 6028, 6029, 6030 and 6037 also exist on map 870, which has no graveyards.
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 11 AND `ID` IN (15104, 15124);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 14 AND `ID` IN (15029, 15032, 15037, 15038, 15046, 15047, 15052);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 14 AND `ID` IN (15053, 15059, 15063);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 16 AND `ID` IN (15029, 15032, 15037, 15038, 15046, 15047, 15052);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 16 AND `ID` IN (15053, 15059, 15063);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 17 AND `ID` IN (15031, 15036, 15048, 15049, 15060);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 28 AND `ID` IN (15108, 15110, 15114, 15115, 15119, 15133, 15139);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 36 AND `ID` IN (15103, 15105, 15114, 15123, 15125, 15130, 15136);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 45 AND `ID` IN (1724, 1725, 15011, 15012, 15104, 15124);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 47 AND `ID` IN (1724, 1725, 15011, 15012, 15107, 15113, 15131);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 47 AND `ID` IN (15132);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 85 AND `ID` IN (15100, 15101, 15106, 15110, 15111, 15122, 15138);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 130 AND `ID` IN (15102, 15105, 15118, 15137, 15140);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 139 AND `ID` IN (15109, 15112, 15116, 15117, 15120, 15121, 15126);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 139 AND `ID` IN (15127, 15128, 15129);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 148 AND `ID` IN (15030, 15034, 15036, 15061);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 267 AND `ID` IN (15103, 15105, 15114, 15123, 15125, 15130, 15136);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 331 AND `ID` IN (15031, 15036, 15048, 15049, 15060);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 361 AND `ID` IN (15020, 15023, 15033, 15040, 15050, 15051);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 440 AND `ID` IN (15031, 15036, 15048, 15049, 15060);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 493 AND `ID` IN (15022, 15039);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 618 AND `ID` IN (15021, 15024, 15025, 15026, 15027, 15028, 15035);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 618 AND `ID` IN (15041, 15042, 15043, 15044, 15045, 15062);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 6027 AND `ID` IN (15029, 15032, 15037, 15038, 15046, 15047, 15052);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 6027 AND `ID` IN (15053, 15059, 15063);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 6451 AND `ID` IN (15029, 15032, 15037, 15038, 15046, 15047, 15052);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 6451 AND `ID` IN (15053, 15059, 15063);
+DELETE FROM `graveyard_zone` WHERE `GhostZone` = 6454 AND `ID` IN (15100, 15101, 15106, 15110, 15111, 15122, 15138);
+INSERT INTO `graveyard_zone` (`ID`, `GhostZone`, `Faction`, `Comment`) VALUES
+(15104, 11, 0, 'DC751 pocket Wetlands - Arathi Highlands, Eastern Road (751)'),
+(15124, 11, 0, 'DC751 pocket Wetlands - Arathi Highlands, Stromgarde (751)'),
+(15029, 14, 0, 'DC750 pocket Durotar - DC750 Azshara, Forlorn Ridge'),
+(15032, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 369 - Azshara, Northern Azshara GY'),
+(15037, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 609 - Azshara, (Overlooks) The Shattered Strand GY'),
+(15038, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 630 - Azshara, Bitter Reaches GY'),
+(15046, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 1419 - Azshara, Southern Azshara GY'),
+(15047, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 1420 - Azshara, Bilgewater Harbor GY'),
+(15052, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 1733 - Azshara, Orgrimmar Rear Gate GY'),
+(15053, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 1734 - Azshara, Valormok GY'),
+(15059, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 1759 - Azshara, Arcane Pinnacle GY'),
+(15063, 14, 0, 'DC750 pocket Durotar - DC750 cata GY 1845 - Azshara, Gallywix Pleasure Palace GY'),
+(15029, 16, 0, 'DC750 pocket Azshara - DC750 Azshara, Forlorn Ridge'),
+(15032, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 369 - Azshara, Northern Azshara GY'),
+(15037, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 609 - Azshara, (Overlooks) The Shattered Strand GY'),
+(15038, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 630 - Azshara, Bitter Reaches GY'),
+(15046, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 1419 - Azshara, Southern Azshara GY'),
+(15047, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 1420 - Azshara, Bilgewater Harbor GY'),
+(15052, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 1733 - Azshara, Orgrimmar Rear Gate GY'),
+(15053, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 1734 - Azshara, Valormok GY'),
+(15059, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 1759 - Azshara, Arcane Pinnacle GY'),
+(15063, 16, 0, 'DC750 pocket Azshara - DC750 cata GY 1845 - Azshara, Gallywix Pleasure Palace GY'),
+(15031, 17, 0, 'DC750 pocket The Barrens - DC750 cata GY 92 - Ashenvale, Astranaar GY'),
+(15036, 17, 0, 'DC750 pocket The Barrens - DC750 cata GY 512 - Ashenvale, Kargathia GY'),
+(15048, 17, 0, 'DC750 pocket The Barrens - DC750 cata GY 1426 - Ashenvale, Shrine of Aessina GY'),
+(15049, 17, 0, 'DC750 pocket The Barrens - DC750 cata GY 1427 - Ashenvale, Nightsong GY'),
+(15060, 17, 0, 'DC750 pocket The Barrens - DC750 cata GY 1761 - Ashenvale, Zoram Strand GY'),
+(15108, 28, 469, 'DC751 pocket Western Plaguelands - Western Plaguelands, Chillwind Camp (751)'),
+(15110, 28, 67, 'DC751 pocket Western Plaguelands - Western Plaguelands, Bulwark (751)'),
+(15114, 28, 0, 'DC751 pocket Western Plaguelands - Alterac Valley, Alliance Exit (751)'),
+(15115, 28, 0, 'DC751 pocket Western Plaguelands - Western Plaguelands, Caer Darrow (751)'),
+(15119, 28, 0, 'DC751 pocket Western Plaguelands - Western Plaguelands, Central GY (751)'),
+(15133, 28, 0, 'DC751 pocket Western Plaguelands - Western Plaguelands, Argent Areal GY (751)'),
+(15139, 28, 0, 'DC751 pocket Western Plaguelands - Western Plaguelands, Scholo GY (751)'),
+(15103, 36, 67, 'DC751 pocket Alterac Mountains - Hillsbrad Foothills, Tarren Mill (751)'),
+(15105, 36, 469, 'DC751 pocket Alterac Mountains - Hillsbrad Foothills, Southshore (751)'),
+(15114, 36, 469, 'DC751 pocket Alterac Mountains - Alterac Valley, Alliance Exit (751)'),
+(15123, 36, 0, 'DC751 pocket Alterac Mountains - Alterac Mountains - Central GY (751)'),
+(15125, 36, 0, 'DC751 pocket Alterac Mountains - Hillsbrad Foothills, Thoradin''s Wall (751)'),
+(15130, 36, 0, 'DC751 pocket Alterac Mountains - Hillsbrad Foothills, Hillsbrad Fields GY (751)'),
+(15136, 36, 0, 'DC751 pocket Alterac Mountains - Hillsbrad Foothills, Purgation Isle GY (751)'),
+(1724, 45, 67, 'HLBG Arathi Highlands area outside 6738 - HinterlandBG Horde'),
+(1725, 45, 469, 'HLBG Arathi Highlands area outside 6738 - HinterlandBG Alli'),
+(15011, 45, 67, 'HLBG Arathi Highlands area outside 6738 - HinterlandBG Horde_1412'),
+(15012, 45, 469, 'HLBG Arathi Highlands area outside 6738 - HinterlandBG Alli_1412'),
+(15104, 45, 0, 'DC751 pocket Arathi Highlands - Arathi Highlands, Eastern Road (751)'),
+(15124, 45, 0, 'DC751 pocket Arathi Highlands - Arathi Highlands, Stromgarde (751)'),
+(1724, 47, 67, 'HLBG The Hinterlands area outside 6738 - HinterlandBG Horde'),
+(1725, 47, 469, 'HLBG The Hinterlands area outside 6738 - HinterlandBG Alli'),
+(15011, 47, 67, 'HLBG The Hinterlands area outside 6738 - HinterlandBG Horde_1412'),
+(15012, 47, 469, 'HLBG The Hinterlands area outside 6738 - HinterlandBG Alli_1412'),
+(15107, 47, 469, 'DC751 pocket The Hinterlands - The Hinterlands, Aerie Peak (751)'),
+(15113, 47, 67, 'DC751 pocket The Hinterlands - The Hinterlands, The Overlook Cliffs (751)'),
+(15131, 47, 0, 'DC751 pocket The Hinterlands - The Hinterlands, Seradane (751)'),
+(15132, 47, 0, 'DC751 pocket The Hinterlands - The Hinterlands, Shadra''Alor (751)'),
+(15100, 85, 67, 'DC751 pocket Tirisfal Glades - Tirisfal Glades, Deathknell (751)'),
+(15101, 85, 67, 'DC751 pocket Tirisfal Glades - Tirisfal Glades, Undercity (751)'),
+(15106, 85, 67, 'DC751 pocket Tirisfal Glades - Tirisfal Glades, Brill (751)'),
+(15110, 85, 67, 'DC751 pocket Tirisfal Glades - Western Plaguelands, Bulwark (751)'),
+(15111, 85, 469, 'DC751 pocket Tirisfal Glades - TEST for GM Client Only - Do Not Bug (751)'),
+(15122, 85, 469, 'DC751 pocket Tirisfal Glades - Undercity - Alliance - Wrath Gate (751)'),
+(15138, 85, 0, 'DC751 pocket Tirisfal Glades - Tirisfal Glades, Scarlet Moastery GY (751)'),
+(15102, 130, 67, 'DC751 pocket Silverpine Forest - Silverpine Forest, The Sepulcher (751)'),
+(15105, 130, 469, 'DC751 pocket Silverpine Forest - Hillsbrad Foothills, Southshore (751)'),
+(15118, 130, 0, 'DC751 pocket Silverpine Forest - Silverpine Forest, South GY (751)'),
+(15137, 130, 0, 'DC751 pocket Silverpine Forest - Silverpine Forest, Shadowfang Keep GY (751)'),
+(15140, 130, 469, 'DC751 pocket Silverpine Forest - Silverpine Forest, 7th Legion Base Camp GY (751)'),
+(15109, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Pestilent Scar (751)'),
+(15112, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Darrowshire (751)'),
+(15116, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Blackwood Lake (751)'),
+(15117, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Graveyard CG Tower (751)'),
+(15120, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Ebon Hold GY (751)'),
+(15121, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands: Acherus (751)'),
+(15126, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Northdale (751)'),
+(15127, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, Stratholme (751)'),
+(15128, 139, 0, 'DC751 pocket Eastern Plaguelands - Eastern Plaguelands, West GY (751)'),
+(15129, 139, 0, 'DC751 pocket Eastern Plaguelands - Western Plaguelands, Hearthglen (751)'),
+(15030, 148, 469, 'DC750 pocket Darkshore - DC750 cata GY 35 - Darkshore, New Auberdine GY'),
+(15034, 148, 469, 'DC750 pocket Darkshore - DC750 cata GY 469 - Darkshore, Twilight Vale GY'),
+(15036, 148, 67, 'DC750 pocket Darkshore - DC750 cata GY 512 - Ashenvale, Kargathia GY'),
+(15061, 148, 0, 'DC750 pocket Darkshore - DC750 cata GY 1777 - Darkshore, Gary''s Rock'),
+(15103, 267, 67, 'DC751 pocket Hillsbrad Foothills - Hillsbrad Foothills, Tarren Mill (751)'),
+(15105, 267, 469, 'DC751 pocket Hillsbrad Foothills - Hillsbrad Foothills, Southshore (751)'),
+(15114, 267, 469, 'DC751 pocket Hillsbrad Foothills - Alterac Valley, Alliance Exit (751)'),
+(15123, 267, 0, 'DC751 pocket Hillsbrad Foothills - Alterac Mountains - Central GY (751)'),
+(15125, 267, 0, 'DC751 pocket Hillsbrad Foothills - Hillsbrad Foothills, Thoradin''s Wall (751)'),
+(15130, 267, 0, 'DC751 pocket Hillsbrad Foothills - Hillsbrad Foothills, Hillsbrad Fields GY (751)'),
+(15136, 267, 0, 'DC751 pocket Hillsbrad Foothills - Hillsbrad Foothills, Purgation Isle GY (751)'),
+(15031, 331, 0, 'DC750 pocket Ashenvale - DC750 cata GY 92 - Ashenvale, Astranaar GY'),
+(15036, 331, 0, 'DC750 pocket Ashenvale - DC750 cata GY 512 - Ashenvale, Kargathia GY'),
+(15048, 331, 0, 'DC750 pocket Ashenvale - DC750 cata GY 1426 - Ashenvale, Shrine of Aessina GY'),
+(15049, 331, 0, 'DC750 pocket Ashenvale - DC750 cata GY 1427 - Ashenvale, Nightsong GY'),
+(15060, 331, 0, 'DC750 pocket Ashenvale - DC750 cata GY 1761 - Ashenvale, Zoram Strand GY'),
+(15020, 361, 0, 'DC750 pocket Felwood - DC750 Felwood, Morlos''Aran'),
+(15023, 361, 0, 'DC750 pocket Felwood - DC750 Felwood, Irontree Woods'),
+(15033, 361, 0, 'DC750 pocket Felwood - DC750 cata GY 449 - Felwood, Morlos''Aran'),
+(15040, 361, 0, 'DC750 pocket Felwood - DC750 cata GY 635 - Felwood, Irontree Woods'),
+(15050, 361, 0, 'DC750 pocket Felwood - DC750 cata GY 1730 - Felwood, Shatter Scar GY'),
+(15051, 361, 0, 'DC750 pocket Felwood - DC750 cata GY 1731 - Felwood, Felpaw Village GY'),
+(15031, 440, 0, 'DC750 pocket Tanaris - DC750 cata GY 92 - Ashenvale, Astranaar GY'),
+(15036, 440, 0, 'DC750 pocket Tanaris - DC750 cata GY 512 - Ashenvale, Kargathia GY'),
+(15048, 440, 0, 'DC750 pocket Tanaris - DC750 cata GY 1426 - Ashenvale, Shrine of Aessina GY'),
+(15049, 440, 0, 'DC750 pocket Tanaris - DC750 cata GY 1427 - Ashenvale, Nightsong GY'),
+(15060, 440, 0, 'DC750 pocket Tanaris - DC750 cata GY 1761 - Ashenvale, Zoram Strand GY'),
+(15022, 493, 0, 'DC750 pocket Moonglade - DC750 Moonglade'),
+(15039, 493, 0, 'DC750 pocket Moonglade - DC750 cata GY 633 - Moonglade GY'),
+(15021, 618, 0, 'DC750 pocket Winterspring - DC750 Winterspring, Everlook'),
+(15024, 618, 0, 'DC750 pocket Winterspring - DC750 Winterspring, South GY'),
+(15025, 618, 0, 'DC750 pocket Winterspring - DC750 Winterspring, West GY'),
+(15026, 618, 0, 'DC750 pocket Winterspring - DC750 Winterspring, Wintersaber GY'),
+(15027, 618, 0, 'DC750 pocket Winterspring - DC750 Winterspring, Crossroad GY'),
+(15028, 618, 0, 'DC750 pocket Winterspring - DC750 Winterspring, Darkwhisper GY'),
+(15035, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 511 - Winterspring, Everlook GY'),
+(15041, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 1283 - Winterspring, South GY'),
+(15042, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 1284 - Winterspring, West GY'),
+(15043, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 1416 - Winterspring, Wintersaber GY'),
+(15044, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 1417 - Winterspring, Crossroad GY'),
+(15045, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 1418 - Winterspring, Darkwhisper GY'),
+(15062, 618, 0, 'DC750 pocket Winterspring - DC750 cata GY 1817 - Winterspring, Gorge Upper Ledge'),
+(15029, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 Azshara, Forlorn Ridge'),
+(15032, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 369 - Azshara, Northern Azshara GY'),
+(15037, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 609 - Azshara, (Overlooks) The Shattered Strand GY'),
+(15038, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 630 - Azshara, Bitter Reaches GY'),
+(15046, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 1419 - Azshara, Southern Azshara GY'),
+(15047, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 1420 - Azshara, Bilgewater Harbor GY'),
+(15052, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 1733 - Azshara, Orgrimmar Rear Gate GY'),
+(15053, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 1734 - Azshara, Valormok GY'),
+(15059, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 1759 - Azshara, Arcane Pinnacle GY'),
+(15063, 6027, 0, 'DC750 pocket Burning Blade Coven - DC750 cata GY 1845 - Azshara, Gallywix Pleasure Palace GY'),
+(15029, 6451, 0, 'DC750 pocket Valley of Trials - DC750 Azshara, Forlorn Ridge'),
+(15032, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 369 - Azshara, Northern Azshara GY'),
+(15037, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 609 - Azshara, (Overlooks) The Shattered Strand GY'),
+(15038, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 630 - Azshara, Bitter Reaches GY'),
+(15046, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 1419 - Azshara, Southern Azshara GY'),
+(15047, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 1420 - Azshara, Bilgewater Harbor GY'),
+(15052, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 1733 - Azshara, Orgrimmar Rear Gate GY'),
+(15053, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 1734 - Azshara, Valormok GY'),
+(15059, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 1759 - Azshara, Arcane Pinnacle GY'),
+(15063, 6451, 0, 'DC750 pocket Valley of Trials - DC750 cata GY 1845 - Azshara, Gallywix Pleasure Palace GY'),
+(15100, 6454, 67, 'DC751 pocket Deathknell - Tirisfal Glades, Deathknell (751)'),
+(15101, 6454, 67, 'DC751 pocket Deathknell - Tirisfal Glades, Undercity (751)'),
+(15106, 6454, 67, 'DC751 pocket Deathknell - Tirisfal Glades, Brill (751)'),
+(15110, 6454, 67, 'DC751 pocket Deathknell - Western Plaguelands, Bulwark (751)'),
+(15111, 6454, 469, 'DC751 pocket Deathknell - TEST for GM Client Only - Do Not Bug (751)'),
+(15122, 6454, 469, 'DC751 pocket Deathknell - Undercity - Alliance - Wrath Gate (751)'),
+(15138, 6454, 0, 'DC751 pocket Deathknell - Tirisfal Glades, Scarlet Moastery GY (751)');
