@@ -199,8 +199,8 @@ public:
     void DeleteSpawns();
 
     typedef std::map<ObjectGuid::LowType/*lowguid*/, OPvPCapturePoint*> OPvPCapturePointMap;
-    typedef std::pair<ObjectGuid::LowType, GameObject*> GoScriptPair;
-    typedef std::pair<ObjectGuid::LowType, Creature*> CreatureScriptPair;
+    typedef std::pair<ObjectGuid, GameObject*> GoScriptPair;
+    typedef std::pair<ObjectGuid, Creature*> CreatureScriptPair;
 
     virtual void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& /*packet*/) {}
 
@@ -273,8 +273,10 @@ protected:
     uint32 _typeId{};
     bool _sendUpdate{ true };
     Map* _map{};
-    std::unordered_map<ObjectGuid::LowType, GameObject*> _goScriptStore;
-    std::unordered_map<ObjectGuid::LowType, Creature*> _creatureScriptStore;
+    // full guids: low counters repeat across object types and maps, and a colliding erase left an object
+    // unregistered, so DeleteSpawns() never cleared its zone script
+    std::unordered_map<ObjectGuid, GameObject*> _goScriptStore;
+    std::unordered_map<ObjectGuid, Creature*> _creatureScriptStore;
 };
 
 #endif /*OUTDOOR_PVP_H_*/

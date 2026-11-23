@@ -2447,7 +2447,12 @@ void WorldObject::SetZoneScript()
             if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(zoneId))
                 m_zoneScript = bf;
             else
-                m_zoneScript = sOutdoorPvPMgr->GetZoneScript(zoneId);
+            {
+                // DC maps keep stock zone ids in copied WMOs: an outdoor PvP only scripts objects on its own map
+                // (objects elsewhere were missed by its DeleteSpawns() and crashed the shutdown on its freed script)
+                OutdoorPvP* pvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(zoneId);
+                m_zoneScript = pvp && pvp->GetMap() == map ? pvp : nullptr;
+            }
         }
     }
 }

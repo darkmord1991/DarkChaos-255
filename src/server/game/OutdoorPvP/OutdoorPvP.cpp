@@ -676,7 +676,7 @@ void OutdoorPvP::TeamApplyBuff(TeamId teamId, uint32 spellId, uint32 spellId2, P
 
 void OutdoorPvP::OnGameObjectCreate(GameObject* go)
 {
-    GoScriptPair sp(go->GetGUID().GetCounter(), go);
+    GoScriptPair sp(go->GetGUID(), go);
     _goScriptStore.insert(sp);
 
     if (go->GetGoType() != GAMEOBJECT_TYPE_CAPTURE_POINT)
@@ -692,7 +692,7 @@ void OutdoorPvP::OnGameObjectCreate(GameObject* go)
 
 void OutdoorPvP::OnGameObjectRemove(GameObject* go)
 {
-    _goScriptStore.erase(go->GetGUID().GetCounter());
+    _goScriptStore.erase(go->GetGUID());
 
     if (go->GetGoType() != GAMEOBJECT_TYPE_CAPTURE_POINT)
     {
@@ -707,13 +707,13 @@ void OutdoorPvP::OnGameObjectRemove(GameObject* go)
 
 void OutdoorPvP::OnCreatureCreate(Creature* creature)
 {
-    CreatureScriptPair sp(creature->GetGUID().GetCounter(), creature);
+    CreatureScriptPair sp(creature->GetGUID(), creature);
     _creatureScriptStore.insert(sp);
 }
 
 void OutdoorPvP::OnCreatureRemove(Creature* creature)
 {
-    _creatureScriptStore.erase(creature->GetGUID().GetCounter());
+    _creatureScriptStore.erase(creature->GetGUID());
 }
 
 void OutdoorPvP::SetMapFromZone(uint32 zone)
