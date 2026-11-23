@@ -123,6 +123,41 @@ Rate.Health.Above80 = 1
 Rate.Mana.Above80 = 1
 
 #
+#    DC.Talents.MaxPoints
+#        Description: Ceiling on class talent points. The core gives one point
+#                     per level from 10 with no upper limit (151 points at
+#                     level 160, 246 at 255), although the trees were designed
+#                     around the 71 points of a level-80 character.
+#                     Characters holding more spent
+#                     points than the ceiling get a free talent reset the
+#                     next time their points are recalculated (login or
+#                     level change). Bonus points from quest rewards count
+#                     towards the ceiling. Reloadable with .reload config.
+#        Default:     0   - (No ceiling, one point per level)
+#                     71  - (The WotLK total, reached at level 80)
+#                     100 - (Reached at level 109: 29 points more than WotLK,
+#                            two short of taking two 51-point talents)
+#
+DC.Talents.MaxPoints = 0
+
+#
+#    DC.Talents.PetMaxPoints
+#        Description: Ceiling on hunter pet talent points from level. A pet gets
+#                     one point per 4 levels from 20 ((level - 16) / 4: 16 at
+#                     level 80, 36 at 160), more than its trees use. The ceiling
+#                     applies to that part only; Beast Mastery's 4 points stay
+#                     on top. Pets holding more spent points get a free reset
+#                     the next time their points are recalculated. Playerbot
+#                     pet templates spend at most 20 points, so 20 resets no
+#                     bot pet. Reloadable with .reload config.
+#        Default:     0  - (No ceiling, stock formula)
+#                     20 - (Stock up to level 96, 20 from there; 24 with Beast
+#                           Mastery)
+#
+
+DC.Talents.PetMaxPoints = 0
+
+#
 #    DC.Bench.Meter.Enable
 #        Description: Server-side combat meter for balance benchmarks. Writes
 #                     one row per finished fight of a player or playerbot to

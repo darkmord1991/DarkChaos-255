@@ -168,6 +168,7 @@ void AddSC_dc_prestige_alt_bonus();           // Progression/Prestige/dc_prestig
 void AddSC_dc_prestige_challenges();          // Progression/Prestige/dc_prestige_challenges.cpp
 void AddSC_spell_prestige_alt_bonus_aura();   // Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
 void AddSC_dc_prestige_talents();             // Progression/Prestige/dc_prestige_talents.cpp
+void AddSC_dc_talent_point_cap();             // Progression/dc_talent_point_cap.cpp
 void AddSC_dc_gameplay_test();                // GameplayTest/dc_gameplay_test.cpp
 void AddSC_dc_lab_probe();                    // LabTools/dc_lab_probe.cpp
 void AddSC_dc_bug_report();                   // LabTools/dc_bug_report.cpp
@@ -500,6 +501,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_prestige_challenges);
     DC_LOAD(AddSC_spell_prestige_alt_bonus_aura);
     DC_LOAD(AddSC_dc_prestige_talents);
+    DC_LOAD(AddSC_dc_talent_point_cap);
 
     LogSection("Custom Achievements System");
     DC_LOAD(AddSC_dc_achievements);
