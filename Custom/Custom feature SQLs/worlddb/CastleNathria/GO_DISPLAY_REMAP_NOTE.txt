@@ -1,0 +1,50 @@
+Castle Nathria (map 2296) GameObjectDisplayInfo id remaps — reference for the DB-content transcode phase
+(gameobject_template.displayId must use the FINAL id below, never the retail id, for any GO entry using one
+of these models). Two batches so far:
+
+Batch 1 (9 doors, already deployed — see 02_creature_model_info.sql-adjacent door work):
+  all 9 retail door display ids collided with unrelated stock GOs -> remapped to 101186-101194.
+  (retail id -> final id mapping for batch 1 was not preserved verbatim in this file; re-derive from
+  GameObjectDisplayInfo.csv rows 101186-101194 <-> the door model paths if ever needed.)
+
+Batch 2 (37 additional GO models, 2026-07-19): retail_display_id,FileDataID,FINAL_display_id,model_path
+  6391,200293,4595008,world/generic/pvp/collisionwall/collisionwallpvp01.m2
+  6450,197008,4595009,world/generic/activedoodads/instanceportal/instanceportal_green.m2
+  7735,197122,4595010,world/generic/collision/collision_pcsize.m2
+  10403,243808,10403,world/expansion02/doodads/lakewintergrasp/wg_invisible_door.m2   (free, not remapped)
+  13594,795929,13594,world/expansion04/doodads/mogu/thunderking_disc_collision.m2     (free, not remapped)
+  39107,1525053,39107,world/expansion06/doodads/fx/7fx_campfire_cooking01_nocollision_light.m2  (free, not remapped)
+  42973,970208,42973,world/expansion05/doodads/human/doodads/6hu_barracks_keyring01.m2 (free, not remapped)
+  57742,2981872,4595011,world/expansion08/doodads/vampire/9vm_vampire_cage02.m2
+  58016,2982034,4595012,world/expansion08/doodads/vampire/9vm_vampire_rubblepile02.m2
+  58467,2981868,4595013,world/expansion08/doodads/vampire/9vm_vampire_cage01.m2
+  58579,2982035,4595014,world/expansion08/doodads/vampire/9vm_vampire_rubblepile03.m2
+  58597,2982036,4595015,world/expansion08/doodads/vampire/9vm_vampire_rubblerocks03.m2
+  58621,3048926,4595016,world/expansion08/doodads/vampire/9vm_vampire_chair04.m2
+  59069,2982033,4595017,world/expansion08/doodads/vampire/9vm_vampire_rubblepile01.m2
+  59223,3095195,4595018,world/expansion08/doodads/vampire/9vm_vampire_mirror02.m2
+  59232,3045415,4595019,world/expansion08/doodads/castlezone/9cas_rose_c01.m2
+  59443,2982038,4595020,world/expansion08/doodads/vampire/9vm_vampire_rubblerocks01.m2
+  59444,2982037,4595021,world/expansion08/doodads/vampire/9vm_vampire_rubblerocks02.m2
+  59967,3164725,4595022,world/wmo/expansion08/vampire/9vm_vampire_elevator02.wmo       (WMO, not M2)
+  59976,3187916,4595023,world/expansion08/doodads/vampire/9vm_vampire_animacontainer01.m2
+  61022,3255412,4595024,world/expansion08/doodads/vampire/9vm_vampire_elevatorwindow01.m2
+  61221,3163642,4595025,world/expansion08/doodads/vampire/9vm_vampire_elevatormechanism01.m2
+  61282,3396105,4595026,world/expansion08/doodads/vampire/9vm_vampire_elevatormechanism02.m2
+  61326,3447743,4595027,world/expansion08/doodads/dungeon/9du_vampire_cathedral_pew01.m2
+  61438,3187917,4595028,world/expansion08/doodads/vampire/9vm_vampire_animacontainer02.m2
+  61524,3461565,4595029,world/expansion08/doodads/dungeon/9du_vampire_raid_pathblocker01_e.m2
+  61617,3461564,4595030,world/expansion08/doodads/dungeon/9du_vampire_raid_pathblocker01_d.m2
+  61862,3486911,4595031,world/expansion08/doodads/dungeon/9du_vampire_raid_animachambercontainer01.m2
+  61947,3456971,4595032,world/expansion08/doodads/vampire/9vm_vampire_sconce02.m2
+  62286,3525400,4595033,world/expansion08/doodads/dungeon/9du_vampire_raid_animachambercontainer02.m2
+  62287,3525402,4595034,world/expansion08/doodads/fx/9fx_raid1_sommelier_wallbreach.m2
+  64147,3542680,4595035,world/expansion08/doodads/dungeon/9du_vampire_raid_animacontainervalve01.m2
+  64562,3578457,4595036,world/expansion08/doodads/dungeon/9du_vampire_cathedral_pathblocker03.m2
+  64681,3580358,4595037,world/expansion08/doodads/9xp_cooking_feast_small01.m2
+  64973,3595030,4595038,world/expansion08/doodads/vampire/9vm_vampire_largechest01.m2
+  65636,3556441,4595039,world/expansion08/doodads/dungeon/9du_vampire_raid_sinstone01.m2
+  65826,3610995,4595040,world/expansion08/doodads/dungeon/9du_vampire_raid_denathrius_lights01.m2
+
+Next free custom GameObjectDisplayInfo id after batch 2: 4595041.
+Cross-reference entry->retail-displayId mapping: scratchpad nath_all_go_display.txt (this session).
