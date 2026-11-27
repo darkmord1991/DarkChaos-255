@@ -22,10 +22,18 @@ COLLECTION_SQL_GLOBS = (
     "Custom/Custom feature SQLs/collectionextracts/*.sql",
 )
 
+# Mount spells from this id up are ours; stock ones keep their item-derived icon.
+CUSTOM_MOUNT_SPELL_MIN = 100000
+
 ITEM_TEMPLATE_SQL_CANDIDATES = (
+    "Custom/Custom feature SQLs/item_template.sql",
     "Custom/Custom feature SQLs/worlddb/item_template.sql",
     "data/sql/base/db_world/item_template.sql",
 )
+# Rows by which the live item_template has moved past the dump above, merged per row AFTER it.
+# Built and signature-verified against the live DB by retroport_tools/_build_item_template_delta.py,
+# so a batch does not have to wait for a full 80 MB re-dump. Delete it after the next re-dump.
+ITEM_TEMPLATE_DELTA_SQL = "Custom/Custom feature SQLs/item_template_live_delta.sql"
 
 CREATURE_TEMPLATE_MODEL_SQL_CANDIDATES = (
     "Custom/Custom feature SQLs/worlddb/creature_template_model.sql",
@@ -112,6 +120,10 @@ CURATED_PET_PREVIEW_OVERRIDES: dict[int, tuple[int, int, int]] = {
     18966: (23431, 14658, 14630),
     18967: (23430, 14659, 14631),
     19462: (23811, 14938, 14878),
+    # Baby Coralshell Turtle: teaching item 39148 carries no summon spell, so the
+    # generic walk resolves nothing. Creature 24594 (Coral Shell Turtle) -> display
+    # 7046 (matches the server 2026_06_18_00 fix and the old client hardcode).
+    39148: (0, 7046, 24594),
     33199: (43461, 28397, 32939),
     34364: (44369, 26452, 29726),
     34724: (71840, 31073, 38374),
@@ -441,6 +453,11 @@ def parse_args() -> argparse.Namespace:
         "--skip-patch-copy",
         action="store_true",
         help="Do not mirror generated CDBCs into the patch bundle path.",
+    )
+    parser.add_argument(
+        "--allow-row-loss",
+        action="store_true",
+        help="Write even if shipped DCCollectionSource rows are not in the SQL inputs.",
     )
     parser.add_argument(
         "--only",
@@ -808,6 +825,11 @@ def parse_sql_value_rows(values_sql: str) -> list[list[Any]]:
                     index += 2
                     continue
                 if char == "'":
+                    if index + 1 < len(values_sql) and values_sql[index + 1] == "'":
+                        # standard SQL doubled-quote escape ('' -> literal ')
+                        token_chars.append("'")
+                        index += 2
+                        continue
                     in_string = False
                     index += 1
                     continue
@@ -850,6 +872,20 @@ def collect_sql_files(repo_root: Path) -> list[Path]:
     return sql_files
 
 
+def parse_simple_assignments(set_sql: str) -> dict[str, str]:
+    """`a='x', b=12` -> {"a": "x", "b": "12"}; anything fancier returns {} (ignored)."""
+    out: dict[str, str] = {}
+    for m in re.finditer(r"`?(\w+)`?\s*=\s*(?:'((?:[^']|'')*)'|(-?\d+(?:\.\d+)?)|(NULL))",
+                         set_sql, re.IGNORECASE):
+        col, s, n, null = m.group(1), m.group(2), m.group(3), m.group(4)
+        out[col] = (s.replace("''", "'") if s is not None else
+                    n if n is not None else "")
+    # reject if the SET clause had anything the pattern did not consume
+    consumed = re.sub(r"`?\w+`?\s*=\s*(?:'(?:[^']|'')*'|-?\d+(?:\.\d+)?|NULL)\s*,?\s*",
+                      "", set_sql, flags=re.IGNORECASE).strip()
+    return out if not consumed else {}
+
+
 def load_collection_definition_tables(repo_root: Path) -> dict[str, dict[int, dict[str, Any]]]:
     tables = {
         table_name: {}
@@ -864,6 +900,16 @@ def load_collection_definition_tables(repo_root: Path) -> dict[str, dict[int, di
         r"^\s*DELETE\s+FROM\s+`?(\w+)`?\s+WHERE\s+(.+)$",
         re.IGNORECASE | re.DOTALL,
     )
+    # UPDATE `t` SET a='x', b=1 WHERE key=N  -- single-row repairs (icons, displays)
+    update_re = re.compile(
+        r"^\s*UPDATE\s+`?(\w+)`?\s+SET\s+(.+?)\s+WHERE\s+(.+)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    # UPDATEs are collected here and applied after every file has been read. See the
+    # note at the append site: collectionextracts/*.sql is a live snapshot that loads
+    # last, so applying an UPDATE in file order let a stale INSERT silently undo it.
+    deferred_updates: list[tuple[str, list[int], dict[str, str]]] = []
 
     for sql_file in collect_sql_files(repo_root):
         sql_text = sql_file.read_text(encoding="utf-8")
@@ -893,6 +939,37 @@ def load_collection_definition_tables(repo_root: Path) -> dict[str, dict[int, di
                     key_value = int_or_default(row.get(key_name), 0)
                     if key_value > 0:
                         tables[table_name][key_value] = row
+                continue
+
+            update_match = update_re.match(statement)
+            if update_match:
+                table_name = update_match.group(1).lower()
+                if table_name not in tables:
+                    continue
+                key_name = TABLE_KEY_COLUMNS[table_name]
+                assignments = parse_simple_assignments(update_match.group(2))
+                if not assignments:
+                    continue
+                where_sql = update_match.group(3)
+                keys: list[int] = []
+                in_match = re.search(
+                    rf"`?{re.escape(key_name)}`?\s+IN\s*\(([^)]+)\)",
+                    where_sql, re.IGNORECASE | re.DOTALL)
+                eq_match = re.search(
+                    rf"`?{re.escape(key_name)}`?\s*=\s*(-?\d+)", where_sql, re.IGNORECASE)
+                if in_match:
+                    keys = [int(v) for v in re.findall(r"-?\d+", in_match.group(1))]
+                elif eq_match:
+                    keys = [int(eq_match.group(1))]
+                # Deferred on purpose. collectionextracts/*.sql is a snapshot of the
+                # LIVE tables and loads last, so an UPDATE from a repo migration that
+                # post-dates that snapshot was applied and then immediately overwritten
+                # by the stale INSERT -- silently, and only for rows that exist live
+                # (stock and hand-authored ones), which is why it looked like a partial
+                # failure. An UPDATE mutates the final row set rather than supplying
+                # rows, so it belongs after every INSERT regardless of file order.
+                # Relative order between UPDATEs is preserved.
+                deferred_updates.append((table_name, keys, assignments))
                 continue
 
             delete_match = delete_re.match(statement)
@@ -927,6 +1004,12 @@ def load_collection_definition_tables(repo_root: Path) -> dict[str, dict[int, di
             )
             if eq_match:
                 tables[table_name].pop(int(eq_match.group(1)), None)
+
+    for table_name, keys, assignments in deferred_updates:
+        for key_value in keys:
+            row = tables[table_name].get(key_value)
+            if row is not None:
+                row.update(assignments)
 
     return tables
 
@@ -1070,7 +1153,34 @@ def read_csv_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def load_item_template_rows(repo_root: Path) -> dict[int, dict[str, Any]]:
+def load_item_template_rows(
+    repo_root: Path,
+    apply_delta: bool = True,
+) -> dict[int, dict[str, Any]]:
+    rows = _load_item_template_dump_rows(repo_root)
+    delta_path = repo_root / ITEM_TEMPLATE_DELTA_SQL
+    if apply_delta and rows and delta_path.exists():
+        insert_re = re.compile(
+            r"^\s*INSERT(?:\s+IGNORE)?\s+INTO\s+`?item_template`?\s*\((.*?)\)\s*VALUES\s*(.*)$",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for statement in split_sql_statements(delta_path.read_text(encoding="utf-8")):
+            match = insert_re.match(statement)
+            if not match:
+                continue
+            columns = parse_sql_columns(match.group(1))
+            for raw_row in parse_sql_value_rows(match.group(2)):
+                row = {
+                    columns[index]: raw_row[index]
+                    for index in range(min(len(columns), len(raw_row)))
+                }
+                entry = int_or_default(row.get("entry"), 0)
+                if entry > 0:
+                    rows[entry] = {**rows.get(entry, {}), **row}
+    return rows
+
+
+def _load_item_template_dump_rows(repo_root: Path) -> dict[int, dict[str, Any]]:
     create_re = re.compile(
         r"^\s*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+`?item_template`?\s*\(.*$",
         re.IGNORECASE | re.DOTALL,
@@ -1161,6 +1271,63 @@ def load_item_display_icons(repo_root: Path) -> dict[int, str]:
         )
         if icon:
             icons[display_id] = icon
+    return icons
+
+
+def load_spell_to_teaching_item(repo_root: Path) -> dict[int, int]:
+    """learn/summon spell id -> teaching item entry, parsed from item_template
+    INSERTs in the collection SQL (Retroports). The teaching item carries the
+    learn spell in spellid_2 (spelltrigger_2 = 6 = ON_LEARN). Mounts are keyed
+    in dc_mount_definitions by spell_id but the icon lives on the item, so this
+    bridges spell_id -> item -> Item.csv DisplayInfoID -> ItemDisplayInfo icon."""
+    insert_re = re.compile(
+        r"^\s*INSERT(?:\s+IGNORE)?\s+INTO\s+`?item_template`?\s*\((.*?)\)\s*VALUES\s*(.*)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    spell_to_item: dict[int, int] = {}
+    for sql_file in collect_sql_files(repo_root):
+        sql_text = sql_file.read_text(encoding="utf-8")
+        if "item_template" not in sql_text.lower():
+            continue
+        for statement in split_sql_statements(sql_text):
+            match = insert_re.match(statement)
+            if not match:
+                continue
+            columns = parse_sql_columns(match.group(1))
+            if "spellid_2" not in columns or "entry" not in columns:
+                continue
+            values_sql = re.split(
+                r"\bON\s+DUPLICATE\s+KEY\s+UPDATE\b",
+                match.group(2),
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0]
+            for raw_row in parse_sql_value_rows(values_sql):
+                row = {
+                    columns[index]: raw_row[index]
+                    for index in range(min(len(columns), len(raw_row)))
+                }
+                entry = int_or_default(row.get("entry"), 0)
+                learn_spell = int_or_default(row.get("spellid_2"), 0)
+                if entry > 0 and learn_spell > 0:
+                    spell_to_item.setdefault(learn_spell, entry)
+    return spell_to_item
+
+
+def load_spell_icon_paths(repo_root: Path) -> dict[int, str]:
+    """SpellIcon id -> texture path, from the binary: this table has no CSV."""
+    path = repo_root / "Custom" / "DBCs" / "SpellIcon.dbc"
+    if not path.exists():
+        return {}
+
+    data = path.read_bytes()
+    count, _, record_size, _ = struct.unpack_from("<4I", data, 4)
+    strings = 20 + count * record_size
+    icons: dict[int, str] = {}
+    for index in range(count):
+        icon_id, offset = struct.unpack_from("<2I", data, 20 + index * record_size)
+        end = data.index(b"\0", strings + offset)
+        icons[icon_id] = data[strings + offset:end].decode("latin-1")
     return icons
 
 
@@ -1261,6 +1428,65 @@ def load_creature_template_model_display_ids(repo_root: Path) -> dict[int, int]:
             }
 
     return {}
+
+
+def load_mount_display_to_creature(repo_root: Path) -> dict[int, int]:
+    """display_id -> creature_id from creature_template_model across the Retroports
+    batch SQL (where custom mounts live) + the dedicated dumps, preferring Idx 0.
+
+    Mounts render their preview via SetCreature(creatureEntry) (reliable) rather
+    than SetDisplayInfo(displayId) (unreliable for unowned customs), so the CDBC
+    CreatureID must carry the mount's creature_template entry.
+    """
+    insert_with_columns_re = re.compile(
+        r"^\s*INSERT(?:\s+IGNORE)?\s+INTO\s+`?creature_template_model`?\s*"
+        r"\((.*?)\)\s*VALUES\s*(.*)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    best: dict[int, tuple[int, int]] = {}  # display_id -> (idx, creature_id)
+    paths: list[Path] = []
+    for pattern in COLLECTION_SQL_GLOBS:
+        paths.extend(sorted(repo_root.glob(pattern)))
+    for candidate in CREATURE_TEMPLATE_MODEL_SQL_CANDIDATES:
+        p = repo_root / candidate
+        if p.exists():
+            paths.append(p)
+
+    for path in paths:
+        try:
+            sql_text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "creature_template_model" not in sql_text.lower():
+            continue
+        for statement in split_sql_statements(sql_text):
+            match = insert_with_columns_re.match(statement)
+            if not match:
+                continue
+            columns = parse_sql_columns(match.group(1))
+            values_sql = re.split(
+                r"\bON\s+DUPLICATE\s+KEY\s+UPDATE\b",
+                match.group(2),
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0]
+            for raw_row in parse_sql_value_rows(values_sql):
+                row = {
+                    columns[index]: raw_row[index]
+                    for index in range(min(len(columns), len(raw_row)))
+                }
+                creature_id = first_int(row, "CreatureID", "creature_id", "creatureid")
+                display_id = first_int(
+                    row, "CreatureDisplayID", "creature_display_id", "creaturedisplayid"
+                )
+                if creature_id <= 0 or display_id <= 0:
+                    continue
+                idx = int_or_default(row.get("Idx", row.get("idx")), 99)
+                current = best.get(display_id)
+                if current is None or idx < current[0]:
+                    best[display_id] = (idx, creature_id)
+
+    return {display_id: creature_id for display_id, (_, creature_id) in best.items()}
 
 
 def is_companion_spell_row(spell_row: dict[str, Any] | None) -> bool:
@@ -1374,6 +1600,34 @@ def resolve_companion_preview_from_item_entry(
         return summon_spell_id, display_id, creature_id
 
     return 0, 0, 0
+
+
+def creature_id_from_summon_spell(
+    spell_rows: dict[int, dict[str, Any]],
+    spell_id: int,
+) -> int:
+    """Read the summoned creature straight off a companion's summon spell.
+
+    resolve_companion_preview_from_item_entry() can only start from an
+    item_template row, and load_item_template_rows() reads ONE dump
+    (Custom/Custom feature SQLs/item_template.sql) -- so every pet added since
+    that dump was taken resolves to CreatureID 0 until the user re-applies and
+    re-dumps. dc_pet_definitions.pet_spell_id already names the summon spell and
+    Spell.csv already carries its EffectMiscValue, so the creature is knowable
+    without the dump. Used as a fallback only, so a stale dump can no longer
+    starve the wardrobe's pet previews.
+    """
+    summon_spell = spell_rows.get(spell_id)
+    if not summon_spell:
+        return 0
+    for effect_index in range(1, 4):
+        effect_id = int_or_default(summon_spell.get(f"Effect_{effect_index}"), 0)
+        if effect_id not in {SPELL_EFFECT_SUMMON, SPELL_EFFECT_SUMMON_PET}:
+            continue
+        creature_id = first_int(summon_spell, f"EffectMiscValue_{effect_index}")
+        if creature_id > 0:
+            return creature_id
+    return 0
 
 
 def is_better_transmog_representative(
@@ -1529,9 +1783,13 @@ def build_source_rows(
     repo_root: Path,
     tables: dict[str, dict[int, dict[str, Any]]],
     item_display_ids: dict[int, int],
+    item_display_icons: dict[int, str],
+    spell_to_teaching_item: dict[int, int],
     item_template_rows: dict[int, dict[str, Any]],
     spell_rows: dict[int, dict[str, Any]],
     creature_model_display_ids: dict[int, int],
+    mount_display_to_creature: dict[int, int],
+    spell_icon_paths: dict[int, str],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
@@ -1540,7 +1798,28 @@ def build_source_rows(
         mount = mounts[entry_id]
         source_fields = build_source_fields(mount.get("source"))
         preview_display_id = int_or_default(mount.get("display_id"), 0)
-        preview_creature_id = 0
+        # Mount previews render via SetCreature(entry) (reliable) — give unowned
+        # customs the creature_template entry so they preview like owned ones.
+        preview_creature_id = mount_display_to_creature.get(preview_display_id, 0)
+        # Icon: dc_mount_definitions has no icon column, so resolve the teaching
+        # item's real inventory icon (mount spell -> item via spellid_2 ->
+        # Item.csv DisplayInfoID -> ItemDisplayInfo InventoryIcon). Unlike pets
+        # (client resolves via GetItemInfo(ItemID)), the mount UI reads def.icon
+        # straight from this CDBC row, so it must be baked in here.
+        mount_item_id = int_or_default(source_fields["item_id"], 0)
+        if mount_item_id == 0:
+            mount_item_id = spell_to_teaching_item.get(entry_id, 0)
+        mount_icon = normalize_icon_path(mount.get("icon"))
+        # A custom mount's spell carries retail's own icon; the teaching item is
+        # the generic reins on many of them, and a wrong name match on others.
+        if not mount_icon and entry_id >= CUSTOM_MOUNT_SPELL_MIN:
+            mount_icon = spell_icon_paths.get(
+                int_or_default((spell_rows.get(entry_id) or {}).get("SpellIconID"), 0),
+                "",
+            )
+        if not mount_icon and mount_item_id:
+            item_display_id = item_display_ids.get(mount_item_id, 0)
+            mount_icon = item_display_icons.get(item_display_id, "")
         rows.append(
             {
                 "ID": len(rows) + 1,
@@ -1550,7 +1829,7 @@ def build_source_rows(
                 "SortOrder": sort_order,
                 "Flags": 0,
                 "Rarity": int_or_default(mount.get("rarity"), 0),
-                "ItemID": int_or_default(source_fields["item_id"], 0),
+                "ItemID": mount_item_id,
                 "SpellID": entry_id,
                 "DisplayID": preview_display_id,
                 "CreatureID": preview_creature_id,
@@ -1561,7 +1840,7 @@ def build_source_rows(
                 ),
                 "SourceValue": float_or_default(source_fields["source_value"], 0.0),
                 "Name": text_or_empty(mount.get("name")),
-                "Icon": normalize_icon_path(mount.get("icon")),
+                "Icon": mount_icon,
                 "SourceType": source_fields["source_type"],
                 "SourceName": source_fields["source_name"],
                 "SourceText": source_fields["source_text"],
@@ -1610,6 +1889,11 @@ def build_source_rows(
                 display_id = resolved_display_id
             if creature_id <= 0:
                 creature_id = resolved_creature_id
+
+        if creature_id <= 0 and spell_id > 0:
+            creature_id = creature_id_from_summon_spell(spell_rows, spell_id)
+            if creature_id > 0 and display_id <= 0:
+                display_id = creature_model_display_ids.get(creature_id, 0)
 
         curated_preview = CURATED_PET_PREVIEW_OVERRIDES.get(preview_entry_id)
         if curated_preview is None:
@@ -1690,12 +1974,94 @@ def build_source_rows(
     return rows
 
 
+def mix_revision(hash_value: int, value: int) -> int:
+    # Mirrors MixLocalRevision in dc_addon_collection.cpp: result is always in
+    # [1, 2147483646], so a computed revision is never 0 ("absent").
+    mixed = ((hash_value * 131) + value + 17) % 2147483647
+    if mixed <= 0:
+        mixed += 2147483646
+    return mixed
+
+
+def mix_revision_text(hash_value: int, value: str) -> int:
+    for byte in value.encode("utf-8"):
+        hash_value = mix_revision(hash_value, byte)
+    return hash_value
+
+
+def compute_rows_revision(
+    rows: list[dict[str, Any]],
+    schema: tuple[tuple[str, str], ...],
+) -> int:
+    """Deterministic content revision over the rows exactly as emitted.
+
+    This value is the single source of truth for the client-data revision
+    handshake: it is embedded in the completeness manifest (reported by the
+    client addon) and stamped into dc_client_data_revisions (read by the
+    server), so both sides compare the same generator-computed number. It
+    does NOT need to match the server's runtime content hash.
+    """
+    hash_value = 5381
+    for row in rows:
+        for field_name, field_type in schema:
+            value = row.get(field_name)
+            if field_type == "int":
+                hash_value = mix_revision(hash_value, int_or_default(value, 0))
+            elif field_type == "float":
+                hash_value = mix_revision_text(
+                    hash_value, repr(float_or_default(value, 0.0)))
+            else:
+                hash_value = mix_revision_text(
+                    hash_value, text_or_empty(value))
+    return hash_value
+
+
+DATA_REVISION_FEATURES = (
+    "collectionCategories",
+    "collectionSources",
+    "collectionShop",
+    "collectionSets",
+)
+
+
+def build_client_data_revisions_sql(data_revisions: dict[str, int]) -> str:
+    lines = [
+        "-- Auto-generated by tools/generate_dc_collection_cdbc.py. Do not edit.",
+        "-- Stamps the client-data revisions of the generated CDBC build into",
+        "-- the world DB. The server prefers these values over its runtime",
+        "-- content hash when answering the addon handshake, and the client",
+        "-- addon reports the same values from its generated manifest - so the",
+        "-- native-CDBC path engages exactly when the deployed client patch",
+        "-- matches this build. Re-apply whenever the CDBCs are regenerated.",
+        "CREATE TABLE IF NOT EXISTS `dc_client_data_revisions` (",
+        "  `feature` VARCHAR(32) NOT NULL,",
+        "  `revision` INT UNSIGNED NOT NULL DEFAULT 0,",
+        "  `generated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,",
+        "  PRIMARY KEY (`feature`)",
+        ") ENGINE=InnoDB;",
+        "",
+    ]
+    for feature in DATA_REVISION_FEATURES:
+        revision = int_or_default(data_revisions.get(feature), 0)
+        lines.append(
+            "DELETE FROM `dc_client_data_revisions` "
+            f"WHERE `feature` = '{feature}';"
+        )
+        lines.append(
+            "INSERT INTO `dc_client_data_revisions` (`feature`, `revision`) "
+            f"VALUES ('{feature}', {revision});"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def build_collection_completeness_manifest(
     tables: dict[str, dict[int, dict[str, Any]]],
     source_rows: list[dict[str, Any]],
     transmog_rows: list[dict[str, Any]],
     shop_static_rows: list[dict[str, Any]],
     definition_index: dict[int, dict[int, dict[str, Any]]],
+    data_revisions: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     source_ids_by_type: dict[int, set[int]] = {}
     preview_incomplete_ids_by_type: dict[int, list[int]] = {}
@@ -1834,11 +2200,17 @@ def build_collection_completeness_manifest(
         ],
     }
 
-    return {
+    manifest: dict[str, Any] = {
         "version": 1,
         "types": type_manifest,
         "shop": shop_manifest,
     }
+    if data_revisions:
+        manifest["dataRevisions"] = {
+            feature: int_or_default(data_revisions.get(feature), 0)
+            for feature in DATA_REVISION_FEATURES
+        }
+    return manifest
 
 
 def build_collection_completeness_json_content(
@@ -1927,6 +2299,21 @@ def build_collection_completeness_lua_content(
         [
             "        },",
             "    },",
+        ]
+    )
+
+    data_revisions = manifest.get("dataRevisions")
+    if isinstance(data_revisions, dict):
+        lines.append("    dataRevisions = {")
+        for feature in DATA_REVISION_FEATURES:
+            lines.append(
+                f"        {feature} = "
+                f"{int_or_default(data_revisions.get(feature), 0)},"
+            )
+        lines.append("    },")
+
+    lines.extend(
+        [
             "}",
             "DC.COLLECTION_STATIC_MANIFEST_VERSION = "
             f"{int_or_default(manifest.get('version'), 0)}",
@@ -2279,28 +2666,70 @@ def main() -> int:
     definition_index = load_collection_definition_index(repo_root)
     item_display_ids = load_item_display_ids(repo_root)
     item_display_icons = load_item_display_icons(repo_root)
+    spell_to_teaching_item = load_spell_to_teaching_item(repo_root)
     item_template_rows = load_item_template_rows(repo_root)
     spell_rows = load_spell_rows(repo_root)
+    spell_icon_paths = load_spell_icon_paths(repo_root)
     creature_model_display_ids = load_creature_template_model_display_ids(repo_root)
+    mount_display_to_creature = load_mount_display_to_creature(repo_root)
 
     category_rows = list(CATEGORY_ROWS)
     source_rows = build_source_rows(
         repo_root,
         tables,
         item_display_ids,
+        item_display_icons,
+        spell_to_teaching_item,
         item_template_rows,
         spell_rows,
         creature_model_display_ids,
+        mount_display_to_creature,
+        spell_icon_paths,
     )
+
+    # The rows are only as complete as the SQL this script can read, so a batch
+    # applied live whose file left the repo would vanish from the client here.
+    existing_source_csv = csv_output_dir / "DCCollectionSource.csv"
+    if existing_source_csv.exists() and not args.allow_row_loss:
+        def source_key(row: dict[str, Any]) -> tuple[int, ...]:
+            return tuple(
+                int_or_default(row.get(name), 0)
+                for name in ("CollectionType", "EntryID", "SpellID", "DisplayID")
+            )
+
+        generated = {source_key(row) for row in source_rows}
+        lost = [
+            row
+            for row in read_schema_csv_rows(existing_source_csv, SOURCE_SCHEMA)
+            if source_key(row) not in generated
+        ]
+        if lost:
+            print(f"REFUSED: {len(lost)} shipped collection rows are not in the SQL inputs:")
+            for row in lost[:20]:
+                print(f"  {row.get('EntryID')} {row.get('Name')}")
+            print(
+                "Re-extract collectionextracts/extracts.sql from the live DB, "
+                "or pass --allow-row-loss if the removal is intended."
+            )
+            return 1
+
     transmog_rows = build_transmog_rows(item_template_rows, item_display_icons)
     shop_static_rows = build_shop_static_rows(tables, source_rows, item_display_ids)
     set_rows = build_set_rows(repo_root)
+    data_revisions = {
+        "collectionCategories": compute_rows_revision(
+            category_rows, CATEGORY_SCHEMA),
+        "collectionSources": compute_rows_revision(source_rows, SOURCE_SCHEMA),
+        "collectionShop": compute_rows_revision(shop_static_rows, SHOP_SCHEMA),
+        "collectionSets": compute_rows_revision(set_rows, SET_SCHEMA),
+    }
     completeness_manifest = build_collection_completeness_manifest(
         tables,
         source_rows,
         transmog_rows,
         shop_static_rows,
         definition_index,
+        data_revisions,
     )
 
     outputs = (
@@ -2390,6 +2819,13 @@ def main() -> int:
     ):
         changed_paths.append(manifest_lua_path)
 
+    revisions_sql_path = csv_output_dir / "dc_client_data_revisions.sql"
+    if write_text_if_changed(
+        revisions_sql_path,
+        build_client_data_revisions_sql(data_revisions),
+    ):
+        changed_paths.append(revisions_sql_path)
+
     authoritative_types = [
         type_name
         for type_name in MANIFEST_TYPE_ORDER
@@ -2411,6 +2847,14 @@ def main() -> int:
     print(
         "Authoritative local definition request-skip: "
         + (", ".join(authoritative_types) if authoritative_types else "none")
+    )
+    print(
+        "Client data revisions: "
+        + ", ".join(
+            f"{feature}={data_revisions[feature]}"
+            for feature in DATA_REVISION_FEATURES
+        )
+        + f" (SQL stamp: {revisions_sql_path})"
     )
     print(
         "Authoritative local shop static: "

@@ -28,7 +28,11 @@ INSERT INTO `dc_mount_definitions` (`spell_id`, `name`, `mount_type`, `source`, 
 (32246, 'Swift Purple Gryphon', 1, '{"type":"vendor","npc":"Brunn Flamebeard","zone":"Shadowmoon Valley"}', 1, 3, 310, 17719),
 (32295, 'Swift Red Wind Rider', 1, '{"type":"vendor","npc":"Dama Wildmane","zone":"Shadowmoon Valley"}', 2, 3, 310, 17719),
 (48025, 'Headless Horseman\'s Mount', 1, '{"type":"drop","boss":"Headless Horseman","instance":"Scarlet Monastery","dropRate":0.5}', 0, 4, 310, 25159),
-(51960, 'Ashes of Al\'ar', 1, '{"type":"drop","boss":"Kael\'thas Sunstrider","instance":"Tempest Keep","dropRate":1.0}', 0, 5, 310, 17890),
+-- REMOVED 2026-08-18: spell 51960 is NOT the Ashes of Alar mount, it summons creature 28531
+-- (Frost Wyrm Mount). The real Ashes of Alar is spell 40192, which is already in
+-- dc_mount_definitions (display 17890, Kaelthas drop). This row put a mislabelled
+-- duplicate in the client catalog: generate_dc_collection_cdbc.py globs this file, so a
+-- sample row with no matching live-DB row still reaches DCCollectionSource.cdbc.
 (44153, 'Azure Drake', 1, '{"type":"drop","boss":"Malygos","instance":"Eye of Eternity","dropRate":2.0}', 0, 4, 310, 25832),
 (59650, 'Black Proto-Drake', 1, '{"type":"achievement","achievement":"Glory of the Raider"}', 0, 4, 310, 28040),
 (59961, 'Red Proto-Drake', 1, '{"type":"achievement","achievement":"Glory of the Hero"}', 0, 4, 310, 28044),
@@ -42,7 +46,11 @@ INSERT INTO `dc_mount_definitions` (`spell_id`, `name`, `mount_type`, `source`, 
 (66088, 'Sunreaver Dragonhawk', 1, '{"type":"vendor","npc":"Vasarin Redmorn","rep":"Sunreavers","repLevel":"Exalted"}', 2, 4, 310, 29696),
 
 -- All-Terrain (type 3)
-(48778, 'Acherus Deathcharger', 3, '{"type":"quest","quest":"The Light of Dawn","class":"Death Knight"}', 0, 3, 100, 25280),
+-- MOVED 2026-08-18 to Retroports/2026_08_18_01_dc_mount_catalog_fixes.sql: spell 48778
+-- (Acherus Deathcharger) is a REAL mount that was missing from dc_mount_definitions
+-- entirely, so this sample row was the only thing putting it in the client catalog --
+-- a phantom entry the server knew nothing about. It now lives in the real table.
+-- (mount_type corrected 3 -> 0: it is a ground mount.)
 (75614, 'Celestial Steed', 3, '{"type":"shop","store":"Blizzard Store"}', 0, 4, 310, 31958)
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
