@@ -14,19 +14,19 @@
 --   1. An AreaTrigger has no model, no name and no tooltip, so it cannot be found. That is
 --      literally why Timbermaw's "portal" was reported missing -- there was nothing to see.
 --   2. It fires on APPROACH. The Timbermaw gatekeeper was first placed 7.6 yards from
---      trigger 607002's box (half-extents 4), so walking up to talk teleported the player
+--      trigger 6923's box (half-extents 4), so walking up to talk teleported the player
 --      before they could click. The outside NPCs now stand 25-27 yards clear.
---   3. **Both exit triggers were centred exactly on their own arrival point** -- 607005 sat
---      at (-151.89, 106.96, -39.87) on map 820, which is precisely where 607004 drops you.
+--   3. **Both exit triggers were centred exactly on their own arrival point** -- 6926 sat
+--      at (-151.89, 106.96, -39.87) on map 820, which is precisely where 6925 drops you.
 --      Arriving would have landed you inside the exit box and bounced you straight back
 --      out, forever. Timbermaw had the identical bug at (-8165.96, -3459.75, 221.0); it
 --      only came apart because the arrival Z was corrected to 222.4 afterwards.
 --      Section 6 below removes the teleport action from both, killing the loop.
 --
 -- CORRECTION (2026-08-08): an earlier revision claimed custom AreaTriggers never fire on
--- this server and blamed the ID range (stock tops out at 5872, these are 607002+). WRONG --
--- in-game testing showed 607002 firing normally. High AreaTrigger IDs are fine. The
--- Blackfathom ENTRANCE trigger 607004 is still silent, which is a separate open question:
+-- this server and blamed the ID range (stock tops out at 5872, these are 6923+). WRONG --
+-- in-game testing showed 6923 firing normally. High AreaTrigger IDs are fine. The
+-- Blackfathom ENTRANCE trigger 6925 is still silent, which is a separate open question:
 -- its coordinates come from map 1's VANILLA terrain, while map 750's Zoram Strand is CATA
 -- terrain, so the cave mouth may simply not be in the same place there. The outside NPC
 -- makes that moot.
@@ -119,7 +119,7 @@ INSERT INTO tmp_gate VALUES
      -- floor -- it is not an estimate of mine, and it needs no re-measuring.
      820, -151.89, 106.96, -39.87, 4.53),
 
-    -- outside Timbermaw, on map 750 (furbolg camp), ~27 yd clear of trigger 607002
+    -- outside Timbermaw, on map 750 (furbolg camp), ~27 yd clear of trigger 6923
     (3999002, 16622001, 'Timbermaw Gatekeeper', 'Timbermaw Hold', 2003, 62011, 62011, 1,
      'Take me into Timbermaw Hold.',
      'The Hold is not what it was. Something beneath the roots has turned our kin against us. If you mean to face it, I can open the way.',
@@ -169,11 +169,15 @@ INSERT INTO tmp_gate VALUES
      750, 1707.48, -1289.88, 173.694, 2.356,
      823, 585.6, 96.7, 276.92, 5.498),
 
-    -- outside Emerald Sanctum, on map 750 (Hyjal, ~170 yd from Nordrassil)
+    -- outside Emerald Sanctum, on map 750 -- area 16498 Grove of Aessina, 25.00 yd up the
+    -- approach from the druid camp, facing the Kalidar moon gate at 5091.64/-1767.09/1332.97.
+    -- RELOCATED 2026-08-29: the original 4833.10/-1731.70 is inside area 16482 Ashen Lake,
+    -- ground 1196.21 under an MH2O surface at 1253.44 -- 57 yd of water. See
+    -- EmeraldSanctum/18_relocate_entrance.sql for the full derivation.
     (3999007, 16622006, 'Emerald Sanctum Gatekeeper', 'Emerald Sanctum', 11769, 62016, 62016, 1,
      'Take me into the Emerald Sanctum.',
      'Behind this slope the Dream presses against the waking world, and something inside the Sanctum has stopped holding the two apart. Twenty of you, no fewer, if you mean to walk it.',
-     750, 4833.10, -1731.70, 1196.215, 4.712,
+     750, 5110.93, -1751.19, 1334.10, 3.831,
      824, 2767.4, 2959.0, 30.10, 0.785),
 
     -- inside Crescent Grove, ~8 yd from where players land (dz -0.5, flat ground)
@@ -188,7 +192,7 @@ INSERT INTO tmp_gate VALUES
      'Take me back to Hyjal.',
      'The Dream does not let go gladly. Stand with me and I will draw you back to the mountain.',
      824, 2761.74, 2953.34, 30.019, 0.785,
-     750, 4833.10, -1731.70, 1196.215, 4.712);
+     750, 5110.93, -1751.19, 1334.10, 3.831);
 
 -- =====================================================================================
 -- 2. Templates. Cloned from 3694 (Sentinel Selarin) so every stat column gets a sane 3.3.5
@@ -382,27 +386,27 @@ FROM tmp_gate;
 -- =====================================================================================
 -- 6. Kill the exit-trigger teleport loop.
 --
--- 607003 and 607005 are the two "exit" AreaTriggers, and each box was originally placed on
+-- 6924 and 6926 are the two "exit" AreaTriggers, and each box was originally placed on
 -- top of its own instance's ARRIVAL point -- so the first thing a player did on arriving was
 -- stand in the trigger that sends them back.
 --
--- **607005 (Blackfathom) IS FIXED and is no longer deleted here.** Its box was re-measured
+-- **6926 (Blackfathom) IS FIXED and is no longer deleted here.** Its box was re-measured
 -- in game to the real walk-out point inside the dungeon (-176.86 / 51.56 / -49.64), which is
 -- 61.5 yd from the arrival point -- far outside the 8x8x10 box -- so the loop is gone and the
 -- portal works as a real exit. `06_registration.sql` owns that row; see the geometry note
 -- there. Deleting it here would just fight that file.
 --
--- 607003 (Timbermaw) is still dropped: its box sits on my old, below-the-floor arrival
+-- 6924 (Timbermaw) is still dropped: its box sits on my old, below-the-floor arrival
 -- estimate, and Timbermaw already enters and exits correctly through the gatekeeper and
 -- warden gossip. `.gps` the real walk-out spot inside the Hold if you want it re-enabled.
 --
--- The two ENTRANCE triggers (607002 Timbermaw, 607004 Blackfathom) are left working.
+-- The two ENTRANCE triggers (6923 Timbermaw, 6925 Blackfathom) are left working.
 --
 -- Crescent Grove (823) and Emerald Sanctum (824) have NO exit trigger at all -- the loop is
--- avoided by construction rather than repaired afterwards. Their entrance boxes are 607006
--- and 607007; the way out is the warden, same as Timbermaw.
+-- avoided by construction rather than repaired afterwards. Their entrance boxes are 6927
+-- and 6928; the way out is the warden, same as Timbermaw.
 -- =====================================================================================
-DELETE FROM `areatrigger_teleport` WHERE `ID` = 607003;
+DELETE FROM `areatrigger_teleport` WHERE `ID` = 6924;
 
 -- =====================================================================================
 -- Report
@@ -425,7 +429,7 @@ UNION ALL SELECT 'smart rows (want 40)', CAST(COUNT(*) AS CHAR)
 UNION ALL SELECT 'spawns (want 8)', CAST(COUNT(*) AS CHAR)
     FROM `creature` WHERE `guid` BETWEEN 16622000 AND 16622007
 UNION ALL SELECT 'exit-trigger loops remaining (want 0)', CAST(COUNT(*) AS CHAR)
-    FROM `areatrigger_teleport` WHERE `ID` = 607003
+    FROM `areatrigger_teleport` WHERE `ID` = 6924
 UNION ALL SELECT 'target maps registered (want 4)', CAST(COUNT(*) AS CHAR)
     FROM `instance_template` WHERE `map` IN (819, 820, 823, 824);
 

@@ -1,0 +1,15 @@
+-- ---------------------------------------------------------------------------
+-- creature_loot_template -- 5 orphan tables (Halloween summons + a stray boss)
+-- ---------------------------------------------------------------------------
+-- "Table 'creature_loot_template' Entry N isn't creature entry and not
+-- referenced from loot, and thus useless" for 44487/44488/44489/45239/46096
+-- (1181 total rows). Verified: the creature_template rows at these exact
+-- entries DO exist (Thrashing Pumpkin/Pome Wraith/Corn Stalker -- the
+-- Plaguelands Hallow's End summon-only decorations from an earlier round --
+-- plus Lesser Val'kyr/Crusader Lord Valdelmar) and all correctly have
+-- `lootid=0` (intentionally no loot for these summon-only/non-lootable
+-- entries) -- and NOTHING else references these ids as a `Reference` either.
+-- Pure leftover dead data with zero consumers; deleted per the engine's own
+-- diagnosis.
+-- ---------------------------------------------------------------------------
+DELETE FROM `creature_loot_template` WHERE `Entry` IN (44487,44488,44489,45239,46096);

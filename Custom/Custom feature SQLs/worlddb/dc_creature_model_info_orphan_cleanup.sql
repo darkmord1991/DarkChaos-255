@@ -1,0 +1,11 @@
+-- ---------------------------------------------------------------------------
+-- creature_model_info -- 5 orphan rows referencing non-existent display ids
+-- ---------------------------------------------------------------------------
+-- "Table `creature_model_info` has model for not existed display id (N)" for
+-- 70574/71536/90230/108129/501315. Confirmed via cross-check against
+-- creature_template_model: NO creature actually uses any of these 5 display
+-- ids (0 rows) -- pure orphan metadata with zero consumers, not a live
+-- display gap like the Mobus/WhaleShark crash-risk case. Harmless but
+-- pointless; removed as a minor data-hygiene cleanup.
+-- ---------------------------------------------------------------------------
+DELETE FROM `creature_model_info` WHERE `DisplayID` IN (70574,71536,90230,108129,501315);
