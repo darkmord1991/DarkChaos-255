@@ -1,39 +1,62 @@
 #!/bin/bash
+
+LOG_FILE="extractor_$(date +%Y%m%d_%H%M%S).log"
+
+log() {
+    local ts
+    ts="$(date +%H:%M:%S)"
+    echo "[$ts] $*" | tee -a "$LOG_FILE"
+}
+
+run_tool() {
+    local tool="$1"; shift
+    log "--- START: $tool $* ---"
+    { "./$tool" "$@" 2>&1; } | tee -a "$LOG_FILE"
+    local rc="${PIPESTATUS[0]}"
+    if [ "$rc" -ne 0 ]; then
+        log "!!! $tool exited with code $rc !!!"
+    else
+        log "--- DONE:  $tool (exit 0) ---"
+    fi
+    return "$rc"
+}
+
 function Base {
-    echo "Extract Base"
+    log "=== Extract Base ==="
     rm -rf dbc maps Cameras
-    ./map_extractor
+    run_tool map_extractor
     Menu
 }
 
 function VMaps {
-    echo "Extract VMaps"
+    log "=== Extract VMaps ==="
     mkdir -p Buildings vmaps
     rm -rf Buildings/* vmaps/*
-    ./vmap4_extractor
-    ./vmap4_assembler Buildings vmaps
-    rmdir -rf Buildings
+    run_tool vmap4_extractor || { log "Aborting: vmap4_extractor failed, skipping assembler."; Menu; return; }
+    run_tool vmap4_assembler Buildings vmaps
+    rm -rf Buildings
     Menu
 }
 
 function MMaps {
-    echo "This may take a few hours to complete. Please be patient."
+    log "=== Extract MMaps (this may take a few hours) ==="
     mkdir -p mmaps
     rm -rf mmaps/*
-    ./mmaps_generator
+    run_tool mmaps_generator
     Menu
 }
 
 function All {
-    echo "This may take a few hours to complete. Please be patient."
+    log "=== Extract All (this may take a few hours) ==="
     rm -rf dbc maps Cameras
     mkdir -p Buildings vmaps mmaps
     rm -rf Buildings/* vmaps/* mmaps/*
-    ./map_extractor
-    ./vmap4_extractor
-    ./vmap4_assembler Buildings vmaps
-    rmdir -rf Buildings
-    ./mmaps_generator
+    run_tool map_extractor || { log "Aborting: map_extractor failed."; Menu; return; }
+    run_tool vmap4_extractor || { log "Aborting: vmap4_extractor failed, skipping assembler/mmaps."; Menu; return; }
+    run_tool vmap4_assembler Buildings vmaps || { log "Aborting: vmap4_assembler failed, skipping mmaps."; Menu; return; }
+    rm -rf Buildings
+    run_tool mmaps_generator
+    log "=== All extractions complete ==="
     Menu
 }
 
@@ -61,6 +84,8 @@ echo "3 - Extract mmaps (needs vmaps to be extracted before you run this, may ta
 echo "4 - Extract all (may take hours)"
 echo "5 - EXIT"
 echo ""
+echo "Log file: $LOG_FILE"
+echo ""
 
 read -rp "Type 1, 2, 3, 4 or 5 then press ENTER: " choice
 
@@ -69,12 +94,13 @@ case $choice in
     2) VMaps ;;
     3) MMaps ;;
     4) All ;;
-    5) exit 0;;
+    5) log "Session ended."; exit 0;;
     *) echo "Invalid choice."; read -rp "Type 1, 2, 3, 4 or 5 then press ENTER: " choice ;;
 esac
 }
 
 if [ -d "./Data" ] && [ -f "map_extractor" ] && [ -f "vmap4_extractor" ] && [ -f "vmap4_assembler" ] && [ -f "mmaps_generator" ]; then
+    log "Extractor started. Log: $LOG_FILE"
     echo "The required files and folder exist in the current directory."
     chmod +x map_extractor vmap4_extractor vmap4_assembler mmaps_generator
     Menu

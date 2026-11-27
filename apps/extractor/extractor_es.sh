@@ -1,39 +1,62 @@
 #!/bin/bash
+
+LOG_FILE="extractor_$(date +%Y%m%d_%H%M%S).log"
+
+log() {
+    local ts
+    ts="$(date +%H:%M:%S)"
+    echo "[$ts] $*" | tee -a "$LOG_FILE"
+}
+
+run_tool() {
+    local tool="$1"; shift
+    log "--- INICIO: $tool $* ---"
+    { "./$tool" "$@" 2>&1; } | tee -a "$LOG_FILE"
+    local rc="${PIPESTATUS[0]}"
+    if [ "$rc" -ne 0 ]; then
+        log "!!! $tool terminó con código $rc !!!"
+    else
+        log "--- FIN:    $tool (exit 0) ---"
+    fi
+    return "$rc"
+}
+
 function Base {
-    echo "Extrayendo archivos base"
+    log "=== Extrayendo archivos base ==="
     rm -rf dbc maps Cameras
-    ./map_extractor
+    run_tool map_extractor
     Menu
 }
 
 function VMaps {
-    echo "Extrayendo VMaps"
+    log "=== Extrayendo VMaps ==="
     mkdir -p Buildings vmaps
     rm -rf Buildings/* vmaps/*
-    ./vmap4_extractor
-    ./vmap4_assembler Buildings vmaps
-    rmdir -rf Buildings
+    run_tool vmap4_extractor || { log "Abortando: vmap4_extractor falló, se omite el ensamblador."; Menu; return; }
+    run_tool vmap4_assembler Buildings vmaps
+    rm -rf Buildings
     Menu
 }
 
 function MMaps {
-    echo "Esto puede tardar unas horas en completarse. Por favor, tenga paciencia."
+    log "=== Extrayendo MMaps (esto puede tardar varias horas) ==="
     mkdir -p mmaps
     rm -rf mmaps/*
-    ./mmaps_generator
+    run_tool mmaps_generator
     Menu
 }
 
 function All {
-    echo "Esto puede tardar varias horas en completarse. Por favor, tenga paciencia."
+    log "=== Extrayendo todo (esto puede tardar varias horas) ==="
     rm -rf dbc maps Cameras
     mkdir -p Buildings vmaps mmaps
     rm -rf Buildings/* vmaps/* mmaps/*
-    ./map_extractor
-    ./vmap4_extractor
-    ./vmap4_assembler Buildings vmaps
-    rmdir -rf Buildings
-    ./mmaps_generator
+    run_tool map_extractor || { log "Abortando: map_extractor falló."; Menu; return; }
+    run_tool vmap4_extractor || { log "Abortando: vmap4_extractor falló, se omiten ensamblador/mmaps."; Menu; return; }
+    run_tool vmap4_assembler Buildings vmaps || { log "Abortando: vmap4_assembler falló, se omiten mmaps."; Menu; return; }
+    rm -rf Buildings
+    run_tool mmaps_generator
+    log "=== Todas las extracciones completadas ==="
     Menu
 }
 
@@ -61,6 +84,8 @@ echo "3 - Extraer mmaps (necesita que los vmaps se extraigan antes de ejecutar e
 echo "4 - Extraer todo (puede llevar varias horas)"
 echo "5 - SALIR"
 echo ""
+echo "Archivo de log: $LOG_FILE"
+echo ""
 
 read -rp "Escriba 1, 2, 3, 4 o 5 y pulse ENTER: " choice
 
@@ -69,12 +94,13 @@ case $choice in
     2) VMaps ;;
     3) MMaps ;;
     4) All ;;
-    5) exit 0;;
+    5) log "Sesión finalizada."; exit 0;;
     *) echo "Opción inválida."; read -rp "Escriba 1, 2, 3, 4 o 5 y presione ENTER: " choice ;;
 esac
 }
 
 if [ -d "./Data" ] && [ -f "map_extractor" ] && [ -f "vmap4_extractor" ] && [ -f "vmap4_assembler" ] && [ -f "mmaps_generator" ]; then
+    log "Extractor iniciado. Log: $LOG_FILE"
     echo "Los archivos y carpetas requeridos existen en el directorio actual."
     chmod +x map_extractor vmap4_extractor vmap4_assembler mmaps_generator
     Menu
