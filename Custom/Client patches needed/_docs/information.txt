@@ -1,0 +1,10 @@
+Client patch layout is documented in CLIENT_PATCH_LAYOUT.md (next to this file).
+That file, and K:\Dark-Chaos\retroport_tools\dc_mpq_layout.py, are the source of truth for
+which asset belongs in which patch-*.MPQ. Do not deploy by picking a patch letter by hand -
+call dc_mpq_deploy.py, which routes each file automatically.
+
+Rebuilt 2026-08-04: 17 archives / 32.4 GB -> 14 archives, roles no longer smeared across
+archives, every archive carries a (listfile).
+
+the current MPQ files can be downloaded from:
+https://1drv.ms/f/c/d9368532fb96da3d/IgApzcL1PyeoRLhaAbJlbvj8AQIH_JILZu_DqlLn61TIWbw?e=5%3Apc5TRp&sharingv2=true&fromShare=true&at=9
