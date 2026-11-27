@@ -1,0 +1,5 @@
+spawn_guid,x,y,z,o,area,note
+6900660,-1687.171,-3512.607,61.355,2.472844,16671,Secluded Soothsayer's Pipes: off the cliff onto the Witherbark Village floor (in-game .gps 2026-10-06)
+6900150,3954.8,-6268.3,9.905,3.18633,16593,Giant's Storm Dagger: on DC terrain. CoA 4c444c986 puts it on the stock shore (1.902) which DC's Cataclysm shore buries 8 yd deep (not checked in game)
+6900171,2900.8,-959.9,195.795,2.27933,16468,Elune Tear Fragment: kept on DC terrain. CoA 4c444c986's height (199.143) floats 3.3 yd above DC's ground here (not checked in game)
+6900370,2537.2,1451.7,-0.147,6.04786,16621,Floating Barrel: kept floating at sea level. CoA 4c444c986 sank it to the sea floor (-3.787) (not checked in game)
