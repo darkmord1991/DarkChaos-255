@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "DC prestige: refused below the required level, then drops the character to the restart level",
+  "description": "DESTRUCTIVE: performs a real prestige on a dedicated lab character (DC.GameplayTest.AllowDestructive = 1 required). Cleanup puts the prestige level and the character level back and re-teaches class spells; prestige rewards (title, currencies) and the account-wide talent point stay. Needs Prestige.Enable = 1 and Prestige.RequiredLevel <= MaxPlayerLevel.",
+  "timeout_ms": 90000,
+  "destructive": true,
+  "cleanup": { "restore_level": true, "restore_prestige": true },
+  "actors": [
+    { "id": "hero", "name": "Gtprestige", "create": { "race": 1, "class": 2 }, "level": 80 }
+  ],
+  "steps": [
+    {
+      "action": "assert", "label": "Below the required level the refusal names the level",
+      "metric": "prestige_refusal", "contains": "must be level"
+    },
+    { "action": "snapshot", "metric": "prestige_level", "save_as": "prestige_before" },
+    { "action": "snapshot", "metric": "prestige_restart_level", "save_as": "restart_level" },
+    { "action": "set_level", "label": "Prestige.RequiredLevel on the live config", "level": 255 },
+    { "action": "assert", "label": "At the required level nothing refuses", "metric": "prestige_refusal", "equals": "" },
+    { "action": "prestige" },
+    {
+      "action": "assert", "label": "The character restarts at Prestige.ResetLevel (+ Head Start)",
+      "metric": "level", "relative_to": "restart_level", "equals": 0
+    },
+    {
+      "action": "assert", "label": "The prestige level went up by one",
+      "metric": "prestige_level", "relative_to": "prestige_before", "equals": 1
+    }
+  ]
+}

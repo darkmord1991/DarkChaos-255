@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "name": "Mage: only spellbook spells cast; Frostbolt damages and slows; Slow applies after learning",
+  "description": "Stock spell pipeline on a headless actor. Slow (31589, single rank) is the spellbook control: refused while unknown, applied once learned. Frostbolt rank 16 against a level 70 target keeps a 1% spell miss chance, so a rare miss fails the damage step.",
+  "timeout_ms": 60000,
+  "actors": [
+    { "id": "mage", "name": "Gtmage", "create": { "race": 1, "class": 8 }, "level": 80 }
+  ],
+  "steps": [
+    {
+      "action": "spawn", "id": "dummy", "entry": 36, "distance": 10,
+      "level": 70, "health": 200000, "faction": 14, "passive": true
+    },
+    { "action": "unlearn", "spell": 31589 },
+    { "action": "assert", "metric": "knows_spell", "spell": 31589, "equals": 0 },
+    { "action": "cast", "label": "An unknown spell is refused, as the client would be", "spell": 31589, "target": "dummy", "expect": "fail" },
+    { "action": "assert", "unit": "dummy", "metric": "aura", "spell": 31589, "equals": 0 },
+    { "action": "learn", "spell": 42842 },
+    { "action": "learn", "spell": 31589 },
+    { "action": "snapshot", "metric": "power", "power": "mana", "save_as": "mana_before" },
+    { "action": "cast", "label": "Frostbolt rank 16", "spell": 42842, "target": "dummy" },
+    {
+      "action": "assert", "label": "Frostbolt applies the caster's slow", "unit": "dummy",
+      "metric": "aura", "spell": 42842, "caster": "mage", "equals": 1, "within_ms": 6000
+    },
+    { "action": "assert", "label": "Frostbolt deals damage", "unit": "dummy", "metric": "health", "max": 199999, "within_ms": 2000 },
+    { "action": "assert", "label": "Frostbolt costs mana", "metric": "power", "power": "mana", "relative_to": "mana_before", "max": -1 },
+    { "action": "wait", "label": "Global cooldown", "ms": 1600 },
+    { "action": "cast", "label": "Slow, now in the spellbook", "spell": 31589, "target": "dummy" },
+    {
+      "action": "assert", "unit": "dummy", "metric": "aura", "spell": 31589, "caster": "mage",
+      "equals": 1, "within_ms": 2000
+    },
+    { "action": "kill", "actor": "mage", "target": "dummy" },
+    { "action": "assert", "unit": "dummy", "metric": "creature_alive", "equals": 0 }
+  ]
+}

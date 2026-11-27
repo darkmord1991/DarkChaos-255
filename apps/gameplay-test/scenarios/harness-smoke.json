@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "Harness smoke: phase, level, money, items, auras, spawn, kill and despawn",
+  "description": "Exercises the harness itself without any DC system, so a failure here is a harness problem, not a gameplay one.",
+  "timeout_ms": 60000,
+  "actors": [
+    { "id": "hero", "name": "Gtwarrior", "create": { "race": 1, "class": 1 }, "level": 80 }
+  ],
+  "steps": [
+    { "action": "assert", "label": "The actor is out of the normal phase", "metric": "phase_mask", "not_equals": 1 },
+    { "action": "assert", "label": "Actor levels are applied at setup", "metric": "level", "equals": 80 },
+    { "action": "assert", "label": "Setup moved the actor to GM Island", "metric": "map_id", "equals": 1 },
+    { "action": "set_money", "copper": 123456 },
+    { "action": "assert", "metric": "money", "equals": 123456 },
+    { "action": "snapshot", "metric": "item_count", "item": 2589, "save_as": "linen_before" },
+    { "action": "add_item", "item": 2589, "count": 5 },
+    { "action": "assert", "metric": "item_count", "item": 2589, "relative_to": "linen_before", "equals": 5 },
+    { "action": "remove_item", "item": 2589, "count": 2 },
+    { "action": "assert", "metric": "item_count", "item": 2589, "relative_to": "linen_before", "equals": 3 },
+    {
+      "action": "spawn", "id": "dummy", "entry": 36, "distance": 6,
+      "level": 70, "health": 50000, "faction": 14, "passive": true
+    },
+    { "action": "assert", "label": "Spawns share the run's phase", "unit": "dummy", "metric": "phase_mask", "not_equals": 1 },
+    { "action": "assert", "unit": "dummy", "metric": "health", "equals": 50000 },
+    { "action": "assert", "metric": "distance", "target": "dummy", "min": 3, "max": 9 },
+    { "action": "set_health", "target": "dummy", "pct": 50 },
+    { "action": "assert", "unit": "dummy", "metric": "health_pct", "min": 49, "max": 51 },
+    { "action": "add_aura", "label": "Power Word: Fortitude", "target": "hero", "spell": 48161 },
+    { "action": "assert", "metric": "aura", "spell": 48161, "equals": 1 },
+    { "action": "remove_aura", "target": "hero", "spell": 48161 },
+    { "action": "assert", "metric": "aura", "spell": 48161, "equals": 0 },
+    { "action": "kill", "actor": "hero", "target": "dummy" },
+    { "action": "assert", "unit": "dummy", "metric": "creature_alive", "equals": 0 },
+    { "action": "despawn", "target": "dummy" },
+    { "action": "assert", "unit": "dummy", "metric": "exists", "equals": 0, "within_ms": 3000 }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "DC item upgrade: one level on an equipped tier 1 robe spends tokens and raises stamina",
+  "description": "Gown of Blaumeux (39396, item level 200, 90 stamina) falls in tier 1 (item level 1-212, +7% per level, 10 tokens for level 1 on the live tables). Uses the DCItemUpgradeApi provider, the same path the playerbots use. Needs ItemUpgrade.Currency.TokenId = 300311.",
+  "timeout_ms": 60000,
+  "actors": [
+    { "id": "hero", "name": "Gtwarrior", "create": { "race": 1, "class": 1 }, "level": 80 }
+  ],
+  "steps": [
+    { "action": "add_item", "label": "Upgrade tokens", "item": 300311, "count": 200 },
+    { "action": "equip", "item": 39396 },
+    { "action": "assert", "label": "The robe is worn in the chest slot", "metric": "equipped_item", "slot": 4, "equals": 39396 },
+    { "action": "snapshot", "label": "Waits for the upgrade cache", "metric": "item_upgrade_level", "slot": 4, "save_as": "level_before" },
+    { "action": "snapshot", "metric": "stat", "stat": "stamina", "save_as": "stamina_before" },
+    { "action": "snapshot", "metric": "item_count", "item": 300311, "save_as": "tokens_before" },
+    { "action": "item_upgrade", "slot": 4 },
+    {
+      "action": "assert", "label": "The robe is one level higher", "metric": "item_upgrade_level", "slot": 4,
+      "relative_to": "level_before", "equals": 1, "within_ms": 5000
+    },
+    {
+      "action": "assert", "label": "The upgrade is applied to the character's stamina", "metric": "stat",
+      "stat": "stamina", "relative_to": "stamina_before", "min": 1, "within_ms": 3000
+    },
+    {
+      "action": "assert", "label": "Tokens were spent", "metric": "item_count", "item": 300311,
+      "relative_to": "tokens_before", "max": -1
+    }
+  ]
+}

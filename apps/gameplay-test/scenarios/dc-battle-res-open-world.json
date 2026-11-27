@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "name": "DC battle resurrection: no charge limit in the open world, Rebirth still resurrects",
+  "description": "DC/DungeonQoL limits combat resurrections only in active Mythic+ runs and the raids in DC.BattleRes.RaidMaps. This is the negative control for that limit: outside them the charge metric reports no limit and Rebirth works as stock. A refusal test needs a listed raid with an encounter in progress (follow-up).",
+  "timeout_ms": 60000,
+  "actors": [
+    { "id": "healer", "name": "Gtdruid", "create": { "race": 4, "class": 11 }, "level": 80 },
+    { "id": "victim", "name": "Gtwarrior", "create": { "race": 1, "class": 1 }, "level": 80 }
+  ],
+  "steps": [
+    { "action": "assert", "label": "Open world: no limit applies", "unit": "victim", "metric": "battle_res_charges", "equals": -1 },
+    { "action": "kill", "target": "victim" },
+    { "action": "assert", "unit": "victim", "metric": "alive", "equals": 0 },
+    {
+      "action": "cast", "label": "Rebirth rank 7 (triggered: no reagent, no cast time)", "actor": "healer",
+      "spell": 48477, "target": "victim", "triggered": true
+    },
+    {
+      "action": "assert", "label": "The victim gets a resurrection request", "unit": "victim",
+      "metric": "resurrect_requested", "equals": 1, "within_ms": 3000
+    },
+    { "action": "accept_resurrect", "actor": "victim" },
+    { "action": "assert", "unit": "victim", "metric": "alive", "equals": 1, "within_ms": 3000 }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "name": "DC Mythic+: a Font of Power refuses activation in the open world and in a normal-difficulty dungeon",
+  "description": "Reads MythicPlusRunManager::CanActivateKeystone and GetRunState through the harness metrics, with a Font of Power (700001) spawned in the run's phase. Needs MythicPlus.Keystone.Enabled = 1; otherwise both refusals read 'keystones are currently disabled'. Ends with the battle-resurrection state of a dungeon without an active run.",
+  "timeout_ms": 90000,
+  "actors": [
+    { "id": "hero", "name": "Gtwarrior", "create": { "race": 1, "class": 1 }, "level": 80 }
+  ],
+  "steps": [
+    { "action": "assert", "label": "No Mythic+ run in the open world", "metric": "mplus_active", "equals": 0 },
+    { "action": "assert", "metric": "mplus_keystone_level", "equals": 0 },
+    { "action": "spawn_object", "id": "font", "entry": 700001, "distance": 3 },
+    { "action": "assert", "label": "Open world: refused", "metric": "mplus_can_activate", "target": "font", "equals": 0 },
+    { "action": "assert", "metric": "mplus_activation_error", "target": "font", "contains": "inside a dungeon" },
+    { "action": "despawn", "target": "font" },
+    {
+      "action": "teleport", "label": "Utgarde Keep, normal difficulty",
+      "map": 574, "x": 153.789, "y": -86.548, "z": 12.551, "o": 0.304
+    },
+    { "action": "assert", "metric": "map_id", "equals": 574 },
+    { "action": "assert", "metric": "mplus_active", "equals": 0 },
+    { "action": "spawn_object", "id": "font_dungeon", "entry": 700001, "distance": 3 },
+    {
+      "action": "assert", "label": "Normal difficulty: refused until the instance is Mythic",
+      "metric": "mplus_activation_error", "target": "font_dungeon", "contains": "Mythic difficulty"
+    },
+    {
+      "action": "assert", "label": "No battle-res limit in a dungeon without an active run",
+      "metric": "battle_res_charges", "equals": -1
+    },
+    { "action": "despawn", "target": "font_dungeon" },
+    { "action": "teleport", "label": "Back to GM Island", "map": 1, "x": 16222.1, "y": 16252.1, "z": 12.5872 }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "DC custom spell: the prestige level 1 aura (800010) raises stats and gives them back on removal",
+  "description": "Spell 800010 is a DC custom aura scripted in DC/Progression/Prestige/dc_prestige_spells.cpp (prestige level x Prestige.StatBonusPercent percent of every stat). Needs Prestige.StatBonusPercent >= 1 and an actor without prestige auras.",
+  "timeout_ms": 30000,
+  "actors": [
+    { "id": "hero", "name": "Gtwarrior", "create": { "race": 1, "class": 1 }, "level": 80 }
+  ],
+  "steps": [
+    { "action": "assert", "label": "No prestige aura before the test", "metric": "aura", "spell": 800010, "equals": 0 },
+    { "action": "snapshot", "metric": "stat", "stat": "stamina", "save_as": "stamina_before" },
+    { "action": "add_aura", "target": "hero", "spell": 800010 },
+    { "action": "assert", "metric": "aura", "spell": 800010, "equals": 1 },
+    {
+      "action": "assert", "label": "Stamina rises by the configured percent", "metric": "stat", "stat": "stamina",
+      "relative_to": "stamina_before", "min": 1, "within_ms": 2000
+    },
+    { "action": "remove_aura", "target": "hero", "spell": 800010 },
+    {
+      "action": "assert", "label": "Removal gives back exactly what was added", "metric": "stat", "stat": "stamina",
+      "relative_to": "stamina_before", "equals": 0, "within_ms": 2000
+    }
+  ]
+}
