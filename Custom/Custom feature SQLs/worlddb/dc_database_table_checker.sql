@@ -5,8 +5,8 @@
  * and reports which ones are missing. Run this before starting the server
  * to identify database schema issues.
  * 
- * Updated: 2025-11-29 (synced with C++ code and schema files)
- * Tables: ~95 in acore_chars, ~60 in acore_world = ~155 total
+ * Updated: 2026-08-09 (hotspot runtime tables moved acore_world -> acore_chars)
+ * Tables: ~97 in acore_chars, ~59 in acore_world = ~156 total
  */
 
 -- Create a temporary table to store check results
@@ -75,10 +75,15 @@ INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_heirloom_upgrade_l
 INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_heirloom_upgrades', 0, 'Heirloom');
 
 -- HLBG (Hinterlands BG) System
-INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_player_history', 0, 'HLBG System');
-INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_player_season_data', 0, 'HLBG System');
-INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_season_config', 0, 'HLBG System');
-INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_match_history', 0, 'HLBG System');
+INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_match_participants', 0, 'HLBG System');
+INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_player_stats', 0, 'HLBG System');
+INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hlbg_winner_history', 0, 'HLBG System');
+
+-- Hotspot System
+-- Moved from acore_world: both are per-realm runtime state written by the
+-- worldserver, and the world DB gets rebuilt from its SQL (which wiped them).
+INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hotspots_active', 0, 'Hotspot System');
+INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_hotspot_spawn_points', 0, 'Hotspot System');
 
 -- Item Upgrade System
 INSERT INTO dc_table_check_results VALUES ('acore_chars', 'dc_item_upgrade_costs', 0, 'Item Upgrade');
@@ -188,13 +193,14 @@ INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_heirloom_package_l
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_heirloom_stat_packages', 0, 'Heirloom');
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_heirloom_upgrade_costs', 0, 'Heirloom');
 
--- Hotspots
-INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_hotspots_active', 0, 'Hotspot System');
+-- Hotspots: dc_hotspots_active / dc_hotspot_spawn_points moved to acore_chars
+-- (see the Hotspot System block above). Only the aura spell rows stay in the
+-- world DB, and those live in spell_dbc / spell_script_names, not a dc_ table.
 
 -- Item Upgrade Config
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_proc_spells', 0, 'Item Procs');
-INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_templates_upgrade', 0, 'Item Upgrade');
-INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_upgrade_clones', 0, 'Item Upgrade');
+-- dc_item_templates_upgrade: legacy compat stub, no longer queried by current binary. Omitted.
+INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_upgrade_item_overrides', 0, 'Item Upgrade');
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_upgrade_costs', 0, 'Item Upgrade');
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_upgrade_stage', 0, 'Item Upgrade');
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_item_upgrade_state', 0, 'Item Upgrade');

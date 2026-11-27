@@ -1,5 +1,9 @@
 # Season System Evaluation - Work Completed
 
+> Historical note: this archived work log predates the 2026-05-23 HLBG cleanup.
+> `HLBGSeasonalParticipant.cpp` was later retired in favor of unified HLBG
+> seasonal views and match-history tables.
+
 **Date:** November 15, 2025  
 **Status:** ✅ ARCHITECTURE & DATABASE DESIGN COMPLETE  
 **Next Phase:** Code Implementation (Phase 1)
@@ -13,7 +17,7 @@ You asked to work on the season system evaluation to create an integrated, easy-
 ### 1. ✅ System Analysis (COMPLETED)
 - Reviewed existing `SeasonalSystem.h/cpp` - core framework is solid
 - Analyzed `ItemUpgradeTokenHooks.cpp` - token system already in place
-- Examined `HLBGSeasonalParticipant.cpp` - integration pattern established
+- Examined `HLBGSeasonalParticipant.cpp` - historical integration pattern established at the time
 - Identified reusable functions and consolidation opportunities
 
 ### 2. ✅ Architecture Design (COMPLETED)

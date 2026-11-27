@@ -19,7 +19,7 @@
     - Leaderboard data scattered across multiple systems:
       • Seasonal: dc_addon_seasons.cpp (HandleGetLeaderboard - TODO placeholder)
       • M+: npc_mythic_plus_statistics.cpp (NPC-based gossip menu)
-      • HLBG: HLBGSeasonalParticipant.cpp (GetSeasonLeaderboard function)
+    • HLBG: v_hlbg_player_seasonal_stats plus unified HLBG participant/history tables
       • AoE Loot: ac_aoeloot.cpp (chat command based)
       • Item Upgrades: dc_top_upgraders table (no UI)
       • Duels: dc_duel_statistics table (no UI)
@@ -84,10 +84,10 @@ local LEADERBOARD_SYSTEMS = {
         id = 4,
         name = "Hinterland BG",
         subcategories = {
-            {id = 1, name = "Rating", table = "dc_hlbg_player_season_data", orderBy = "rating DESC"},
-            {id = 2, name = "Wins", table = "dc_hlbg_player_season_data", orderBy = "wins DESC"},
-            {id = 3, name = "Win Rate", table = "dc_hlbg_player_season_data", computed = "wins/(wins+losses)*100"},
-            {id = 4, name = "Games Played", table = "dc_hlbg_player_season_data", orderBy = "completed_games DESC"},
+            {id = 1, name = "Rating", table = "v_hlbg_player_seasonal_stats", orderBy = "current_rating DESC"},
+            {id = 2, name = "Wins", table = "v_hlbg_player_seasonal_stats", orderBy = "wins DESC"},
+            {id = 3, name = "Win Rate", table = "v_hlbg_player_seasonal_stats", computed = "win_rate"},
+            {id = 4, name = "Games Played", table = "v_hlbg_player_seasonal_stats", orderBy = "games_played DESC"},
         },
         refresh_interval = 120,
         max_entries = 100,

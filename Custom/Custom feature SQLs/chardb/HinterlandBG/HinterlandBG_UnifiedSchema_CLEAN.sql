@@ -35,7 +35,7 @@ CREATE TABLE `dc_hlbg_match_participants` (
   `player_name` VARCHAR(50) NOT NULL COMMENT 'Player name (denormalized for convenience)',
   `account_id` INT UNSIGNED NOT NULL COMMENT 'Account ID (denormalized)',
   `account_name` VARCHAR(32) NOT NULL COMMENT 'Account name (denormalized)',
-  `team` TINYINT NOT NULL COMMENT 'Team number (1=Horde, 2=Alliance)',
+  `team` TINYINT NOT NULL COMMENT 'TeamId: 0=Alliance, 1=Horde',
   `season_id` INT UNSIGNED NOT NULL DEFAULT '1' COMMENT 'Season when match occurred',
   `match_date` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When match was played',
   
@@ -60,110 +60,80 @@ CREATE TABLE `dc_hlbg_match_participants` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
 
 -- ==============================================================================
--- STEP 3: CREATE MATERIALIZED VIEW: Seasonal Statistics
+-- STEP 3-4: CREATE THE STATISTICS VIEWS
 -- ==============================================================================
--- Groups participant data by player and season
--- Used for: rating, wins, winrate, games, kills, resources leaderboards
+-- These are the live definitions (characters rev_1793962095460547800.sql, 2026-11-06).
+-- winner_tid and team both hold a TeamId: 0 = Alliance, 1 = Horde. winner_tid 2 is a draw
+-- or a manual reset, which is neither a win nor a loss. The views this file used to create
+-- read winner_tid 0 as a draw, so every Alliance win went uncounted as a Horde loss, and
+-- the all-time view used other column names (lifetime_wins, total_matches, ...).
+-- Keep these in step with the live views: the server reads both, but leaderboards and
+-- .hlbg read the live names first.
 
-CREATE VIEW `v_hlbg_player_seasonal_stats` AS
-SELECT 
-  p.guid,
-  p.account_id,
-  p.player_name,
-  p.account_name,
-  p.season_id,
-  
-  -- Win Count (winner_tid: 1=Alliance, 2=Horde, 0=Draw)
-  COUNT(CASE WHEN wh.winner_tid = p.team THEN 1 END) as `wins`,
-  
-  -- Loss Count
-  COUNT(CASE WHEN wh.winner_tid != p.team AND wh.winner_tid != 0 THEN 1 END) as `losses`,
-  
-  -- Total Games Played
-  COUNT(*) as `games_played`,
-  
-  -- Win Rate (as percentage, 0-100)
-  ROUND(
-    (COUNT(CASE WHEN wh.winner_tid = p.team THEN 1 END) * 100.0) / COUNT(*),
-    2
-  ) as `win_rate`,
-  
-  -- Aggregated Performance Stats
-  SUM(p.kills) as `total_kills`,
-  SUM(p.deaths) as `total_deaths`,
-  ROUND(
-    SUM(p.kills) / NULLIF(SUM(p.deaths), 0),
-    2
-  ) as `kd_ratio`,
-  
-  ROUND(SUM(p.kills) / NULLIF(COUNT(*), 0), 2) as `avg_kills_per_game`,
-  ROUND(SUM(p.damage_done) / NULLIF(COUNT(*), 0), 0) as `avg_damage_per_game`,
-  
-  SUM(p.healing_done) as `total_healing`,
-  SUM(p.resources_captured) as `total_resources_captured`,
-  SUM(p.flags_returned) as `total_flags_returned`,
-  
-  -- Rating (sum of rating changes, or default 1200 if new)
-  COALESCE(
-    (SELECT SUM(rating_change) FROM dc_hlbg_match_participants p2 
-     WHERE p2.guid = p.guid AND p2.season_id = p.season_id) + 1200,
-    1200
-  ) as `current_rating`,
-  
-  -- Last Match Time
-  MAX(p.match_date) as `last_match_date`
-  
-FROM `dc_hlbg_match_participants` p
-LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id
-GROUP BY p.guid, p.account_id, p.player_name, p.account_name, p.season_id;
+DROP VIEW IF EXISTS `v_hlbg_player_seasonal_stats`;
+CREATE SQL SECURITY INVOKER VIEW `v_hlbg_player_seasonal_stats` AS
+SELECT
+    `p`.`guid` AS `guid`,
+    `p`.`account_id` AS `account_id`,
+    `p`.`player_name` AS `player_name`,
+    `p`.`account_name` AS `account_name`,
+    `p`.`season_id` AS `season_id`,
+    COUNT(CASE WHEN `wh`.`winner_tid` = `p`.`team` THEN 1 END) AS `wins`,
+    COUNT(CASE WHEN `wh`.`winner_tid` IN (0, 1) AND `wh`.`winner_tid` <> `p`.`team` THEN 1 END) AS `losses`,
+    COUNT(*) AS `games_played`,
+    ROUND((COUNT(CASE WHEN `wh`.`winner_tid` = `p`.`team` THEN 1 END) * 100.0) / COUNT(*), 2) AS `win_rate`,
+    SUM(`p`.`kills`) AS `total_kills`,
+    SUM(`p`.`deaths`) AS `total_deaths`,
+    ROUND(SUM(`p`.`kills`) / NULLIF(SUM(`p`.`deaths`), 0), 2) AS `kd_ratio`,
+    ROUND(SUM(`p`.`kills`) / NULLIF(COUNT(*), 0), 2) AS `avg_kills_per_game`,
+    ROUND(SUM(`p`.`damage_done`) / NULLIF(COUNT(*), 0), 0) AS `avg_damage_per_game`,
+    SUM(`p`.`healing_done`) AS `total_healing`,
+    SUM(`p`.`resources_captured`) AS `total_resources_captured`,
+    SUM(`p`.`flags_returned`) AS `total_flags_returned`,
+    COALESCE((
+        SELECT
+            SUM(`p2`.`rating_change`)
+        FROM `dc_hlbg_match_participants` `p2`
+        WHERE `p2`.`guid` = `p`.`guid` AND `p2`.`season_id` = `p`.`season_id`) + 1200, 1200) AS `current_rating`,
+    MAX(`p`.`match_date`) AS `last_match_date`
+FROM `dc_hlbg_match_participants` `p`
+LEFT JOIN `dc_hlbg_winner_history` `wh` ON `p`.`match_id` = `wh`.`id`
+GROUP BY `p`.`guid`, `p`.`account_id`, `p`.`player_name`, `p`.`account_name`, `p`.`season_id`;
 
--- ==============================================================================
--- STEP 4: CREATE MATERIALIZED VIEW: All-Time Statistics
--- ==============================================================================
--- Aggregates across all seasons for career statistics
-
-CREATE VIEW `v_hlbg_player_alltime_stats` AS
-SELECT 
-  p.guid,
-  p.account_id,
-  p.player_name,
-  p.account_name,
-  
-  -- Career Wins/Losses (winner_tid: 1=Alliance, 2=Horde, 0=Draw)
-  COUNT(CASE WHEN wh.winner_tid = p.team THEN 1 END) as `lifetime_wins`,
-  COUNT(CASE WHEN wh.winner_tid != p.team AND wh.winner_tid != 0 THEN 1 END) as `lifetime_losses`,
-  COUNT(*) as `total_matches`,
-  
-  -- Career Win Rate
-  ROUND(
-    (COUNT(CASE WHEN wh.winner_tid = p.team THEN 1 END) * 100.0) / COUNT(*),
-    2
-  ) as `lifetime_win_rate`,
-  
-  -- Career Stats
-  SUM(p.kills) as `lifetime_kills`,
-  SUM(p.deaths) as `lifetime_deaths`,
-  ROUND(
-    SUM(p.kills) / NULLIF(SUM(p.deaths), 0),
-    2
-  ) as `lifetime_kd_ratio`,
-  
-  ROUND(SUM(p.kills) / NULLIF(COUNT(*), 0), 2) as `avg_kills_career`,
-  ROUND(SUM(p.damage_done) / NULLIF(COUNT(*), 0), 0) as `avg_damage_career`,
-  
-  SUM(p.healing_done) as `lifetime_healing`,
-  SUM(p.resources_captured) as `lifetime_resources`,
-  SUM(p.flags_returned) as `lifetime_flags`,
-  
-  -- Career Stats By Season Count
-  COUNT(DISTINCT p.season_id) as `seasons_played`,
-  
-  -- Most Recent Activity
-  MAX(p.match_date) as `last_played`
-  
-FROM `dc_hlbg_match_participants` p
-LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id
-GROUP BY p.guid, p.account_id, p.player_name, p.account_name;
+DROP VIEW IF EXISTS `v_hlbg_player_alltime_stats`;
+CREATE SQL SECURITY INVOKER VIEW `v_hlbg_player_alltime_stats` AS
+SELECT
+    `p`.`guid` AS `guid`,
+    `p`.`account_id` AS `account_id`,
+    `p`.`player_name` AS `player_name`,
+    `p`.`account_name` AS `account_name`,
+    COUNT(CASE WHEN `wh`.`winner_tid` = `p`.`team` THEN 1 END) AS `total_wins`,
+    COUNT(CASE WHEN `wh`.`winner_tid` IN (0, 1) AND `wh`.`winner_tid` <> `p`.`team` THEN 1 END) AS `total_losses`,
+    COUNT(*) AS `total_games_played`,
+    ROUND((COUNT(CASE WHEN `wh`.`winner_tid` = `p`.`team` THEN 1 END) * 100.0) / COUNT(*), 2) AS `overall_win_rate`,
+    SUM(`p`.`kills`) AS `total_kills`,
+    SUM(`p`.`deaths`) AS `total_deaths`,
+    ROUND(SUM(`p`.`kills`) / NULLIF(SUM(`p`.`deaths`), 0), 2) AS `overall_kd_ratio`,
+    ROUND(SUM(`p`.`kills`) / NULLIF(COUNT(*), 0), 2) AS `avg_kills_per_game`,
+    ROUND(SUM(`p`.`damage_done`) / NULLIF(COUNT(*), 0), 0) AS `avg_damage_per_game`,
+    SUM(`p`.`healing_done`) AS `total_healing`,
+    SUM(`p`.`resources_captured`) AS `total_resources_captured`,
+    SUM(`p`.`flags_returned`) AS `total_flags_returned`,
+    (
+        SELECT
+            COALESCE(SUM(`p2`.`rating_change`), 0) + 1200
+        FROM `dc_hlbg_match_participants` `p2`
+        WHERE `p2`.`guid` = `p`.`guid` AND `p2`.`season_id` = (
+            SELECT
+                MAX(`p3`.`season_id`)
+            FROM `dc_hlbg_match_participants` `p3`
+            WHERE `p3`.`guid` = `p`.`guid`)) AS `current_rating`,
+    COUNT(DISTINCT `p`.`season_id`) AS `seasons_participated`,
+    MIN(`p`.`match_date`) AS `first_match_date`,
+    MAX(`p`.`match_date`) AS `last_match_date`
+FROM `dc_hlbg_match_participants` `p`
+LEFT JOIN `dc_hlbg_winner_history` `wh` ON `p`.`match_id` = `wh`.`id`
+GROUP BY `p`.`guid`, `p`.`account_id`, `p`.`player_name`, `p`.`account_name`;
 
 -- ==============================================================================
 -- STEP 5: CREATE INDEXES FOR PERFORMANCE
@@ -199,7 +169,7 @@ REFERENCES `dc_hlbg_winner_history` (`id`) ON DELETE CASCADE;
 
 -- 3. Check all-time stats view:
 --    SELECT * FROM `v_hlbg_player_alltime_stats` 
---    ORDER BY lifetime_wins DESC 
+--    ORDER BY total_wins DESC 
 --    LIMIT 10;
 
 -- 4. Verify winner_history table exists:

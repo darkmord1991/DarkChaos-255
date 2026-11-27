@@ -21,6 +21,11 @@ VALUES
 (920102, 'HLBG Daily Win Credit', 'Hidden Quest Credit', 1, 1, 2, 35, 0, 1, 1.14286, 1, 7, 1, 1, 1, 1, 1, 12340),
 (920103, 'HLBG Weekly Participation Credit', 'Hidden Quest Credit', 1, 1, 2, 35, 0, 1, 1.14286, 1, 7, 1, 1, 1, 1, 1, 12340);
 
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (920102, 920103);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(920102, 0, 11686, 1, 1, 12340),
+(920103, 0, 11686, 1, 1, 12340);
+
 -- Daily + weekly HLBG quests.
 DELETE FROM `quest_template` WHERE `ID` IN (920100, 920101);
 INSERT INTO `quest_template`

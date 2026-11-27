@@ -225,18 +225,21 @@ Check `src/server/scripts/DC/dc_script_loader.cpp` contains:
 
 ```cpp
 void AddSC_SeasonalRewardScripts(); // location: scripts\DC\Seasons\SeasonalRewardScripts.cpp
-void AddSC_SeasonalRewardCommands(); // location: scripts\DC\Seasons\SeasonalRewardCommands.cpp
+void AddSC_DCWeeklyResetHub();      // location: scripts\DC\Seasons\DCWeeklyResetHub.cpp
+void AddSC_dc_seasonal_rewards_commandscript(); // location: scripts\DC\Commands\cs_dc_seasonal_rewards.cpp
 ```
 
 And in `AddDCScripts()`:
 ```cpp
 // Seasonal Reward System
-LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-LOG_INFO("scripts", ">> DC Seasonal Reward System (C++ Core)");
-// ... (see full log output in file)
-AddSC_SeasonalRewardScripts();
-AddSC_SeasonalRewardCommands();
+DC_LOAD(AddSC_SeasonalRewardScripts);
+DC_LOAD(AddSC_DCWeeklyResetHub);
+
+// DC Commands (unified .dc command hub)
+DC_LOAD(AddSC_dc_seasonal_rewards_commandscript);
 ```
+
+Note: seasonal admin commands no longer register in the seasonal section directly. They are part of the unified DC command hub.
 
 ### 3.4 Compile
 

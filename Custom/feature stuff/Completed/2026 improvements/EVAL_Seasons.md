@@ -1,6 +1,10 @@
 # DC Seasons System Evaluation
 ## 2026 Improvements Analysis
 
+> Historical note: this evaluation predates the 2026-05-23 HLBG seasonal cleanup.
+> `HLBGSeasonalParticipant.cpp` has been retired and should be read here as
+> archive context, not active implementation guidance.
+
 **Files Analyzed:** 8 files (140KB+ total)
 **Last Analyzed:** January 1, 2026
 
@@ -17,7 +21,7 @@ The Seasons system provides a framework for time-limited competitive periods wit
 | `SeasonalRewardSystem.cpp` | 44KB | Reward distribution |
 | `SeasonalSystem.h` | 11KB | Core definitions |
 | `SeasonalRewardSystem.h` | 9KB | Reward interfaces |
-| `HLBGSeasonalParticipant.cpp` | 21KB | HLBG season integration |
+| `HLBGSeasonalParticipant.cpp` | 21KB | Historical HLBG season integration |
 
 ---
 
@@ -29,7 +33,7 @@ Different subsystems register differently:
 // SeasonalSystem.cpp - manual registration
 bool RegisterSystem(const SystemRegistration& system)
 
-// HLBGSeasonalParticipant.cpp - implicit registration
+// HLBGSeasonalParticipant.cpp - historical implicit registration
 // No explicit registration call
 ```
 **Recommendation:** Standardize registration with auto-discovery.

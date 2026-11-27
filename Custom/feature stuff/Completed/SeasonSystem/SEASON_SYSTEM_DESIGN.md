@@ -1,8 +1,13 @@
 # Season System - Comprehensive Design Document
 
+> Historical note: this document is a pre-2026-05-23 design snapshot.
+> `HLBGSeasonalParticipant.cpp` and its legacy HLBG season/archive tables were retired,
+> and HLBG seasonal reads now flow through `v_hlbg_player_seasonal_stats`
+> plus unified match tables.
+
 **Project:** DarkChaos-255 WoW 3.3.5a Private Server  
 **Date:** November 22, 2025  
-**Status:** Research & Design Complete  
+**Status:** Archived Design Snapshot  
 **Version:** 2.0
 
 ---
@@ -15,7 +20,7 @@
 - ✅ **Core Seasonal Framework** (`SeasonalSystem.h/.cpp`) - Independent, generic seasonal system
 - ✅ **Database Foundation** - `dc_seasons` table and player season tracking
 - ✅ **System Registration Pattern** - Event-driven callbacks for season transitions
-- ✅ **HLBG Integration** - Full seasonal participant implementation with rating resets
+- ✅ **HLBG Integration (historical)** - Former seasonal participant implementation before unified HLBG views
 - ✅ **Item Upgrade Seasonal** - Season-based progression tracking and leaderboards
 - ✅ **Mythic+ Season Infrastructure** - `dc_mplus_seasons` table with affix rotation and rewards
 - ✅ **Quest/Creature Reward Tables** - `dc_seasonal_quest_rewards`, `dc_seasonal_creature_rewards` (designed, not implemented)
@@ -84,7 +89,7 @@ struct SystemRegistration {
 
 ### 2. Database Schema
 
-**Character Database:**
+**Character Database (historical snapshot):**
 ```sql
 -- Core season tracking
 dc_seasons (season_id, season_name, start/end timestamps, carryover config)
@@ -95,7 +100,7 @@ dc_player_upgrade_tokens (essence, tokens per player)
 dc_season_history (archived season data)
 dc_upgrade_history (per-upgrade tracking)
 
--- HLBG specific
+-- HLBG specific (retired on 2026-05-23)
 dc_hlbg_player_season_data (rating, wins, losses, scores)
 dc_hlbg_match_history (archived matches)
 ```
@@ -127,9 +132,12 @@ dc_seasonal_reward_config (NEW - global settings)
 
 ### 3. System-Specific Implementations
 
-#### A. HLBG Seasonal Participant
+#### A. HLBG Seasonal Participant (Historical / Retired)
 
 **File:** `src/server/scripts/DC/Seasons/HLBGSeasonalParticipant.cpp`
+
+Retired on 2026-05-23. The current HLBG seasonal surface is the
+`v_hlbg_player_seasonal_stats` view backed by unified match history tables.
 
 **Implementation:**
 ```cpp

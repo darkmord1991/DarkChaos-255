@@ -24,7 +24,7 @@ INSERT INTO `creature_template` (
     900001, 0, 0, 0,                          -- entry, difficulty variants
     0, 0,                                      -- kill credits
     'Hinterlands Battlemaster', 'Battleground Organizer', NULL,  -- name, subname, icon
-    900001, 80, 80, 2, 35, 3,                  -- gossip, levels, exp, faction, npcflag (gossip + questgiver)
+    900001, 80, 80, 2, 1048611, 3,             -- gossip, levels, exp, faction, npcflag (existing flags + battlemaster)
     1, 1.14286, 1, 1, 20,                      -- speeds, detection
     0, 0, 1,                                   -- rank, dmgschool, damage modifier
     2000, 2000, 1, 1,                          -- attack times, variance

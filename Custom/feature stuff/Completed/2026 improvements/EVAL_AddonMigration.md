@@ -7,6 +7,10 @@ This document outlines the systems currently using legacy communication methods 
 
 ## 1. Hinterland BG (HLBG)
 
+> Historical note: the HLBG migration described in this section has been completed.
+> `dc_addon_hlbg.cpp` is the live addon bridge, and references to `hlbg_addon.cpp`
+> or `OutdoorPvPHL` below are archived migration context rather than active work.
+
 ### Current State
 - **Legacy Handler:** `src/server/scripts/DC/HinterlandBG/hlbg_addon.cpp`
   - Uses chat prefixes (e.g., `[HLBG_LIVE_JSON]`, `[HLBG_QUEUE]`) to communicate with the client.

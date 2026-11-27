@@ -537,10 +537,13 @@ VALUES
 
 ## 📚 Related Documentation
 
+> Historical note: the HLBG integration example below was later retired on
+> 2026-05-23 when HLBG seasonal reads moved to unified match tables/views.
+
 - `Custom/feature stuff/SeasonSystem/seasonsystem evaluation.txt` - Original evaluation
 - `src/server/scripts/DC/Seasons/SeasonalSystem.h` - Core seasonal API
 - `src/server/scripts/DC/ItemUpgrades/ItemUpgradeTokenHooks.cpp` - Token system
-- `src/server/scripts/DC/Seasons/HLBGSeasonalParticipant.cpp` - Integration example
+- `src/server/scripts/DC/Seasons/HLBGSeasonalParticipant.cpp` - Historical integration example
 
 ---
 

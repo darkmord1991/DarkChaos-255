@@ -1,7 +1,11 @@
 # Seasonal System Integration - Implementation Complete
 
+> Historical note: this document describes the 2025 consolidation plan before the
+> 2026-05-23 HLBG cleanup. `HLBGSeasonalParticipant.cpp` has been retired and HLBG
+> seasonal reads now use unified views/tables instead of a registered participant.
+
 **Date:** November 22, 2025  
-**Status:** ✅ COMPLETE
+**Status:** Archived Integration Snapshot
 
 ## Overview
 
@@ -33,10 +37,10 @@ Successfully integrated all DarkChaos seasonal systems under a unified framework
 - **Fallback:** Uses config `DarkChaos.ActiveSeasonID` if manager unavailable
 - **Remove Hardcode:** Eliminated hardcoded `return 1;` - now dynamic
 
-### 4. HLBG System ✅ (Already Integrated)
-- **Status:** Was already using generic framework correctly
-- **Implementation:** `HLBGSeasonalParticipant.cpp` serves as gold standard
-- **No Changes:** System working as designed
+### 4. HLBG System (Historical Snapshot)
+- **Status:** This section is obsolete after the 2026-05-23 HLBG consolidation
+- **Former Implementation:** `HLBGSeasonalParticipant.cpp` served as the original integration example
+- **Current State:** HLBG no longer registers a seasonal participant; seasonal leaderboard data comes from unified HLBG views and tables
 
 ## Configuration Updates
 

@@ -328,7 +328,7 @@ WHERE season_id = 1 AND multiplier_type = 'creature';
 - **Architecture Document:** `SEASONAL_QUEST_CHEST_ARCHITECTURE.md`
 - **SeasonalSystem API:** `src/server/scripts/DC/Seasons/SeasonalSystem.h`
 - **ItemUpgrade System:** `src/server/scripts/DC/ItemUpgrades/ItemUpgradeTokenHooks.cpp`
-- **HLBG Integration Example:** `src/server/scripts/DC/Seasons/HLBGSeasonalParticipant.cpp`
+- **HLBG Integration Example (historical):** `src/server/scripts/DC/Seasons/HLBGSeasonalParticipant.cpp`
 - **Database Schema:** `Custom/Custom feature SQLs/{worlddb,chardb}/`
 
 ---

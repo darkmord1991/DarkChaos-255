@@ -7,7 +7,7 @@
 -- ========================================================================
 -- 
 -- This script creates tables that are used by C++ code but might not exist:
---   - HLBG seasonal tables (used by HLBGSeasonalParticipant.cpp)
+--   - HLBG unified tables (used by addon stats, scoreboards, and leaderboards)
 --   - Mythic+ player tables (used by MythicPlusRunManager.cpp)
 --   - Spectator settings (used by dc_addon_spectator.cpp)
 --
@@ -19,97 +19,85 @@
 USE acore_chars;
 
 -- ========================================================================
--- HLBG (Hinterlands BG) System Tables
+-- HLBG (Hinterlands BG) Unified Tables
 -- ========================================================================
--- Referenced by: HLBGSeasonalParticipant.cpp
+-- Referenced by: dc_addon_hlbg.cpp, dc_addon_leaderboards.cpp, HLBG runtime history
 
 SELECT '📋 Creating HLBG System Tables...' AS step;
 
--- HLBG Season Config - stores HLBG-specific season settings
--- This is NOT obsolete - it holds HLBG-specific config like base_rating
-CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
-    `season_id` INT UNSIGNED NOT NULL,
-    `base_rating` INT UNSIGNED NOT NULL DEFAULT 1500,
-    `max_rating_change` INT UNSIGNED NOT NULL DEFAULT 50,
-    `min_players_per_team` TINYINT UNSIGNED NOT NULL DEFAULT 5,
-    `max_players_per_team` TINYINT UNSIGNED NOT NULL DEFAULT 10,
-    `match_duration` INT UNSIGNED NOT NULL DEFAULT 1800 COMMENT 'In seconds',
-    `rating_decay_enabled` TINYINT(1) NOT NULL DEFAULT 0,
-    `rating_decay_threshold` INT UNSIGNED DEFAULT 0 COMMENT 'Days inactive before decay',
-    `rating_decay_amount` INT UNSIGNED DEFAULT 0 COMMENT 'Rating lost per decay period',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`season_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='HLBG-specific season configuration (base_rating, match settings, etc.)';
-
--- HLBG Player Season Data - tracks player stats per season
-CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
+-- HLBG Match Participants - unified seasonal and per-match stats source
+CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `player_guid` INT UNSIGNED NOT NULL,
-    `season_id` INT UNSIGNED NOT NULL,
-    `joined_at` BIGINT UNSIGNED NOT NULL,
-    `rating` INT UNSIGNED NOT NULL DEFAULT 1500,
-    `completed_games` INT UNSIGNED NOT NULL DEFAULT 0,
-    `wins` INT UNSIGNED NOT NULL DEFAULT 0,
-    `losses` INT UNSIGNED NOT NULL DEFAULT 0,
-    `highest_rating` INT UNSIGNED NOT NULL DEFAULT 1500,
-    `lowest_rating` INT UNSIGNED NOT NULL DEFAULT 1500,
-    `total_score` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-    `average_score` INT UNSIGNED NOT NULL DEFAULT 0,
-    `win_streak` INT UNSIGNED NOT NULL DEFAULT 0,
-    `best_win_streak` INT UNSIGNED NOT NULL DEFAULT 0,
-    `last_game_at` BIGINT UNSIGNED DEFAULT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `match_id` INT UNSIGNED NOT NULL,
+    `guid` INT UNSIGNED NOT NULL,
+    `player_name` VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+    `account_id` INT UNSIGNED NOT NULL,
+    `account_name` VARCHAR(32) COLLATE utf8mb4_unicode_ci NOT NULL,
+    `team` TINYINT NOT NULL COMMENT '0 = Alliance, 1 = Horde',
+    `season_id` INT UNSIGNED NOT NULL DEFAULT 1,
+    `match_date` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `kills` INT UNSIGNED NOT NULL DEFAULT 0,
+    `deaths` INT UNSIGNED NOT NULL DEFAULT 0,
+    `healing_done` INT UNSIGNED NOT NULL DEFAULT 0,
+    `damage_done` INT UNSIGNED NOT NULL DEFAULT 0,
+    `resources_captured` INT UNSIGNED NOT NULL DEFAULT 0,
+    `flags_returned` INT UNSIGNED NOT NULL DEFAULT 0,
+    `objectives_completed` INT UNSIGNED NOT NULL DEFAULT 0,
+    `rating_change` INT NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_player_season` (`player_guid`, `season_id`),
-    KEY `idx_season_rating` (`season_id`, `rating` DESC),
-    KEY `idx_player_guid` (`player_guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='HLBG player seasonal stats (rating, wins, losses, etc.)';
-
--- HLBG Player History - archived player data from previous seasons
-CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
-    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `player_guid` INT UNSIGNED NOT NULL,
-    `season_id` INT UNSIGNED NOT NULL,
-    `joined_at` BIGINT UNSIGNED NOT NULL,
-    `rating` INT UNSIGNED NOT NULL,
-    `completed_games` INT UNSIGNED NOT NULL,
-    `wins` INT UNSIGNED NOT NULL,
-    `losses` INT UNSIGNED NOT NULL,
-    `highest_rating` INT UNSIGNED NOT NULL,
-    `lowest_rating` INT UNSIGNED NOT NULL,
-    `total_score` BIGINT UNSIGNED NOT NULL,
-    `average_score` INT UNSIGNED NOT NULL,
-    `final_rank` INT UNSIGNED DEFAULT NULL,
-    `archived_at` BIGINT UNSIGNED NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `idx_player_season` (`player_guid`, `season_id`),
-    KEY `idx_season_rank` (`season_id`, `final_rank`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='Archived HLBG player stats from previous seasons';
-
--- HLBG Match History - archived match data
-CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
-    `match_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `season_id` INT UNSIGNED NOT NULL,
-    `start_time` BIGINT UNSIGNED NOT NULL,
-    `end_time` BIGINT UNSIGNED DEFAULT NULL,
-    `winner_team` TINYINT UNSIGNED DEFAULT NULL COMMENT '0 = draw, 1 = team1, 2 = team2',
-    `team1_score` INT UNSIGNED NOT NULL DEFAULT 0,
-    `team2_score` INT UNSIGNED NOT NULL DEFAULT 0,
-    `player_count` TINYINT UNSIGNED NOT NULL DEFAULT 0,
-    `map_id` INT UNSIGNED DEFAULT NULL,
-    `match_duration` INT UNSIGNED DEFAULT NULL COMMENT 'In seconds',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (`match_id`),
+    KEY `idx_guid` (`guid`),
+    KEY `idx_match_id` (`match_id`),
+    KEY `idx_account` (`account_id`),
     KEY `idx_season` (`season_id`),
-    KEY `idx_start_time` (`start_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='HLBG match history and results';
+    KEY `idx_date` (`match_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tracks individual player statistics for each HLBG match';
+
+-- HLBG Player Stats - legacy all-time leaderboard counters still queried directly
+CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
+    `player_guid` INT UNSIGNED NOT NULL,
+    `player_name` VARCHAR(12) NOT NULL,
+    `faction` VARCHAR(16) NOT NULL DEFAULT 'Unknown',
+    `battles_participated` INT UNSIGNED NOT NULL DEFAULT 0,
+    `battles_won` INT UNSIGNED NOT NULL DEFAULT 0,
+    `last_participation` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `total_kills` INT UNSIGNED NOT NULL DEFAULT 0,
+    `total_deaths` INT UNSIGNED NOT NULL DEFAULT 0,
+    `resources_captured` INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (`player_guid`),
+    KEY `idx_player_name` (`player_name`),
+    KEY `idx_faction` (`faction`),
+    KEY `idx_battles_won` (`battles_won`),
+    KEY `idx_total_kills` (`total_kills`),
+    KEY `idx_last_participation` (`last_participation`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+COMMENT='HLBG player all-time statistics';
+
+-- HLBG Winner History - primary HLBG battle result history
+CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `season` SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+    `occurred_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `duration_seconds` INT UNSIGNED NOT NULL DEFAULT 0,
+    `zone_id` SMALLINT UNSIGNED NOT NULL DEFAULT 26,
+    `map_id` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    `winner_tid` TINYINT UNSIGNED NOT NULL DEFAULT 2 COMMENT '0 = Alliance, 1 = Horde, 2 = Draw',
+    `win_reason` VARCHAR(32) NOT NULL DEFAULT 'depletion',
+    `score_alliance` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    `score_horde` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    `affix` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `weather` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `weather_intensity` FLOAT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    KEY `idx_season` (`season`),
+    KEY `idx_occurred_at` (`occurred_at`),
+    KEY `idx_winner_tid` (`winner_tid`),
+    KEY `idx_affix` (`affix`),
+    KEY `idx_weather` (`weather`),
+    KEY `idx_win_reason` (`win_reason`),
+    KEY `idx_season_occurred` (`season`, `occurred_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+COMMENT='HLBG battle history';
 
 SELECT '✅ HLBG Tables Created/Verified' AS status;
 
@@ -267,10 +255,9 @@ SELECT
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_SCHEMA = 'acore_chars'
 AND TABLE_NAME IN (
-    'dc_hlbg_season_config',
-    'dc_hlbg_player_season_data',
-    'dc_hlbg_player_history',
-    'dc_hlbg_match_history',
+    'dc_hlbg_match_participants',
+    'dc_hlbg_player_stats',
+    'dc_hlbg_winner_history',
     'dc_player_keystones',
     'dc_mythic_keystones',
     'dc_spectator_settings',
@@ -280,6 +267,6 @@ AND TABLE_NAME IN (
 ORDER BY TABLE_NAME;
 
 SELECT '========================================' AS divider;
-SELECT 'Tables verified: 9' AS table_count;
+SELECT 'Tables verified: 8' AS table_count;
 SELECT 'Status: Ready for use' AS status;
 SELECT '========================================' AS divider;

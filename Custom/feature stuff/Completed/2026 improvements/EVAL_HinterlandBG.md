@@ -1,5 +1,9 @@
-# DC HinterlandBG System Evaluation
+# DC HinterlandBG System Evaluation (Archived OutdoorPvPHL Snapshot)
 ## 2026 Improvements Analysis
+
+> Historical note: this evaluation analyzed the pre-cutover OutdoorPvPHL-based HLBG layout.
+> The current implementation is battleground-owned in BattlegroundHLBG and HLBGService,
+> so file and architecture references below are retained for archive context only.
 
 **Files Analyzed:** 33 files (300KB+ total)
 **Last Analyzed:** January 1, 2026

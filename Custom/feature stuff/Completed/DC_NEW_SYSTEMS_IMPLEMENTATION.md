@@ -211,13 +211,15 @@ Add to your script loader:
 ```cpp
 void AddSC_dc_phased_duels();
 void AddSC_dc_mythic_spectator();
-void AddSC_dc_aoeloot_extensions();
+void AddSC_dc_aoeloot_unified();
 
 // In AddDCScripts() or equivalent:
 AddSC_dc_phased_duels();
 AddSC_dc_mythic_spectator();
-AddSC_dc_aoeloot_extensions();
+AddSC_dc_aoeloot_unified();
 ```
+
+Current DarkChaos builds use the consolidated AoE loot registration entry point `AddSC_dc_aoeloot_unified()`.
 
 ---
 

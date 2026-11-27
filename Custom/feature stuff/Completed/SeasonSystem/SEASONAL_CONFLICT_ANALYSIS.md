@@ -1,5 +1,9 @@
 # Seasonal System Conflict Analysis & Resolution
 
+> Historical note: this analysis captured the 2025 pre-consolidation state.
+> HLBG no longer registers `HLBGSeasonalParticipant`, and the legacy HLBG
+> season/archive tables referenced below were retired on 2026-05-23.
+
 ## Critical Issues Found
 
 ### 1. **DUPLICATE SEASONAL SYSTEMS** ⚠️
@@ -19,11 +23,11 @@ Two separate seasonal frameworks exist:
 - Comment: `// TODO: wire to seasons DB`
 - Uses `season` field in upgrade states but not connected to seasonal framework
 
-### 4. **HLBG System Has Separate Season Tracking** ⚠️
-- `HLBGSeasonalParticipant.cpp` - Implements `SeasonalParticipant` interface
-- Uses generic `SeasonalSystem` framework
-- **Does NOT integrate with SeasonalRewardSystem**
-- Has own `dc_hlbg_player_season_data` tables
+### 4. **HLBG System Had Separate Season Tracking** ⚠️
+- Historical implementation: `HLBGSeasonalParticipant.cpp` implemented `SeasonalParticipant`
+- Historical implementation used generic `SeasonalSystem`
+- Historical implementation did not integrate with `SeasonalRewardSystem`
+- Legacy tables `dc_hlbg_player_season_data`, `dc_hlbg_player_history`, `dc_hlbg_match_history`, and `dc_hlbg_season_config` were retired on 2026-05-23
 
 ### 5. **Obsolete Eluna Scripts** ⚠️
 Four deprecated scripts still exist:
@@ -51,7 +55,7 @@ DarkChaos::Seasonal (Core Framework)
    ├─ RegisterSystem("rewards") → SeasonalRewardSystem
    ├─ RegisterSystem("mythic_plus") → MythicPlusSeasonalParticipant  
    ├─ RegisterSystem("item_upgrades") → ItemUpgradeSeasonalParticipant
-   └─ RegisterSystem("hlbg") → HLBGSeasonalParticipant (already exists)
+  └─ RegisterSystem("hlbg") → HLBGSeasonalParticipant (historical, now removed)
 ```
 
 ### Implementation Plan
@@ -204,7 +208,8 @@ CREATE TABLE dc_mplus_seasons_backup AS SELECT * FROM dc_mplus_seasons;
 -- Ensure all systems use same season ID
 UPDATE dc_player_seasonal_stats SET season_id = 1;
 UPDATE dc_mplus_runs SET season_id = 1;
-UPDATE dc_hlbg_player_season_data SET season_id = 1;
+-- Historical example before HLBG unified-table migration:
+-- UPDATE dc_hlbg_player_season_data SET season_id = 1;
 ```
 
 ### Step 4: Remove Old Scripts

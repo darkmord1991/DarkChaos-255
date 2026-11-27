@@ -12,7 +12,7 @@ Defined in [src/server/scripts/DC/MythicPlus/dc_mythicplus_affixes.h](src/server
 
 ## Hinterland BG (HLBG) Affix Spells
 
-Defined in [src/server/scripts/DC/HinterlandBG/HinterlandBGConstants.h](src/server/scripts/DC/HinterlandBG/HinterlandBGConstants.h) and mapped in [src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Affixes.cpp](src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Affixes.cpp):
+Default spell IDs are defined in [src/server/scripts/DC/HinterlandBG/hlbg_constants.h](src/server/scripts/DC/HinterlandBG/hlbg_constants.h) and loaded or applied by [src/server/scripts/DC/HinterlandBG/BattlegroundHLBG.cpp](src/server/scripts/DC/HinterlandBG/BattlegroundHLBG.cpp):
 
 - 910010 — HLBG Affix: Sunlight (player haste)
 - 910011 — HLBG Affix: Clear Skies (player damage)

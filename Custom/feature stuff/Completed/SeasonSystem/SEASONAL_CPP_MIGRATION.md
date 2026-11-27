@@ -86,9 +86,9 @@ Client Addon (Custom/Client addons needed/DC-Seasons/)
 
 ✅ src/server/scripts/DC/dc_script_loader.cpp
    - Added AddSC_SeasonalRewardScripts() forward declaration
-   - Added AddSC_SeasonalRewardCommands() forward declaration
-   - Added initialization logging section
-   - Called initialization functions in AddDCScripts()
+  - Added AddSC_DCWeeklyResetHub() forward declaration
+  - Seasonal registration now loads reward hooks and weekly reset integration in the seasonal section
+  - Seasonal commands now live in the unified DC command hub as `AddSC_dc_seasonal_rewards_commandscript()`
 ```
 
 ### Deprecated Files (To Be Deleted)
