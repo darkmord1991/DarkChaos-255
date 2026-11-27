@@ -1,0 +1,133 @@
+-- ====================================================================
+-- review_zone_items.sql  (Mount Hyjal map 750 / Plaguelands map 751)
+-- Missing item_template rows referenced by zone loot + quests.
+-- READ-ONLY review output; APPLY MANUALLY after verifying.
+-- ====================================================================
+
+-- PART A: 7 missing items that DO exist in nelt_world.item_template.
+--         Clone them across (110 common columns; acore NOT-NULL cols all
+--         covered or defaulted). cata_world has NO item_template table,
+--         so cata cannot be a clone source for ANY of these.
+INSERT IGNORE INTO acore_world.item_template (`entry`, `class`, `subclass`, `SoundOverrideSubclass`, `name`, `displayid`, `Quality`, `Flags`, `FlagsExtra`, `BuyCount`, `BuyPrice`, `SellPrice`, `InventoryType`, `AllowableClass`, `AllowableRace`, `ItemLevel`, `RequiredLevel`, `RequiredSkill`, `RequiredSkillRank`, `requiredspell`, `requiredhonorrank`, `RequiredCityRank`, `RequiredReputationFaction`, `RequiredReputationRank`, `maxcount`, `stackable`, `ContainerSlots`, `stat_type1`, `stat_value1`, `stat_type2`, `stat_value2`, `stat_type3`, `stat_value3`, `stat_type4`, `stat_value4`, `stat_type5`, `stat_value5`, `stat_type6`, `stat_value6`, `stat_type7`, `stat_value7`, `stat_type8`, `stat_value8`, `stat_type9`, `stat_value9`, `stat_type10`, `stat_value10`, `ScalingStatDistribution`, `delay`, `RangedModRange`, `spellid_1`, `spelltrigger_1`, `spellcharges_1`, `spellcooldown_1`, `spellcategory_1`, `spellcategorycooldown_1`, `spellid_2`, `spelltrigger_2`, `spellcharges_2`, `spellcooldown_2`, `spellcategory_2`, `spellcategorycooldown_2`, `spellid_3`, `spelltrigger_3`, `spellcharges_3`, `spellcooldown_3`, `spellcategory_3`, `spellcategorycooldown_3`, `spellid_4`, `spelltrigger_4`, `spellcharges_4`, `spellcooldown_4`, `spellcategory_4`, `spellcategorycooldown_4`, `spellid_5`, `spelltrigger_5`, `spellcharges_5`, `spellcooldown_5`, `spellcategory_5`, `spellcategorycooldown_5`, `bonding`, `description`, `PageText`, `LanguageID`, `PageMaterial`, `startquest`, `lockid`, `Material`, `sheath`, `RandomProperty`, `RandomSuffix`, `itemset`, `MaxDurability`, `area`, `Map`, `BagFamily`, `TotemCategory`, `socketColor_1`, `socketContent_1`, `socketColor_2`, `socketContent_2`, `socketColor_3`, `socketContent_3`, `socketBonus`, `GemProperties`, `ArmorDamageModifier`, `duration`, `ItemLimitCategory`, `HolidayId`, `flagsCustom`)
+SELECT `entry`, `class`, `subclass`, `SoundOverrideSubclass`, `name`, `displayid`, `Quality`, `Flags`, `FlagsExtra`, `BuyCount`, `BuyPrice`, `SellPrice`, `InventoryType`, `AllowableClass`, `AllowableRace`, `ItemLevel`, `RequiredLevel`, `RequiredSkill`, `RequiredSkillRank`, `requiredspell`, `requiredhonorrank`, `RequiredCityRank`, `RequiredReputationFaction`, `RequiredReputationRank`, `maxcount`, `stackable`, `ContainerSlots`, `stat_type1`, `stat_value1`, `stat_type2`, `stat_value2`, `stat_type3`, `stat_value3`, `stat_type4`, `stat_value4`, `stat_type5`, `stat_value5`, `stat_type6`, `stat_value6`, `stat_type7`, `stat_value7`, `stat_type8`, `stat_value8`, `stat_type9`, `stat_value9`, `stat_type10`, `stat_value10`, `ScalingStatDistribution`, `delay`, `RangedModRange`, `spellid_1`, `spelltrigger_1`, `spellcharges_1`, `spellcooldown_1`, `spellcategory_1`, `spellcategorycooldown_1`, `spellid_2`, `spelltrigger_2`, `spellcharges_2`, `spellcooldown_2`, `spellcategory_2`, `spellcategorycooldown_2`, `spellid_3`, `spelltrigger_3`, `spellcharges_3`, `spellcooldown_3`, `spellcategory_3`, `spellcategorycooldown_3`, `spellid_4`, `spelltrigger_4`, `spellcharges_4`, `spellcooldown_4`, `spellcategory_4`, `spellcategorycooldown_4`, `spellid_5`, `spelltrigger_5`, `spellcharges_5`, `spellcooldown_5`, `spellcategory_5`, `spellcategorycooldown_5`, `bonding`, `description`, `PageText`, `LanguageID`, `PageMaterial`, `startquest`, `lockid`, `Material`, `sheath`, `RandomProperty`, `RandomSuffix`, `itemset`, `MaxDurability`, `area`, `Map`, `BagFamily`, `TotemCategory`, `socketColor_1`, `socketContent_1`, `socketColor_2`, `socketContent_2`, `socketColor_3`, `socketContent_3`, `socketBonus`, `GemProperties`, `ArmorDamageModifier`, `duration`, `ItemLimitCategory`, `HolidayId`, `flagsCustom` FROM nelt_world.item_template WHERE entry IN (53139,53464,68997,69212,69236,69645,69679);
+
+
+-- ====================================================================
+-- PART B: 140 missing items that exist in NEITHER acore_world, cata_world,
+--         NOR nelt_world as SQL rows. cata_world stores items in client
+--         DBC/db2 only (no item_template table); nelt_world.item_template
+--         is a sparse 884-row custom set. These 140 must be regenerated
+--         from the 4.3.4 client Item DBCs via the downport-item.js pipeline
+--         (CSV->WDBX or x_dbc mirror -> server item_template). They CANNOT
+--         be cloned by SQL from any DB in this review.
+-- 94 of these are QUEST BLOCKERS (StartItem / RequiredItem): the quest
+--    cannot be started or turned in -> the zone questline is broken.
+-- ====================================================================
+-- Quest-blocker items (item -> quest that needs it):
+--   item 52537  Req1      quest 25224 "In Bloom"
+--   item 52568  Req1      quest 25234 "In the Rear With the Gear"
+--   item 52658  Req1      quest 25271 "Goldrinn's Ferocity"
+--   item 52682  StartItem quest 25273 "Lycanthoth the Corruptor"
+--   item 52683  StartItem quest 25274 "Signed in Blood"
+--   item 52685  Req1      quest 25274 "Signed in Blood"
+--   item 52693  StartItem quest 25276 "Your New Identity"
+--   item 52717  StartItem quest 25294 "Walking the Dog"
+--   item 52726  Req1      quest 25297 "From the Mouth of Madness"
+--   item 52727  Req2      quest 25297 "From the Mouth of Madness"
+--   item 52728  Req3      quest 25297 "From the Mouth of Madness"
+--   item 52730  StartItem quest 25298 "Free Your Mind, the Rest Follows"
+--   item 52819  StartItem quest 25330 "Waste of Flesh"
+--   item 52828  StartItem quest 25299 "Mental Training: Speaking the Truth to Power"
+--   item 52834  Req1      quest 25355 "Lightning in a Bottle"
+--   item 52853  StartItem quest 25353 "Lightning in a Bottle"
+--   item 52854  StartItem quest 25355 "Lightning in a Bottle"
+--   item 53060  Req1      quest 25385 "Save the Wee Animals"
+--   item 53102  Req1      quest 25408 "Seeds of Their Demise"
+--   item 53107  StartItem quest 25323 "Flamebreaker"
+--   item 53120  StartItem quest 25411 "A New Master"
+--   item 53139  Req1      quest 25321 "Twilight Captivity" [in nelt - see Part A]
+--   item 53454  Req1      quest 25428 "Black Heart of Flame"
+--   item 53464  StartItem quest 25428 "Black Heart of Flame" [in nelt - see Part A]
+--   item 54461  Req1      quest 25472 "The Flameseer's Staff"
+--   item 54463  StartItem quest 25464 "The Return of Baron Geddon"
+--   item 54574  Req1      quest 25491 "Durable Seeds"
+--   item 54609  Req1      quest 25493 "Fresh Bait"
+--   item 54610  Req1      quest 25494 "A Champion's Collar"
+--   item 54744  StartItem quest 25507 "Hell's Shells"
+--   item 54745  Req1      quest 25507 "Hell's Shells"
+--   item 54788  StartItem quest 25509 "Physical Training: Forced Labor"
+--   item 54814  StartItem quest 25310 "The Greater of Two Evils"
+--   item 54905  Req3      quest 25554 "Secrets of the Flame"
+--   item 54906  Req2      quest 25554 "Secrets of the Flame"
+--   item 54907  Req1      quest 25554 "Secrets of the Flame"
+--   item 54973  Req1      quest 25552 "Brood of Evil"
+--   item 55122  StartItem quest 25574 "Flames from Above"
+--   item 55136  Req2      quest 25599 "Cindermaul, the Portal Master"
+--   item 55153  StartItem quest 25555 "The Gatekeeper"
+--   item 55173  StartItem quest 25553 "Death to the Broodmother"
+--   item 55178  StartItem quest 25644 "The Twilight Egg"
+--   item 55179  StartItem quest 25550 "Magma Monarch"
+--   item 55189  Req1      quest 25656 "Scrambling for Eggs"
+--   item 55208  StartItem quest 25663 "An Offering for Aviana"
+--   item 55210  Req1      quest 25664 "A Prayer and a Wing"
+--   item 55211  StartItem quest 25664 "A Prayer and a Wing"
+--   item 55809  Req1      quest 25758 "A Gap in Their Armor"
+--   item 55883  StartItem quest 25761 "Disassembly"
+--   item 56003  StartItem quest 25776 "Sethria's Demise"
+--   item 56016  StartItem quest 25807 "An Ancient Reborn"
+--   item 56057  StartItem quest 25372 "Aessina's Miracle"
+--   item 56176  Req1      quest 25901 "Hyjal Recycling Program"
+--   item 56177  Req1      quest 25904 "The Hammer and the Key"
+--   item 56207  StartItem quest 25923 "Finish Nemesis"
+--   item 60678  StartItem quest 26925 "Araj the Summoner"
+--   item 60747  Req2      quest 27012 "A Gnoll's Resolve"
+--   item 60748  Req1      quest 27012 "A Gnoll's Resolve"
+--   item 60750  Req1      quest 27011 "Redpine Thievery"
+--   item 60760  Req1      quest 26999 "A New Era for the Plaguelands"
+--   item 60761  Req2      quest 26999 "A New Era for the Plaguelands"
+--   item 60762  Req3      quest 26999 "A New Era for the Plaguelands"
+--   item 60763  Req4      quest 26999 "A New Era for the Plaguelands"
+--   item 60772  StartItem quest 27055 "Students of Krastinov"
+--   item 60815  StartItem quest 27084 "The Farmers' Militia"
+--   item 60849  StartItem quest 27164 "Araj the Summoner"
+--   item 60851  Req1      quest 27167 "A Mighty Hunger"
+--   item 60866  StartItem quest 27172 "The Writhing Haunt"
+--   item 60983  Req1      quest 27368 "Just Encased"
+--   item 60984  Req1      quest 27369 "Greasing the Wheel"
+--   item 60986  Req1      quest 27372 "A Gift For Fiona"
+--   item 61292  Req1      quest 27450 "Frederick's Fish Fancy"
+--   item 61293  Req2      quest 27450 "Frederick's Fish Fancy"
+--   item 61294  Req3      quest 27450 "Frederick's Fish Fancy"
+--   item 61313  Req1      quest 27479 "Righteous Indignation"
+--   item 61334  StartItem quest 27523 "Duskwing, Oh How I Hate Thee..."
+--   item 61362  StartItem quest 27532 "The Plaguewood Tower"
+--   item 61364  Req1      quest 27531 "Counter-Plague Research"
+--   item 61365  Req2      quest 27531 "Counter-Plague Research"
+--   item 61366  Req3      quest 27531 "Counter-Plague Research"
+--   item 61369  StartItem quest 27528 "Scourged Mass"
+--   item 61372  Req1      quest 27539 "Add 'em to the Pile"
+--   item 61375  StartItem quest 27530 "The Corpsebeasts"
+--   item 61379  StartItem quest 27527 "Journey's End"
+--   item 65615  Req1      quest 28755 "Annals of the Silver Hand"
+--   item 68997  StartItem quest 29126 "The Power of Malorne" [in nelt - see Part A]
+--   item 69212  StartItem quest 29148 "Wings Aflame" [in nelt - see Part A]
+--   item 69225  StartItem quest 29165 "The Call of the Pack"
+--   item 69232  StartItem quest 29162 "Nature's Blessing"
+--   item 69234  StartItem quest 29147 "Call the Flock"
+--   item 69235  StartItem quest 29164 "Perfecting Your Howl"
+--   item 69236  Req1      quest 29166 "Supplies for the Other Side" [in nelt - see Part A]
+--   item 69645  StartItem quest 29125 "Between the Trees" [in nelt - see Part A]
+--   item 69649  StartItem quest 29161 "Those Bears Up There"
+
+-- Full list of the 140 items absent from every SQL source:
+--   52537, 52568, 52658, 52682, 52683, 52685, 52693, 52708, 52717, 52726, 52727, 52728, 52730, 52819, 52828, 52834, 52853, 52854, 53009, 53060
+--   53102, 53107, 53120, 53454, 54461, 54463, 54574, 54609, 54610, 54744, 54745, 54788, 54814, 54905, 54906, 54907, 54973, 55049, 55050, 55122
+--   55123, 55136, 55153, 55173, 55178, 55179, 55189, 55208, 55210, 55211, 55809, 55883, 56003, 56016, 56051, 56053, 56057, 56176, 56177, 56207
+--   57297, 58266, 59230, 60396, 60397, 60485, 60488, 60489, 60491, 60493, 60576, 60577, 60578, 60579, 60678, 60747, 60748, 60750, 60760, 60761
+--   60762, 60763, 60772, 60815, 60849, 60851, 60866, 60983, 60984, 60986, 60987, 61292, 61293, 61294, 61313, 61334, 61362, 61364, 61365, 61366
+--   61369, 61372, 61375, 61378, 61379, 61387, 62028, 62156, 62172, 62176, 62192, 62205, 62209, 62210, 62214, 62781, 62785, 62992, 62995, 63014
+--   63018, 63022, 63024, 63025, 64640, 65615, 65661, 65662, 67391, 67406, 67409, 67410, 67510, 67511, 68055, 69225, 69232, 69234, 69235, 69649
+
+-- (No INSERT generated for Part B: source data unavailable in SQL.
+--  Action: run downport-item.js --icons-from-dbc for these ids against the
+--  4.3.4 client Item DB2s, then re-import into acore_world.item_template.)
