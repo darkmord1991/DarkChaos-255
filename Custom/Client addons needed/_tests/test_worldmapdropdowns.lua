@@ -23,7 +23,7 @@ local ROWS = {
     { id = 485,  map = 571,  area = 0,     name = "Northrend" },
     { id = 613,  map = 37,   area = 268,   name = "Azshara Crater (1-80)" },
     { id = 640,  map = 646,  area = 0,     name = "Deepholm" },
-    { id = 1100, map = 1405, area = 5006,  name = "Isles of Giants" },
+    { id = 1100, map = 1405, area = 5006,  name = "Isle of Giants" },
     { id = 1101, map = 745,  area = 5019,  name = "The Jade Forest" },
     { id = 1203, map = 1411, area = 0,     name = "HinterlandBattleground" },
     { id = 1204, map = 2706, area = 0,     name = "Undermine" },
@@ -49,7 +49,7 @@ local MAP_NAMES = {
     [1] = "Kalimdor", [0] = "Eastern Kingdoms", [530] = "Outland", [571] = "Northrend",
     [646] = "Deepholm", [1411] = "HinterlandBG - New", [2706] = "Undermine", [870] = "Pandaria",
     [2875] = "Karazhan Crypts", [2921] = "Naxxramas", [1451] = "Level Zones",
-    [1412] = "HinterlandBG - Copy", [750] = "Mount Hyjal (80-130)", [751] = "Plaguelands",
+    [1412] = "HinterlandBG - Copy", [750] = "The Sundered Wilds (80-130)", [751] = "The Fallen Kingdom (130-160)",
     [745] = "Jade Forest",
 }
 local ROW = {}
@@ -321,7 +321,7 @@ ok(WorldMapZoneDropDown.text == "Azshara Crater (1-80)", "Azshara Crater: Zone =
 
 local continents = OpenList(WorldMapContinentDropDown)
 local expected = { "Kalimdor", "Eastern Kingdoms", "Outland", "Northrend",
-                   "Mount Hyjal (80-130)", "Plaguelands", "Pandaria", "Dark Chaos" }
+                   "The Sundered Wilds (80-130)", "The Fallen Kingdom (130-160)", "Pandaria", "Dark Chaos" }
 ok(table.concat(Names(continents), "|") == table.concat(expected, "|"),
    "continent list is exactly the curated one: " .. table.concat(Names(continents), ", "))
 ok(Checked(continents) == "Dark Chaos", "and Dark Chaos is the checked entry")
@@ -332,7 +332,7 @@ end
 
 print("Dark Chaos zones")
 local zones = OpenList(WorldMapZoneDropDown)
-ok(table.concat(Names(zones), "|") == "Azshara Crater (1-80)|Deepholm|Isles of Giants|The Jade Forest|The Molten Front|Undermine",
+ok(table.concat(Names(zones), "|") == "Azshara Crater (1-80)|Deepholm|Isle of Giants|The Jade Forest|The Molten Front|Undermine",
    "zone list is the Dark Chaos zones: " .. table.concat(Names(zones), ", "))
 ok(Checked(zones) == "Azshara Crater (1-80)", "the displayed zone is checked")
 
@@ -347,14 +347,14 @@ Show(1251)
 ok(WorldMapZoneDropDown.text == "Azshara Crater (1-80)", "the Level Zones copy of Azshara Crater resolves to Azshara Crater")
 
 print("custom continents stay native")
-ok(Click(WorldMapContinentDropDown, "Mount Hyjal (80-130)") and displayed == 1262, "picking Mount Hyjal opens its continent row 1262")
-ok(WorldMapContinentDropDown.text == "Mount Hyjal (80-130)" and WorldMapZoneDropDown.text == "",
+ok(Click(WorldMapContinentDropDown, "The Sundered Wilds (80-130)") and displayed == 1262, "picking The Sundered Wilds opens its continent row 1262")
+ok(WorldMapContinentDropDown.text == "The Sundered Wilds (80-130)" and WorldMapZoneDropDown.text == "",
    "continent overview: Continent = Mount Hyjal, Zone empty (as stock)")
 ok(WorldMapZoneDropDown.initialize == WorldMapZoneDropDown_Initialize, "the zone dropdown is left to stock there")
 ok(Click(WorldMapZoneDropDown, "Winterspring (104-115)") and displayed == 1256, "the stock zone list still navigates")
-ok(WorldMapContinentDropDown.text == "Mount Hyjal (80-130)" and WorldMapZoneDropDown.text == "Winterspring (104-115)",
+ok(WorldMapContinentDropDown.text == "The Sundered Wilds (80-130)" and WorldMapZoneDropDown.text == "Winterspring (104-115)",
    "Mount Hyjal / Winterspring")
-ok(Checked(OpenList(WorldMapContinentDropDown)) == "Mount Hyjal (80-130)",
+ok(Checked(OpenList(WorldMapContinentDropDown)) == "The Sundered Wilds (80-130)",
    "the curated position (5) is checked, not the native index (13)")
 
 zoomCalls = {}
@@ -377,7 +377,7 @@ ok(WorldMapContinentDropDown.text == "" and WorldMapZoneDropDown.text == "", "Wo
 print("fallbacks")
 boundsExport = false
 Show(1256)
-ok(WorldMapContinentDropDown.text == "Mount Hyjal (80-130)", "without the bounds export, Mount Hyjal is found by native continent name")
+ok(WorldMapContinentDropDown.text == "The Sundered Wilds (80-130)", "without the bounds export, The Sundered Wilds is found by native continent name")
 Show(1215)
 ok(WorldMapContinentDropDown.text == "Dark Chaos" and WorldMapZoneDropDown.text == "Deepholm",
    "and Deepholm by its native continent name")

@@ -102,15 +102,15 @@ A full leveling zone on WoW's cancelled battleground terrain (Map 37, Zone 268),
 
 ~130 NPCs, 6 mini-dungeons (5 trash + 1 boss each), 4 world bosses, 8 rares, 5 shared faction bases, flightmasters/guards, and a protected road network. Factions: Naga, Satyr (Haldarr/Legashi), Highborne ghosts, Timbermaw furbolgs, and the Blue Dragonflight.
 
-Leveling path: **Azshara Crater (1–80) → Hyjal Frontier (80–130) → Stratholme Valley (130–160)**.
+Leveling path: **Azshara Crater (1–80) → The Sundered Wilds (80–130, map 750) → The Fallen Kingdom (130–160, map 751)**.
 
 ### Giant Isles (Zone 5000)
 MoP-inspired zone ported from the Isle of Giants: Dinotamer Camp, Primal Basin, Devilsaur Gorge, Raptor Ridge, Thundering Peaks, Bone Wastes, Ancient Ruins. Daily quest hub with vendors, world-boss daily rotation, dynamic rare spawns, zone invasions, cannon quests, fishing, a war-economy loop, and a water-monster encounter.
 
 ### Downported Zones (Cataclysm / MoP / Shadowlands)
-- **Mount Hyjal (map 750)** — Cata Hyjal plus retagged Azshara, Darkshore, and Felwood; Cata skyboxes, ambience, taxi network.
+- **The Sundered Wilds (map 750)** — Cata Hyjal plus retagged Azshara, Darkshore, and Felwood; Cata skyboxes, ambience, taxi network. Flying needs Scorched Weather Flying (level 120).
 - **Molten Front (map 861)** and **Deepholm** — Cata dailies content.
-- **Eastern/Western Plaguelands (map 751)** — Cata revamp downport with its own flight masters and cauldron scripts.
+- **The Fallen Kingdom (map 751)** — Cata revamp downport (Eastern/Western Plaguelands, Tirisfal, Silverpine, Gilneas and more) with its own flight masters and cauldron scripts. Flying needs Plague Weather Flying (level 150).
 - **Hyjal Frontier (80–130)** — the T4/T5 gear band: Emberwood Sap vendor, flightmaster, guards, innkeeper.
 - **Jadeforest** and **Battle for Gilneas** — MoP zone port and custom battleground.
 
@@ -131,7 +131,7 @@ MoP-inspired zone ported from the Isle of Giants: Dinotamer Camp, Primal Basin, 
 | **Karazhan Crypts** | 2875 | Season of Discovery | Registration only, spawns pending |
 
 ### Status
-- **Active:** Azshara Crater, Giant Isles, Hinterland BG, Guild Housing, Battle for Gilneas, Mount Hyjal, Plaguelands, Molten Front.
+- **Active:** Azshara Crater, Giant Isles, Hinterland BG, Guild Housing, Battle for Gilneas, The Sundered Wilds, The Fallen Kingdom, Molten Front.
 - **In progress:** Hyjal Frontier (80–130), Stratholme Valley (130–160), Jadeforest, Karazhan Crypts, and the newer dungeon imports (client assets deployed, spawns/SQL in flight).
 
 ---
