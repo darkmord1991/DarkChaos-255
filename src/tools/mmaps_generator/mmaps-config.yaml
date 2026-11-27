@@ -134,6 +134,14 @@ mmapsConfig:
             # https://github.com/azerothcore/azerothcore-wotlk/pull/22462#issuecomment-3067024680
             walkableSlopeAngle: 45
 
+      "750": # DC Kalimdor north (Hyjal). Tile keys here are the REVERSE of the --tile argument and the
+        # file name: 7502437.mmtile is built with "--tile 37,24" and keyed "24,37" here.
+        tilesOverrides:
+          "24,37": # Sulfuron Spire / Firelands corner: 91,424 verts at the default 0.8 (limit 65,535)
+            maxSimplificationError: 1.6
+          "21,38": # Nordrassil hub: 68,925 verts at the default 0.8
+            maxSimplificationError: 1.6
+
       "530": # Outland
         tilesOverrides:
           "32,30": # Dark portal
