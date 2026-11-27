@@ -1,0 +1,158 @@
+CREATURES
+4010001  Karrsh the Sentinel          boss      lvl 130  HP 14,517,505 (HM  135.35)  melee ~  18294 (DM  7.13)
+4010002  Rotgrowl                     boss      lvl 130  HP  6,512,766 (HM   60.72)  melee ~  14587 (DM  5.54)
+4010003  Kodiak                       companion lvl 130  HP  3,361,497 (HM   31.34)  melee ~  13271 (DM  5.04)
+4010004  Ormanos the Cracked          boss      lvl 130  HP 20,726,729 (HM  193.24)  melee ~  22887 (DM  8.92)
+4010005  Loktanag the Vile            boss      lvl 130  HP 18,419,588 (HM  171.73)  melee ~  12469 (DM  4.86)
+4010006  Selenaxx Foulheart           boss      lvl 130  HP 17,428,514 (HM  162.49)  melee ~  13727 (DM  5.35)
+4010007  Ursol                        final     lvl 130  HP 26,872,669 (HM  250.54)  melee ~  16883 (DM  6.58)
+4010008  Corrupted Draenethyst Geode  companion lvl 130  HP  6,970,762 (HM   64.99)  melee ~    128 (DM  0.05)
+4010009  Archdruid Kronn              boss      lvl 130  HP 19,143,586 (HM  178.48)  melee ~  14587 (DM  5.54)
+4010010  Trioch the Devourer          boss      lvl 130  HP 15,993,389 (HM  149.11)  melee ~   8929 (DM  3.48)
+4010011  Chieftain Partath            boss      lvl 130  HP 20,676,317 (HM  192.77)  melee ~  13727 (DM  5.35)
+4010012  Totem of Corruption          add       lvl 128  HP     49,851 (HM    0.50)  melee ~    117 (DM  0.05)
+4010013  Withermaw Shadowkeeper       add       lvl 129  HP  1,145,904 (HM   11.08)  melee ~  16058 (DM  5.91)
+4010014  Foulheart Warlock            add       lvl 129  HP  1,262,770 (HM   12.21)  melee ~  16733 (DM  6.80)
+4010015  Foulheart Imp                add       lvl 129  HP    377,486 (HM    3.65)  melee ~  16733 (DM  6.80)
+4010101  Enraged Withermaw            trash     lvl 128  HP  1,203,415 (HM   12.07)  melee ~  16354 (DM  6.93)
+4010102  Withermaw Defiler            trash     lvl 128  HP  1,139,605 (HM   11.43)  melee ~  12638 (DM  4.70)
+4010103  Withermaw Shaman             trash     lvl 128  HP  1,149,575 (HM   11.53)  melee ~  16048 (DM  6.15)
+4010104  Withermaw Pathfinder         trash     lvl 129  HP  1,183,136 (HM   11.44)  melee ~  16339 (DM  6.64)
+4010105  Withermaw Totemic            trash     lvl 129  HP  1,256,565 (HM   12.15)  melee ~  17988 (DM  7.31)
+4010106  Vile Skitterer               trash     lvl 128  HP    183,453 (HM    1.84)  melee ~    920 (DM  0.39)
+4010107  Withermaw Tracker            trash     lvl 128  HP  1,136,614 (HM   11.40)  melee ~  17959 (DM  7.61)
+4010108  Withermaw Den Watcher        trash     lvl 129  HP  1,185,204 (HM   11.46)  melee ~   6521 (DM  2.40)
+4010109  Withermaw Ursa               trash     lvl 130  HP  1,811,604 (HM   16.89)  melee ~   7261 (DM  2.83)
+4010110  Tainted Mass                 trash     lvl 130  HP  1,500,553 (HM   13.99)  melee ~   7979 (DM  3.11)
+4010111  Corruption of Loktanag       trash     lvl 129  HP  1,676,454 (HM   16.21)  melee ~   7259 (DM  2.95)
+4010112  Twisted Rumbler              trash     lvl 129  HP  1,092,125 (HM   10.56)  melee ~   7259 (DM  2.95)
+4010113  Foulheart Deceiver           trash     lvl 128  HP  1,002,015 (HM   10.05)  melee ~   4176 (DM  1.71)
+4010114  Foulheart Satyr              trash     lvl 128  HP  1,020,958 (HM   10.24)  melee ~   4176 (DM  1.71)
+4010115  Foulheart Trickster          trash     lvl 129  HP  1,047,654 (HM   10.13)  melee ~   4176 (DM  1.64)
+4010116  Foulheart Hellcaller         trash     lvl 128  HP  1,104,709 (HM   11.08)  melee ~   4176 (DM  1.71)
+4010117  Son of Ursol                 trash     lvl 129  HP  1,346,541 (HM   13.02)  melee ~   7948 (DM  3.23)
+4010118  Withermaw Illuminator        trash     lvl 129  HP  3,055,056 (HM   29.54)  melee ~  16058 (DM  5.91)
+4010201  Narkogg the Dark             camp      lvl 130  HP  2,681,475 (HM   25.00)  melee ~   9813 (DM  4.00)
+4010202  Kathor the Brave             camp      lvl 130  HP  2,681,475 (HM   25.00)  melee ~  10263 (DM  4.00)
+4010203  Nathok                       camp      lvl 130  HP  2,681,475 (HM   25.00)  melee ~  10263 (DM  4.00)
+
+ITEMS
+33088 -> 410200 Libram of the Exorciser                  ilvl 76->450  45:174 7:150  [dropped: Searing Radiance Passive]
+33091 -> 410201 Totem of Ancient Rites                   ilvl 76->450  45:174 7:150  [dropped: Ancient Rites (Cooldown), Ancient Rites (Totemic Slam), Ancient Rites (Feral Spirit), Ancient Rites (Hex)]
+33237 -> 410202 Timbermaw Defenders                      ilvl 76->450  7:285 4:214 12:103
+33238 -> 410203 Karrsh's Memento                         ilvl 76->450  45:398 43:44
+33239 -> 410204 Weaponmaster's Gauntlets                 ilvl 76->450  37:263 4:168 7:168 3:105
+33240 -> 410205 Furbolg Medicine Handwraps               ilvl 76->450  6:192 45:220 7:168 5:96 43:24
+33241 -> 410206 Bramblehide Breastplate                  ilvl 74->446  32:385 7:344 4:220 3:193  [dropped: Thorns Nature Dmg +5]
+33242 -> 410207 Claw of Reckless Abandon                 ilvl 74->446  32:511  [dropped: Wild Thrash]
+33243 -> 410208 Relentless Tracker's Wristguards         ilvl 76->450  7:177 3:162 36:147
+33244 -> 410209 Kodiak's Collar                          ilvl 76->450  45:262 3:143  [dropped: Kodiak's Collar Passive, Kodiak's Collar Passive]
+33245 -> 410210 Tealeaf Waistwrap                        ilvl 76->450  45:213 6:165 5:132 7:88 43:33
+33246 -> 410211 Twig of Untamed Magics                   ilvl 76->450  45:225 47:107
+33247 -> 410212 Denrender, Hatchet of the Subterranean Hunter ilvl 74->446  32:203 7:159 37:145
+33248 -> 410213 Fetish of the Endless Bond               ilvl 74->446  32:223 7:223  [dropped: Endless Bond]
+33249 -> 410214 Asphyxiating Root                        ilvl 78->454  38:711 46:49 36:99
+33250 -> 410215 Spore-laden Girdle                       ilvl 78->454  4:204 7:204 32:151 3:97  [dropped: Spore-laden Passive]
+33251 -> 410216 Drape of Contagion                       ilvl 78->454  45:169 6:123 5:111 43:45
+33252 -> 410217 Hazardous Environment Stompers           ilvl 78->454  38:504 45:249 7:140
+33253 -> 410218 Heart of Decay                           ilvl 76->450  32:225 7:225  [dropped: Decayed Heart Passive]
+33254 -> 410219 Shield of Wailing Souls                  ilvl 76->450  45:590 5:149 7:149  [dropped: Thorns Nature Dmg +3]
+33255 -> 410220 Leggings of Pulsating Pustules           ilvl 76->450  45:716 7:164 5:153 6:131 36:109
+33256 -> 410221 Corrosion                                ilvl 76->450  4:550 7:550  [dropped: Corrosion]
+33257 -> 410222 Stonebound Wristguards                   ilvl 78->454  7:276 15:153 4:138
+33258 -> 410223 Visor of the Mending Cracks              ilvl 78->454  7:215 46:82 5:184 45:214 43:61
+33259 -> 410224 Ormanos' Hollow Finger                   ilvl 78->454  7:287 31:192
+33260 -> 410225 Sliver of Corrupted Draenethyst          ilvl 78->454  45:416 7:256 36:256
+33261 -> 410226 Crown of Draenic Corruption              ilvl 76->450  45:562 5:221 7:212 32:129 36:92  [dropped: Reclaimed Power Passive]
+33262 -> 410227 Wall of Earthen Attunement               ilvl 76->450  7:375 48:432
+33263 -> 410228 Promised Salvation                       ilvl 76->450  45:397 6:237
+33264 -> 410229 Furbolg Medicine Footwraps               ilvl 78->454  45:206 7:138 6:128 5:89 43:30
+33265 -> 410230 Drape of Bestial Ferocity                ilvl 78->454  4:168 3:168 7:155
+33266 -> 410231 Archdruid's Protection                   ilvl 78->454  7:291 31:194
+33267 -> 410232 Mantle of the Den Watcher                ilvl 78->454  7:219 3:158 13:146 5:122 12:88
+33268 -> 410233 Beacon of the Emerald Dream              ilvl 76->450  45:526 6:208 5:166 7:149 43:50  [dropped: Whisper of the Emerald Dream Passive, Emerald Dream Welcome]
+33269 -> 410234 Signet of Screaming Nightmares           ilvl 76->450  32:266 3:123 5:123 7:123 31:95
+33270 -> 410235 Slumberweave Cloak                       ilvl 76->450  45:406 5:111 36:111 7:22  [dropped: Emerald Dream Welcome]
+33271 -> 410236 Pendant of the Bountiful                 ilvl 78->454  4:171 7:142 36:142  [dropped: Increase Luck 5%]
+33272 -> 410237 Earth Warder's Grasp                     ilvl 78->454  45:461 5:198 43:47
+33273 -> 410238 Sash of the Pathfinder                   ilvl 78->454  3:283 7:193 32:180
+33274 -> 410239 Moonblessed Spaulders                    ilvl 78->454  45:378 5:145 6:124 43:31 7:62
+33275 -> 410240 Signet of Howling Nightmares             ilvl 76->450  31:322 32:225 4:209 6:209
+33276 -> 410241 Unity of the Timbermaw                   ilvl 76->450  45:523
+33277 -> 410242 Will of the Chieftain                    ilvl 76->450  32:225 7:225  [dropped: Broken Will]
+33278 -> 410243 Maw of Gluttony                          ilvl 76->450  4:550 7:550  [dropped: Gluttony's Avarice]
+33279 -> 410244 Pauldrons of Sinister Intent             ilvl 78->454  7:208 3:182 4:182 37:162
+33280 -> 410245 Treads of the Blighted Messenger         ilvl 78->454  45:371 5:199 6:199  [dropped: Item - Minor Run Speed]
+33281 -> 410246 Foulthorn Ring                           ilvl 78->454  45:486 32:213 5:152
+33282 -> 410247 Fluctuating Rod                          ilvl 78->454  45:150 3:71 4:71 5:71 6:71 7:71
+33283 -> 410248 Fang of the First Called                 ilvl 76->450  45:525 5:59 7:59  [dropped: Echo of the First Called]
+33284 -> 410249 Claw of the Befouler                     ilvl 76->450  32:225 7:225  [dropped: Corrupted Essence]
+33285 -> 410250 Recurve of the Last Stand                ilvl 76->450  7:249 12:124
+33286 -> 410251 Crystal Encrusted Girdle                 ilvl 76->450  7:244 45:255 5:207 36:122
+33287 -> 410252 Hydrascale Seal                          ilvl 76->450  7:475
+33288 -> 410253 Cloak of the Unfortunate                 ilvl 76->450  45:245 7:138 3:138  [dropped: Increase Luck 10%]
+33289 -> 410254 Digested Slayer's Pauldrons              ilvl 78->454  37:262 4:157 3:157 7:157
+33290 -> 410255 Igniter's Scorchcloth                    ilvl 78->454  45:238 5:195 7:134 36:122
+33291 -> 410256 Pysan's New Greatsword                   ilvl 76->450  4:550 7:550  [dropped: Pysan's Wrath]
+33292 -> 410257 Elberetha's Scepter of Agitation         ilvl 76->450  45:233 7:167  [dropped: Heightened Vitality Passive]
+33293 -> 410258 Trifang Shredders                        ilvl 76->450  3:186 7:186  [dropped: Trifang Shredders Passive]
+33294 -> 410259 Droplet of Nordrassil                    ilvl 83->464  45:540  [dropped: Nordrassil's Reprieve Passive]
+33295 -> 410260 Breastcage of Ironbark                   ilvl 83->464  7:535 4:302 12:214 31:137  [dropped: Thorns Nature Dmg +4]
+33296 -> 410261 Shard of Dreams                          ilvl 83->464  43:93 45:268  [dropped: Call of the Emerald Dream]
+33297 -> 410262 Dreamwind Threads                        ilvl 83->464  4:315 36:252 7:189
+33298 -> 410263 Cuffs of the Enlightened                 ilvl 83->464  45:246 5:128 6:128 43:32 7:64
+33299 -> 410264 Maw of Spewing Malignity                 ilvl 81->460  3:188 7:188  [dropped: Horrific Refuse Passive]
+33300 -> 410265 Cenarius' Teachings                      ilvl 81->460  45:597 5:87
+33301 -> 410266 Spaulders of Unresolved Regrets          ilvl 83->464  4:385 3:385 31:143
+33302 -> 410267 Forlorn Hope                             ilvl 83->464  36:264 5:106 7:106 45:75 6:26
+33303 -> 410268 Gloves of Sudden Betrayal                ilvl 83->464  7:245 45:227 5:192 32:149 31:106
+33304 -> 410269 Ironweave Chaincloak                     ilvl 83->464  14:284 7:213 12:114
+33305 -> 410270 Vor’ethil, the Broken Shadow             ilvl 81->460  38:1510 4:267 36:103
+33324 -> 410271 Breastplate of the Wild God              ilvl 73->444  3:263 45:305 7:211 5:169 12:126 15:105
+33325 -> 410272 Helmet of Natural Benevolence            ilvl 73->444  45:339 7:244 5:208 6:196 43:73
+33326 -> 410273 Leggings of Untamed Strength             ilvl 73->444  7:424 4:396 32:198 36:141  [dropped: Add Fire Dam - Weap 08]
+33327 -> 410274 Branch of the Emerald Expanse            ilvl 73->444  45:248 5:146 6:135 43:34
+33328 -> 410275 Wispwoven Loop                           ilvl 73->444  45:236 5:136 32:136 36:97
+33329 -> 410276 Dreambark Amulet                         ilvl 73->444  7:166 3:155 31:111 36:111
+33333 -> 410277 Furbolg Medicine Wristwraps              ilvl 78->454  45:177 6:140 7:105 5:93
+33334 -> 410278 Timbermaw Protectors                     ilvl 78->454  4:352 7:186 12:174
+33341 -> 410285 Pendant of Relentless Assault            ilvl 78->454  36:120 31:120 4:108 7:108
+33342 -> 410286 Legguards of the Den Watcher             ilvl 78->454  7:386 3:271 12:171 36:143
+33343 -> 410287 Earth Warder's Visage                    ilvl 78->454  45:647 43:80 5:184
+33344 -> 410288 Moonblessed Bracers                      ilvl 78->454  32:139 5:119 6:99 7:69 45:75
+33345 -> 410289 Treads of the Pathfinder                 ilvl 76->450  3:266 7:191 32:149 13:127
+33346 -> 410290 Ursa's Rampage                           ilvl 76->450  7:358 32:358 4:269 12:153  [dropped: Increased Attacking Rage 3%]
+33361 -> 410291 Bracelet of the Defender                 ilvl 73->444  7:226 4:183 15:71
+33362 -> 410292 Bracelet of the Visionary                ilvl 73->444  38:418 7:116 3:77 5:77
+33363 -> 410293 Bracelet of the Ravager                  ilvl 73->444  32:177 7:164 4:139
+33364 -> 410294 Bracelet of the Oracle                   ilvl 73->444  7:132 43:48 36:120 5:108
+33380 -> 410295 Guile of the Stag                        ilvl 76->450  45:514 7:232 5:200 6:158 31:105
+33381 -> 410296 Burden of the Stag                       ilvl 76->450  7:221 45:235 5:199 32:154 31:110
+33382 -> 410297 Embrace of the Stag                      ilvl 76->450  45:520 7:267 5:224 36:213
+33383 -> 410298 Grasp of the Stag                        ilvl 76->450  45:304 5:190 7:162 32:133 6:114
+33384 -> 410299 Vigor of the Stag                        ilvl 76->450  45:486 5:234 31:213 7:181 6:128
+33385 -> 410300 Path of the Stag                         ilvl 76->450  45:196 7:145 5:113 6:113 32:113 36:81
+33386 -> 410301 Guile of the Ursa                        ilvl 76->450  7:322 3:309 4:260 31:124 36:124
+33387 -> 410302 Burden of the Ursa                       ilvl 76->450  7:287 4:275 3:262 44:61
+33388 -> 410303 Embrace of the Ursa                      ilvl 76->450  7:303 4:291 3:267 32:170 31:121
+33389 -> 410304 Grasp of the Ursa                        ilvl 76->450  7:215 3:215 4:204 31:113 36:113
+33390 -> 410305 Vigor of the Ursa                        ilvl 76->450  7:339 3:339 4:183 32:183 36:130
+33391 -> 410306 Path of the Ursa                         ilvl 76->450  7:234 3:234 4:159 46:42
+33392 -> 410307 Guile of the Hippogryph                  ilvl 76->450  38:684 7:226 3:217 5:136 32:127 36:90
+33393 -> 410308 Burden of the Hippogryph                 ilvl 76->450  38:586 7:163 3:163 5:134 32:134
+33394 -> 410309 Embrace of the Hippogryph                ilvl 76->450  38:721 3:248 7:210 36:191 5:143
+33395 -> 410310 Grasp of the Hippogryph                  ilvl 76->450  38:440 3:188 31:188 7:151 5:113
+33396 -> 410311 Vigor of the Hippogryph                  ilvl 76->450  38:622 7:244 3:223 5:152 32:142 36:102
+33397 -> 410312 Path of the Hippogryph                   ilvl 76->450  38:400 3:167 7:139 5:102 36:93 44:32
+33398 -> 410313 Guile of the Moose                       ilvl 76->450  7:551 4:193 3:193 12:132 15:69
+33399 -> 410314 Burden of the Moose                      ilvl 76->450  7:385 4:185 3:142 12:103 15:71
+33400 -> 410315 Embrace of the Moose                     ilvl 76->450  7:491 31:273 4:177 12:115 3:96
+33401 -> 410316 Grasp of the Moose                       ilvl 76->450  7:276 3:248 4:221 12:116
+33402 -> 410317 Vigor of the Moose                       ilvl 76->450  7:322 3:253 4:173 48:265 12:138 31:115
+33403 -> 410318 Path of the Moose                        ilvl 76->450  7:286 4:148 3:117 31:106 12:76
+33674 -> 410319 Guile of the Deer                        ilvl 76->450  7:254 6:242 45:278 5:231 43:69
+33675 -> 410320 Burden of the Deer                       ilvl 76->450  5:210 7:198 6:198 45:189 36:117
+33676 -> 410321 Embrace of the Deer                      ilvl 76->450  45:403 7:289 5:277 43:96
+33677 -> 410322 Grasp of the Deer                        ilvl 76->450  36:218 7:185 5:174 6:174 45:125
+33678 -> 410323 Vigor of the Deer                        ilvl 76->450  45:401 6:255 7:209 43:81 5:162
+33679 -> 410324 Path of the Deer                         ilvl 76->450  6:200 45:165 5:134 32:134 7:124
