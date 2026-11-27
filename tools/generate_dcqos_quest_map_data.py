@@ -38,6 +38,18 @@ def parse_args() -> argparse.Namespace:
         default=OUTPUT_FILE,
         help="Output Lua file path.",
     )
+    parser.add_argument(
+        "--mysql-host",
+        help=(
+            "Read from the LIVE world database instead of the base SQL dumps. "
+            "The dumps only hold stock AzerothCore content, so custom zones "
+            "(map 750 and friends) are missing from them entirely."
+        ),
+    )
+    parser.add_argument("--mysql-port", type=int, default=3306)
+    parser.add_argument("--mysql-user", default="acore")
+    parser.add_argument("--mysql-password", default="acore")
+    parser.add_argument("--mysql-db", default="acore_world")
     return parser.parse_args()
 
 
@@ -233,6 +245,76 @@ def build_records(path: Path) -> list[dict[str, object]]:
     return [dict(zip(columns, (sql_to_python(value) for value in row), strict=False)) for row in rows]
 
 
+class SqlFileSource:
+    """Default source: the AzerothCore base SQL dumps checked into the repo."""
+
+    def __init__(self, world_sql_root: Path):
+        self.root = world_sql_root
+
+    def records(self, table: str) -> list[dict[str, object]]:
+        return build_records(self.root / f"{table}.sql")
+
+    def close(self) -> None:
+        pass
+
+
+class MySqlSource:
+    """Live world database.
+
+    The base SQL dumps only contain STOCK AzerothCore content, so a realm with
+    custom zones generates quest data that silently omits them -- map 750 has
+    788 quests and produced exactly zero markers. The live `acore_world` is the
+    superset (base content plus every applied custom SQL), so when this source is
+    used it REPLACES the files rather than merging: there is nothing in the dumps
+    that the database does not already have, and merging two sources of the same
+    rows only invites disagreement about which wins.
+    """
+
+    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+        try:
+            import pymysql
+        except ImportError as exc:  # pragma: no cover - depends on environment
+            raise SystemExit(
+                "--mysql-host needs PyMySQL: pip install pymysql"
+            ) from exc
+
+        self._pymysql = pymysql
+        try:
+            self.conn = pymysql.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                database=database,
+                charset="utf8mb4",
+                cursorclass=pymysql.cursors.DictCursor,
+            )
+        except pymysql.err.OperationalError as exc:
+            code = exc.args[0] if exc.args else 0
+            hint = ""
+            if code == 1045:
+                hint = (
+                    "\n  Access denied. MySQL grants are per HOST, so credentials that work\n"
+                    "  on the server itself are still refused from another machine. Either run\n"
+                    "  this on the DB host, or grant your workstation:\n"
+                    f"      GRANT SELECT ON {database}.* TO '{user}'@'<your-ip>' IDENTIFIED BY '<pw>';"
+                )
+            elif code == 2003:
+                hint = "\n  Could not reach the server -- check the host/port and that MySQL listens externally."
+            raise SystemExit(f"MySQL connection failed: {exc}{hint}") from exc
+
+    def records(self, table: str) -> list[dict[str, object]]:
+        with self.conn.cursor() as cur:
+            cur.execute(f"SELECT * FROM `{table}`")
+            return list(cur.fetchall())
+
+    def close(self) -> None:
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+
 def normalize_coord(value: float, min_value: float, max_value: float) -> float | None:
     span = max_value - min_value
     if span == 0:
@@ -354,6 +436,38 @@ def normalize_world_point(raw_x: float, raw_y: float, world_map_area: dict[str, 
     return normalized_x, normalized_y
 
 
+def choose_world_map_area_by_position(
+    rows: list[dict[str, object]],
+    raw_x: float,
+    raw_y: float,
+) -> dict[str, object] | None:
+    """Resolve the WorldMapArea containing a world position on a given map: the
+    smallest Loc rect that contains the point (most specific zone) wins. Needed
+    because this fork's spawn tables carry zoneId/areaId = 0 almost everywhere,
+    which starves the id-based resolution."""
+    best_row = None
+    best_span = None
+    for row in rows:
+        try:
+            left = float(row["LocLeft"])
+            right = float(row["LocRight"])
+            top = float(row["LocTop"])
+            bottom = float(row["LocBottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if normalize_coord(raw_y, left, right) is None:
+            continue
+        if normalize_coord(raw_x, top, bottom) is None:
+            continue
+        span = abs(left - right) * abs(top - bottom)
+        if span <= 0:
+            continue
+        if best_span is None or span < best_span:
+            best_span = span
+            best_row = row
+    return best_row
+
+
 def build_spawn_lookup(
     records: list[dict[str, object]],
     entity_id_field: str,
@@ -365,6 +479,8 @@ def build_spawn_lookup(
     needed_entity_ids: set[int],
     area_parent: dict[int, int | None],
     area_to_rows: dict[int, list[dict[str, object]]],
+    z_field: str | None = None,
+    map_rect_rows: dict[int, list[dict[str, object]]] | None = None,
 ) -> dict[int, list[dict[str, object]]]:
     lookup: dict[int, list[dict[str, object]]] = defaultdict(list)
 
@@ -387,6 +503,12 @@ def build_spawn_lookup(
             area_parent,
             area_to_rows,
         )
+        if not world_map_area and map_rect_rows is not None and isinstance(map_id, int):
+            world_map_area = choose_world_map_area_by_position(
+                map_rect_rows.get(map_id) or [],
+                float(raw_x),
+                float(raw_y),
+            )
         if not world_map_area:
             continue
 
@@ -395,13 +517,18 @@ def build_spawn_lookup(
             continue
 
         normalized_x, normalized_y = normalized
-        lookup[entity_id].append(
-            {
-                "m": int(world_map_area["ID"]),
-                "x": normalized_x,
-                "y": normalized_y,
-            }
-        )
+        point: dict[str, object] = {
+            "m": int(world_map_area["ID"]),
+            "x": normalized_x,
+            "y": normalized_y,
+        }
+        # World Z (spawn height) rides along so the in-world supertracker pin can
+        # sit on the real ground instead of guessing from the player's elevation.
+        if z_field is not None:
+            raw_z = record.get(z_field)
+            if isinstance(raw_z, (int, float)):
+                point["z"] = round(float(raw_z), 1)
+        lookup[entity_id].append(point)
 
     for entity_id, points in list(lookup.items()):
         lookup[entity_id] = dedupe_points(points)
@@ -427,8 +554,8 @@ def append_marker(store: dict[int, dict[str, object]], quest_id: int, key: str, 
     bucket.append(marker)
 
 
-def load_relation_map(path: Path) -> dict[int, list[int]]:
-    relation_rows = build_records(path)
+def load_relation_map(source, table: str) -> dict[int, list[int]]:
+    relation_rows = source.records(table)
     relation_map: dict[int, list[int]] = defaultdict(list)
     for row in relation_rows:
         entity_id = row.get("id")
@@ -446,7 +573,24 @@ def main() -> None:
     world_sql_root = repo_root / "data" / "sql" / "base" / "db_world"
     world_map_by_id, area_to_rows, area_parent = build_world_map_lookup(repo_root)
 
-    quest_template_rows = build_records(world_sql_root / "quest_template.sql")
+    if args.mysql_host:
+        source = MySqlSource(
+            args.mysql_host,
+            args.mysql_port,
+            args.mysql_user,
+            args.mysql_password,
+            args.mysql_db,
+        )
+        print(f"source: live database {args.mysql_user}@{args.mysql_host}:{args.mysql_port}/{args.mysql_db}")
+    else:
+        source = SqlFileSource(world_sql_root)
+        print(f"source: base SQL dumps at {world_sql_root}")
+        print(
+            "  NOTE: the dumps are STOCK content only -- custom zones such as map 750\n"
+            "        will be absent. Pass --mysql-host to read the live world DB."
+        )
+
+    quest_template_rows = source.records("quest_template")
     quests: dict[int, dict[str, object]] = {}
     for row in quest_template_rows:
         quest_id = row.get("ID")
@@ -455,15 +599,53 @@ def main() -> None:
         if isinstance(quest_id, int) and isinstance(title, str):
             quests[quest_id] = {"t": title, "l": int(level) if isinstance(level, int) else 0}
 
-    creature_starters = load_relation_map(world_sql_root / "creature_queststarter.sql")
-    gameobject_starters = load_relation_map(world_sql_root / "gameobject_queststarter.sql")
-    creature_enders = load_relation_map(world_sql_root / "creature_questender.sql")
-    gameobject_enders = load_relation_map(world_sql_root / "gameobject_questender.sql")
+    creature_starters = load_relation_map(source, "creature_queststarter")
+    gameobject_starters = load_relation_map(source, "gameobject_queststarter")
+    creature_enders = load_relation_map(source, "creature_questender")
+    gameobject_enders = load_relation_map(source, "gameobject_questender")
 
-    creature_ids = set(creature_starters) | set(creature_enders)
-    gameobject_ids = set(gameobject_starters) | set(gameobject_enders)
+    # Objective entities (RequiredNpcOrGo1..4: positive = creature entry, negative
+    # = gameobject entry). Their spawn heights supply the world Z for objective
+    # POI markers, which quest_poi_points lacks entirely.
+    quest_objective_entities: dict[int, list[tuple[str, int]]] = defaultdict(list)
+    for row in quest_template_rows:
+        quest_id = row.get("ID")
+        if not isinstance(quest_id, int):
+            continue
+        for index in range(1, 5):
+            entity = row.get(f"RequiredNpcOrGo{index}")
+            if isinstance(entity, int) and entity > 0:
+                quest_objective_entities[quest_id].append(("npc", entity))
+            elif isinstance(entity, int) and entity < 0:
+                quest_objective_entities[quest_id].append(("object", -entity))
 
-    creature_rows = build_records(world_sql_root / "creature.sql")
+    objective_creature_ids = {
+        entity_id
+        for entities in quest_objective_entities.values()
+        for kind, entity_id in entities
+        if kind == "npc"
+    }
+    objective_gameobject_ids = {
+        entity_id
+        for entities in quest_objective_entities.values()
+        for kind, entity_id in entities
+        if kind == "object"
+    }
+
+    creature_ids = set(creature_starters) | set(creature_enders) | objective_creature_ids
+    gameobject_ids = set(gameobject_starters) | set(gameobject_enders) | objective_gameobject_ids
+
+    # WorldMapArea rows grouped by terrain MapID for geometric (rect-contains)
+    # zone resolution -- this fork's spawn rows have zoneId/areaId = 0.
+    map_rect_rows: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for row in world_map_by_id.values():
+        try:
+            terrain_map_id = int(float(row["MapID"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        map_rect_rows[terrain_map_id].append(row)
+
+    creature_rows = source.records("creature")
     creature_spawns = build_spawn_lookup(
         creature_rows,
         entity_id_field="id1",
@@ -475,9 +657,11 @@ def main() -> None:
         needed_entity_ids=creature_ids,
         area_parent=area_parent,
         area_to_rows=area_to_rows,
+        z_field="position_z",
+        map_rect_rows=map_rect_rows,
     )
 
-    gameobject_rows = build_records(world_sql_root / "gameobject.sql")
+    gameobject_rows = source.records("gameobject")
     gameobject_spawns = build_spawn_lookup(
         gameobject_rows,
         entity_id_field="id",
@@ -489,7 +673,36 @@ def main() -> None:
         needed_entity_ids=gameobject_ids,
         area_parent=area_parent,
         area_to_rows=area_to_rows,
+        z_field="position_z",
+        map_rect_rows=map_rect_rows,
     )
+
+    def resolve_objective_z(quest_id: int, world_map_area_id: int, centroid_x: float, centroid_y: float) -> float | None:
+        """World Z for an objective POI: average the quest's objective-entity spawn
+        heights near the POI centroid (same WorldMapArea). Falls back to the single
+        nearest spawn when none are close; None when the quest has no locatable
+        objective entities there."""
+        best: list[float] = []
+        nearest_z: float | None = None
+        nearest_dist_sq: float | None = None
+        for kind, entity_id in quest_objective_entities.get(quest_id, []):
+            spawns = creature_spawns if kind == "npc" else gameobject_spawns
+            for point in spawns.get(entity_id, []):
+                if point.get("m") != world_map_area_id or point.get("z") is None:
+                    continue
+                dx = float(point["x"]) - centroid_x
+                dy = float(point["y"]) - centroid_y
+                dist_sq = (dx * dx) + (dy * dy)
+                if dist_sq <= 0.12 * 0.12:
+                    best.append(float(point["z"]))
+                if nearest_dist_sq is None or dist_sq < nearest_dist_sq:
+                    nearest_dist_sq = dist_sq
+                    nearest_z = float(point["z"])
+        if best:
+            return round(sum(best) / len(best), 1)
+        if nearest_z is not None and nearest_dist_sq is not None and nearest_dist_sq <= 0.25 * 0.25:
+            return round(nearest_z, 1)
+        return None
 
     for entity_id, quest_ids in creature_starters.items():
         for quest_id in quest_ids:
@@ -511,8 +724,8 @@ def main() -> None:
             for point in gameobject_spawns.get(entity_id, []):
                 append_marker(quests, quest_id, "r", {**point, "k": "object"})
 
-    poi_rows = build_records(world_sql_root / "quest_poi.sql")
-    poi_points_rows = build_records(world_sql_root / "quest_poi_points.sql")
+    poi_rows = source.records("quest_poi")
+    poi_points_rows = source.records("quest_poi_points")
     poi_points_by_key: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
 
     for row in poi_points_rows:
@@ -551,6 +764,9 @@ def main() -> None:
             "x": centroid[0],
             "y": centroid[1],
         }
+        objective_z = resolve_objective_z(quest_id, world_map_area_id, centroid[0], centroid[1])
+        if objective_z is not None:
+            marker["z"] = objective_z
         if objective_index >= 0:
             marker["i"] = objective_index
             append_marker(quests, quest_id, "o", marker)
@@ -605,6 +821,8 @@ def main() -> None:
                     f"x={format_lua_value(marker.get('x'))}",
                     f"y={format_lua_value(marker.get('y'))}",
                 ]
+                if marker.get("z") is not None:
+                    marker_fields.append(f"z={format_lua_value(marker.get('z'))}")
                 if marker.get("k") is not None:
                     marker_fields.append(f"k={format_lua_value(marker.get('k'))}")
                 if marker.get("i") is not None:
@@ -617,12 +835,13 @@ def main() -> None:
     output_lines.extend([
         "}",
         "",
-        f"data.generatedAt = {format_lua_value('2026-05-10')}",
+        f"data.generatedAt = {format_lua_value('2026-07-12')}",
         "",
     ])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(output_lines), encoding="utf-8", newline="\n")
+    source.close()
     print(f"Wrote {output_path}")
 
 
