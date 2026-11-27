@@ -143,38 +143,54 @@ DROP PROCEDURE IF EXISTS `sp_dc_addon_aggregate_daily`;
 DELIMITER //
 CREATE PROCEDURE `sp_dc_addon_aggregate_daily`()
 BEGIN
-    DECLARE yesterday DATE;
-    SET yesterday = DATE_SUB(CURDATE(), INTERVAL 1 DAY);
-    
-    -- Insert or update daily aggregates
-    INSERT INTO `dc_addon_protocol_daily` (`date`, `module`, `total_c2s`, `total_s2c`, `unique_players`, `error_count`, `avg_response_time_ms`, `peak_hour`)
-    SELECT 
-        DATE(`timestamp`) as log_date,
-        `module`,
-        SUM(CASE WHEN `direction` = 'C2S' THEN 1 ELSE 0 END) as total_c2s,
-        SUM(CASE WHEN `direction` = 'S2C' THEN 1 ELSE 0 END) as total_s2c,
-        COUNT(DISTINCT `guid`) as unique_players,
-        SUM(CASE WHEN `status` IN ('error', 'timeout') THEN 1 ELSE 0 END) as error_count,
-        AVG(`processing_time_ms`) as avg_response_time_ms,
+    DECLARE log_day   DATE;
+    DECLARE day_start DATETIME;
+    DECLARE day_end   DATETIME;
+
+    SET log_day   = DATE_SUB(CURDATE(), INTERVAL 1 DAY);
+    -- Half-open range [day_start, day_end). Do NOT filter with DATE(`timestamp`) =
+    -- log_day: wrapping the column in a function makes the predicate non-sargable,
+    -- so idx_timestamp is unusable and every nightly run full-scans the log table
+    -- (2.0M rows as of 2026-09-09).
+    SET day_start = TIMESTAMP(log_day);
+    SET day_end   = TIMESTAMP(CURDATE());
+
+    START TRANSACTION;
+
+    -- Idempotent refresh. This replaces an ON DUPLICATE KEY UPDATE clause that was
+    -- a silent no-op: in INSERT ... SELECT, unqualified names in the UPDATE clause
+    -- bind to the target table, not to the SELECT's aliases, so `total_c2s` =
+    -- total_c2s assigned each column to itself. Re-running for a date changed
+    -- nothing. DELETE + INSERT is unambiguous and matches the project convention.
+    DELETE FROM `dc_addon_protocol_daily` WHERE `date` = log_day;
+
+    INSERT INTO `dc_addon_protocol_daily`
+        (`date`, `module`, `total_c2s`, `total_s2c`, `unique_players`,
+         `error_count`, `avg_response_time_ms`, `peak_hour`)
+    SELECT
+        log_day,
+        l.`module`,
+        SUM(CASE WHEN l.`direction` = 'C2S' THEN 1 ELSE 0 END) as total_c2s,
+        SUM(CASE WHEN l.`direction` = 'S2C' THEN 1 ELSE 0 END) as total_s2c,
+        COUNT(DISTINCT l.`guid`) as unique_players,
+        SUM(CASE WHEN l.`status` IN ('error', 'timeout') THEN 1 ELSE 0 END) as error_count,
+        AVG(l.`processing_time_ms`) as avg_response_time_ms,
         (
             SELECT HOUR(sub.`timestamp`)
             FROM `dc_addon_protocol_log` sub
-            WHERE DATE(sub.`timestamp`) = DATE(l.`timestamp`)
+            WHERE sub.`timestamp` >= day_start
+              AND sub.`timestamp` <  day_end
               AND sub.`module` = l.`module`
             GROUP BY HOUR(sub.`timestamp`)
             ORDER BY COUNT(*) DESC
             LIMIT 1
         ) as peak_hour
     FROM `dc_addon_protocol_log` l
-    WHERE DATE(`timestamp`) = yesterday
-    GROUP BY DATE(`timestamp`), `module`
-    ON DUPLICATE KEY UPDATE
-        `total_c2s` = total_c2s,
-        `total_s2c` = total_s2c,
-        `unique_players` = unique_players,
-        `error_count` = error_count,
-        `avg_response_time_ms` = avg_response_time_ms,
-        `peak_hour` = peak_hour;
+    WHERE l.`timestamp` >= day_start
+      AND l.`timestamp` <  day_end
+    GROUP BY l.`module`;
+
+    COMMIT;
 END //
 DELIMITER ;
 

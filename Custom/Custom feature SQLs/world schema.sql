@@ -1657,20 +1657,10 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_costs` (
   PRIMARY KEY (`upgrade_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Costs for heirloom stat package upgrades';
 
-CREATE TABLE IF NOT EXISTS `dc_hotspots_active` (
-  `id` int unsigned NOT NULL COMMENT 'Unique hotspot ID',
-  `map_id` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Map ID where hotspot is located',
-  `zone_id` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Zone ID where hotspot is located',
-  `x` float NOT NULL DEFAULT '0' COMMENT 'X coordinate',
-  `y` float NOT NULL DEFAULT '0' COMMENT 'Y coordinate',
-  `z` float NOT NULL DEFAULT '0' COMMENT 'Z coordinate',
-  `spawn_time` bigint NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when hotspot was spawned',
-  `expire_time` bigint NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when hotspot expires',
-  `gameobject_guid` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'GUID of visual marker GameObject (0 if none)',
-  PRIMARY KEY (`id`),
-  KEY `idx_expire_time` (`expire_time`),
-  KEY `idx_map_zone` (`map_id`,`zone_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='DarkChaos Hotspots - Active hotspots for crash persistence';
+-- dc_hotspots_active and dc_hotspot_spawn_points used to live here. Both are
+-- per-realm runtime state written by the worldserver, and this database is
+-- read-mostly and rebuilt from its SQL - which silently wiped them. They now
+-- live in acore_chars; see chardb/Hotspot/01_hotspot_tables_move_to_chardb.sql.
 
 CREATE TABLE IF NOT EXISTS `dc_item_custom_data` (
   `item_id` int unsigned NOT NULL COMMENT 'Item entry ID',
@@ -1698,17 +1688,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_templates_upgrade` (
   KEY `idx_armor_type` (`armor_type`),
   KEY `idx_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Upgrade Template Mappings v2.0';
-
-CREATE TABLE IF NOT EXISTS `dc_item_upgrade_clones` (
-  `base_item_id` int unsigned NOT NULL,
-  `tier_id` tinyint unsigned NOT NULL,
-  `upgrade_level` tinyint unsigned NOT NULL,
-  `clone_item_id` int unsigned NOT NULL,
-  `stat_multiplier` float NOT NULL,
-  PRIMARY KEY (`base_item_id`,`upgrade_level`),
-  UNIQUE KEY `idx_clone_item` (`clone_item_id`),
-  KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Generated item clone mapping';
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `tier_id` tinyint unsigned NOT NULL,
