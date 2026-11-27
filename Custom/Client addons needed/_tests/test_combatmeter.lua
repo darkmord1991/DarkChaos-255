@@ -84,6 +84,18 @@ local function deepcopy(t)
     for k, v in pairs(t) do o[k] = deepcopy(v) end
     return o
 end
+-- addon:DelayedCall, run by hand: each call returns the delays it ran
+local pendingCalls = {}
+local function runDelayedCalls()
+    local delays = {}
+    while #pendingCalls > 0 and #delays < 100 do
+        local call = table.remove(pendingCalls, 1)
+        delays[#delays + 1] = call.delay
+        call.fn()
+    end
+    return delays
+end
+
 _G.DCQOS = {
     defaults = {}, settings = {}, modules = {}, moduleOrder = {},
     Print = function(_, m) end,
@@ -93,6 +105,7 @@ _G.DCQOS = {
     PromptReloadUI = function() end,
     DeepCopy = function(_, t) return deepcopy(t) end,
     RegisterSettingsKeywords = function() end,
+    DelayedCall = function(_, delay, fn) pendingCalls[#pendingCalls + 1] = { delay = delay, fn = fn } end,
 }
 function DCQOS:MergeModuleDefaults(d)
     for k, v in pairs(d) do
@@ -336,8 +349,22 @@ ok(not CombatLog.IsInDetailView() and rowNames()[1] == "Tester", "second click r
 -- Report
 sent = {}
 ok(CombatLog.Report("say", 3), "report to say succeeds")
+-- Paced for the server's chat flood mute (10 lines a second): the header goes at once, the rest 0.25 s apart
+ok(#sent == 1, "report sends only its first line at once: " .. #sent)
+local delays = runDelayedCalls()
+ok(#delays == 1 and delays[1] == 0.25, "the next line follows 0.25 s later: " .. table.concat(delays, ","))
 ok(#sent == 2 and sent[1].chatType == "SAY" and sent[1].msg:find("^DC Combat %- Damage") ~= nil and sent[2].msg:find("^1%. Tester") ~= nil,
     "report posts header + rows: " .. tostring(sent[1] and sent[1].msg) .. " / " .. tostring(sent[2] and sent[2].msg))
+
+-- Two reports in a row share one queue: still one line at once, all four in order, no faster
+sent = {}
+CombatLog.Report("say", 3)
+CombatLog.Report("say", 3)
+ok(#sent == 1, "a second report waits for the first: " .. #sent)
+delays = runDelayedCalls()
+ok(#sent == 4 and #delays == 3 and sent[3].msg:find("^DC Combat %- Damage") ~= nil,
+    "both reports arrive in order, 0.25 s apart: " .. #sent .. " lines, " .. #delays .. " waits")
+ok(#pendingCalls == 0, "the queue stops when it is empty")
 ok(not CombatLog.Report("party"), "party report is refused when not grouped")
 
 -- End the fight after 6s: segment named after the enemy

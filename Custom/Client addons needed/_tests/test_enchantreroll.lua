@@ -406,6 +406,56 @@ SIM.Run(11);
 ok(frame.status:GetText() == "", "a result message clears itself after a while");
 
 -- ----------------------------------------------------------------------------
+-- The per-item reroll limit (DC.RandomEnchants.Reroll.MaxRerolls)
+-- ----------------------------------------------------------------------------
+
+section("reroll limit");
+
+Deliver(SMSG_ENCHANT_INFO, Info({ maxRerolls = 15, rerollCount = 3 }));
+ok(frame.hint:GetText() == "12 of 15 rerolls left - each one costs more.", "the hint counts the rerolls left");
+ok(rows[1].button:IsEnabled() and frame.rerollAll:IsEnabled(), "with 12 left every action is open");
+
+Deliver(SMSG_ENCHANT_INFO, Info({ maxRerolls = 15, rerollCount = 14 }));
+ok(rows[1].button:IsEnabled() and rows[1].cost:GetText():find("8", 1, true) == 1,
+    "with one left a single line can still be rerolled");
+ok(not frame.rerollAll:IsEnabled() and frame.rerollAllCost:GetText() == "Needs 2 rerolls",
+    "but not both lines at once: Reroll All needs one per line");
+frame.rerollAll:GetScript("OnEnter")(frame.rerollAll);
+ok(SIM.TooltipText(GameTooltip):find("Needs 2 rerolls; this item has 1 left.", 1, true) ~= nil,
+    "Reroll All's tooltip says how many it needs");
+frame.rerollAll:GetScript("OnLeave")(frame.rerollAll);
+
+mark = #sent;
+rows[1].button:Click();
+_, popup = StaticPopup_Visible(POPUP);
+ok(popup and popup.text:GetText():find("Rerolls left afterwards: 0 of 15", 1, true) ~= nil,
+    "the confirmation says the last reroll is being spent");
+SIM.ClickPopup(POPUP, 2);
+ok(#SentSince(mark, CMSG_DO_ENCHANT_REROLL) == 0, "cancelling sends nothing");
+
+Deliver(SMSG_ENCHANT_INFO, Info({ maxRerolls = 15, rerollCount = 15 }));
+ok(not rows[1].button:IsEnabled() and rows[1].cost:GetText() == "No rerolls left", "at the limit Reroll is closed");
+ok(rows[3].button:IsEnabled() and rows[3].cost:GetText():find("30", 1, true) == 1,
+    "Add uses no rerolls and stays open");
+ok(frame.hint:GetText() == "All 15 rerolls of this item are used." and frame.hint:GetTextColor() == 1.0,
+    "the hint says the rerolls are used up, in red");
+SIM.keys.shift = true;
+rows[1].button:Click();
+SIM.keys.shift = false;
+ok(#SentSince(mark, CMSG_DO_ENCHANT_REROLL) == 0, "a closed Reroll sends nothing, shift-click included");
+
+Deliver(SMSG_ENCHANT_RESULT, {
+    success = false, errorCode = 14, error = "This item has no rerolls left for that.", action = "reroll", line = 0,
+    bag = 0, slot = 3, before = { 2803, 2804, 0 }, after = { 2803, 2804, 0 }, cost = {}, rerollCount = 15,
+});
+ok(frame.status:GetText() == "This item has no rerolls left for that.", "the server's limit refusal is shown");
+
+Deliver(SMSG_ENCHANT_INFO, Info({ maxRerolls = 0, rerollCount = 40 }));
+ok(rows[1].button:IsEnabled() and frame.rerollAll:IsEnabled()
+    and frame.hint:GetText() == "Rerolled 40 times - each one costs more.",
+    "MaxRerolls 0 means no limit");
+
+-- ----------------------------------------------------------------------------
 -- Items that cannot hold lines, moved items, a lowered line limit
 -- ----------------------------------------------------------------------------
 

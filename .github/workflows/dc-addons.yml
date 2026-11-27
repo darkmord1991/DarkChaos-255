@@ -1,0 +1,94 @@
+# DC client addon suite: Lua regression tests (_tests/run.sh) and the static integrity check (check_addons.py).
+#
+# Runner: GitHub-hosted ubuntu-latest. No secrets.
+#
+# Lua version: the suite runs under Lua 5.4 on purpose. Its harness emulates the 3.3.5 client's Lua 5.1 on top of
+# 5.4 (setfenv(1, env) per file, loadstring, the client's bit/format helpers; see _tests/talents_sim.lua), and
+# talents_client.lua replaces setfenv/getfenv globally, which a real 5.1 interpreter would not accept as the
+# same thing. Locally it is run with Lua 5.4.8. A separate, non-blocking step parses every DC addon file with
+# luac5.1, the client's own grammar, so 5.2+ syntax (goto, //, integer literals the client cannot read) shows up.
+#
+# Paths: most tests load files by the workstation path K:\Dark-Chaos\DarkChaos-255-Master\... . The suite is run
+# with LUA_INIT=@_tests/ci_pathmap.lua and DC_REPO_ROOT=<checkout>, which maps that prefix onto the checkout (and
+# backslashes to slashes) for dofile/loadfile/io.open/io.lines. The talents suites (test_talents*, test_path) also
+# load the stock 3.3.5 FrameXML; it comes from the public wowgaming/3.3.5-interface-files repository (the same
+# files as the workstation's Archive/3.3.5-interface-files-main) and reaches talents_client.lua as SIM_FRAMEXML.
+name: DC Addons
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - 'Custom/Client addons needed/**'
+      - .github/workflows/dc-addons.yml
+  push:
+    branches:
+      - master
+      - '0.3'
+    paths:
+      - 'Custom/Client addons needed/**'
+      - .github/workflows/dc-addons.yml
+  workflow_dispatch:
+
+concurrency:
+  # New commits on a PR cancel the still-running check on the old commit.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dc-addons:
+    runs-on: ubuntu-latest
+    name: DC addon tests
+    # Deliberately NOT gated on github.repository: the upstream workflows are pinned to
+    # azerothcore/azerothcore-wotlk and therefore never run here.
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Install Lua 5.4 (suite) and 5.1 (client grammar check)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.4 lua5.1
+          # run.sh calls plain `lua`; make sure it is 5.4 whatever the alternatives system picked.
+          sudo ln -sf "$(command -v lua5.4)" /usr/local/bin/lua
+          lua -v
+
+      - name: Static checks (check_addons.py)
+        run: python "Custom/Client addons needed/check_addons.py"
+
+      - name: Stock 3.3.5 FrameXML for the talents suites
+        uses: actions/checkout@v7
+        with:
+          repository: wowgaming/3.3.5-interface-files
+          ref: main
+          path: _framexml
+
+      - name: Lua regression suite (_tests/run.sh)
+        working-directory: Custom/Client addons needed/_tests
+        env:
+          DC_REPO_ROOT: ${{ github.workspace }}
+          LUA_INIT: '@${{ github.workspace }}/Custom/Client addons needed/_tests/ci_pathmap.lua'
+          SIM_FRAMEXML: ${{ github.workspace }}/_framexml/
+        run: sh run.sh
+
+      - name: Lua 5.1 syntax of the addon files (informational)
+        continue-on-error: true
+        working-directory: Custom/Client addons needed
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+              if ! out=$(luac5.1 -p "$f" 2>&1); then
+                  echo "$out"
+                  fail=1
+              fi
+          done < <(find . -name '*.lua' -not -path './_tests/*' -not -path './_tools/*' -print0)
+          exit $fail

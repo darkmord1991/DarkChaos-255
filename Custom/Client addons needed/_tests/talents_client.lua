@@ -1585,6 +1585,8 @@ function SIM.LoadFile(path, addonName, ns)
 	local file = assert(io.open(path, "rb"))
 	local source = file:read("a")
 	file:close()
+	-- The client skips a UTF-8 byte order mark (DC-QOS/Modules/NameplatesPlus.lua has one)
+	source = source:gsub("^\239\187\191", "")
 	local state = { target = _G }
 	local proxy = setmetatable({}, {
 		__index = function(_, key)

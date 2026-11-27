@@ -363,6 +363,61 @@ T.SetMythicPlus({
     },
 })
 dockedOk(T, "challenge-mode block")
+
+-- Enemy forces (server MythicPlus.Forces.*): the payload carries forces /
+-- forcesRequired only when forces gate the run. Without them - an older server,
+-- forces off, an exempt bot run - the block keeps the plain enemy count.
+local function shownLines(T)
+    local out = {}
+    for _, line in ipairs(T.lines) do
+        if line.text:IsShown() then
+            out[#out + 1] = { text = line.text:GetText(), icon = line.icon._tex and line.icon._tex[1] }
+        end
+    end
+    return out
+end
+local function findLine(T, prefix)
+    for _, line in ipairs(shownLines(T)) do
+        if string.sub(tostring(line.text), 1, #prefix) == prefix then
+            return line
+        end
+    end
+end
+local MPLUS_BOSSES = {
+    { name = "Prince Keleseth", killed = 1, at = 300 },
+    { name = "Skarvald the Constructor", killed = 0 },
+    { name = "Ingvar the Plunderer", killed = 0 },
+}
+local function mplus(extra)
+    local data = { mapName = "Utgarde Keep", keystone = 12, duration = 1800, remaining = 1500, deaths = 2,
+        affixes = {}, enemiesKilled = 40, bosses = MPLUS_BOSSES }
+    for k, v in pairs(extra or {}) do data[k] = v end
+    return data
+end
+
+T.SetMythicPlus(mplus())
+ok(findLine(T, "Enemies slain: 40") ~= nil and findLine(T, "Forces") == nil,
+    "old server (no forces fields): the plain enemy count stays, no forces line")
+
+T.SetMythicPlus(mplus({ forces = 30, forcesRequired = 58 }))
+local forcesLine = findLine(T, "Forces")
+ok(forcesLine ~= nil and forcesLine.text == "Forces 30/58 (51%)",
+    "forces in the payload: 'Forces 30/58 (51%)' (got " .. tostring(forcesLine and forcesLine.text) .. ")")
+ok(findLine(T, "Enemies slain") == nil, "the forces line replaces the enemy count")
+ok(forcesLine ~= nil and forcesLine.icon == T.ICON_DASH, "forces still missing: dash icon")
+dockedOk(T, "challenge-mode block with a forces line")
+
+T.SetMythicPlus(mplus({ forces = 61, forcesRequired = 58 }))
+forcesLine = findLine(T, "Forces")
+ok(forcesLine ~= nil and forcesLine.text == "Forces 61/58 (100%)" and forcesLine.icon == T.ICON_CHECK,
+    "forces met: count may pass the requirement, percent stops at 100, check icon")
+
+T.SetMythicPlus(mplus({ forces = 0, forcesRequired = 0 }))
+ok(findLine(T, "Forces") == nil and findLine(T, "Enemies slain: 40") ~= nil,
+    "forcesRequired 0 (no requirement) hides the forces line")
+ok(T.FormatForces(5, nil) == nil and T.FormatForces(0, 10) == "Forces 0/10 (0%)",
+    "FormatForces: nil without a requirement, 0% at the start")
+
 T.ClearMythicPlus()
 dockedOk(T, "back to the dungeon list")
 

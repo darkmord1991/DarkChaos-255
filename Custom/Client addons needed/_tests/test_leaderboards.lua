@@ -74,6 +74,7 @@ _G.DCAddonProtocol = {
     RegisterHandler = function(_, module, opcode, fn)
         handlers[module .. "_" .. opcode] = fn
     end,
+    RegisterErrorHandler = function() end,
     DebugPrint = function() end,
 }
 

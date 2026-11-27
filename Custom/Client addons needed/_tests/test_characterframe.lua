@@ -134,11 +134,34 @@ _G.GetInventoryItemTexture = function(_, id)
 end
 _G.GetInventoryItemQuality = function() return 4 end
 _G.GetInventoryItemID = function(_, id) return 1000 + id end
+local scaledItems = {}   -- item id -> quality 7, template level 1
 _G.GetItemInfo = function(link)
     local id = tonumber(string.match(link, "item:(%d+)")) or 0
     local loc = (id == 1016) and "INVTYPE_2HWEAPON" or "INVTYPE_HEAD"
+    if scaledItems[id] then
+        return "Item " .. id, link, 7, 1, 1, "Armor", "Plate", 1, loc, "Interface\\Icons\\Item"
+    end
     return "Item " .. id, link, 4, 200, 80, "Armor", "Plate", 1, loc, "Interface\\Icons\\Item"
 end
+
+-- What the item level scan reads: the tooltip's line, there only with the CVar on
+local tooltipLevels = {}
+local cvars = { showItemLevel = "1" }
+local cvarWrites = 0
+_G.ITEM_LEVEL = "Item Level %d"
+_G.GetCVar = function(name) return cvars[name] end
+_G.SetCVar = function(name, value) cvars[name] = value; cvarWrites = cvarWrites + 1 end
+Methods.SetOwner = Methods.SetOwner or function() end
+Methods.SetInventoryItem = function(self, _, slotId)
+    self._lines = { "Item", "Requires level 1 to 255 (81)" }
+    if cvars.showItemLevel == "1" and tooltipLevels[slotId] then
+        self._lines[3] = "Item Level " .. tooltipLevels[slotId]
+    end
+    for i, text in ipairs(self._lines) do
+        _G["DCCFItemLevelScanTextLeft" .. i] = { GetText = function() return text end }
+    end
+end
+Methods.NumLines = function(self) return self._lines and #self._lines or 0 end
 
 -- Titles
 _G.GetNumTitles = function() return 3 end
@@ -392,6 +415,31 @@ ok(CharacterHeadSlot.dccfLevel and tostring(CharacterHeadSlot.dccfLevel._text) =
     "head slot badge shows upgraded item level 220")
 ok(CharacterShirtSlot.dccfLevel and CharacterShirtSlot.dccfLevel._shown == false, "shirt slot carries no item level badge")
 ok(CharacterHeadSlot.dccfQuality._shown ~= false, "epic item shows a quality border")
+
+-- A level-scaling item: the tooltip's item level, whatever the template or the upgrade cache say
+scaledItems[1005] = true           -- chest: heirloom by quality alone, template level 1
+tooltipLevels[5] = 189
+tooltipLevels[2] = 189             -- neck: heirloom by id, template level 200 here
+DCCF:UpdateAllSlotOverlays()
+ok(tostring(CharacterChestSlot.dccfLevel._text) == "189", "a quality 7 item's badge shows the tooltip's 189, not template level 1")
+ok(tostring(CharacterNeckSlot.dccfLevel._text) == "189", "an item the upgrade list calls an heirloom shows the tooltip's level too")
+ok(math.abs(DCCF:GetAverageItemLevel() - ((220 + 13 * 200 + 2 * 189 + 200) / 17)) < 0.01, "the average item level counts the scaled levels")
+DCCF:SelectSidebar(4)
+ok(tostring(DCCF.upgradesPane.rows[5].Level._text) == "189", "the upgrades pane row shows the scaled level")
+DCCF:SelectSidebar(1)
+local writes = cvarWrites
+DCCF:UpdateAllSlotOverlays()
+ok(cvarWrites == writes, "with showItemLevel on, the scan leaves the CVar alone")
+cvars.showItemLevel = "0"
+DCCF:UpdateAllSlotOverlays()
+ok(tostring(CharacterChestSlot.dccfLevel._text) == "189", "the scan still finds the line with showItemLevel off")
+ok(cvars.showItemLevel == "0", "and puts the CVar back")
+cvars.showItemLevel = "1"
+tooltipLevels[5], tooltipLevels[2] = nil, nil
+DCCF:UpdateAllSlotOverlays()
+ok(tostring(CharacterChestSlot.dccfLevel._text) == "1", "a tooltip with no item level line falls back to the template")
+scaledItems[1005] = nil
+DCCF:UpdateAllSlotOverlays()
 
 -- Titles pane
 DCCF:SelectSidebar(2)

@@ -11,6 +11,8 @@ fail a build instead of accumulating silently:
   TOCNAME     the .toc basename does not match its folder   -> the addon never loads
   POLYFILL    an all-or-nothing shim guard (the C-1 pattern)
   FRAMEXML    an addon replaces a stock 3.3.5 Blizzard global UI-wide
+              (not in files that switch to a private environment with a file-scope
+              setfenv(1, env) first: their "globals" never reach _G)
 
 Exit code is non-zero if any error-level finding is present. ORPHAN and
 POLYFILL are warnings by default; pass --strict to make them fail too.
@@ -64,6 +66,10 @@ ALL_OR_NOTHING = re.compile(
 # to be diffed against stock and recorded before it is allowed.
 STOCK_GLOBALS_FILE = os.path.join(HERE, 'stock_framexml_globals.txt')
 OVERRIDES_FILE = os.path.join(HERE, 'framexml_overrides.txt')
+
+# `setfenv(1, env)` at file scope (optionally after `local ... = ...;` on the same line): from there on
+# the file's globals live in `env`, not _G (DC-Talents runs the vendored retail FrameXML that way).
+PRIVATE_ENV = re.compile(r'^(?:local\b[^;]*;\s*)?setfenv\(\s*1\s*,')
 
 # A top-level global definition: `X = ...` or `function X(...)` at column 0.
 G_ASSIGN = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)')
@@ -224,7 +230,10 @@ def main():
                     rel = os.path.relpath(os.path.join(dirpath, fn),
                                           path).replace(os.sep, '/')
                     body_lines = body.split('\n')
+                    private_from = next((j for j, ln in enumerate(body_lines) if PRIVATE_ENV.match(ln)), None)
                     for i, ln in enumerate(body_lines):
+                        if private_from is not None and i >= private_from:
+                            break
                         m = G_ASSIGN.match(ln) or G_FUNC.match(ln)
                         if not m:
                             continue
