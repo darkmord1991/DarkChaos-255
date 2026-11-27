@@ -98,6 +98,9 @@ The Training Master provides a gossip menu (no chat command) to spawn configurab
 | `challenge status` | | View the status of your active challenge. |
 | `challenge list` | | List all available prestige challenges. |
 | `altbonus info` | | View bonuses applied to this alt from your main's prestige. |
+| `talents` | | List prestige talents, your account's points and this character's ranks. |
+| `talents learn` | `<id>` | Spend one prestige talent point on the given talent. |
+| `talents reset` | | Refund all prestige talent points on this character (costs `Prestige.Talents.ResetCost`). |
 
 ### System: Mythic+ Dungeons
 *Command:* `.mplus`
@@ -372,6 +375,21 @@ Reloads the Universal Quest Master cache (quest mappings, display IDs, daily/wee
 | `reset` | `<player>` | Reset a player's seasonal data. |
 | `setseason` | `<id>` | Manually set the active season ID. |
 | `multiplier` | `<type> <val>` | Set global reward multipliers. |
+
+### System: Collection (`.collection`)
+*Command:* `.collection`
+
+`<type>` is `mount` | `pet` | `toy` | `heirloom` | `title` | `transmog` (or 1-6).
+`<entry>` may be the spell id, teaching item id, title id or appearance id -
+it is normalised the same way a real reward would be. The target may be offline;
+unlocks are account-wide and an offline character picks the spell up at login.
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| `grant` | `<type> <entry> [player]` | Unlock a collectible for the target's account. |
+| `revoke` | `<type> <entry> [player]` | Remove an unlock and unlearn it. |
+| `check` | `<type> <entry> [player]` | Report how the entry resolves and whether it is owned. |
+| `reload` | | Re-read `dc_collection_rewards` (quest/achievement rewards). |
 
 ### System: Prestiges (`.prestige`)
 *Command:* `.prestige`
