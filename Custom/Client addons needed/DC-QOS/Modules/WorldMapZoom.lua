@@ -62,7 +62,7 @@ local WorldMapZoom = {
 
 -- Game maps whose continent overview can be zoomed.
 local ZOOMABLE_GAME_MAPS = {
-    [750] = true, -- Mount Hyjal (80-130), continent WorldMapArea 1262
+    [750] = true, -- The Sundered Wilds (80-130), continent WorldMapArea 1262
     [751] = true, -- Plaguelands, continent WorldMapArea 1267
 }
 

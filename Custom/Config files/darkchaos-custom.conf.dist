@@ -1417,8 +1417,8 @@ RareSpawn.Announce.Enable = 1
 #    RareSpawn.Announce.Maps
 #        Description: Comma-separated map ids to watch. Rares on any other map
 #                     are ignored entirely.
-#                     750 = Cata Kalimdor downport, 751 = DC Plaguelands
-#                     (Lordaeron), 37 = Azshara Crater
+#                     750 = The Sundered Wilds (Cata Kalimdor downport),
+#                     751 = The Fallen Kingdom (Lordaeron), 37 = Azshara Crater
 #        Default:     "750,751,37"
 #
 #        Map 751 carries 65 rares. It was missing from this list until 2026-08-20,
@@ -1614,8 +1614,8 @@ Hotspots.AnnounceRadius = 1000.0
 #                     Restricted to the custom leveling maps:
 #                     37 = Azshara Crater (1-80), 1410 = Hyjal Frontier
 #                     (80-130), 850 = Stratholme Valley (130-160),
-#                     750 = DC Hyjal (Mount Hyjal downport),
-#                     751 = DC Plaguelands (Eastern Plaguelands downport).
+#                     750 = The Sundered Wilds (Mount Hyjal downport),
+#                     751 = The Fallen Kingdom (Plaguelands downport).
 #                     Other options: 1405 = Isle of Giants, 0/1/530/571 =
 #                     vanilla continents. Maps must exist in the deployed
 #                     Map.dbc and be non-instanced; invalid entries are
@@ -5684,7 +5684,7 @@ DC.UpdateProfiler.ThresholdMs = 25
 
 
 ###############################################################################
-# DUNGEON QOL: BATTLE RESURRECTION CHARGES AND CHECKPOINT RELEASE
+# DUNGEON QOL: BATTLE RESURRECTION CHARGES, CHECKPOINT RELEASE, FINAL BOSS REVIVE
 #
 #  src/server/scripts/DC/DungeonQoL. Ported in idea from Ascension CoA.
 #
@@ -5736,6 +5736,38 @@ DC.CheckpointRelease.Maps = ""
 #
 
 DC.CheckpointRelease.MythicPlus = 1
+
+#
+#    DC.FinalBossRevive.Enable
+#        Description: When the final boss of a 5-player dungeon dies, every dead player of the instance is
+#                     resurrected where they died, once nobody is fighting (at most 2 minutes later).
+#                     Players who released and are still ghosts outside are sent back to their corpse
+#                     and resurrected there. Each wing's end boss counts (Dire Maul, Stratholme, ...).
+#        Default:     1 (Enabled)
+#
+
+DC.FinalBossRevive.Enable = 1
+
+#
+#    DC.FinalBossRevive.RestorePct
+#        Description: Health and mana the resurrected players get back, in percent (1-100).
+#        Default:     100
+#
+
+DC.FinalBossRevive.RestorePct = 100
+
+#
+#    DC.FinalBossRevive.ExtraBosses
+#        Description: Comma-separated map:creatureEntry pairs that also count as a dungeon's final boss.
+#                     Only needed for dungeons without DungeonEncounter.dbc rows: elsewhere the final
+#                     encounter of instance_encounters is used (or the highest OrderIndex when none is
+#                     marked, as on the DC custom dungeons 820 and 823).
+#        Default:     "821:5500038,821:10813,822:5700000,825:5046964"
+#                     (Stratholme DC: Baron Rivendare and Balnazzar, Scholomance DC: Darkmaster Gandling,
+#                     Shadowfang Keep Cata: Lord Godfrey)
+#
+
+DC.FinalBossRevive.ExtraBosses = "821:5500038,821:10813,822:5700000,825:5046964"
 
 ###############################################################################
 # RAID FLEX: BOSS HEALTH AND BONUS LOOT BY HEADCOUNT
@@ -5892,8 +5924,8 @@ DC.ThirdProfession.UnlockPrestige = 0
 #    DC.XPRate.Max
 #        Description: Personal XP rate (.dc xp <rate>, .dc xp bonus on|off), a multiplier of the realm
 #                     rate. Min 0 allows "XP off"; Max 1.0 means nobody goes above the realm rate. The
-#                     bonus opt-out removes the prestige alt bonus, the hotspot buff and prestige talent
-#                     XP; rested XP, Recruit-a-Friend and racial bonuses stay.
+#                     bonus opt-out removes the prestige alt bonus, the hotspot buff, prestige talent
+#                     XP and Well Rested; rested XP, Recruit-a-Friend and racial bonuses stay.
 #        Default:     1, 0.0, 1.0
 #
 
@@ -5902,12 +5934,80 @@ DC.XPRate.Min = 0.0
 DC.XPRate.Max = 1.0
 
 ###############################################################################
+# WELL RESTED
+#
+#  src/server/scripts/DC/Progression/dc_well_rested.cpp, spell 800030. Staying in an inn gives
+#  Well Rested: more XP from kills and quests for a stretch of play time. An inn is a tavern
+#  areatrigger (stock inns and the DC ones in areatrigger_tavern) or an area flagged as a rest
+#  zone (Westguard Inn, Warsong Hold, DC.RestAreas.ExtraAreaIds); a capital city alone is not.
+#  Time logged out in an inn counts as time in the inn. The duration only runs while the
+#  character is online, and staying in an inn keeps it full. Characters that turned bonus XP
+#  off (.dc xp bonus off), are at their max level or use the Experience Eliminator do not get
+#  it. Stacks with the hotspot bonus and the challenge-mode multipliers (they multiply).
+#  Logging out in an inn is remembered in character_settings (needs EnablePlayerSettings = 1).
+#
+###############################################################################
+
+#
+#    DC.WellRested.Enable
+#        Description: Turns Well Rested on or off. Off also removes the aura at the next login.
+#        Default:     1 (Enabled)
+#
+
+DC.WellRested.Enable = 1
+
+#
+#    DC.WellRested.InnMinutes
+#        Description: Minutes a character must stay in an inn (online, or logged out there) to
+#                     become Well Rested. Being out of the inn for more than a minute starts the
+#                     count over. 0 = at once.
+#        Default:     10
+#
+
+DC.WellRested.InnMinutes = 10
+
+#
+#    DC.WellRested.DurationMinutes
+#        Description: Minutes of play time Well Rested lasts (1 - 10080).
+#        Default:     120
+#
+
+DC.WellRested.DurationMinutes = 120
+
+#
+#    DC.WellRested.XPPercent
+#        Description: Extra XP in percent while Well Rested (0 - 1000). The buff tooltip reads its
+#                     number from the spell row (10%), so change spell 800030's EffectBasePoints_1
+#                     (spell_dbc and the client Spell.dbc) along with this.
+#        Default:     10
+#
+
+DC.WellRested.XPPercent = 10
+
+#
+#    DC.WellRested.IncludeQuests
+#        Description: The bonus also applies to quest XP (including dungeon finder rewards).
+#                     0 = kill XP only.
+#        Default:     1 (Enabled)
+#
+
+DC.WellRested.IncludeQuests = 1
+
+#
+#    DC.WellRested.IncludeBots
+#        Description: Playerbots can become Well Rested too.
+#        Default:     0 (Real players only)
+#
+
+DC.WellRested.IncludeBots = 0
+
+###############################################################################
 # MAP FLIGHT LICENSES (MAPS 750 / 751)
 #
-#  src/server/scripts/DC/Progression/dc_flight_license.cpp. Flying on map 750 needs the Kalimdor
-#  Flight License (spell 300610, level 120), flying on map 751 the Lordaeron Flight License
-#  (spell 300611, level 150), like Cold Weather Flying in Northrend. Every riding trainer teaches
-#  them; each also adds 50% mount and flight-form speed on its own map.
+#  src/server/scripts/DC/Progression/dc_flight_license.cpp. Flying on map 750 (The Sundered Wilds)
+#  needs Scorched Weather Flying (spell 300610, level 120), flying on map 751 (The Fallen Kingdom)
+#  needs Plague Weather Flying (spell 300611, level 150), like Cold Weather Flying in Northrend.
+#  Every riding trainer teaches them; each also adds 50% mount and flight-form speed on its own map.
 #
 ###############################################################################
 
@@ -5939,6 +6039,41 @@ DC.FlightLicense.AccountWide = 1
 #
 
 DC.FlightLicense.AutoQuest = 1
+
+###############################################################################
+# MOUNT SPEED FROM RIDING SKILL
+#
+#  src/server/scripts/DC/Progression/dc_mount_speed.cpp. A mount's speed comes from the character's
+#  Riding skill instead of the mount spell: 75 = 60% ground, 150 = 100% ground, 225 = 150% flying,
+#  300 = 280% flying (310% once the character knows a 310% flyer). Only mounts at a standard speed
+#  (ground 1-100%, flying 150-310%) are re-rated; special mounts keep their own speed. Applies to
+#  playerbots too. Druid flight forms are not affected.
+#
+###############################################################################
+
+#
+#    DC.MountSpeed.RidingSkill
+#        Description: 0 = stock (the mount spell sets the speed).
+#                     1 = raise only: the riding skill can make a mount faster, never slower.
+#                     2 = follow: the riding skill sets the speed both ways, so a mount the skill does
+#                         not cover yet (e.g. an account-wide 310% flyer on an Expert Riding character)
+#                         runs at the skill's speed.
+#        Default:     2
+#
+
+DC.MountSpeed.RidingSkill = 2
+
+#
+#    DC.MountSpeed.StackBonuses
+#        Description: Stock takes the larger of two bonus groups: the best of Riding Crop / Crusader
+#                     Aura / On a Pale Horse / Pathfinding, or the product of Collector's Speed, Scorched
+#                     and Plague Weather Flying (+50% on maps 750/751), Mithril Spurs and the mount speed
+#                     enchants. 1 = multiply the two groups so every bonus applies (within the first
+#                     group the best one still wins). 0 = stock.
+#        Default:     1
+#
+
+DC.MountSpeed.StackBonuses = 1
 
 ###############################################################################
 # LAB TOOLS: CLIENT PROBE RELAY AND IN-GAME BUG REPORTS

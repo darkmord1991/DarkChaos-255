@@ -2717,6 +2717,8 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
     Unit* caster = m_originalCaster ? m_originalCaster : m_caster->ToUnit();
 
     SpellMissInfo missInfo = target->missCondition;
+    if (caster)
+        sScriptMgr->OnSpellHitOutcome(caster, effectUnit, m_spellInfo, uint8(missInfo), target->crit);
 
     // Need init unitTarget by default unit (can changed in code on reflect)
     // Or on missInfo != SPELL_MISS_NONE unitTarget undefined (but need in trigger subsystem)

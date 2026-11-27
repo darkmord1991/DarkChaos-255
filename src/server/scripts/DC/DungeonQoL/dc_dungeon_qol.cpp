@@ -16,6 +16,7 @@
 #include "StringConvert.h"
 #include "Tokenize.h"
 
+#include <algorithm>
 #include <cctype>
 #include <mutex>
 #include <string>
@@ -26,6 +27,11 @@ namespace
     // The DC custom raids (Map.dbc InstanceType 2): Blackwing Descent, Timbermaw Hold,
     // Emerald Sanctum, Castle Nathria, Naxxramas 40.
     constexpr char const* DEFAULT_RAID_MAPS = "669,819,824,2296,2921";
+
+    // The DC 5-player dungeons with no DungeonEncounter.dbc rows: Stratholme 821 (Baron Rivendare,
+    // and Balnazzar - Dathrohan becomes stock entry 10813 mid-fight), Scholomance 822 (Darkmaster
+    // Gandling), Shadowfang Keep Cata 825 (Lord Godfrey).
+    constexpr char const* DEFAULT_FINAL_BOSSES = "821:5500038,821:10813,822:5700000,825:5046964";
 
     std::mutex g_settingsLock;
     std::shared_ptr<DC::DungeonQoL::Settings const> g_settings;
@@ -59,6 +65,34 @@ namespace
         return maps;
     }
 
+    // "map:creatureEntry" pairs, comma-separated.
+    std::unordered_set<uint64> ParseBossList(std::string const& text, char const* key)
+    {
+        std::unordered_set<uint64> bosses;
+        for (std::string_view token : Acore::Tokenize(text, ',', false))
+        {
+            token = TrimToken(token);
+            if (token.empty())
+                continue;
+
+            Optional<uint32> mapId;
+            Optional<uint32> entry;
+            std::size_t const colon = token.find(':');
+            if (colon != std::string_view::npos)
+            {
+                mapId = Acore::StringTo<uint32>(TrimToken(token.substr(0, colon)));
+                entry = Acore::StringTo<uint32>(TrimToken(token.substr(colon + 1)));
+            }
+
+            if (mapId && entry)
+                bosses.insert(DC::DungeonQoL::FinalBossKey(*mapId, *entry));
+            else
+                LOG_ERROR("scripts.dc", "{}: '{}' is not a map:creature pair, ignored.", key, token);
+        }
+
+        return bosses;
+    }
+
     class dc_dungeon_qol_world : public WorldScript
     {
     public:
@@ -84,12 +118,21 @@ namespace DC::DungeonQoL
         settings->checkpointMaps = ParseMapList(
             sConfigMgr->GetOption<std::string>("DC.CheckpointRelease.Maps", ""), "DC.CheckpointRelease.Maps");
         settings->checkpointMythicPlus = sConfigMgr->GetOption<bool>("DC.CheckpointRelease.MythicPlus", true);
+        settings->finalBossReviveEnable = sConfigMgr->GetOption<bool>("DC.FinalBossRevive.Enable", true);
+        uint32 const restorePct =
+            std::clamp<uint32>(sConfigMgr->GetOption<uint32>("DC.FinalBossRevive.RestorePct", 100), 1, 100);
+        settings->finalBossReviveRestore = restorePct / 100.0f;
+        settings->finalBossReviveExtraBosses = ParseBossList(
+            sConfigMgr->GetOption<std::string>("DC.FinalBossRevive.ExtraBosses", DEFAULT_FINAL_BOSSES),
+            "DC.FinalBossRevive.ExtraBosses");
 
         LOG_INFO("scripts.dc", "Dungeon QoL: battle res {} ({} raid maps, Mythic+ recharge {} min), "
-            "checkpoint release on {} listed maps, Mythic+ checkpoints {}.",
+            "checkpoint release on {} listed maps, Mythic+ checkpoints {}, "
+            "final boss revive {} ({}%, {} extra bosses).",
             settings->battleResEnable ? "on" : "off", settings->battleResRaidMaps.size(),
             settings->battleResRechargeMinutes, settings->checkpointMaps.size(),
-            settings->checkpointMythicPlus ? "on" : "off");
+            settings->checkpointMythicPlus ? "on" : "off", settings->finalBossReviveEnable ? "on" : "off",
+            restorePct, settings->finalBossReviveExtraBosses.size());
 
         std::lock_guard<std::mutex> guard(g_settingsLock);
         g_settings = std::move(settings);
@@ -142,4 +185,5 @@ void AddSC_dc_dungeon_qol()
     new dc_dungeon_qol_world();
     DC::DungeonQoL::RegisterBattleResurrectionScripts();
     DC::DungeonQoL::RegisterCheckpointReleaseScripts();
+    DC::DungeonQoL::RegisterFinalBossReviveScripts();
 }

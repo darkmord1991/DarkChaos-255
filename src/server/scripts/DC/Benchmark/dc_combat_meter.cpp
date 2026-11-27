@@ -29,6 +29,16 @@
  *    their pets and minions) and how much of the damage taken came from
  *    players. On maps both factions share, this separates world PvP from
  *    mob balance. Written only if the columns exist.
+ *  - The character's spell power, attack power and crit chances when the
+ *    fight started, so the damage per hit of a spell rank can be read against
+ *    them. Written only if the columns exist.
+ *  - Its haste, hit, expertise and armor penetration when the fight started,
+ *    and how its own attacks ended: auto attacks that crit, missed, were
+ *    dodged or parried, or glanced; damage spells that missed, were resisted,
+ *    dodged or parried, and how many direct hits crit. Combat ratings convert
+ *    to less and less of a percentage above 80; these show what that costs.
+ *    From two read-only hooks (OnMeleeAttackOutcome, OnSpellHitOutcome).
+ *    Written only if the columns exist.
  *  - Per spell (table `dc_bench_spell`, written only if it exists): the
  *    damage of every spell the character, its pet and each minion dealt in
  *    the fight, with the minion's creature entry. Spell 0 is a melee swing.
@@ -83,6 +93,13 @@ namespace
 
         // Set at config load: whether dc_bench_fight has damage_taken_players, killer_type and killer_entry.
         std::atomic<bool> hasKillerColumns{false};
+
+        // Set at config load: whether dc_bench_fight has spell_power, attack_power, spell_crit and physical_crit.
+        std::atomic<bool> hasStatColumns{false};
+
+        // Set at config load: whether dc_bench_fight has the haste, hit, expertise and armor penetration columns
+        // and the outcome counts (swing_* and spell_*).
+        std::atomic<bool> hasRatingColumns{false};
     };
 
     MeterConfig s_config;
@@ -147,6 +164,34 @@ namespace
         uint32 biggestSpellHit = 0;
         uint32 biggestSpellId = 0;
 
+        // The character's offence when the fight started, before any of its procs: what the damage per hit of a
+        // spell rank is to be read against.
+        uint32 spellPower = 0;      // magic schools
+        uint32 attackPower = 0;     // ranged for hunters, melee for everyone else
+        float spellCrit = 0.0f;     // percent, the best magic school
+        float physicalCrit = 0.0f;  // percent, ranged for hunters
+        float spellHaste = 0.0f;    // percent from haste rating only (no talents or buffs)
+        float physicalHaste = 0.0f; // percent from haste rating only, ranged for hunters
+        float spellHit = 0.0f;      // percent bonus to hit (rating and talents)
+        float physicalHit = 0.0f;   // percent bonus to hit, ranged for hunters
+        float expertise = 0.0f;     // percent off the target's dodge and parry chance
+        float armorPen = 0.0f;      // percent from armor penetration rating
+
+        // How the character's own attacks ended (pets and minions not included). Swings are main and off hand auto
+        // attacks; spells are the ones that deal damage, directly or over time, cast at a target not friendly to it.
+        uint32 swings = 0;
+        uint32 swingCrits = 0;
+        uint32 swingMisses = 0;
+        uint32 swingDodgesParries = 0;
+        uint32 swingGlancing = 0;
+        uint32 spellAttempts = 0;
+        uint32 spellMisses = 0;
+        uint32 spellResists = 0;
+        uint32 spellDodgesParries = 0;
+        uint32 spellOther = 0;      // immune, evade, reflect, absorb, deflect
+        uint32 spellDirectHits = 0; // landed spells with a direct damage effect: what spellCrits is out of
+        uint32 spellCrits = 0;
+
         std::vector<SpellTotal> spells;
     };
 
@@ -177,6 +222,58 @@ namespace
         fight->spells.push_back({ source, casterEntry, spellId, damage, 1 });
     }
 
+    void NoteOffence(Fight* fight, Player* player)
+    {
+        bool const ranged = player->getClass() == CLASS_HUNTER;
+        fight->spellPower = uint32(std::max(0, player->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_MAGIC)));
+        WeaponAttackType const attack = ranged ? RANGED_ATTACK : BASE_ATTACK;
+        fight->attackPower = uint32(std::max(0.0f, player->GetTotalAttackPowerValue(attack)));
+        fight->spellCrit = 0.0f;
+        for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+        {
+            float const crit = player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + school);
+            fight->spellCrit = std::max(fight->spellCrit, crit);
+        }
+        fight->physicalCrit = player->GetFloatValue(ranged ? PLAYER_RANGED_CRIT_PERCENTAGE : PLAYER_CRIT_PERCENTAGE);
+        fight->spellHaste = player->GetRatingBonusValue(CR_HASTE_SPELL);
+        fight->physicalHaste = player->GetRatingBonusValue(ranged ? CR_HASTE_RANGED : CR_HASTE_MELEE);
+        fight->spellHit = player->m_modSpellHitChance;
+        fight->physicalHit = ranged ? player->m_modRangedHitChance : player->m_modMeleeHitChance;
+        fight->expertise = player->GetExpertiseDodgeOrParryReduction(BASE_ATTACK);
+        fight->armorPen = player->GetRatingBonusValue(CR_ARMOR_PENETRATION);
+    }
+
+    // Whether a spell's outcome is counted: it deals damage, directly or over time. `direct` tells which, since
+    // only a direct hit can crit when it lands (the crit flag of a periodic aura says nothing about its ticks).
+    bool IsDamageSpell(SpellInfo const* spellInfo, bool& direct)
+    {
+        bool periodic = false;
+        direct = false;
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            switch (effect.Effect)
+            {
+                case SPELL_EFFECT_SCHOOL_DAMAGE:
+                case SPELL_EFFECT_WEAPON_DAMAGE:
+                case SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL:
+                case SPELL_EFFECT_NORMALIZED_WEAPON_DMG:
+                case SPELL_EFFECT_WEAPON_PERCENT_DAMAGE:
+                case SPELL_EFFECT_HEALTH_LEECH:
+                    direct = true;
+                    break;
+                case SPELL_EFFECT_APPLY_AURA:
+                    if (effect.ApplyAuraName == SPELL_AURA_PERIODIC_DAMAGE ||
+                        effect.ApplyAuraName == SPELL_AURA_PERIODIC_LEECH ||
+                        effect.ApplyAuraName == SPELL_AURA_PERIODIC_DAMAGE_PERCENT)
+                        periodic = true;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return direct || periodic;
+    }
+
     bool IsMetered(Player const* player)
     {
         if (player->GetLevel() < s_config.minLevel)
@@ -204,6 +301,7 @@ namespace
 
             fight->active = true;
             fight->startMs = now;
+            NoteOffence(fight, player);
         }
 
         fight->lastEventMs = now;
@@ -225,6 +323,11 @@ namespace
     uint32 ClampToUInt32(uint64 value)
     {
         return uint32(std::min<uint64>(value, std::numeric_limits<uint32>::max()));
+    }
+
+    uint32 ClampToUInt16(uint32 value)
+    {
+        return std::min<uint32>(value, std::numeric_limits<uint16>::max());
     }
 }
 
@@ -262,6 +365,10 @@ private:
         s_config.hasSpellTable = CharacterDatabase.Query("SHOW TABLES LIKE 'dc_bench_spell'") != nullptr;
         s_config.hasKillerColumns =
             CharacterDatabase.Query("SHOW COLUMNS FROM dc_bench_fight LIKE 'killer_type'") != nullptr;
+        s_config.hasStatColumns =
+            CharacterDatabase.Query("SHOW COLUMNS FROM dc_bench_fight LIKE 'physical_crit'") != nullptr;
+        s_config.hasRatingColumns =
+            CharacterDatabase.Query("SHOW COLUMNS FROM dc_bench_fight LIKE 'spell_crits'") != nullptr;
     }
 };
 
@@ -269,7 +376,81 @@ class dc_combat_meter_unit : public UnitScript
 {
 public:
     dc_combat_meter_unit() : UnitScript("dc_combat_meter_unit", true,
-        { UNITHOOK_ON_HEAL, UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_ON_DEAL_DAMAGE_DETAIL }) { }
+        { UNITHOOK_ON_HEAL, UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_ON_DEAL_DAMAGE_DETAIL,
+          UNITHOOK_ON_MELEE_ATTACK_OUTCOME, UNITHOOK_ON_SPELL_HIT_OUTCOME }) { }
+
+    void OnMeleeAttackOutcome(Unit* attacker, Unit* /*victim*/, WeaponAttackType /*attType*/, uint8 outcome) override
+    {
+        if (!s_config.enabled || !s_config.hasRatingColumns || outcome == MELEE_HIT_EVADE || !attacker)
+            return;
+
+        Player* player = attacker->ToPlayer();
+        if (!player || !IsMetered(player))
+            return;
+
+        Fight* fight = TouchFight(player, true);
+        ++fight->swings;
+        switch (outcome)
+        {
+            case MELEE_HIT_CRIT:
+                ++fight->swingCrits;
+                break;
+            case MELEE_HIT_MISS:
+                ++fight->swingMisses;
+                break;
+            case MELEE_HIT_DODGE:
+            case MELEE_HIT_PARRY:
+                ++fight->swingDodgesParries;
+                break;
+            case MELEE_HIT_GLANCING:
+                ++fight->swingGlancing;
+                break;
+            default:
+                break;
+        }
+    }
+
+    void OnSpellHitOutcome(Unit* caster, Unit* target, SpellInfo const* spellInfo, uint8 missInfo, bool crit) override
+    {
+        if (!s_config.enabled || !s_config.hasRatingColumns || !caster || !target || caster == target || !spellInfo)
+            return;
+
+        Player* player = caster->ToPlayer();
+        if (!player || !IsMetered(player))
+            return;
+
+        bool direct = false;
+        if (!IsDamageSpell(spellInfo, direct) || player->IsFriendlyTo(target))
+            return;
+
+        Fight* fight = TouchFight(player, true);
+        ++fight->spellAttempts;
+        switch (missInfo)
+        {
+            case SPELL_MISS_NONE:
+            case SPELL_MISS_BLOCK:  // a blocked ability still lands, for less
+                if (direct)
+                {
+                    ++fight->spellDirectHits;
+                    if (crit)
+                        ++fight->spellCrits;
+                }
+                break;
+            case SPELL_MISS_MISS:
+                ++fight->spellMisses;
+                break;
+            case SPELL_MISS_RESIST:
+                ++fight->spellResists;
+                break;
+            case SPELL_MISS_DODGE:
+            case SPELL_MISS_PARRY:
+                ++fight->spellDodgesParries;
+                break;
+            default:
+                ++fight->spellOther;
+                break;
+        }
+    }
 
     // Right after the DealDamage hooks (so after the Mythic+ scaling) with the spell that dealt the damage.
     void OnDealDamageDetail(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType /*damagetype*/,
@@ -426,6 +607,28 @@ public:
             columns += ", damage_taken_players, killer_type, killer_entry";
             values += Acore::StringFormat(", {}, {}, {}", ClampToUInt32(fight.damageTakenPlayers),
                 uint32(fight.killerType), fight.killerEntry);
+        }
+
+        if (s_config.hasStatColumns)
+        {
+            columns += ", spell_power, attack_power, spell_crit, physical_crit";
+            values += Acore::StringFormat(", {}, {}, {:.2f}, {:.2f}", fight.spellPower, fight.attackPower,
+                fight.spellCrit, fight.physicalCrit);
+        }
+
+        if (s_config.hasRatingColumns)
+        {
+            columns += ", spell_haste, physical_haste, spell_hit, physical_hit, expertise, armor_pen, swings, "
+                "swing_crits, swing_misses, swing_dodges_parries, swing_glancing, spell_attempts, spell_misses, "
+                "spell_resists, spell_dodges_parries, spell_other, spell_direct_hits, spell_crits";
+            values += Acore::StringFormat(", {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}", fight.spellHaste,
+                fight.physicalHaste, fight.spellHit, fight.physicalHit, fight.expertise, fight.armorPen);
+            values += Acore::StringFormat(", {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}",
+                ClampToUInt16(fight.swings), ClampToUInt16(fight.swingCrits), ClampToUInt16(fight.swingMisses),
+                ClampToUInt16(fight.swingDodgesParries), ClampToUInt16(fight.swingGlancing),
+                ClampToUInt16(fight.spellAttempts), ClampToUInt16(fight.spellMisses),
+                ClampToUInt16(fight.spellResists), ClampToUInt16(fight.spellDodgesParries),
+                ClampToUInt16(fight.spellOther), ClampToUInt16(fight.spellDirectHits), ClampToUInt16(fight.spellCrits));
         }
 
         CharacterDatabase.Execute("INSERT INTO dc_bench_fight (" + columns + ") VALUES (" + values + ")");

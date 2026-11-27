@@ -2844,6 +2844,7 @@ void Unit::AttackerStateUpdate(Unit* victim, WeaponAttackType attType /*= BASE_A
         victim = GetMeleeHitRedirectTarget(victim);
         CalcDamageInfo damageInfo;
         CalculateMeleeDamage(victim, &damageInfo, attType, sittingVictim);
+        sScriptMgr->OnMeleeAttackOutcome(this, victim, attType, uint8(damageInfo.hitOutCome));
 
         // Send log damage message to client
         for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
@@ -10977,6 +10978,10 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
                     main_speed_mod  = GetMaxPositiveAuraModifier(SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED);
                     stack_bonus     = GetTotalAuraMultiplier(SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS);
                     non_stack_bonus += GetMaxPositiveAuraModifier(SPELL_AURA_MOD_MOUNTED_SPEED_NOT_STACK) / 100.0f;
+
+                    // DarkChaos: riding-skill mount speed and bonus stacking (DC/Progression/dc_mount_speed.cpp)
+                    if (Player* player = ToPlayer())
+                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus, non_stack_bonus);
                 }
                 else
                 {
@@ -11030,6 +11035,10 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
                     main_speed_mod  = GetMaxPositiveAuraModifier(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED);
                     stack_bonus     = GetTotalAuraMultiplier(SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS);
                     non_stack_bonus += GetMaxPositiveAuraModifier(SPELL_AURA_MOD_FLIGHT_SPEED_MOUNTED_NOT_STACKING) / 100.0f;
+
+                    // DarkChaos: riding-skill mount speed and bonus stacking (DC/Progression/dc_mount_speed.cpp)
+                    if (Player* player = ToPlayer())
+                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus, non_stack_bonus);
                 }
                 else             // Use not mount (shapeshift for example) auras (should stack)
                 {

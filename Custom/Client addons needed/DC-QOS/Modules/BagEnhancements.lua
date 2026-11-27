@@ -720,6 +720,25 @@ local function GetOrCreateButton(bag, slot, parentFrame)
     return button
 end
 
+-- Quest overlay, as stock ContainerFrame_Update (and WoW Forever's retail bag) does it: "!" on an item that
+-- starts a quest not yet in the log, a gold border on quest items and on starters whose quest is accepted.
+-- The template already owns the texture ($parentIconQuestTexture); it only needs filling.
+local function UpdateButtonQuestTexture(button, bag, slot)
+    local questTexture = _G[button:GetName() .. "IconQuestTexture"]
+    if not questTexture then return end
+
+    local isQuestItem, questId, isActive = GetContainerItemQuestInfo(bag, slot)
+    if questId and not isActive then
+        questTexture:SetTexture(TEXTURE_ITEM_QUEST_BANG or "Interface\\ContainerFrame\\UI-Icon-QuestBang")
+        questTexture:Show()
+    elseif questId or isQuestItem then
+        questTexture:SetTexture(TEXTURE_ITEM_QUEST_BORDER or "Interface\\ContainerFrame\\UI-Icon-QuestBorder")
+        questTexture:Show()
+    else
+        questTexture:Hide()
+    end
+end
+
 -- Update the item display on a button (texture, count, quality)
 local function UpdateButtonItem(button, bag, slot)
     local texture, count, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
@@ -736,7 +755,9 @@ local function UpdateButtonItem(button, bag, slot)
     
     -- Set locked state (grayed out)
     SetItemButtonDesaturated(button, IsBagSlotLocked(locked))
-    
+
+    UpdateButtonQuestTexture(button, bag, slot)
+
     -- Update cooldown
     local cooldown = _G[button:GetName() .. "Cooldown"]
     if cooldown then
@@ -1347,7 +1368,10 @@ function BagEnhancements.OnEnable()
     ev:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     ev:RegisterEvent("BANKFRAME_OPENED")
     ev:RegisterEvent("BANKFRAME_CLOSED")
-    
+    -- Accepting/finishing a quest turns a starter's "!" into a border (or back); no bag event fires for it.
+    ev:RegisterEvent("QUEST_ACCEPTED")
+    ev:RegisterEvent("UNIT_QUEST_LOG_CHANGED")
+
     ev:SetScript("OnEvent", function(self, event, ...)
         if IsDebug() then
             local argStr = select("#", ...) > 0 and table.concat({...}, ", ") or "none"
@@ -1402,6 +1426,11 @@ function BagEnhancements.OnEnable()
                     local f = _G["ContainerFrame"..i]
                     if f and f:IsShown() then UpdateDefaultContainerFrame(f) end
                 end
+            end
+        elseif event == "QUEST_ACCEPTED" or (event == "UNIT_QUEST_LOG_CHANGED" and ... == "player") then
+            -- Default mode: stock ContainerFrame already handles these itself.
+            if settings.oneBag then
+                RefreshShownFrames()
             end
         elseif event == "BANKFRAME_OPENED" then
             if settings.oneBag then

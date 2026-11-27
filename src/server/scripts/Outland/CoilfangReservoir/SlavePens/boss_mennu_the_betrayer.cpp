@@ -30,9 +30,9 @@ enum Spells
 
 enum Text
 {
-    SAY_AGGRO       = 1,
-    SAY_KILL        = 2,
-    SAY_JUST_DIED   = 3
+    SAY_AGGRO       = 0,
+    SAY_KILL        = 1,
+    SAY_JUST_DIED   = 2
 };
 
 struct boss_mennu_the_betrayer : public BossAI

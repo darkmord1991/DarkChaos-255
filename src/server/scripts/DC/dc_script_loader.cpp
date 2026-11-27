@@ -175,7 +175,9 @@ void AddSC_dc_bug_report();                   // LabTools/dc_bug_report.cpp
 void AddSC_dc_accountwide_taxi();             // Progression/Accountwide/dc_accountwide_taxi.cpp
 void AddSC_dc_third_profession();             // Progression/dc_third_profession.cpp
 void AddSC_dc_xp_rate();                      // Progression/dc_xp_rate.cpp
+void AddSC_dc_well_rested();                  // Progression/dc_well_rested.cpp
 void AddSC_dc_flight_license();               // Progression/dc_flight_license.cpp
+void AddSC_dc_mount_speed();                  // Progression/dc_mount_speed.cpp
 void AddSC_dc_dungeon_qol();                  // DungeonQoL/dc_dungeon_qol.cpp (battle res charges, checkpoint release)
 void AddSC_dc_raid_flex();                    // RaidFlex/dc_raid_flex.cpp
 void AddSC_dc_boss_kit();                     // BossKit/dc_boss_kit.cpp
@@ -623,8 +625,14 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_third_profession);
     DC_LOAD(AddSC_dc_xp_rate);
 
+    // Well Rested (spell 800030): 10 minutes in an inn gives +10% kill and quest XP for 2 hours of play time.
+    DC_LOAD(AddSC_dc_well_rested);
+
     // Map flight licenses for maps 750/751 (DC.FlightLicense.*): fly gate, +50% mount speed, account-wide pool.
     DC_LOAD(AddSC_dc_flight_license);
+
+    // Mount speed from the Riding skill, and every mount speed bonus stacking (DC.MountSpeed.*).
+    DC_LOAD(AddSC_dc_mount_speed);
 
     // Battle resurrection charges and checkpoint release (DC.BattleRes.*, DC.CheckpointRelease.*); registers its
     // internal scripts itself.

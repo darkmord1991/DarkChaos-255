@@ -2,7 +2,7 @@
  * DarkChaos: per-character XP rate - cross-file surface.
  *
  * DC's own bonus XP sources (prestige alt bonus, hotspot buff, prestige talent
- * XP effects) ask IsBonusXPOptedOut before adding their share, so the opt-out
+ * XP effects, Well Rested) ask IsBonusXPOptedOut before adding their share, so the opt-out
  * works whatever order the OnPlayerGiveXP hooks run in. Implemented in
  * dc_xp_rate.cpp.
  */

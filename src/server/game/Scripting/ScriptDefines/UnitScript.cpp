@@ -74,6 +74,18 @@ void ScriptMgr::OnDealDamageDetail(Unit* attacker, Unit* victim, uint32 damage, 
     CALL_ENABLED_HOOKS(UnitScript, UNITHOOK_ON_DEAL_DAMAGE_DETAIL, script->OnDealDamageDetail(attacker, victim, damage, damagetype, spellProto));
 }
 
+void ScriptMgr::OnMeleeAttackOutcome(Unit* attacker, Unit* victim, WeaponAttackType attType, uint8 outcome)
+{
+    CALL_ENABLED_HOOKS(UnitScript, UNITHOOK_ON_MELEE_ATTACK_OUTCOME,
+                       script->OnMeleeAttackOutcome(attacker, victim, attType, outcome));
+}
+
+void ScriptMgr::OnSpellHitOutcome(Unit* caster, Unit* target, SpellInfo const* spellInfo, uint8 missInfo, bool crit)
+{
+    CALL_ENABLED_HOOKS(UnitScript, UNITHOOK_ON_SPELL_HIT_OUTCOME,
+                       script->OnSpellHitOutcome(caster, target, spellInfo, missInfo, crit));
+}
+
 void ScriptMgr::OnBeforeRollMeleeOutcomeAgainst(Unit const* attacker, Unit const* victim, WeaponAttackType attType, int32& attackerMaxSkillValueForLevel, int32& victimMaxSkillValueForLevel, int32& attackerWeaponSkill, int32& victimDefenseSkill, int32& crit_chance, int32& miss_chance, int32& dodge_chance, int32& parry_chance, int32& block_chance)
 {
     CALL_ENABLED_HOOKS(UnitScript, UNITHOOK_ON_BEFORE_ROLL_MELEE_OUTCOME_AGAINST, script->OnBeforeRollMeleeOutcomeAgainst(attacker, victim, attType, attackerMaxSkillValueForLevel, victimMaxSkillValueForLevel, attackerWeaponSkill, victimDefenseSkill, crit_chance, miss_chance, dodge_chance, parry_chance, block_chance));

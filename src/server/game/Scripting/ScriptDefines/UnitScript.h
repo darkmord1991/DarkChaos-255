@@ -46,6 +46,8 @@ enum UnitHook
     UNITHOOK_ON_UNIT_DEATH,
     UNITHOOK_ON_UNIT_SET_SHAPESHIFT_FORM,
     UNITHOOK_ON_DEAL_DAMAGE_DETAIL,
+    UNITHOOK_ON_MELEE_ATTACK_OUTCOME,
+    UNITHOOK_ON_SPELL_HIT_OUTCOME,
     UNITHOOK_END
 };
 
@@ -87,6 +89,16 @@ public:
     // DarkChaos: called right after DealDamage with the final amount and the spell that dealt it (nullptr for a
     // melee swing). Read-only: for meters that need to know where damage came from.
     virtual void OnDealDamageDetail(Unit* /*attacker*/, Unit* /*victim*/, uint32 /*damage*/, DamageEffectType /*damagetype*/, SpellInfo const* /*spellProto*/) { }
+
+    // DarkChaos: how a main or off hand auto attack ended (a MeleeHitOutcome), including the ones that deal no
+    // damage. Read-only, for meters.
+    virtual void OnMeleeAttackOutcome(Unit* /*attacker*/, Unit* /*victim*/, WeaponAttackType /*attType*/,
+                                      uint8 /*outcome*/) { }
+
+    // DarkChaos: how a spell or ability ended on one target (a SpellMissInfo, SPELL_MISS_NONE when it landed) and
+    // whether it was a critical hit. Read-only, for meters.
+    virtual void OnSpellHitOutcome(Unit* /*caster*/, Unit* /*target*/, SpellInfo const* /*spellInfo*/,
+                                   uint8 /*missInfo*/, bool /*crit*/) { }
 
     virtual void OnBeforeRollMeleeOutcomeAgainst(Unit const* /*attacker*/, Unit const* /*victim*/, WeaponAttackType /*attType*/, int32& /*attackerMaxSkillValueForLevel*/, int32& /*victimMaxSkillValueForLevel*/, int32& /*attackerWeaponSkill*/, int32& /*victimDefenseSkill*/, int32& /*crit_chance*/, int32& /*miss_chance*/, int32& /*dodge_chance*/, int32& /*parry_chance*/, int32& /*block_chance*/ ) {   };
 

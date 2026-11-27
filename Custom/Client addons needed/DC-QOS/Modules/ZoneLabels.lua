@@ -169,7 +169,7 @@ end
 -- we can rely on here. So the label itself is the target: each name is a Button
 -- that calls SetMapByID, never the engine hit test.
 --
--- Map 750 ("Mount Hyjal (80-130)") is the case that needs it most: its overview
+-- Map 750 ("The Sundered Wilds (80-130)") is the case that needs it most: its overview
 -- borrows the stock Kalimdor art, whose baked-in zone names belong to the REAL
 -- Kalimdor, so the seven playable zones sit on the map completely unlabelled.
 -- Names are AreaTable ids 4923/4926-4931; regenerate the coordinates if any of
@@ -186,7 +186,7 @@ end
 -- map this dense with POI pins the glow drowns the icons and the rects sit between
 -- the cursor and them. Clicking the name is the deliberate choice here.
 local CONTINENT_ZONES = {
-    -- map 750, "Mount Hyjal (80-130)" (continent WorldMapArea 1262).
+    -- map 750, "The Sundered Wilds (80-130)" (continent WorldMapArea 1262).
     --
     -- Positions come from the STOCK map-1 Kalimdor rects and masks, NOT map 750's
     -- own WorldMapArea rows: the overview borrows the stock WotLK Kalimdor art,
@@ -214,7 +214,7 @@ local CONTINENT_ZONES = {
     ["Deepholm"]                 = { x = 0.5000, y = 0.5000, w = 1215 },
     ["Azshara Crater (1-80)"]    = { x = 0.5000, y = 0.5000, w = 1251 },
 
-    -- map 751, "Plaguelands" (continent WorldMapArea 1267).
+    -- map 751, "The Fallen Kingdom (130-160)" (continent WorldMapArea 1267, texture folder "Plaguelands").
     --
     -- TEXT-FREE targets -- note the cw/ch. Unlike map 750, which borrows stock
     -- Kalimdor art labelled with the WRONG names, 751's continent tiles were baked

@@ -1,10 +1,11 @@
 /*
  * DarkChaos-255 Map Flight Licenses (maps 750 and 751)
  *
- * Flying on map 750 (Mount Hyjal continent, 80-130) needs the Kalimdor Flight
- * License, flying on map 751 (Plaguelands, 130-160) the Lordaeron Flight
- * License, the way Northrend needs Cold Weather Flying. Every riding trainer
- * teaches them (trainer_spell: level 120 / 150, Expert Riding).
+ * Flying on map 750 (The Sundered Wilds, 80-130) needs Scorched Weather Flying,
+ * flying on map 751 (The Fallen Kingdom, 130-160) needs Plague Weather Flying,
+ * the way Northrend needs Cold Weather Flying. Every riding trainer teaches
+ * them (trainer_spell: level 120 / 150, Expert Riding). Code, config and SQL
+ * still call them the flight licenses.
  *
  * - Gate: OnPlayerCanFlyInZone. Player::canFlyInZone runs it for every
  *   "flying areas only" spell (flying mounts, flight forms) at cast time and
@@ -55,7 +56,7 @@ namespace
     constexpr char const* CONFIG_AUTO_QUEST = "DC.FlightLicense.AutoQuest";
 
     constexpr char const* STATE_KEY = "dc_flight_license";
-    constexpr char const* CHAT_PREFIX = "|cff00ccff[Flight License]|r ";
+    constexpr char const* CHAT_PREFIX = "|cff00ccff[Flying]|r ";
 
     constexpr uint32 SPELL_SLOW_FALL = 130;
     constexpr uint32 HINT_COOLDOWN_MS = 5000;
@@ -73,8 +74,8 @@ namespace
 
     constexpr std::array<FlightLicense, 2> LICENSES =
     {{
-        { 750, 300610, 120, 81330, 0x1, "Kalimdor Flight License", "Kalimdor" },
-        { 751, 300611, 150, 81331, 0x2, "Lordaeron Flight License", "Lordaeron" },
+        { 750, 300610, 120, 81330, 0x1, "Scorched Weather Flying", "the Sundered Wilds" },
+        { 751, 300611, 150, 81331, 0x2, "Plague Weather Flying", "the Fallen Kingdom" },
     }};
 
     // Written on the world thread at config (re)load, read from map threads.
@@ -160,7 +161,7 @@ namespace
         if (!IsRealPlayer(player) || !TakeHintSlot(player))
             return;
 
-        Notify(player, Acore::StringFormat("Flying in {} needs the {}. Every riding trainer teaches it from level {}.",
+        Notify(player, Acore::StringFormat("Flying in {} needs {}. Every riding trainer teaches it from level {}.",
             license.Region, license.Name, uint32(license.Level)));
     }
 
@@ -182,7 +183,7 @@ namespace
         if (!player->HasSpell(license->SpellId))
             return;
 
-        Notify(player, Acore::StringFormat("Another character of your account holds the {}: you can fly in {} as well.",
+        Notify(player, Acore::StringFormat("Another character of your account knows {}: you can fly in {} as well.",
             license->Name, license->Region));
 
         LOG_INFO("module.dc", "[FlightLicense] {} received {} ({}) from the account pool",
@@ -237,13 +238,13 @@ namespace
 
         if (!player->CanAddQuest(quest, false))
         {
-            Notify(player, Acore::StringFormat("You can now learn the {}. Free a quest log slot and log in again to "
+            Notify(player, Acore::StringFormat("You can now learn {}. Free a quest log slot and log in again to "
                 "receive \"{}\".", license.Name, quest->GetTitle()));
             return;
         }
 
         player->AddQuestAndCheckCompletion(quest, nullptr);
-        Notify(player, Acore::StringFormat("You can now learn the {}. New quest: \"{}\".", license.Name,
+        Notify(player, Acore::StringFormat("You can now learn {}. New quest: \"{}\".", license.Name,
             quest->GetTitle()));
     }
 

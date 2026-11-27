@@ -198,20 +198,39 @@ public:
                 return;
 
             if (Creature* dweller = unit->ToCreature())
-                if (CreatureGroup* formation = dweller->GetFormation())
+                if (dweller->GetFormation())
                 {
+                    // Only the GUID crosses the delay: the dweller can be removed within the second, and its
+                    // formation is deleted with its last member.
+                    ObjectGuid const dwellerGUID = dweller->GetGUID();
                     scheduler.CancelAll();
-                    scheduler.Schedule(1s, [this, dweller, formation](TaskContext /*context*/)
+                    scheduler.Schedule(1s, [this, dwellerGUID](TaskContext /*context*/)
                     {
-                        if (!formation->IsAnyMemberAlive())
+                        Creature* dweller = instance->GetCreature(dwellerGUID);
+                        if (CreatureGroup* formation = dweller ? dweller->GetFormation() : nullptr)
                         {
-                            if (dweller)
-                                dweller->AI()->Talk(EMOTE_SUMMON_ECK);
-
-                            instance->SummonCreature(NPC_ECK_THE_FEROCIOUS, { 1624.70f, 891.43f, 95.08f, 1.2f });
+                            if (formation->IsAnyMemberAlive())
+                                return;
                         }
+                        else if (IsAnyRuinsDwellerAlive())
+                            return;
+
+                        if (dweller)
+                            dweller->AI()->Talk(EMOTE_SUMMON_ECK);
+
+                        instance->SummonCreature(NPC_ECK_THE_FEROCIOUS, { 1624.70f, 891.43f, 95.08f, 1.2f });
                     });
                 }
+        }
+
+        // For when the dweller, and with it the formation, is already gone.
+        bool IsAnyRuinsDwellerAlive() const
+        {
+            for (auto const& [spawnId, creature] : instance->GetCreatureBySpawnIdStore())
+                if (creature->GetEntry() == NPC_RUINS_DWELLER && creature->IsAlive())
+                    return true;
+
+            return false;
         }
 
         void Update(uint32 diff) override

@@ -509,6 +509,8 @@ public: /* PlayerScript */
     void OnPlayerBeforeReceiveSpellListFromTrainer(Player* player, Creature* trainer, WorldPackets::NPC::TrainerList& trainerList);
     void OnPlayerGetTrainerSpellState(Player const* player, uint32 trainerId, uint32 spellId, Trainer::SpellState& state);
     void OnPlayerAfterTrainSpell(Player* player, Creature* trainer, uint32 spellId);
+    void OnPlayerCalcMountedSpeed(Player* player, UnitMoveType moveType, int32& mountSpeedMod, float& stackBonus,
+        float& nonStackBonus);
 
     // Anti cheat
     void AnticheatSetCanFlybyServer(Player* player, bool apply);
@@ -597,6 +599,8 @@ public: /* UnitScript */
     void ModifyAuraEffectAmount(Unit* target, Unit* caster, AuraEffect const* aurEff, int32& amount, bool& canBeRecalculated);
     uint32 DealDamage(Unit* AttackerUnit, Unit* pVictim, uint32 damage, DamageEffectType damagetype);
     void OnDealDamageDetail(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType damagetype, SpellInfo const* spellProto);
+    void OnMeleeAttackOutcome(Unit* attacker, Unit* victim, WeaponAttackType attType, uint8 outcome);
+    void OnSpellHitOutcome(Unit* caster, Unit* target, SpellInfo const* spellInfo, uint8 missInfo, bool crit);
     void OnBeforeRollMeleeOutcomeAgainst(Unit const* attacker, Unit const* victim, WeaponAttackType attType, int32& attackerMaxSkillValueForLevel, int32& victimMaxSkillValueForLevel, int32& attackerWeaponSkill, int32& victimDefenseSkill, int32& crit_chance, int32& miss_chance, int32& dodge_chance, int32& parry_chance, int32& block_chance);
     void OnAuraApply(Unit* /*unit*/, Aura* /*aura*/);
     void OnAuraRemove(Unit* unit, AuraApplication* aurApp, AuraRemoveMode mode);

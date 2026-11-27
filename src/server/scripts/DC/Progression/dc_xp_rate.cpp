@@ -19,7 +19,7 @@
  * mode compose with it.
  *
  * Bonus XP off strips DC's own bonus sources: the prestige alt bonus, the
- * hotspot buff and prestige talent XP effects (each asks
+ * hotspot buff, prestige talent XP effects and Well Rested (each asks
  * DCXPRate::IsBonusXPOptedOut). Rested XP, Recruit-a-Friend and racial
  * traits are core or character mechanics and stay. Hotspot kill objectives
  * keep counting.
@@ -128,7 +128,7 @@ namespace
                 (setting & FLAG_CUSTOM_RATE) ? "" : " (default)");
 
         handler->PSendSysMessage("|cff00ccff[XP]|r Allowed: {}x to {}x. Bonus XP (prestige alt bonus, hotspots, "
-            "prestige talents): {}.", FormatRate(minH), FormatRate(maxH),
+            "prestige talents, Well Rested): {}.", FormatRate(minH), FormatRate(maxH),
             (setting & FLAG_NO_BONUS) ? "|cffff6060off|r" : "on");
         handler->SendSysMessage("|cff00ccff[XP]|r Usage: .dc xp <rate> | .dc xp reset | .dc xp bonus [on|off]");
     }
@@ -292,7 +292,8 @@ namespace
 
             WriteSetting(player, setting);
 
-            handler->PSendSysMessage("|cff00ccff[XP]|r Bonus XP (prestige alt bonus, hotspots, prestige talents) "
+            handler->PSendSysMessage("|cff00ccff[XP]|r Bonus XP (prestige alt bonus, hotspots, prestige talents, "
+                "Well Rested) "
                 "is now {}. Rested XP is not affected.", bonusOn ? "on" : "|cffff6060off|r");
             return true;
         }

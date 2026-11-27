@@ -62,8 +62,8 @@ local CONTINENTS = {
     { map = 0,   native = 2, name = "Eastern Kingdoms" },
     { map = 530, native = 3, name = "Outland" },
     { map = 571, native = 4, name = "Northrend" },
-    { map = 750, wma = 1262, name = "Mount Hyjal (80-130)" },
-    { map = 751, wma = 1267, name = "Plaguelands" },
+    { map = 750, wma = 1262, name = "The Sundered Wilds (80-130)" },
+    { map = 751, wma = 1267, name = "The Fallen Kingdom (130-160)" },
     { map = 870, wma = 1205, name = "Pandaria" },
     { darkChaos = true, name = DARK_CHAOS },
 }
