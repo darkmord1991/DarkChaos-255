@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "Level-80 (highest) ranks taught by each class trainer at level 60 or above, with the ranked spells they trigger.",
+    "Read from acore_world on 2026-11-15 (trainer + trainer_spell + spell_ranks; triggers from Spell.dbc).",
+    "gen_class_ranks.py keeps a family only if it carries a damage, heal or absorb amount; see its filters.",
+    "Format per class: [top rank id, trainer level, [[effect index, triggered spell id], ...] or null]."
+  ],
+  "warrior": {"class_id": 1, "spell_base": 922000, "sla_base": 41000, "families": [
+    [47436, 78, null], [47437, 79, null], [47440, 80, null], [47450, 76, null], [47465, 76, null],
+    [47471, 80, null], [47475, 79, null], [47486, 80, null], [47488, 80, null], [47498, 80, null],
+    [47502, 78, null], [47520, 77, null], [57823, 80, null]]},
+  "paladin": {"class_id": 2, "spell_base": 923000, "sla_base": 42000, "families": [
+    [48782, 80, null], [48785, 79, null], [48788, 78, null], [48801, 79, null], [48806, 80, null],
+    [48817, 78, null], [48819, 80, null], [48825, 80, null], [48827, 80, null], [48932, 79, null],
+    [48934, 79, null], [48936, 77, null], [48938, 77, null], [48942, 79, null], [48943, 76, null],
+    [48945, 77, null], [48947, 78, null], [48950, 79, null], [48952, 80, null], [54043, 76, null],
+    [61411, 80, null]]},
+  "hunter": {"class_id": 3, "spell_base": 924000, "sla_base": 43000, "families": [
+    [14311, 60, null], [27044, 68, null], [48990, 80, null], [48996, 77, null], [48999, 78, null],
+    [49001, 79, null], [49012, 80, null], [49045, 79, null], [49048, 80, null], [49050, 80, null],
+    [49052, 77, null], [49056, 78, null], [49067, 77, null], [49071, 76, null], [53338, 76, null],
+    [53339, 80, null], [58434, 80, [[2, 58433]]], [60053, 80, null], [61006, 80, null], [61847, 80, null],
+    [63672, 80, null]]},
+  "rogue": {"class_id": 4, "spell_base": 925000, "sla_base": 44000, "families": [
+    [26889, 62, [[1, 26888]]], [48638, 80, null], [48657, 80, null], [48659, 78, null], [48660, 80, null],
+    [48666, 80, [[2, 48665], [3, 48664]]], [48668, 79, null], [48672, 79, null], [48674, 76, null],
+    [48676, 80, null], [48691, 80, null], [51724, 71, null], [57993, 80, null]]},
+  "priest": {"class_id": 5, "spell_base": 926000, "sla_base": 45000, "families": [
+    [10955, 60, null], [48063, 78, null], [48066, 80, null], [48068, 80, null], [48071, 79, null],
+    [48072, 76, null], [48073, 80, null], [48074, 80, null], [48078, 80, null], [48087, 80, null],
+    [48089, 80, null], [48113, 79, [[1, 48111]]], [48120, 78, null], [48123, 79, null], [48125, 80, null],
+    [48127, 79, null], [48135, 78, null], [48156, 80, null], [48158, 80, null], [48160, 80, null],
+    [48161, 80, null], [48162, 80, null], [48168, 77, null], [48169, 76, null], [48170, 77, null],
+    [48171, 78, null], [48173, 80, null], [48300, 79, null], [53007, 80, null], [53023, 80, [[1, 53022]]]]},
+  "deathknight": {"class_id": 6, "spell_base": 927000, "sla_base": 46000, "families": [
+    [49895, 80, null], [49909, 78, null], [49921, 80, null], [49924, 80, null], [49930, 80, null],
+    [49938, 80, null], [49941, 78, null], [51328, 80, null], [51411, 80, null], [51425, 79, null],
+    [55262, 80, null], [55268, 80, null], [55271, 79, null], [57623, 75, null]]},
+  "shaman": {"class_id": 7, "spell_base": 928000, "sla_base": 47000, "families": [
+    [49231, 79, null], [49233, 80, null], [49236, 78, null], [49238, 79, null], [49271, 80, null],
+    [49273, 80, null], [49276, 77, null], [49277, 80, null], [49281, 80, null], [49284, 80, null],
+    [51994, 80, null], [55459, 80, null], [57722, 80, null], [57960, 76, null], [58582, 78, null],
+    [58643, 80, null], [58656, 80, null], [58704, 80, null], [58734, 78, null], [58739, 80, null],
+    [58745, 80, null], [58749, 80, null], [58753, 78, null], [58757, 80, null], [58774, 80, null],
+    [58790, 80, null], [58796, 80, null], [58804, 80, null], [59159, 80, null], [60043, 80, null],
+    [61301, 80, null], [61657, 80, null]]},
+  "warlock": {"class_id": 9, "spell_base": 929000, "sla_base": 48000, "families": [
+    [47809, 79, null], [47811, 80, null], [47813, 77, null], [47815, 79, null], [47820, 79, [[2, 47818]]],
+    [47823, 78, [[1, 47822]]], [47825, 80, null], [47827, 80, null], [47836, 80, null], [47838, 80, null],
+    [47843, 80, null], [47847, 80, null], [47855, 77, null], [47856, 76, null], [47857, 78, null],
+    [47860, 78, null], [47864, 79, null], [47865, 78, null], [47867, 80, null], [47878, 79, null],
+    [47884, 76, null], [47888, 78, null], [47889, 80, null], [47891, 78, null], [47893, 79, null],
+    [50511, 71, null], [57946, 80, null], [58887, 80, null], [59092, 80, null], [59164, 80, null],
+    [59172, 80, null], [60220, 80, null], [61191, 72, null], [61290, 80, null]]},
+  "druid": {"class_id": 11, "spell_base": 930000, "sla_base": 49000, "families": [
+    [26995, 70, null], [33357, 65, null], [40120, 71, null], [48378, 79, null], [48441, 80, null],
+    [48443, 77, null], [48447, 80, [[2, 48445]]], [48451, 80, null], [48461, 79, null], [48463, 80, null],
+    [48465, 78, null], [48467, 80, [[3, 48466]]], [48468, 80, null], [48469, 80, null], [48470, 80, null],
+    [48477, 79, null], [48480, 79, null], [48560, 77, null], [48562, 77, null], [48564, 80, null],
+    [48566, 80, null], [48568, 80, null], [48570, 79, null], [48572, 80, null], [48574, 78, null],
+    [48575, 76, null], [48577, 78, null], [48579, 79, null], [49800, 80, null], [49802, 74, null],
+    [49803, 77, [[2, 49804]]], [50213, 79, null], [50763, 80, null], [53201, 80, [[1, 53198]]],
+    [53251, 80, null], [53307, 74, null], [53308, 78, null], [53312, 78, [[2, 53313]]],
+    [61384, 80, [[2, 53227]]]]}
+}
