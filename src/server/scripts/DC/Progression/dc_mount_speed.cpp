@@ -1,5 +1,5 @@
 /*
- * DarkChaos-255 Mount Speed: riding skill sets the speed, every bonus applies
+ * DarkChaos-255 Mount Speed: riding skill sets the speed, every bonus adds to it
  *
  * Stock 3.3.5 takes a mount's speed from the mount spell itself (60/100% ground, 150/280/310% flying). Here
  * it follows the character's Riding skill instead, the way later expansions do it:
@@ -18,19 +18,25 @@
  *   never slowed), 2 = follow (also slows a mount the skill does not cover yet, e.g. an account-wide 310%
  *   flyer on a character with Expert Riding).
  *
- * Bonuses. The core combines max(best *_NOT_STACK bonus, product of *_ALWAYS bonuses) * (1 + mount speed), so
- * the Riding Crop, Crusader Aura, On a Pale Horse and Pathfinding (NOT_STACK) are lost as soon as the ALWAYS
- * product is larger: Collector's Speed (DC-Collection, 300510-300513), Scorched / Plague Weather Flying on maps
- * 750/751 (300610/300611, +50%), Mithril Spurs and the mount speed enchants. DC.MountSpeed.StackBonuses = 1
- * multiplies the two groups instead. Within the NOT_STACK group the best one still wins (crop vs Crusader Aura),
- * and the ALWAYS group already multiplied before. A new DC bonus therefore needs no code: give its spell a
- * SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS (130) / SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS (209) effect.
+ * Bonuses. The core multiplies: speed = max(best *_NOT_STACK bonus, product of *_ALWAYS bonuses) * (1 + mount
+ * speed). So Scorched / Plague Weather Flying (300610/300611, "+50%") turned a 310% flyer into 4.1 x 1.5 = 6.15x
+ * run speed, and the Riding Crop, Crusader Aura, On a Pale Horse and Pathfinding (NOT_STACK) were lost as soon as
+ * the ALWAYS product was larger. DC.MountSpeed.StackBonuses = 1 adds every bonus to the mount's percentage instead:
  *
- * Druid flight forms are not mounts and are not touched (Swift Flight Form already needs 300 riding and turns
- * 310% with a 310% flyer in spell_dru_swift_flight_passive).
+ *     speed = 1 + (mount % + sum of the ALWAYS bonuses + best NOT_STACK bonus) / 100
+ *
+ * 310% flyer + Weather Flying 50 + Collector's Speed IV 5 + Riding Crop 10 = 375% (4.75x run speed). The ALWAYS
+ * group is Collector's Speed (DC-Collection, 300510-300513), the 750/751 licenses, Mithril Spurs and the mount
+ * speed enchants; within the NOT_STACK group only the best one counts (crop vs Crusader Aura), as in stock. A new
+ * DC bonus needs no code: give its spell a SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS (130) /
+ * SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS (209) effect.
+ *
+ * Druid flight forms: the riding tiers do not apply (Swift Flight Form already needs 300 riding and turns 310%
+ * with a 310% flyer in spell_dru_swift_flight_passive), but their bonuses add the same way: the licenses' flight
+ * form effect (SPELL_AURA_MOD_FLIGHT_SPEED_NOT_STACKING, 210) makes Swift Flight Form 360%, not 310% x 1.5.
  *
  * Hook: PlayerScript::OnPlayerCalcMountedSpeed, called from Unit::UpdateSpeed for a mounted player's MOVE_RUN
- * and MOVE_FLIGHT. Applies to playerbots as well.
+ * and MOVE_FLIGHT and for an unmounted player's MOVE_FLIGHT. Applies to playerbots as well.
  */
 
 #include "Config.h"
@@ -116,6 +122,21 @@ namespace
         return tier->Flying;
     }
 
+    // The same auras the core reads for each case, as percentage points: every ALWAYS bonus, the best NOT_STACK one.
+    int32 GetAdditiveBonus(Player* player, UnitMoveType moveType, bool mounted)
+    {
+        if (moveType == MOVE_RUN)
+            return player->GetTotalAuraModifier(SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS) +
+                player->GetMaxPositiveAuraModifier(SPELL_AURA_MOD_MOUNTED_SPEED_NOT_STACK);
+
+        if (mounted)
+            return player->GetTotalAuraModifier(SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS) +
+                player->GetMaxPositiveAuraModifier(SPELL_AURA_MOD_FLIGHT_SPEED_MOUNTED_NOT_STACKING);
+
+        return player->GetTotalAuraModifier(SPELL_AURA_MOD_FLIGHT_SPEED_ALWAYS) +
+            player->GetMaxPositiveAuraModifier(SPELL_AURA_MOD_FLIGHT_SPEED_NOT_STACKING);
+    }
+
     void RefreshMountedSpeed(Player* player)
     {
         if (!player->IsInWorld() || !player->IsMounted())
@@ -152,8 +173,10 @@ namespace
         void OnPlayerCalcMountedSpeed(Player* player, UnitMoveType moveType, int32& mountSpeedMod,
             float& stackBonus, float& nonStackBonus) override
         {
+            bool const mounted = player->IsMounted();
+
             uint8 const mode = sRidingMode;
-            if (mode != RIDING_MODE_OFF && IsStandardMountSpeed(moveType, mountSpeedMod))
+            if (mounted && mode != RIDING_MODE_OFF && IsStandardMountSpeed(moveType, mountSpeedMod))
             {
                 if (int32 const ridingSpeed = GetRidingSpeed(player, moveType))
                 {
@@ -164,13 +187,13 @@ namespace
                 }
             }
 
-            // The core takes the larger of the two; returning the product in both makes every bonus count.
-            if (sStackBonuses)
-            {
-                float const combined = stackBonus * nonStackBonus;
-                stackBonus = combined;
-                nonStackBonus = combined;
-            }
+            if (!sStackBonuses)
+                return;
+
+            // Every bonus goes onto the percentage; the core's max(nonStack, stack) multiplier becomes 1.
+            mountSpeedMod += GetAdditiveBonus(player, moveType, mounted);
+            stackBonus = 1.0f;
+            nonStackBonus = 1.0f;
         }
 
         // A riding rank learned (or unlearned) while mounted takes effect at once instead of at the next mount.

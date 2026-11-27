@@ -989,17 +989,19 @@ public:
     virtual void OnPlayerAfterTrainSpell(Player* /*player*/, Creature* /*trainer*/, uint32 /*spellId*/) {}
 
     /**
-     * @brief This hook is called from Unit::UpdateSpeed while a mounted player's ground (MOVE_RUN) or
-     *        mounted flight (MOVE_FLIGHT) speed is recalculated, before the three parts are combined.
+     * @brief This hook is called from Unit::UpdateSpeed while a player's mounted ground speed (MOVE_RUN, mounted),
+     *        mounted flight speed (MOVE_FLIGHT, mounted) or unmounted flight speed (MOVE_FLIGHT, flight forms) is
+     *        recalculated, before the three parts are combined. Player::IsMounted() tells the two flight cases apart.
      *
      * The core then computes max(nonStackBonus, stackBonus) * (1 + mountSpeedMod / 100) and applies
      * slows and the minimum speed to that.
      *
      * @param player Contains information about the Player
      * @param moveType MOVE_RUN or MOVE_FLIGHT
-     * @param mountSpeedMod The mount's own speed in percent (the strongest SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED
-     *        or SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED effect)
-     * @param stackBonus Product of the *_ALWAYS multipliers (Mithril Spurs, mount speed enchants, ...)
+     * @param mountSpeedMod The speed in percent: the strongest SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED /
+     *        SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED effect, or SPELL_AURA_MOD_INCREASE_FLIGHT_SPEED unmounted
+     * @param stackBonus Product of the *_ALWAYS multipliers (Mithril Spurs, mount speed enchants, ...). Unmounted
+     *        flight is a stock quirk: the SUM of the SPELL_AURA_MOD_FLIGHT_SPEED_ALWAYS amounts, not a multiplier.
      * @param nonStackBonus 1 + the strongest *_NOT_STACK bonus (Riding Crop, Crusader Aura, ...)
      */
     virtual void OnPlayerCalcMountedSpeed(Player* /*player*/, UnitMoveType /*moveType*/, int32& /*mountSpeedMod*/,

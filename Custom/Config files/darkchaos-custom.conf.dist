@@ -6065,11 +6065,13 @@ DC.MountSpeed.RidingSkill = 2
 
 #
 #    DC.MountSpeed.StackBonuses
-#        Description: Stock takes the larger of two bonus groups: the best of Riding Crop / Crusader
-#                     Aura / On a Pale Horse / Pathfinding, or the product of Collector's Speed, Scorched
-#                     and Plague Weather Flying (+50% on maps 750/751), Mithril Spurs and the mount speed
-#                     enchants. 1 = multiply the two groups so every bonus applies (within the first
-#                     group the best one still wins). 0 = stock.
+#        Description: 1 = every mount speed bonus adds its percent to the mount's speed: a 310% flyer
+#                     with Scorched / Plague Weather Flying (+50% on maps 750/751), Collector's Speed IV
+#                     (+5%) and a Riding Crop (+10%) flies at 375%. Of Riding Crop / Crusader Aura / On a
+#                     Pale Horse / Pathfinding only the best one counts. Druid flight forms get the
+#                     licenses' +50% the same way (Swift Flight Form 360%).
+#                     0 = stock: bonuses multiply the whole speed (310% x 1.5 with a license) and the
+#                     larger of the two bonus groups wins, so the license swallows the Riding Crop.
 #        Default:     1
 #
 

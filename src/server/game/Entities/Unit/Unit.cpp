@@ -10981,7 +10981,8 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
 
                     // DarkChaos: riding-skill mount speed and bonus stacking (DC/Progression/dc_mount_speed.cpp)
                     if (Player* player = ToPlayer())
-                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus, non_stack_bonus);
+                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus,
+                            non_stack_bonus);
                 }
                 else
                 {
@@ -11038,13 +11039,19 @@ void Unit::UpdateSpeed(UnitMoveType mtype, bool forced)
 
                     // DarkChaos: riding-skill mount speed and bonus stacking (DC/Progression/dc_mount_speed.cpp)
                     if (Player* player = ToPlayer())
-                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus, non_stack_bonus);
+                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus,
+                            non_stack_bonus);
                 }
                 else             // Use not mount (shapeshift for example) auras (should stack)
                 {
                     main_speed_mod  = GetMaxPositiveAuraModifier(SPELL_AURA_MOD_INCREASE_FLIGHT_SPEED);
                     stack_bonus     = GetTotalAuraModifier(SPELL_AURA_MOD_FLIGHT_SPEED_ALWAYS);
                     non_stack_bonus += GetMaxPositiveAuraModifier(SPELL_AURA_MOD_FLIGHT_SPEED_NOT_STACKING) / 100.0f;
+
+                    // DarkChaos: flight-form speed bonuses add up (DC/Progression/dc_mount_speed.cpp)
+                    if (Player* player = ToPlayer())
+                        sScriptMgr->OnPlayerCalcMountedSpeed(player, mtype, main_speed_mod, stack_bonus,
+                            non_stack_bonus);
                 }
 
                 // Update speed for vehicle if available
