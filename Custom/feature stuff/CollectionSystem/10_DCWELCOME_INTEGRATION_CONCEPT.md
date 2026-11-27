@@ -224,18 +224,18 @@ INSERT INTO `item_template`
 
 -- Tier 3: Raid boss or collection shop exclusive
 (300602, 0, 8, 'Riding Saddle Enhancement III', 63216, 4, 0, 0,
- 300512, 0, -1, 64, 'Permanently increases mounted speed by 3%. Requires Enhancement II.'),
+ 300512, 0, -1, 64, 'Permanently increases mounted speed by 4%. Requires Enhancement II.'),
 
 -- Tier 4: Legendary - Top collector reward
 (300603, 0, 8, 'Master Rider\'s Blessing', 63217, 5, 0, 0,
- 300513, 0, -1, 64, 'Permanently increases mounted speed by 2%. Requires Enhancement III.');
+ 300513, 0, -1, 64, 'Permanently increases mounted speed by 5%. Requires Enhancement III.');
 
 -- The spells these items teach (permanent passive auras)
 INSERT INTO `spell_dbc` (`Id`, `SpellName`, `Effect1`, `EffectApplyAuraName1`, `EffectBasePoints1`, `Attributes`) VALUES
 (300510, 'Saddle Enhancement I', 6, 232, 2, 0x00000400),   -- PASSIVE
 (300511, 'Saddle Enhancement II', 6, 232, 3, 0x00000400),
-(300512, 'Saddle Enhancement III', 6, 232, 3, 0x00000400),
-(300513, 'Master Rider', 6, 232, 2, 0x00000400);
+(300512, 'Saddle Enhancement III', 6, 232, 4, 0x00000400),
+(300513, 'Master Rider', 6, 232, 5, 0x00000400);
 ```
 
 **Acquisition Sources:**
@@ -243,8 +243,8 @@ INSERT INTO `spell_dbc` (`Id`, `SpellName`, `Effect1`, `EffectApplyAuraName1`, `
 |------|--------|-----------|
 | Enhancement I | Collection Shop / Dungeon Boss | 500 Collection Tokens |
 | Enhancement II | Collection Shop / Raid Boss | 1500 Collection Tokens |
-| Enhancement III | Raid Boss / Collection Achievement | 50+ mounts collected |
-| Master Rider's Blessing | Collection Shop Exclusive | 100+ mounts + 5000 Tokens |
+| Enhancement III | Raid Boss / Collection Achievement | 100+ mounts collected |
+| Master Rider's Blessing | Collection Shop Exclusive | 200+ mounts + 5000 Tokens |
 
 ---
 
