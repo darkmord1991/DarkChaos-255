@@ -49,12 +49,23 @@ INSTALLER_PULL_FROM=
 #
 ##############################################
 # Set preferred compilers.
-# To use gcc (not suggested) instead of clang change in:
-#  CCOMPILERC="/usr/bin/gcc"
-#  CCOMPILERCXX="/usr/bin/g++"
-#
-CCOMPILERC="/usr/bin/clang"
-CCOMPILERCXX="/usr/bin/clang++"
+# Linux defaults to gcc/g++ for better compatibility with newer distro
+# toolchains. Override these values explicitly if you want clang.
+case "$OSTYPE" in
+  linux*)
+    if command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; then
+      CCOMPILERC=${CCOMPILERC:-$(command -v gcc)}
+      CCOMPILERCXX=${CCOMPILERCXX:-$(command -v g++)}
+    else
+      CCOMPILERC=${CCOMPILERC:-$(command -v clang || echo "/usr/bin/clang")}
+      CCOMPILERCXX=${CCOMPILERCXX:-$(command -v clang++ || echo "/usr/bin/clang++")}
+    fi
+    ;;
+  *)
+    CCOMPILERC=${CCOMPILERC:-$(command -v clang || echo "/usr/bin/clang")}
+    CCOMPILERCXX=${CCOMPILERCXX:-$(command -v clang++ || echo "/usr/bin/clang++")}
+    ;;
+esac
 
 # how many thread must be used for compilation ( leave zero to use all available )
 MTHREADS=${MTHREADS:-0}

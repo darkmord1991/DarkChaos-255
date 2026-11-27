@@ -26,6 +26,8 @@ function comp_ccacheEnable() {
     [ "$AC_CCACHE" != true ] && return
 
     export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-'1000MB'}
+    export CCACHE_BASEDIR=${CCACHE_BASEDIR:-"$SRCPATH"}
+    mkdir -p "$CCACHE_DIR"
     #export CCACHE_DEPEND=true
     export CCACHE_SLOPPINESS=${CCACHE_SLOPPINESS:-pch_defines,time_macros,include_file_mtime}
     export CCACHE_CPP2=${CCACHE_CPP2:-true} # optimization for clang
