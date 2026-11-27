@@ -1,0 +1,55 @@
+# DC lab tooling: the LabTools core checks (lab probe result book, bug-report validation, rate limit and spool
+# writer, compiled with g++ against a stub Define.h: apps/dc_labtools_check/run.py) and the bug-report relay's
+# unit tests (apps/bugreport_relay). The fork's unit_tests target does not link, so this is where that logic is
+# checked. Neither job builds the worldserver or talks to GitHub's API.
+#
+# Runner: GitHub-hosted ubuntu-latest. No secrets.
+name: DC Lab Tools
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - src/server/scripts/DC/LabTools/**
+      - apps/dc_labtools_check/**
+      - apps/bugreport_relay/**
+      - .github/workflows/dc-labtools.yml
+  push:
+    branches:
+      - master
+      - '0.3'
+    paths:
+      - src/server/scripts/DC/LabTools/**
+      - apps/dc_labtools_check/**
+      - apps/bugreport_relay/**
+      - .github/workflows/dc-labtools.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  labtools:
+    runs-on: ubuntu-latest
+    name: DC lab tools
+    # Not gated on github.repository, for the same reason as dc-sql-codestyle.yml.
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: LabTools core checks (g++, C++20)
+        run: python apps/dc_labtools_check/run.py
+
+      - name: Bug-report relay tests
+        working-directory: apps/bugreport_relay
+        run: python -B -m unittest -v test_dc_bugreport_relay
